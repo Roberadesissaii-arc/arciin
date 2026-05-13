@@ -1,0 +1,353 @@
+import { access, mkdir, readdir, rm, stat } from "node:fs/promises"
+import path from "node:path"
+
+import { execa } from "execa"
+import { fileTypeFromFile } from "file-type"
+import type Redis from "ioredis"
+import sharp from "sharp"
+
+import type { Prisma } from "@prisma/client"
+import { prisma } from "@arciin/database"
+import {
+  JOB_TYPES,
+  type AnalyzeFilePayload,
+  type CalculateStorageUsagePayload,
+  type CleanupTempFilesPayload,
+  type ExtractMetadataPayload,
+  type GenerateThumbnailPayload,
+  type PlexSyncPlaceholderPayload,
+} from "@arciin/shared"
+
+import { createRealtimeEvent, publishRealtimeEvent } from "@/services/realtime"
+
+async function markJob(
+  jobRecordId: string | undefined,
+  input: {
+    status: "ACTIVE" | "COMPLETED" | "FAILED"
+    progress: number
+    result?: Record<string, unknown>
+    error?: string
+  }
+) {
+  if (!jobRecordId) {
+    return
+  }
+
+  await prisma.job.update({
+    where: {
+      id: jobRecordId,
+    },
+    data: {
+      status: input.status,
+      progress: input.progress,
+      result: input.result as Prisma.InputJsonValue | undefined,
+      error: input.error,
+      completedAt: input.status === "COMPLETED" || input.status === "FAILED" ? new Date() : null,
+    },
+  })
+}
+
+export async function markJobFailure(jobRecordId: string | undefined, error: unknown) {
+  await markJob(jobRecordId, {
+    status: "FAILED",
+    progress: 100,
+    error: error instanceof Error ? error.message : "Job failed.",
+  })
+}
+
+async function detectMetadata(filePath: string) {
+  const detected = await fileTypeFromFile(filePath)
+
+  let width: number | undefined
+  let height: number | undefined
+
+  if (detected?.mime?.startsWith("image/")) {
+    try {
+      const metadata = await sharp(filePath).metadata()
+      width = metadata.width
+      height = metadata.height
+    } catch {
+      width = undefined
+      height = undefined
+    }
+  }
+
+  return {
+    mimeType: detected?.mime,
+    extension: detected?.ext,
+    width,
+    height,
+  }
+}
+
+async function generateThumbnail(assetId: string, filePath: string, storageRoot: string) {
+  const thumbnailsDir = path.join(storageRoot, "thumbnails")
+  await mkdir(thumbnailsDir, { recursive: true })
+  const thumbnailPath = path.join(thumbnailsDir, `${assetId}.webp`)
+
+  try {
+    if (filePath.match(/\.(png|jpe?g|webp|gif|bmp)$/i)) {
+      await sharp(filePath).resize(640, 360, { fit: "inside" }).webp().toFile(thumbnailPath)
+      return thumbnailPath
+    }
+
+    await execa("ffmpeg", [
+      "-y",
+      "-i",
+      filePath,
+      "-frames:v",
+      "1",
+      "-vf",
+      "scale=640:-1",
+      thumbnailPath,
+    ])
+
+    return thumbnailPath
+  } catch {
+    return null
+  }
+}
+
+export async function handleMediaJob(
+  name: string,
+  data:
+    | (AnalyzeFilePayload & { jobRecordId?: string })
+    | (ExtractMetadataPayload & { jobRecordId?: string })
+    | (GenerateThumbnailPayload & { jobRecordId?: string }),
+  redis: Redis
+) {
+  await markJob(data.jobRecordId, { status: "ACTIVE", progress: 10 })
+
+  const asset = await prisma.asset.findUnique({
+    where: { id: data.assetId },
+    include: { storageObject: true },
+  })
+
+  if (!asset) {
+    throw new Error("Asset not found.")
+  }
+
+  const instance = await prisma.instanceConfig.findFirst()
+  const storageRoot = instance?.storageRoot || path.dirname(path.dirname(asset.storageObject.physicalPath))
+
+  if (name === JOB_TYPES.analyzeFile || name === JOB_TYPES.extractMetadata) {
+    const metadata = await detectMetadata(asset.storageObject.physicalPath)
+
+    await prisma.asset.update({
+      where: { id: asset.id },
+      data: {
+        mimeType: metadata.mimeType || asset.mimeType,
+        extension: metadata.extension || asset.extension,
+        width: metadata.width ?? asset.width,
+        height: metadata.height ?? asset.height,
+      },
+    })
+
+    if ("uploadId" in data && data.uploadId) {
+      await prisma.uploadSession.update({
+        where: { id: data.uploadId },
+        data: {
+          status: "CLASSIFIED",
+          progress: 100,
+        },
+      })
+    }
+
+    await publishRealtimeEvent(
+      redis,
+      createRealtimeEvent("asset.classified", {
+        assetId: asset.id,
+        libraryId: asset.libraryId,
+        userId: data.userId,
+        message: `${asset.originalFilename} classified.`,
+      })
+    )
+
+    if (name === JOB_TYPES.extractMetadata && asset.mediaType === "AUDIO") {
+      await prisma.asset.update({
+        where: { id: asset.id },
+        data: {
+          status: "READY",
+        },
+      })
+
+      if ("uploadId" in data && data.uploadId) {
+        await prisma.uploadSession.update({
+          where: { id: data.uploadId },
+          data: {
+            status: "READY",
+            progress: 100,
+            completedAt: new Date(),
+          },
+        })
+      }
+    }
+  }
+
+  if (name === JOB_TYPES.generateThumbnail) {
+    const thumbnailPath = await generateThumbnail(
+      asset.id,
+      asset.storageObject.physicalPath,
+      storageRoot
+    )
+
+    await prisma.asset.update({
+      where: { id: asset.id },
+      data: {
+        status: "READY",
+      },
+    })
+
+    const upload = await prisma.uploadSession.findFirst({
+      where: {
+        assetId: asset.id,
+      },
+    })
+
+    if (upload) {
+      await prisma.uploadSession.update({
+        where: { id: upload.id },
+        data: {
+          status: "READY",
+          progress: 100,
+          completedAt: new Date(),
+        },
+      })
+
+      await publishRealtimeEvent(
+        redis,
+        createRealtimeEvent("upload.completed", {
+          userId: upload.userId,
+          libraryId: asset.libraryId,
+          uploadId: upload.id,
+          assetId: asset.id,
+          progress: 100,
+          message: `${asset.originalFilename} is ready.`,
+        })
+      )
+    }
+
+    if (thumbnailPath) {
+      await publishRealtimeEvent(
+        redis,
+        createRealtimeEvent("thumbnail.created", {
+          userId: data.userId,
+          libraryId: asset.libraryId,
+          assetId: asset.id,
+          message: "Thumbnail created.",
+        })
+      )
+    }
+  }
+
+  await markJob(data.jobRecordId, {
+    status: "COMPLETED",
+    progress: 100,
+    result: {
+      assetId: asset.id,
+      jobType: name,
+    },
+  })
+}
+
+export async function handleStorageJob(
+  name: string,
+  data:
+    | (CleanupTempFilesPayload & { jobRecordId?: string })
+    | (CalculateStorageUsagePayload & { jobRecordId?: string })
+) {
+  await markJob(data.jobRecordId, { status: "ACTIVE", progress: 10 })
+
+  const instance = await prisma.instanceConfig.findFirst()
+  const storageRoot = instance?.storageRoot || "./data/arciin"
+
+  if (name === JOB_TYPES.cleanupTempFiles) {
+    const tempDir = path.join(storageRoot, "temp")
+    const olderThanHours = "olderThanHours" in data ? data.olderThanHours : undefined
+    const cutoff = Date.now() - (olderThanHours ?? 24) * 60 * 60 * 1000
+    let deleted = 0
+
+    try {
+      const entries = await readdir(tempDir)
+
+      for (const entry of entries) {
+        const entryPath = path.join(tempDir, entry)
+        const fileStat = await stat(entryPath)
+
+        if (fileStat.mtimeMs < cutoff) {
+          await rm(entryPath, { force: true })
+          deleted += 1
+        }
+      }
+    } catch {
+      deleted = 0
+    }
+
+    await markJob(data.jobRecordId, {
+      status: "COMPLETED",
+      progress: 100,
+      result: { deleted },
+    })
+    return
+  }
+
+  if (name === JOB_TYPES.calculateStorageUsage) {
+    const objectsDir = path.join(storageRoot, "objects")
+    let exists = true
+
+    try {
+      await access(objectsDir)
+    } catch {
+      exists = false
+    }
+
+    await markJob(data.jobRecordId, {
+      status: "COMPLETED",
+      progress: 100,
+      result: {
+        objectsDirExists: exists,
+      },
+    })
+  }
+}
+
+export async function handleIntegrationJob(
+  name: string,
+  data: PlexSyncPlaceholderPayload & { jobRecordId?: string },
+  redis: Redis
+) {
+  await markJob(data.jobRecordId, { status: "ACTIVE", progress: 10 })
+
+  if (name === JOB_TYPES.plexSyncPlaceholder) {
+    await publishRealtimeEvent(
+      redis,
+      createRealtimeEvent("plex.sync.started", {
+        userId: data.requestedByUserId,
+        message: "Plex sync placeholder started.",
+        data: {
+          integrationId: data.integrationId,
+        },
+      })
+    )
+
+    await markJob(data.jobRecordId, {
+      status: "COMPLETED",
+      progress: 100,
+      result: {
+        integrationId: data.integrationId,
+        placeholder: true,
+      },
+    })
+
+    await publishRealtimeEvent(
+      redis,
+      createRealtimeEvent("plex.sync.completed", {
+        userId: data.requestedByUserId,
+        message: "Plex placeholder sync completed.",
+        data: {
+          integrationId: data.integrationId,
+        },
+      })
+    )
+  }
+}

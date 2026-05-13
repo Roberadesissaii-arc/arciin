@@ -1,0 +1,42 @@
+import { redirect } from "next/navigation"
+
+import { DashboardShell } from "@/components/app-shell/dashboard-shell"
+import { SystemUnavailable } from "@/components/app-shell/system-unavailable"
+import { SocketProvider } from "@/components/providers/socket-provider"
+import { GlobalDropzoneProvider } from "@/components/uploads/global-dropzone-provider"
+import { getRootRouteState } from "@/lib/utils/route-guards"
+
+export const dynamic = "force-dynamic"
+
+export default async function DashboardLayout({
+  children,
+}: {
+  children: React.ReactNode
+}) {
+  const state = await getRootRouteState()
+
+  if (state.kind === "setup-required") {
+    redirect("/setup")
+  }
+
+  if (state.kind === "unauthenticated") {
+    redirect("/login")
+  }
+
+  if (state.kind === "unavailable") {
+    return (
+      <SystemUnavailable
+        title="The dashboard shell is waiting for Arciin."
+        description="The UI is ready, but the API must be online before the authenticated app can load."
+      />
+    )
+  }
+
+  return (
+    <DashboardShell auth={state.auth}>
+      <SocketProvider userId={state.auth.user.id}>
+        <GlobalDropzoneProvider>{children}</GlobalDropzoneProvider>
+      </SocketProvider>
+    </DashboardShell>
+  )
+}

@@ -1,0 +1,9 @@
+node_modules
+.next
+dist
+.git
+.cursor
+coverage
+data
+*.log
+.env

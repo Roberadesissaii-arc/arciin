@@ -1,0 +1,21 @@
+import type { PrismaClient, Session, User } from "@prisma/client"
+import type { Server as SocketIOServer } from "socket.io"
+import type Redis from "ioredis"
+
+import type { RealtimeEvent } from "@arciin/shared"
+
+declare module "fastify" {
+  interface FastifyInstance {
+    prisma: PrismaClient
+    redis: Redis
+    io: SocketIOServer
+    publishRealtimeEvent: (event: RealtimeEvent) => Promise<void>
+  }
+
+  interface FastifyRequest {
+    auth?: {
+      user: User
+      session: Session
+    }
+  }
+}

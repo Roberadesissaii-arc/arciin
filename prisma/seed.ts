@@ -1,0 +1,58 @@
+import { PrismaClient, IntegrationType } from "@prisma/client"
+
+import { DEFAULT_LIBRARY_DEFINITIONS } from "../packages/shared/src/constants"
+
+const prisma = new PrismaClient()
+
+async function main() {
+  const instance = await prisma.instanceConfig.findFirst()
+  const defaultStorage = await prisma.storageLocation.findFirst({
+    where: {
+      isDefault: true,
+    },
+  })
+
+  if (instance && defaultStorage) {
+    for (const library of DEFAULT_LIBRARY_DEFINITIONS) {
+      await prisma.library.upsert({
+        where: {
+          slug: library.slug,
+        },
+        update: {},
+        create: {
+          name: library.name,
+          slug: library.slug,
+          kind: library.kind,
+          icon: library.icon,
+          storageLocationId: defaultStorage.id,
+        },
+      })
+    }
+  }
+
+  await prisma.integration.upsert({
+    where: {
+      id: "plex-placeholder",
+    },
+    update: {},
+    create: {
+      id: "plex-placeholder",
+      name: "Plex",
+      type: IntegrationType.PLEX,
+      enabled: false,
+      config: {
+        status: "not_connected",
+        suggestedFolder: "Videos/Plex",
+      },
+    },
+  })
+}
+
+main()
+  .catch((error) => {
+    console.error(error)
+    process.exit(1)
+  })
+  .finally(async () => {
+    await prisma.$disconnect()
+  })
