@@ -8,8 +8,6 @@ const EXEMPT_PREFIXES = [
   "/api/health",
   "/api/instance/status",
   "/api/instance/claim",
-  "/api/auth/login",
-  "/api/auth/register",
 ]
 
 function isExempt(url: string): boolean {

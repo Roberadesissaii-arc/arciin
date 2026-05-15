@@ -1,4 +1,5 @@
 import { access, statfs } from "node:fs/promises"
+import path from "node:path"
 
 import {
   AI_EMOJI_USAGE_LEVELS,
@@ -167,7 +168,7 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
         return
       }
 
-      const storageRoot = parsed.data.storageRoot
+      const storageRoot = path.resolve(parsed.data.storageRoot)
       const instance = await fastify.prisma.instanceConfig.findFirst()
 
       if (!instance) {
