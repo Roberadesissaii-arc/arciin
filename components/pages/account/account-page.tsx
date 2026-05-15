@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   AlertTriangle,
@@ -101,16 +101,20 @@ function RoleBadge({ role }: { role: UserRole }) {
 function IdentityPanel() {
   const queryClient = useQueryClient()
   const meQuery = useAuth()
+  const user = meQuery.data?.user
+
+  // React "adjusting state during render" pattern — avoids setState-in-effect.
+  // We store the last seeded userId in state; when it differs from the current user,
+  // we update all three pieces of state in the same render pass.
+  const [seededForId, setSeededForId] = useState<string | null>(null)
   const [name, setName] = useState("")
   const [email, setEmail] = useState("")
 
-  useEffect(() => {
-    const u = meQuery.data?.user
-    if (u) {
-      setName(u.name)
-      setEmail(u.email)
-    }
-  }, [meQuery.data?.user?.id, meQuery.data?.user?.name, meQuery.data?.user?.email])
+  if (user && seededForId !== user.id) {
+    setSeededForId(user.id)
+    setName(user.name)
+    setEmail(user.email)
+  }
 
   const mutation = useMutation({
     mutationFn: updateProfile,
@@ -121,7 +125,6 @@ function IdentityPanel() {
     onError: (e: Error) => toast.error(e.message || "Could not update profile."),
   })
 
-  const user = meQuery.data?.user
   const dirty =
     user && (name.trim() !== user.name || email.trim().toLowerCase() !== user.email.toLowerCase())
   const letter = (user?.name || "?")[0]?.toUpperCase() ?? "?"
@@ -137,7 +140,7 @@ function IdentityPanel() {
   }
 
   return (
-    <motion.div className="space-y-6">
+    <div className="space-y-6">
       <SectionHeader
         icon={User}
         title="Identity"
@@ -145,12 +148,12 @@ function IdentityPanel() {
       />
 
       <div className="flex flex-col gap-4 border-b border-border pb-6 sm:flex-row sm:items-center">
-        <motion.div
+        <div
           className="flex size-16 shrink-0 items-center justify-center rounded-2xl bg-primary text-xl font-bold text-primary-foreground shadow-sm"
           aria-hidden
         >
           {letter}
-        </motion.div>
+        </div>
         <div className="min-w-0 space-y-1.5">
           <div className="flex flex-wrap items-center gap-2">
             <p className="text-base font-semibold text-foreground">{user?.name}</p>
@@ -205,7 +208,7 @@ function IdentityPanel() {
               placeholder="you@example.com"
               className="border-border bg-white"
             />
-          </motion.div>
+          </div>
           {dirty && (
             <div className="flex flex-wrap gap-2 pt-1">
               <Button
@@ -256,7 +259,7 @@ function PasswordStrengthBar({ password }: { password: string }) {
 
   return (
     <div className="mt-2 space-y-1">
-      <motion.div className="h-1 w-full overflow-hidden rounded-full bg-zinc-200">
+      <div className="h-1 w-full overflow-hidden rounded-full bg-zinc-200">
         <div
           className={cn("h-full rounded-full transition-all", color)}
           style={{ width: `${(score / 5) * 100}%` }}
@@ -375,7 +378,8 @@ function SessionItem({
   revoking: boolean
 }) {
   const { label, DeviceIcon } = parseUA(session.userAgent)
-  const expiringSoon = new Date(session.expiresAt).getTime() - Date.now() < 24 * 60 * 60 * 1000
+  const oneDayMs = 24 * 60 * 60 * 1000
+  const expiringSoon = new Date(session.expiresAt) < new Date(new Date().getTime() + oneDayMs)
 
   return (
     <div className="flex items-center gap-3 border-b border-border py-3.5 last:border-0">
@@ -390,7 +394,7 @@ function SessionItem({
         <DeviceIcon className="size-4" />
       </div>
       <div className="min-w-0 flex-1">
-        <motion.div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <p className="text-[13px] font-medium text-foreground">{label}</p>
           {session.isCurrent && (
             <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-800">
@@ -474,7 +478,7 @@ function SessionsPanel() {
       </div>
 
       {sessionsQuery.isLoading ? (
-        <motion.div className="space-y-3">
+        <div className="space-y-3">
           <Skeleton className="h-16 w-full rounded-xl" />
           <Skeleton className="h-16 w-full rounded-xl" />
         </div>
@@ -605,7 +609,7 @@ function DangerPanel() {
           <p className="text-[11px] text-zinc-500">You will need to sign back in with your email and password.</p>
         </CardContent>
       </Card>
-    </motion.div>
+    </div>
   )
 }
 

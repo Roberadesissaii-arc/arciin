@@ -221,7 +221,7 @@ export async function streamOllamaWithArciinTools(opts: {
   const readOnlyTools = opts.security?.readOnlyTools ?? false
   const toolMode: ToolMode = !agentEnabled ? false : readOnlyTools ? "read-only" : "all"
 
-  let messages = [...opts.messages]
+  const messages = [...opts.messages]
   let totalIn = 0
   let totalOut = 0
 

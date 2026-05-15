@@ -53,7 +53,8 @@ function relTime(iso: string) {
 function EventCard({ event }: { event: LiveEvent }) {
   const [open, setOpen] = useState(false)
 
-  const { _rxAt, _uid, ...payload } = event
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { _rxAt, _uid: _uid_, ...payload } = event
   const hasExtra = Object.keys(payload).some(
     k => !["id","type","createdAt","message"].includes(k) && payload[k as keyof typeof payload] != null
   )
@@ -148,6 +149,7 @@ export function EventsMonitor() {
   const [filter, setFilter] = useState<string>("all")
   const [total, setTotal] = useState(0)
   const [error, setError] = useState<string | null>(null)
+  const [bufferedCount, setBufferedCount] = useState(0)
 
   const pausedRef = useRef(false)
   const bufferRef = useRef<LiveEvent[]>([])
@@ -185,6 +187,7 @@ export function EventsMonitor() {
         setEvents(prev => [event, ...prev].slice(0, MAX_EVENTS))
       } else {
         bufferRef.current.unshift(event)
+        setBufferedCount(c => c + 1)
       }
     })
 
@@ -197,6 +200,7 @@ export function EventsMonitor() {
     if (!next) {
       const buffered = bufferRef.current.splice(0)
       setEvents(prev => [...buffered, ...prev].slice(0, MAX_EVENTS))
+      setBufferedCount(0)
     }
     setPaused(next)
   }
@@ -205,10 +209,10 @@ export function EventsMonitor() {
     setEvents([])
     bufferRef.current = []
     setTotal(0)
+    setBufferedCount(0)
   }
 
   const filtered = filter === "all" ? events : events.filter(e => cat(e.type) === filter)
-  const bufferedCount = paused ? bufferRef.current.length : 0
 
   return (
     <div className="space-y-4">

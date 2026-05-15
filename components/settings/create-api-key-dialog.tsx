@@ -54,6 +54,7 @@ export function CreateApiKeyDialog() {
         queryKey: queryKeys.apiKeys,
       })
     },
+    onError: (e: Error) => toast.error(e.message || "Could not create API key."),
   })
 
   const handleOpenChange = (next: boolean) => {

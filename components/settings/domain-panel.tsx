@@ -28,6 +28,7 @@ export function DomainPanel() {
       await queryClient.invalidateQueries({ queryKey: queryKeys.remoteAccessSettings })
       toast.success("Public URL updated.")
     },
+    onError: (e: Error) => toast.error(e.message || "Could not save domain."),
   })
 
   const [draft, setDraft] = useState("")

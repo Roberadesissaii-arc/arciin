@@ -1,3 +1,6 @@
+// DEAD CODE: This component has zero imports anywhere in the project.
+// It was scaffolded for the appearance settings panel but never wired in.
+// Either import it from appearance-panel.tsx or delete this file.
 "use client"
 
 import { Button } from "@/components/ui/button"

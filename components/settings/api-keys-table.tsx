@@ -65,6 +65,7 @@ export function ApiKeysTable() {
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: queryKeys.apiKeys })
     },
+    onError: (e: Error) => toast.error(e.message || "Could not revoke API key."),
   })
 
   const rotateMutation = useMutation({
@@ -72,6 +73,7 @@ export function ApiKeysTable() {
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: queryKeys.apiKeys })
     },
+    onError: (e: Error) => toast.error(e.message || "Could not rotate API key."),
   })
 
   const apiKeys = apiKeysQuery.data ?? []
@@ -101,6 +103,11 @@ export function ApiKeysTable() {
               {apiKeysQuery.error instanceof Error
                 ? apiKeysQuery.error.message
                 : "Could not load API keys."}
+            </div>
+          ) : apiKeys.length === 0 ? (
+            <div className="flex flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-border bg-muted/20 py-12">
+              <p className="text-[14px] font-medium text-foreground">No API keys yet</p>
+              <p className="text-[12px] text-zinc-500">Create a key using the button above to get started.</p>
             </div>
           ) : (
             <Table>

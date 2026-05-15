@@ -294,6 +294,9 @@ model Asset {
 
   @@index([libraryId])
   @@index([folderId])
+  @@index([ownerId])
+  @@index([storageObjectId])
+  @@index([status])
   @@index([mediaType])
   @@index([createdAt])
   @@index([deletedAt])
@@ -321,6 +324,7 @@ model UploadSession {
   asset             Asset?       @relation(fields: [assetId], references: [id], onDelete: SetNull)
 
   @@index([userId, status])
+  @@index([assetId])
   @@index([createdAt])
 }
 
@@ -352,6 +356,7 @@ model ActivityEvent {
   createdAt  DateTime @default(now())
   user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
 
+  @@index([userId])
   @@index([createdAt])
   @@index([type])
 }
@@ -419,6 +424,7 @@ model AssetTag {
   tag     Tag    @relation(fields: [tagId], references: [id], onDelete: Cascade)
 
   @@id([assetId, tagId])
+  @@index([tagId])
 }
 
 model ModelProfile {

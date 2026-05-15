@@ -582,7 +582,7 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
       }
       const prev = getAiCfg(instance)
       const next: Record<string, unknown> = { ...prev, ...Object.fromEntries(Object.entries(parsed.data).filter(([, v]) => v !== undefined)) }
-      await fastify.prisma.instanceConfig.update({ where: { id: instance.id }, data: { aiConfig: next as any } })
+      await fastify.prisma.instanceConfig.update({ where: { id: instance.id }, data: { aiConfig: next as unknown as import("@prisma/client").Prisma.InputJsonValue } })
       reply.send({ data: parseAiConfig(next) })
     }
   )
@@ -617,7 +617,7 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
       const prev = getAiCfg(instance)
       const prevSec = (prev.security as Record<string, unknown> | null) ?? {}
       const nextSec: Record<string, unknown> = { ...prevSec, ...Object.fromEntries(Object.entries(parsed.data).filter(([, v]) => v !== undefined)) }
-      await fastify.prisma.instanceConfig.update({ where: { id: instance.id }, data: { aiConfig: { ...prev, security: nextSec } as any } })
+      await fastify.prisma.instanceConfig.update({ where: { id: instance.id }, data: { aiConfig: { ...prev, security: nextSec } as unknown as import("@prisma/client").Prisma.InputJsonValue } })
       reply.send({ data: parseAiSecurityConfig(nextSec) })
     }
   )

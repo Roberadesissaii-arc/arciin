@@ -131,6 +131,7 @@ export async function registerAppDatabaseRoutes(fastify: FastifyInstance) {
             },
           },
         },
+        take: 100,
       })
 
       reply.send({
@@ -287,6 +288,7 @@ export async function registerAppDatabaseRoutes(fastify: FastifyInstance) {
             },
           },
         },
+        take: 500,
       })
 
       reply.send({
@@ -509,6 +511,7 @@ export async function registerAppDatabaseRoutes(fastify: FastifyInstance) {
       const records = await fastify.prisma.appDatabaseRecord.findMany({
         where: { folderId: params.folderId },
         orderBy: { updatedAt: "desc" },
+        take: 500,
       })
 
       reply.send({

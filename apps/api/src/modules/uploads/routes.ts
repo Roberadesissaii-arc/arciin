@@ -52,10 +52,25 @@ export async function registerUploadRoutes(fastify: FastifyInstance) {
         return
       }
 
-      const { targetLibraryId, targetFolderId } = (request.query ?? {}) as {
-        targetLibraryId?: string
-        targetFolderId?: string
+      const queryParsed = z
+        .object({
+          targetLibraryId: z.string().uuid().optional(),
+          targetFolderId: z.string().uuid().optional(),
+        })
+        .safeParse(request.query ?? {})
+
+      if (!queryParsed.success) {
+        reply.status(400).send({
+          error: {
+            code: "VALIDATION_ERROR",
+            message: "Invalid upload query parameters.",
+            details: queryParsed.error.flatten(),
+          },
+        })
+        return
       }
+
+      const { targetLibraryId, targetFolderId } = queryParsed.data
 
       const instance = await fastify.prisma.instanceConfig.findFirst()
       const storageRoot = instance?.storageRoot
@@ -268,6 +283,7 @@ export async function registerUploadRoutes(fastify: FastifyInstance) {
         orderBy: {
           createdAt: "desc",
         },
+        take: 100,
       })
 
       reply.send({
@@ -314,6 +330,7 @@ export async function registerUploadRoutes(fastify: FastifyInstance) {
       preHandler: requireRole(["OWNER", "ADMIN", "MEMBER"]),
     },
     async (request, reply) => {
+      if (!request.auth) return
       const params = z.object({ uploadId: z.string() }).parse(request.params)
       const upload = await fastify.prisma.uploadSession.findUnique({
         where: {
@@ -334,6 +351,15 @@ export async function registerUploadRoutes(fastify: FastifyInstance) {
         return
       }
 
+      // Only the uploader, admins, or owners may act on a session.
+      const role = request.auth.user.role
+      if (upload.userId !== request.auth.user.id && role !== "OWNER" && role !== "ADMIN") {
+        reply.status(403).send({
+          error: { code: "FORBIDDEN", message: "You do not have access to this upload." },
+        })
+        return
+      }
+
       reply.send({
         data: serializeUpload(upload),
       })
@@ -346,7 +372,28 @@ export async function registerUploadRoutes(fastify: FastifyInstance) {
       preHandler: requireRole(["OWNER", "ADMIN", "MEMBER"]),
     },
     async (request, reply) => {
+      if (!request.auth) return
       const params = z.object({ uploadId: z.string() }).parse(request.params)
+
+      const upload = await fastify.prisma.uploadSession.findUnique({
+        where: { id: params.uploadId },
+      })
+
+      if (!upload) {
+        reply.status(404).send({
+          error: { code: "UPLOAD_NOT_FOUND", message: "Upload session not found." },
+        })
+        return
+      }
+
+      // Only the uploader, admins, or owners may cancel a session.
+      const role = request.auth.user.role
+      if (upload.userId !== request.auth.user.id && role !== "OWNER" && role !== "ADMIN") {
+        reply.status(403).send({
+          error: { code: "FORBIDDEN", message: "You do not have access to this upload." },
+        })
+        return
+      }
 
       await fastify.prisma.uploadSession.update({
         where: {

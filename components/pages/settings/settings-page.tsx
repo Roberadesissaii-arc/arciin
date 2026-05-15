@@ -144,7 +144,7 @@ export function SettingsPage() {
         <div className="shrink-0 overflow-hidden rounded-2xl border border-border bg-card shadow-sm sm:sticky sm:top-4 sm:w-60 sm:self-start">
           <nav className="flex gap-1 overflow-x-auto px-2.5 py-2.5 scrollbar-hide sm:block sm:space-y-3 sm:overflow-visible sm:px-2.5 sm:py-3.5">
             {NAV.map((group, gi) => (
-              <div key={gi} className="sm:space-y-0.5">
+              <div key={GROUP_LABELS[gi]} className="sm:space-y-0.5">
                 <p className="hidden px-3 pb-1.5 pt-0.5 text-[11px] font-semibold uppercase tracking-wider text-zinc-500 sm:block">
                   {GROUP_LABELS[gi]}
                 </p>

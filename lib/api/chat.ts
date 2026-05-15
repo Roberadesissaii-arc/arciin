@@ -107,7 +107,7 @@ export function updateChatMessage(
 }
 
 export function deleteChatConversation(id: string) {
-  return fetchApi<{ ok: boolean }>(`/chat/conversations/${id}`, { method: "DELETE" })
+  return fetchApi<{ success: true }>(`/chat/conversations/${id}`, { method: "DELETE" })
 }
 
 export function getChatInstanceContext(signal?: AbortSignal) {

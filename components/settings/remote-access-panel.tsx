@@ -64,6 +64,7 @@ export function RemoteAccessPanel() {
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: queryKeys.remoteAccessSettings })
     },
+    onError: (e: Error) => toast.error(e.message || "Could not update remote access settings."),
   })
 
   const [reverseProxy, setReverseProxy] = useState<boolean | null>(null)

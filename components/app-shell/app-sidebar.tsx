@@ -3,7 +3,7 @@
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import {
-  Bell, BookOpen, Boxes, Brain, ChevronLeft, ChevronRight,
+  Bell, BookOpen, Boxes, ChevronLeft, ChevronRight,
   ChevronsUpDown, Code2, Database, Files, GalleryVerticalEnd, HelpCircle, LayoutDashboard,
   Library,
   ListTree, LogOut, MessageSquare, Minus, MonitorDot, PackagePlus,

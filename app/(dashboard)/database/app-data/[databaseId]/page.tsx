@@ -1,11 +1,11 @@
 "use client"
 
 import Link from "next/link"
-import { useEffect, useMemo, useState, use } from "react"
+import { useMemo, useState, use } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   ArrowLeft, ChevronDown, ChevronRight, Columns3, Database,
-  Hash, Loader2, Plus, RefreshCw, Search, Table2, Trash2, X,
+  Loader2, Plus, RefreshCw, Search, Table2, Trash2, X,
 } from "lucide-react"
 import { toast } from "sonner"
 
@@ -297,9 +297,6 @@ function AppDataDatabaseDetailInner({ databaseId }: { databaseId: string }) {
   const [colNullable, setColNullable] = useState(true)
   const [colPrimary, setColPrimary] = useState(false)
 
-  // Columns stored in localStorage per table
-  const [columns, setColumns] = useState<ColumnDef[]>([])
-
   // Add row sheet
   const [rowSheetOpen, setRowSheetOpen]         = useState(false)
   const [rowSheetForTableId, setRowSheetForTableId] = useState<string | null>(null)
@@ -323,6 +320,16 @@ function AppDataDatabaseDetailInner({ databaseId }: { databaseId: string }) {
     return sortedFolders[0]?.id ?? null
   }, [sortedFolders, openTableId])
 
+  // Columns stored in localStorage per table — seeded whenever the selected table changes.
+  // React "adjusting state during render" pattern: store the last seeded id in state
+  // so the guard is a plain state comparison rather than a ref (which triggers react-hooks/refs).
+  const [columnsForTableId, setColumnsForTableId] = useState<string | null>(null)
+  const [columns, setColumns] = useState<ColumnDef[]>([])
+  if (effectiveTableId && columnsForTableId !== effectiveTableId) {
+    setColumnsForTableId(effectiveTableId)
+    setColumns(loadColumns(effectiveTableId))
+  }
+
   const openFolder = sortedFolders.find((f) => f.id === effectiveTableId) ?? null
 
   const recordsQuery = useQuery({
@@ -330,13 +337,6 @@ function AppDataDatabaseDetailInner({ databaseId }: { databaseId: string }) {
     queryFn: ({ signal }) => listFolderRecords(effectiveTableId!, signal),
     enabled: Boolean(effectiveTableId),
   })
-
-  // Load columns from localStorage when selected table changes
-  useEffect(() => {
-    if (effectiveTableId) {
-      setColumns(loadColumns(effectiveTableId))
-    }
-  }, [effectiveTableId])
 
   const role = meQuery.data?.user.role
   const canMutate = role === "OWNER" || role === "ADMIN" || role === "MEMBER"

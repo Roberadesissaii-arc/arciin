@@ -95,6 +95,7 @@ export async function registerWebhookRoutes(fastify: FastifyInstance) {
     async (_request, reply) => {
       const endpoints = await fastify.prisma.webhookEndpoint.findMany({
         orderBy: { createdAt: "desc" },
+        take: 100,
       })
 
       reply.send({

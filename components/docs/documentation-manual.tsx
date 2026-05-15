@@ -3,7 +3,7 @@
 import { createContext, useContext, useEffect, useRef, useState } from "react"
 import type { ReactNode } from "react"
 import Link from "next/link"
-import { API_KEY_SCOPES, SOCKET_EVENT_TYPES } from "@arciin/shared"
+import { API_KEY_SCOPES } from "@arciin/shared"
 import { cn } from "@/lib/utils"
 
 const apiBase  = process.env.NEXT_PUBLIC_API_BASE_URL  || "/api"
@@ -100,9 +100,6 @@ function DocH3({ children }: { children: ReactNode }) {
 }
 function DocP({ children }: { children: ReactNode }) {
   return <p className="text-[15px] leading-7 text-zinc-700">{children}</p>
-}
-function DocUl({ children }: { children: ReactNode }) {
-  return <ul className="list-disc space-y-1.5 pl-5 text-[15px] leading-7 text-zinc-700">{children}</ul>
 }
 function IC({ children }: { children: ReactNode }) {
   return <code className="rounded bg-zinc-200/80 px-1.5 py-0.5 font-mono text-[12px] text-zinc-900">{children}</code>
@@ -208,7 +205,7 @@ function ApiPlayground() {
       })
       const raw = await res.text()
       let pretty = raw
-      try { pretty = JSON.stringify(JSON.parse(raw), null, 2) } catch {}
+      try { pretty = JSON.stringify(JSON.parse(raw), null, 2) } catch { /* raw is not JSON — display as-is */ }
       setResp({ status: res.status, statusText: res.statusText, ms: Date.now() - t0, text: pretty })
     } catch (e) {
       setResp({ status: 0, statusText: e instanceof Error ? e.message : "Network error", ms: Date.now() - t0, text: "" })
@@ -409,7 +406,7 @@ export function DocumentationManual() {
             })}
           </ul>
           <p className="mt-5 border-t border-zinc-200 pt-4 text-[11px] leading-relaxed text-zinc-400">
-            Values in <span className="font-mono">code blocks</span> use this instance's env vars.
+            Values in <span className="font-mono">code blocks</span> use this instance&apos;s env vars.
           </p>
         </nav>
 
@@ -467,7 +464,7 @@ export function DocumentationManual() {
                 { label: "REST API base", value: BASE,      note: "Prefix for every endpoint in this manual." },
                 { label: "Socket.IO server", value: socketUrl, note: "Connect socket.io-client to this origin.", wide: true },
               ].map((r) => (
-                <div key={r.label} className={cn("rounded-xl border border-zinc-200 bg-white p-4 shadow-sm", (r as any).wide && "sm:col-span-2")}>
+                <div key={r.label} className={cn("rounded-xl border border-zinc-200 bg-white p-4 shadow-sm", (r as { label: string; value: string; note: string; wide?: boolean }).wide && "sm:col-span-2")}>
                   <p className="text-[11px] font-bold uppercase tracking-wide text-primary">{r.label}</p>
                   <p className="mt-1 break-all font-mono text-[13px] text-zinc-800">{r.value}</p>
                   <p className="mt-1.5 text-[12px] text-zinc-500">{r.note}</p>

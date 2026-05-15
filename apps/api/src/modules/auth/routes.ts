@@ -340,6 +340,7 @@ export async function registerAuthRoutes(fastify: FastifyInstance) {
       const sessions = await fastify.prisma.session.findMany({
         where: { userId: request.auth.user.id, expiresAt: { gt: new Date() } },
         orderBy: { createdAt: "desc" },
+        take: 100,
       })
       reply.send({
         data: sessions.map((s) => ({

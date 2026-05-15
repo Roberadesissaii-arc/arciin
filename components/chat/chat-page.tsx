@@ -1,6 +1,7 @@
 "use client"
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
+import Link from "next/link"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   ArrowUp, ChevronDown, Clock, Copy, File, Info, Loader2, MessageSquare,
@@ -716,7 +717,7 @@ function ModelPicker({
           {profiles.length === 0 ? (
             <div className="px-3 py-4 text-center text-[12px] text-muted-foreground">
               No models connected.{" "}
-              <a href="/models" className="text-primary underline-offset-4 hover:underline">Configure models</a>
+              <Link href="/models" className="text-primary underline-offset-4 hover:underline">Configure models</Link>
             </div>
           ) : (
             profiles.map((profile) => {
@@ -783,15 +784,22 @@ function ModelPicker({
 
 function ThinkingBlock({ content, live }: { content: string; live: boolean }) {
   const [expanded, setExpanded] = useState(true)
+  const [prevLive, setPrevLive] = useState(live)
   const scrollRef = useRef<HTMLDivElement>(null)
   /** If true, new tokens keep the view pinned to the bottom; false after user scrolls up to read. */
   const stickToBottomRef = useRef(true)
 
+  // React "adjusting state during render": auto-expand when live starts.
+  if (live && !prevLive) {
+    setPrevLive(true)
+    setExpanded(true)
+  } else if (!live && prevLive) {
+    setPrevLive(false)
+  }
+
+  // Reset scroll-pin ref outside of render (in a layout effect) so the ref write is safe.
   useEffect(() => {
-    if (live) {
-      setExpanded(true)
-      stickToBottomRef.current = true
-    }
+    if (live) stickToBottomRef.current = true
   }, [live])
 
   const charCount = content.length
@@ -1077,12 +1085,12 @@ function WelcomeState({ hasProfiles }: { hasProfiles: boolean }) {
         </p>
       </div>
       {!hasProfiles && (
-        <a
+        <Link
           href="/models"
           className="rounded-xl bg-primary px-4 py-2 text-[13px] font-medium text-white hover:bg-primary/90"
         >
           Configure models
-        </a>
+        </Link>
       )}
     </div>
   )
@@ -1522,8 +1530,8 @@ export function ChatPage() {
     staleTime: 30_000,
   })
 
-  const profiles      = profilesQuery.data ?? []
-  const conversations = historyQuery.data ?? []
+  const profiles      = useMemo(() => profilesQuery.data ?? [], [profilesQuery.data])
+  const conversations = useMemo(() => historyQuery.data ?? [], [historyQuery.data])
 
   const activeModelLabel = selectedModel || selectedProfile?.defaultModel || ""
   const ollamaChat = Boolean(selectedProfile && isOllamaProvider(selectedProfile.provider))
@@ -1544,6 +1552,7 @@ export function ChatPage() {
       queryClient.invalidateQueries({ queryKey: queryKeys.chatConversations })
       if (conversationId === id) startNewChat()
     },
+    onError: (e: Error) => toast.error(e.message || "Could not delete conversation."),
   })
 
   // ── Restore model picker from last session (then fall back to default profile) ─

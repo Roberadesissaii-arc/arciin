@@ -29,6 +29,7 @@ export async function registerApiKeyRoutes(fastify: FastifyInstance) {
         orderBy: {
           createdAt: "desc",
         },
+        take: 100,
       })
 
       reply.send({

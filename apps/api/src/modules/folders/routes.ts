@@ -65,6 +65,7 @@ export async function registerFolderRoutes(fastify: FastifyInstance) {
             select: { assets: { where: { deletedAt: null } } },
           },
         },
+        take: 500,
       })
 
       reply.send({

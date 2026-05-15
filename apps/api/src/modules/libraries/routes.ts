@@ -31,6 +31,7 @@ export async function registerLibraryRoutes(fastify: FastifyInstance) {
         orderBy: {
           createdAt: "asc",
         },
+        take: 100,
       })
 
       reply.send({

@@ -60,6 +60,7 @@ export async function registerModelRoutes(fastify: FastifyInstance) {
     async (_request, reply) => {
       const profiles = await fastify.prisma.modelProfile.findMany({
         orderBy: [{ isDefault: "desc" }, { createdAt: "asc" }],
+        take: 50,
       })
       reply.send({ data: profiles.map(serializeProfile) })
     },
@@ -100,7 +101,7 @@ export async function registerModelRoutes(fastify: FastifyInstance) {
       }
 
       const existing = await fastify.prisma.modelProfile.findUnique({ where: { id } })
-      if (!existing) { reply.status(404).send({ error: { code: "NOT_FOUND" } }); return }
+      if (!existing) { reply.status(404).send({ error: { code: "NOT_FOUND", message: "Not found." } }); return }
 
       if (parsed.data.isDefault) {
         await fastify.prisma.modelProfile.updateMany({ data: { isDefault: false } })
@@ -121,7 +122,7 @@ export async function registerModelRoutes(fastify: FastifyInstance) {
     async (request, reply) => {
       const { id } = request.params as { id: string }
       const existing = await fastify.prisma.modelProfile.findUnique({ where: { id } })
-      if (!existing) { reply.status(404).send({ error: { code: "NOT_FOUND" } }); return }
+      if (!existing) { reply.status(404).send({ error: { code: "NOT_FOUND", message: "Not found." } }); return }
       await fastify.prisma.modelProfile.delete({ where: { id } })
       reply.send({ data: { success: true } })
     },
@@ -134,7 +135,7 @@ export async function registerModelRoutes(fastify: FastifyInstance) {
     async (request, reply) => {
       const { id } = request.params as { id: string }
       const profile = await fastify.prisma.modelProfile.findUnique({ where: { id } })
-      if (!profile) { reply.status(404).send({ error: { code: "NOT_FOUND" } }); return }
+      if (!profile) { reply.status(404).send({ error: { code: "NOT_FOUND", message: "Not found." } }); return }
 
       if (!OLLAMA_PROVIDERS.has(profile.provider)) {
         reply.status(400).send({ error: { code: "NOT_SUPPORTED", message: "Dynamic model listing is only supported for Ollama." } })
@@ -180,7 +181,7 @@ export async function registerModelRoutes(fastify: FastifyInstance) {
       }
 
       const profile = await fastify.prisma.modelProfile.findUnique({ where: { id } })
-      if (!profile) { reply.status(404).send({ error: { code: "NOT_FOUND" } }); return }
+      if (!profile) { reply.status(404).send({ error: { code: "NOT_FOUND", message: "Not found." } }); return }
       if (!OLLAMA_PROVIDERS.has(profile.provider)) {
         reply.status(400).send({ error: { code: "NOT_SUPPORTED", message: "Model details are only available for Ollama profiles." } })
         return
@@ -232,7 +233,7 @@ export async function registerModelRoutes(fastify: FastifyInstance) {
     async (request, reply) => {
       const { id } = request.params as { id: string }
       const existing = await fastify.prisma.modelProfile.findUnique({ where: { id } })
-      if (!existing) { reply.status(404).send({ error: { code: "NOT_FOUND" } }); return }
+      if (!existing) { reply.status(404).send({ error: { code: "NOT_FOUND", message: "Not found." } }); return }
       await fastify.prisma.modelProfile.updateMany({ data: { isDefault: false } })
       const updated = await fastify.prisma.modelProfile.update({ where: { id }, data: { isDefault: true } })
       reply.send({ data: serializeProfile(updated) })

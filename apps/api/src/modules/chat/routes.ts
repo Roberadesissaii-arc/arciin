@@ -237,12 +237,12 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
         maxResults: z.number().int().min(1).max(9).optional(),
       }).safeParse(request.body)
       if (!parsed.success) {
-        reply.status(400).send({ error: { code: "VALIDATION_ERROR", details: parsed.error.flatten() } })
+        reply.status(400).send({ error: { code: "VALIDATION_ERROR", message: "Invalid vision search payload.", details: parsed.error.flatten() } })
         return
       }
 
       const profile = await fastify.prisma.modelProfile.findUnique({ where: { id: parsed.data.profileId } })
-      if (!profile) { reply.status(404).send({ error: { code: "NOT_FOUND" } }); return }
+      if (!profile) { reply.status(404).send({ error: { code: "NOT_FOUND", message: "Model profile not found." } }); return }
       if (!OLLAMA_PROVIDERS.has(profile.provider)) {
         reply.status(400).send({ error: { code: "NOT_SUPPORTED", message: "Vision search requires an Ollama profile." } })
         return
@@ -313,12 +313,12 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
         assetId:   z.string().optional(),
       }).safeParse(request.body)
       if (!parsed.success) {
-        reply.status(400).send({ error: { code: "VALIDATION_ERROR", details: parsed.error.flatten() } })
+        reply.status(400).send({ error: { code: "VALIDATION_ERROR", message: "Invalid vision rename payload.", details: parsed.error.flatten() } })
         return
       }
 
       const profile = await fastify.prisma.modelProfile.findUnique({ where: { id: parsed.data.profileId } })
-      if (!profile) { reply.status(404).send({ error: { code: "NOT_FOUND" } }); return }
+      if (!profile) { reply.status(404).send({ error: { code: "NOT_FOUND", message: "Model profile not found." } }); return }
       if (!OLLAMA_PROVIDERS.has(profile.provider)) {
         reply.status(400).send({ error: { code: "NOT_SUPPORTED", message: "Vision rename requires an Ollama profile." } })
         return
@@ -373,13 +373,13 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
         .safeParse(request.body)
 
       if (!parsed.success) {
-        reply.status(400).send({ error: { code: "VALIDATION_ERROR", details: parsed.error.flatten() } })
+        reply.status(400).send({ error: { code: "VALIDATION_ERROR", message: "Invalid organize images payload.", details: parsed.error.flatten() } })
         return
       }
 
       const profile = await fastify.prisma.modelProfile.findUnique({ where: { id: parsed.data.profileId } })
       if (!profile) {
-        reply.status(404).send({ error: { code: "NOT_FOUND" } })
+        reply.status(404).send({ error: { code: "NOT_FOUND", message: "Model profile not found." } })
         return
       }
       if (!OLLAMA_PROVIDERS.has(profile.provider)) {
@@ -453,7 +453,7 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
           messages: { orderBy: { createdAt: "asc" } },
         },
       })
-      if (!convo) { reply.status(404).send({ error: { code: "NOT_FOUND" } }); return }
+      if (!convo) { reply.status(404).send({ error: { code: "NOT_FOUND", message: "Not found." } }); return }
       reply.send({ data: convo })
     },
   )
@@ -466,7 +466,7 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
       const user   = request.auth!.user
       const parsed = conversationSchema.safeParse(request.body)
       if (!parsed.success) {
-        reply.status(400).send({ error: { code: "VALIDATION_ERROR", details: parsed.error.flatten() } })
+        reply.status(400).send({ error: { code: "VALIDATION_ERROR", message: "Invalid payload.", details: parsed.error.flatten() } })
         return
       }
       const convo = await fastify.prisma.chatConversation.create({
@@ -485,13 +485,13 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
       const user   = request.auth!.user
       const parsed = saveMessagesSchema.safeParse(request.body)
       if (!parsed.success) {
-        reply.status(400).send({ error: { code: "VALIDATION_ERROR", details: parsed.error.flatten() } })
+        reply.status(400).send({ error: { code: "VALIDATION_ERROR", message: "Invalid payload.", details: parsed.error.flatten() } })
         return
       }
       const convo = await fastify.prisma.chatConversation.findFirst({
         where: { id: parsed.data.conversationId, userId: user.id },
       })
-      if (!convo) { reply.status(404).send({ error: { code: "NOT_FOUND" } }); return }
+      if (!convo) { reply.status(404).send({ error: { code: "NOT_FOUND", message: "Not found." } }); return }
 
       const created = await fastify.prisma.$transaction(async (tx) => {
         const rows = await Promise.all(
@@ -543,7 +543,7 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
       const { id } = request.params as { id: string }
       const parsed = updateMessageSchema.safeParse(request.body)
       if (!parsed.success) {
-        reply.status(400).send({ error: { code: "VALIDATION_ERROR", details: parsed.error.flatten() } })
+        reply.status(400).send({ error: { code: "VALIDATION_ERROR", message: "Invalid payload.", details: parsed.error.flatten() } })
         return
       }
 
@@ -592,7 +592,7 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
       const { id } = request.params as { id: string }
       const parsed = messageFeedbackSchema.safeParse(request.body)
       if (!parsed.success) {
-        reply.status(400).send({ error: { code: "VALIDATION_ERROR", details: parsed.error.flatten() } })
+        reply.status(400).send({ error: { code: "VALIDATION_ERROR", message: "Invalid payload.", details: parsed.error.flatten() } })
         return
       }
 
@@ -637,9 +637,9 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
       const user  = request.auth!.user
       const { id } = request.params as { id: string }
       const convo = await fastify.prisma.chatConversation.findFirst({ where: { id, userId: user.id } })
-      if (!convo) { reply.status(404).send({ error: { code: "NOT_FOUND" } }); return }
+      if (!convo) { reply.status(404).send({ error: { code: "NOT_FOUND", message: "Not found." } }); return }
       await fastify.prisma.chatConversation.delete({ where: { id } })
-      reply.send({ ok: true })
+      reply.send({ data: { success: true } })
     },
   )
 
@@ -650,13 +650,17 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
     async (request, reply) => {
       const user   = request.auth!.user
       const { id } = request.params as { id: string }
-      const { title } = (request.body ?? {}) as { title?: string }
-      if (!title?.trim()) { reply.status(400).send({ error: { code: "VALIDATION_ERROR" } }); return }
+      const parsedTitle = z.object({ title: z.string().trim().min(1).max(200) }).safeParse(request.body)
+      if (!parsedTitle.success) {
+        reply.status(400).send({ error: { code: "VALIDATION_ERROR", message: "A non-empty title (max 200 chars) is required.", details: parsedTitle.error.flatten() } })
+        return
+      }
+      const { title } = parsedTitle.data
       const convo = await fastify.prisma.chatConversation.findFirst({ where: { id, userId: user.id } })
-      if (!convo) { reply.status(404).send({ error: { code: "NOT_FOUND" } }); return }
+      if (!convo) { reply.status(404).send({ error: { code: "NOT_FOUND", message: "Not found." } }); return }
       const updated = await fastify.prisma.chatConversation.update({
         where: { id },
-        data:  { title: title.trim() },
+        data:  { title },
         select: { id: true, title: true },
       })
       reply.send({ data: updated })
@@ -672,7 +676,7 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
     async (request, reply) => {
       const parsed = chatSchema.safeParse(request.body)
       if (!parsed.success) {
-        reply.status(400).send({ error: { code: "VALIDATION_ERROR", details: parsed.error.flatten() } })
+        reply.status(400).send({ error: { code: "VALIDATION_ERROR", message: "Invalid payload.", details: parsed.error.flatten() } })
         return
       }
 
@@ -774,6 +778,7 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
 
 // ── Ollama native streaming (/api/chat with think:true) ───────────────────────
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 async function streamOllamaNative({
   raw, baseUrl, model, messages,
 }: {

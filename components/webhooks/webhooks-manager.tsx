@@ -81,6 +81,7 @@ function EndpointForm({
       await queryClient.invalidateQueries({ queryKey: queryKeys.webhooks })
       onSaved({ endpoint: data.endpoint, secret: data.secret })
     },
+    onError: (e: Error) => toast.error(e.message || "Could not save webhook."),
   })
 
   const isValid = name.trim().length >= 2 && url.trim().length > 0 && eventTypes.length > 0
@@ -200,6 +201,16 @@ function DeliveryTable({ endpointId }: { endpointId: string }) {
     return <Skeleton className="h-48 rounded-3xl" />
   }
 
+  if (deliveriesQuery.isError) {
+    return (
+      <div className="rounded-2xl border border-red-500/20 bg-red-500/5 p-4 text-sm text-red-800">
+        {deliveriesQuery.error instanceof Error
+          ? deliveriesQuery.error.message
+          : "Could not load deliveries."}
+      </div>
+    )
+  }
+
   const deliveries = deliveriesQuery.data ?? []
 
   return (
@@ -274,6 +285,7 @@ export function WebhooksManager() {
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: queryKeys.webhooks })
     },
+    onError: (e: Error) => toast.error(e.message || "Could not delete webhook."),
   })
 
   const testMutation = useMutation({
@@ -281,9 +293,10 @@ export function WebhooksManager() {
     onSuccess: async (_data, endpointId) => {
       await queryClient.invalidateQueries({ queryKey: queryKeys.webhookDeliveries(endpointId) })
     },
+    onError: (e: Error) => toast.error(e.message || "Could not send test event."),
   })
 
-  const endpoints = endpointsQuery.data ?? []
+  const endpoints = useMemo(() => endpointsQuery.data ?? [], [endpointsQuery.data])
   const active = useMemo(
     () => endpoints.find((e) => e.id === activeEndpointId) ?? endpoints[0] ?? null,
     [activeEndpointId, endpoints]

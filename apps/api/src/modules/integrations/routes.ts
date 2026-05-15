@@ -23,6 +23,7 @@ export async function registerIntegrationRoutes(fastify: FastifyInstance) {
         orderBy: {
           createdAt: "asc",
         },
+        take: 100,
       })
 
       reply.send({

@@ -1,3 +1,4 @@
+import React from "react"
 import { Clock3, FileText, Folder, Key, Library, Upload, Zap } from "lucide-react"
 
 import { formatRelativeDate } from "@/lib/utils/format-date"
@@ -16,9 +17,10 @@ const ENTITY_CONFIG: Record<
   "api-key": { icon: Key      },
 }
 
-function getIcon(event: ActivitySummary) {
+function getIconElement(event: ActivitySummary) {
   const key = event.entityType ?? event.type.split(".")[0] ?? ""
-  return (ENTITY_CONFIG[key] ?? { icon: Zap }).icon
+  const IconComponent = (ENTITY_CONFIG[key] ?? { icon: Zap }).icon
+  return <IconComponent className="size-3.5" />
 }
 
 // ── Type label ────────────────────────────────────────────────────────────────
@@ -33,13 +35,11 @@ function typeLabel(type: string) {
 // ── Item ──────────────────────────────────────────────────────────────────────
 
 export function ActivityItem({ event }: { event: ActivitySummary }) {
-  const Icon = getIcon(event)
-
   return (
     <div className="flex items-start gap-3.5 px-5 py-3.5">
       {/* icon */}
       <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-xl border border-[rgba(255,79,18,0.18)] bg-[rgba(255,79,18,0.08)] text-primary">
-        <Icon className="size-3.5" />
+        {getIconElement(event)}
       </div>
 
       {/* content */}

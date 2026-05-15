@@ -76,6 +76,7 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
         orderBy: {
           createdAt: "desc",
         },
+        take: 200,
       })
 
       reply.send({
@@ -133,6 +134,20 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
         return
       }
 
+      const existing = await fastify.prisma.asset.findFirst({
+        where: { id: params.assetId, deletedAt: null },
+      })
+
+      if (!existing) {
+        reply.status(404).send({
+          error: {
+            code: "ASSET_NOT_FOUND",
+            message: "Asset not found.",
+          },
+        })
+        return
+      }
+
       const asset = await fastify.prisma.asset.update({
         where: {
           id: params.assetId,
@@ -153,6 +168,18 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
     },
     async (request, reply) => {
       const params = z.object({ assetId: z.string() }).parse(request.params)
+
+      const toDelete = await fastify.prisma.asset.findFirst({
+        where: { id: params.assetId, deletedAt: null },
+      })
+
+      if (!toDelete) {
+        reply.status(404).send({
+          error: { code: "ASSET_NOT_FOUND", message: "Asset not found." },
+        })
+        return
+      }
+
       const asset = await fastify.prisma.asset.update({
         where: {
           id: params.assetId,
@@ -353,13 +380,32 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
       if (inlinePreview) {
         reply.header("content-disposition", "inline")
       } else {
+        // Sanitize the filename to prevent header injection via quotes, newlines, etc.
+        // Use RFC 5987 percent-encoding for the filename* parameter so arbitrary
+        // Unicode characters (and ASCII control chars) are safe.
+        const safeAscii = asset.originalFilename.replace(/[^\w.\- ]/g, "_")
+        const encodedName = encodeURIComponent(asset.originalFilename)
         reply.header(
           "content-disposition",
-          `attachment; filename="${asset.originalFilename}"`
+          `attachment; filename="${safeAscii}"; filename*=UTF-8''${encodedName}`
         )
       }
 
-      return reply.send(createReadStream(asset.storageObject.physicalPath))
+      // Prevent path traversal: verify the physical path is inside the storage root.
+      const instance = await fastify.prisma.instanceConfig.findFirst()
+      const storageRoot = path.resolve(instance?.storageRoot ?? "")
+      const resolvedPath = path.resolve(asset.storageObject.physicalPath)
+      if (!resolvedPath.startsWith(storageRoot + path.sep) && resolvedPath !== storageRoot) {
+        reply.status(403).send({
+          error: {
+            code: "FORBIDDEN",
+            message: "Access to this file is not permitted.",
+          },
+        })
+        return
+      }
+
+      return reply.send(createReadStream(resolvedPath))
     }
   )
 
