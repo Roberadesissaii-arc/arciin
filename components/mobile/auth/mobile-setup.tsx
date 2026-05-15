@@ -9,6 +9,7 @@ import {
   FileText,
   ImageIcon,
   Music4,
+  Server,
   Sparkles,
 } from "lucide-react"
 import { toast } from "sonner"
@@ -23,8 +24,19 @@ import {
 } from "@/lib/validation/setup"
 import { cn } from "@/lib/utils"
 
-const INPUT_BASE =
-  "w-full rounded-2xl border border-white/[0.1] bg-white/[0.05] px-4 py-4 text-[16px] text-white placeholder-zinc-600 outline-none transition-all duration-150 focus:border-[#ff4f12]/50 focus:bg-white/[0.07] focus:ring-2 focus:ring-[#ff4f12]/20"
+// ── shared design tokens ──────────────────────────────────────────────────────
+
+const FIELD_WRAP = {
+  background: "rgba(255,255,255,0.05)",
+  border: "1px solid rgba(255,255,255,0.1)",
+} as const
+
+const BTN_PRIMARY = {
+  background: "linear-gradient(135deg, #ff4f12 0%, #ff6a33 100%)",
+  boxShadow: "0 4px 24px rgba(255,79,18,0.35), 0 0 0 1px rgba(255,79,18,0.15)",
+} as const
+
+// ── library metadata ──────────────────────────────────────────────────────────
 
 const LIBRARY_ICONS: Record<string, React.ElementType> = {
   Videos: Clapperboard,
@@ -35,15 +47,43 @@ const LIBRARY_ICONS: Record<string, React.ElementType> = {
 }
 
 const LIBRARY_DESCRIPTIONS: Record<string, string> = {
-  Videos: "Movies, screen recordings, and clips.",
-  Images: "Photos, renders, screenshots, and artwork.",
-  Music: "Audio files and playlists.",
-  Documents: "PDFs, spreadsheets, and text files.",
-  Inbox: "Unclassified uploads waiting for review.",
+  Videos:    "Movies, screen recordings, clips",
+  Images:    "Photos, renders, screenshots",
+  Music:     "Audio files and playlists",
+  Documents: "PDFs, spreadsheets, text files",
+  Inbox:     "Unclassified uploads",
 }
 
-const STEPS = ["Welcome", "Account", "Libraries"] as const
+// ── step config ───────────────────────────────────────────────────────────────
+
+const STEPS = ["Token", "Account", "Libraries"] as const
 type Step = 0 | 1 | 2
+
+// ── shared input component ────────────────────────────────────────────────────
+
+function Field({
+  label,
+  error,
+  children,
+}: {
+  label: string
+  error?: string
+  children: React.ReactNode
+}) {
+  return (
+    <div>
+      <p className="mb-1.5 text-[12px] font-medium" style={{ color: "rgba(255,255,255,0.45)" }}>
+        {label}
+      </p>
+      <div className="rounded-2xl px-4" style={FIELD_WRAP}>
+        {children}
+      </div>
+      {error && <p className="mt-1.5 px-1 text-[12px] text-red-400">{error}</p>}
+    </div>
+  )
+}
+
+// ── main component ────────────────────────────────────────────────────────────
 
 export function MobileSetup() {
   const router = useRouter()
@@ -72,10 +112,7 @@ export function MobileSetup() {
   }
 
   async function handleNext() {
-    if (step === 0) {
-      setStep(1)
-      return
-    }
+    if (step === 0) { setStep(1); return }
     if (step === 1) {
       const result = setupDetailsSchema.safeParse(form.getValues())
       if (!result.success) {
@@ -89,13 +126,9 @@ export function MobileSetup() {
       setStep(2)
       return
     }
-    // Step 2 — submit
     const values = { ...form.getValues(), libraries: selectedLibraries }
     const parsed = setupSchema.safeParse(values)
-    if (!parsed.success) {
-      toast.error("Please fix the errors and try again.")
-      return
-    }
+    if (!parsed.success) { toast.error("Please fix the errors and try again."); return }
     try {
       await claimMutation.mutateAsync(parsed.data)
       toast.success("Instance claimed. Welcome to Arciin.")
@@ -106,66 +139,94 @@ export function MobileSetup() {
     }
   }
 
+  const inputCls =
+    "w-full bg-transparent py-[15px] text-[16px] text-white placeholder-zinc-600 outline-none"
+
   return (
     <div
-      className="relative flex min-h-[100dvh] flex-col overflow-hidden bg-[#09090b]"
-      style={{ paddingTop: "env(safe-area-inset-top)", paddingBottom: "env(safe-area-inset-bottom)" }}
+      className="relative flex min-h-[100dvh] flex-col bg-[#09090b]"
+      style={{
+        paddingTop: "env(safe-area-inset-top)",
+        paddingBottom: "env(safe-area-inset-bottom)",
+      }}
     >
-      {/* Glow */}
+      {/* ── Atmosphere ── */}
       <div
-        className="pointer-events-none absolute inset-0 z-0"
+        className="pointer-events-none fixed inset-0"
         aria-hidden
         style={{
-          background:
-            "radial-gradient(ellipse 80% 50% at 50% -10%, rgba(255,75,51,0.25) 0%, transparent 60%)",
+          background: [
+            "radial-gradient(ellipse 80% 55% at 50% -5%, rgba(255,79,18,0.20) 0%, transparent 65%)",
+            "radial-gradient(ellipse 50% 30% at 85% 10%, rgba(255,120,60,0.08) 0%, transparent 55%)",
+          ].join(","),
+        }}
+      />
+      <div
+        className="pointer-events-none fixed inset-0 opacity-[0.022]"
+        aria-hidden
+        style={{
+          backgroundImage:
+            "linear-gradient(rgba(255,255,255,0.5) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.5) 1px, transparent 1px)",
+          backgroundSize: "40px 40px",
         }}
       />
 
-      <div className="relative z-10 flex min-h-[100dvh] flex-col px-6">
-        {/* Brand */}
-        <div className="flex items-end pb-6 pt-14">
+      {/* ── Content ── */}
+      <div className="relative z-10 flex flex-1 flex-col px-7 pt-14 pb-8">
+
+        {/* Brand header */}
+        <div className="mb-7 flex items-center gap-3">
+          <div
+            className="flex size-[42px] shrink-0 items-center justify-center rounded-[13px]"
+            style={{
+              background: "linear-gradient(135deg, #ff4f12 0%, #cc2e00 100%)",
+              boxShadow: "0 6px 24px rgba(255,79,18,0.3), 0 0 0 1px rgba(255,79,18,0.2)",
+            }}
+          >
+            <Server className="size-[19px] text-white" />
+          </div>
           <div>
-            <p className="font-heading text-2xl font-semibold tracking-[-0.03em] text-white">
+            <p className="font-heading text-[18px] font-bold tracking-tight text-white leading-none">
               Arciin
             </p>
-            <p
-              className="mt-1 text-[11px] font-medium uppercase tracking-[0.22em]"
-              style={{ color: "rgba(255,255,255,0.35)" }}
-            >
-              First-run setup
+            <p className="mt-0.5 text-[11px]" style={{ color: "rgba(255,255,255,0.35)" }}>
+              First-time setup
             </p>
           </div>
         </div>
 
-        {/* Step indicators */}
-        <div className="mb-8 flex items-center gap-2">
+        {/* Step track */}
+        <div className="mb-8 flex items-center gap-0">
           {STEPS.map((label, i) => (
-            <div key={label} className="flex items-center gap-2">
-              <div
-                className={cn(
-                  "flex size-6 items-center justify-center rounded-full text-[11px] font-bold transition-all",
-                  i < step
-                    ? "bg-[#ff4f12] text-white"
-                    : i === step
-                      ? "border border-[#ff4f12] text-[#ff4f12]"
-                      : "border border-white/[0.15] text-zinc-600",
-                )}
-              >
-                {i < step ? <CheckCircle2 className="size-3.5" /> : i + 1}
+            <div key={label} className="flex items-center">
+              <div className="flex items-center gap-1.5">
+                <div
+                  className={cn(
+                    "flex size-[22px] items-center justify-center rounded-full text-[11px] font-bold transition-all",
+                    i < step
+                      ? "bg-[#ff4f12] text-white"
+                      : i === step
+                        ? "border border-[#ff4f12] text-[#ff4f12]"
+                        : "border text-zinc-600",
+                    i >= step && "border-white/[0.15]",
+                  )}
+                >
+                  {i < step ? <CheckCircle2 className="size-3" /> : i + 1}
+                </div>
+                <span
+                  className={cn(
+                    "text-[12px] font-medium",
+                    i === step ? "text-white" : "text-zinc-600",
+                  )}
+                >
+                  {label}
+                </span>
               </div>
-              <span
-                className={cn(
-                  "text-[12px] font-medium",
-                  i === step ? "text-white" : "text-zinc-600",
-                )}
-              >
-                {label}
-              </span>
               {i < STEPS.length - 1 && (
                 <div
                   className={cn(
-                    "h-px w-6 rounded-full transition-all",
-                    i < step ? "bg-[#ff4f12]/60" : "bg-white/[0.1]",
+                    "mx-3 h-px w-8 rounded-full transition-all",
+                    i < step ? "bg-[#ff4f12]/50" : "bg-white/[0.1]",
                   )}
                 />
               )}
@@ -173,165 +234,116 @@ export function MobileSetup() {
           ))}
         </div>
 
-        {/* ── Step 0: Welcome ───────────────────────────────────────────────── */}
+        {/* ── Step 0: Token ── */}
         {step === 0 && (
           <div className="flex flex-1 flex-col">
-            <div className="mb-8">
-              <div
-                className="mb-4 flex size-12 items-center justify-center rounded-2xl"
-                style={{ background: "rgba(255,79,18,0.15)", border: "1px solid rgba(255,79,18,0.25)" }}
-              >
-                <Sparkles className="size-5 text-[#ff4f12]" />
-              </div>
-              <h1 className="font-heading text-[26px] font-semibold tracking-tight text-white">
+            <div className="mb-7">
+              <h2 className="font-heading text-[26px] font-bold tracking-tight text-white leading-none">
                 Claim your instance
-              </h1>
-              <p
-                className="mt-3 text-[14px] leading-relaxed"
-                style={{ color: "rgba(255,255,255,0.4)" }}
-              >
-                This server has not been configured yet. You&apos;ll create the administrator
-                account and set up your default libraries.
+              </h2>
+              <p className="mt-2 text-[14px]" style={{ color: "rgba(255,255,255,0.38)" }}>
+                Enter the setup token from your server to get started.
               </p>
             </div>
 
-            <div
-              className="mb-6 rounded-2xl p-4"
-              style={{
-                background: "rgba(255,255,255,0.03)",
-                border: "1px solid rgba(255,255,255,0.08)",
-              }}
+            <Field
+              label="Setup token"
+              error={form.formState.errors.setupToken?.message}
             >
-              <div className="flex flex-col gap-1.5">
-                <label
-                  htmlFor="setup-token"
-                  className="text-[13px] font-medium"
-                  style={{ color: "rgba(255,255,255,0.55)" }}
-                >
-                  Setup token
-                </label>
-                <input
-                  id="setup-token"
-                  type="text"
-                  autoComplete="off"
-                  placeholder="From ARCIIN_SETUP_TOKEN in .env"
-                  className={INPUT_BASE}
-                  {...form.register("setupToken")}
-                />
-                {form.formState.errors.setupToken && (
-                  <p className="text-[12px] text-red-400">
-                    {form.formState.errors.setupToken.message}
-                  </p>
-                )}
-                <p
-                  className="text-[11px] leading-relaxed"
-                  style={{ color: "rgba(255,255,255,0.25)" }}
-                >
-                  Found in your <span className="font-mono">.env</span> file after running{" "}
-                  <span className="font-mono">./install.sh</span>
-                </p>
-              </div>
-            </div>
+              <input
+                type="text"
+                autoComplete="off"
+                placeholder="From ARCIIN_SETUP_TOKEN in .env"
+                className={inputCls}
+                {...form.register("setupToken")}
+              />
+            </Field>
 
-            <div className="mt-auto pb-6">
+            <p className="mt-3 px-1 text-[11px]" style={{ color: "rgba(255,255,255,0.22)" }}>
+              Generated by <span className="font-mono">./install.sh</span> · check your{" "}
+              <span className="font-mono">.env</span> file
+            </p>
+
+            <div className="mt-auto pt-8">
               <button
                 type="button"
                 onClick={handleNext}
-                className="flex w-full items-center justify-center gap-2 rounded-2xl py-4 text-[15px] font-semibold text-white transition-all active:scale-[0.98]"
-                style={{
-                  background: "linear-gradient(135deg, #ff4f12 0%, #ff6a33 100%)",
-                  boxShadow: "0 0 32px rgba(255,75,51,0.3)",
-                }}
+                className="flex w-full items-center justify-center gap-2 rounded-2xl py-[15px] text-[15px] font-semibold text-white transition-all active:scale-[0.98]"
+                style={BTN_PRIMARY}
               >
-                Continue
-                <ArrowRight className="size-4 shrink-0" />
+                Continue <ArrowRight className="size-4" />
               </button>
             </div>
           </div>
         )}
 
-        {/* ── Step 1: Account ───────────────────────────────────────────────── */}
+        {/* ── Step 1: Account ── */}
         {step === 1 && (
           <div className="flex flex-1 flex-col">
-            <div className="mb-6">
-              <h2 className="font-heading text-[22px] font-semibold text-white">Admin account</h2>
-              <p
-                className="mt-1.5 text-[13px] leading-relaxed"
-                style={{ color: "rgba(255,255,255,0.4)" }}
-              >
-                This becomes the owner account with full access to this instance.
+            <div className="mb-7">
+              <h2 className="font-heading text-[26px] font-bold tracking-tight text-white leading-none">
+                Admin account
+              </h2>
+              <p className="mt-2 text-[14px]" style={{ color: "rgba(255,255,255,0.38)" }}>
+                This becomes the owner with full access.
               </p>
             </div>
 
-            <div className="flex flex-col gap-4 overflow-y-auto">
+            <div className="flex flex-col gap-3 overflow-y-auto">
               {(
                 [
-                  { name: "instanceName",    label: "Instance name",    placeholder: "My Server",       inputType: "text"     },
-                  { name: "adminName",       label: "Your name",        placeholder: "Alex",            inputType: "text"     },
-                  { name: "adminEmail",      label: "Email",            placeholder: "you@example.com", inputType: "email"    },
-                  { name: "adminPassword",   label: "Password",         placeholder: "••••••••",        inputType: "password" },
-                  { name: "confirmPassword", label: "Confirm password", placeholder: "••••••••",        inputType: "password" },
-                  { name: "storageRoot",     label: "Storage path",     placeholder: "./data/arciin",   inputType: "text"     },
+                  { name: "instanceName",    label: "Instance name",    placeholder: "My Server",          inputType: "text"     },
+                  { name: "adminName",       label: "Your name",        placeholder: "Alex",               inputType: "text"     },
+                  { name: "adminEmail",      label: "Email",            placeholder: "you@example.com",    inputType: "email"    },
+                  { name: "adminPassword",   label: "Password",         placeholder: "••••••••",           inputType: "password" },
+                  { name: "confirmPassword", label: "Confirm password", placeholder: "••••••••",           inputType: "password" },
+                  { name: "storageRoot",     label: "Storage path",     placeholder: "./data/arciin",      inputType: "text"     },
                 ] as Array<{ name: keyof SetupSchema; label: string; placeholder: string; inputType: string }>
               ).map(({ name, label, placeholder, inputType }) => (
-                <div key={name} className="flex flex-col gap-1.5">
-                  <label
-                    className="text-[13px] font-medium"
-                    style={{ color: "rgba(255,255,255,0.55)" }}
-                  >
-                    {label}
-                  </label>
+                <Field
+                  key={name}
+                  label={label}
+                  error={form.formState.errors[name]?.message}
+                >
                   <input
                     type={inputType}
                     autoComplete={
                       inputType === "email" ? "email" : inputType === "password" ? "new-password" : "off"
                     }
                     placeholder={placeholder}
-                    className={INPUT_BASE}
+                    className={inputCls}
                     {...form.register(name)}
                   />
-                  {form.formState.errors[name] && (
-                    <p className="text-[12px] text-red-400">
-                      {form.formState.errors[name]?.message}
-                    </p>
-                  )}
-                </div>
+                </Field>
               ))}
             </div>
 
-            <div className="mt-auto pb-6 pt-6">
+            <div className="mt-auto pt-6">
               <button
                 type="button"
                 onClick={handleNext}
-                className="flex w-full items-center justify-center gap-2 rounded-2xl py-4 text-[15px] font-semibold text-white transition-all active:scale-[0.98]"
-                style={{
-                  background: "linear-gradient(135deg, #ff4f12 0%, #ff6a33 100%)",
-                  boxShadow: "0 0 32px rgba(255,75,51,0.3)",
-                }}
+                className="flex w-full items-center justify-center gap-2 rounded-2xl py-[15px] text-[15px] font-semibold text-white transition-all active:scale-[0.98]"
+                style={BTN_PRIMARY}
               >
-                Continue
-                <ArrowRight className="size-4 shrink-0" />
+                Continue <ArrowRight className="size-4" />
               </button>
             </div>
           </div>
         )}
 
-        {/* ── Step 2: Libraries ─────────────────────────────────────────────── */}
+        {/* ── Step 2: Libraries ── */}
         {step === 2 && (
           <div className="flex flex-1 flex-col">
-            <div className="mb-6">
-              <h2 className="font-heading text-[22px] font-semibold text-white">
+            <div className="mb-7">
+              <h2 className="font-heading text-[26px] font-bold tracking-tight text-white leading-none">
                 Default libraries
               </h2>
-              <p
-                className="mt-1.5 text-[13px] leading-relaxed"
-                style={{ color: "rgba(255,255,255,0.4)" }}
-              >
-                Choose which libraries to create. Files you upload will route automatically.
+              <p className="mt-2 text-[14px]" style={{ color: "rgba(255,255,255,0.38)" }}>
+                Files you upload will route automatically.
               </p>
             </div>
 
-            <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-2.5">
               {setupLibraryOptions.map((option) => {
                 const Icon = LIBRARY_ICONS[option] ?? FileText
                 const selected = selectedLibraries.includes(option)
@@ -340,61 +352,41 @@ export function MobileSetup() {
                     key={option}
                     type="button"
                     onClick={() => toggleLibrary(option)}
-                    className="flex items-center gap-4 rounded-2xl p-4 text-left transition-all active:scale-[0.98]"
+                    className="flex items-center gap-3.5 rounded-2xl p-3.5 text-left transition-all active:scale-[0.98]"
                     style={{
                       background: selected ? "rgba(255,79,18,0.1)" : "rgba(255,255,255,0.03)",
                       border: selected
-                        ? "1px solid rgba(255,79,18,0.3)"
+                        ? "1px solid rgba(255,79,18,0.28)"
                         : "1px solid rgba(255,255,255,0.08)",
                     }}
                   >
                     <div
-                      className="flex size-10 shrink-0 items-center justify-center rounded-xl"
+                      className="flex size-9 shrink-0 items-center justify-center rounded-xl"
                       style={{
-                        background: selected
-                          ? "rgba(255,79,18,0.2)"
-                          : "rgba(255,255,255,0.06)",
+                        background: selected ? "rgba(255,79,18,0.18)" : "rgba(255,255,255,0.06)",
                       }}
                     >
-                      <Icon
-                        className="size-5"
-                        style={{ color: selected ? "#ff4f12" : "rgba(255,255,255,0.4)" }}
-                      />
+                      <Icon className="size-[18px]" style={{ color: selected ? "#ff4f12" : "rgba(255,255,255,0.38)" }} />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <p
-                        className="text-[14px] font-semibold"
-                        style={{ color: selected ? "#fff" : "rgba(255,255,255,0.6)" }}
-                      >
+                      <p className="text-[14px] font-semibold" style={{ color: selected ? "#fff" : "rgba(255,255,255,0.6)" }}>
                         {option}
                       </p>
-                      <p
-                        className="mt-0.5 text-[12px] leading-snug"
-                        style={{ color: "rgba(255,255,255,0.3)" }}
-                      >
-                        {LIBRARY_DESCRIPTIONS[option] ?? ""}
+                      <p className="text-[11px]" style={{ color: "rgba(255,255,255,0.28)" }}>
+                        {LIBRARY_DESCRIPTIONS[option]}
                       </p>
                     </div>
+                    {/* Checkbox */}
                     <div
                       className="flex size-5 shrink-0 items-center justify-center rounded-md"
                       style={{
-                        background: selected ? "#ff4f12" : "rgba(255,255,255,0.06)",
-                        border: selected ? "none" : "1px solid rgba(255,255,255,0.12)",
+                        background: selected ? "#ff4f12" : "transparent",
+                        border: selected ? "none" : "1px solid rgba(255,255,255,0.15)",
                       }}
                     >
                       {selected && (
-                        <svg
-                          className="size-3 text-white"
-                          viewBox="0 0 12 12"
-                          fill="none"
-                        >
-                          <path
-                            d="M2 6l3 3 5-5"
-                            stroke="currentColor"
-                            strokeWidth="1.5"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          />
+                        <svg viewBox="0 0 12 12" className="size-3 text-white" fill="none">
+                          <path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                         </svg>
                       )}
                     </div>
@@ -403,21 +395,17 @@ export function MobileSetup() {
               })}
             </div>
 
-            <div className="mt-auto pb-6 pt-6">
+            <div className="mt-auto pt-6">
               <button
                 type="button"
                 onClick={handleNext}
                 disabled={claimMutation.isPending}
-                className="flex w-full items-center justify-center gap-2 rounded-2xl py-4 text-[15px] font-semibold text-white transition-all active:scale-[0.98] disabled:opacity-60"
-                style={{
-                  background: claimMutation.isPending
-                    ? "rgba(255,79,18,0.6)"
-                    : "linear-gradient(135deg, #ff4f12 0%, #ff6a33 100%)",
-                  boxShadow: "0 0 32px rgba(255,75,51,0.3)",
-                }}
+                className="flex w-full items-center justify-center gap-2 rounded-2xl py-[15px] text-[15px] font-semibold text-white transition-all active:scale-[0.98] disabled:opacity-55"
+                style={BTN_PRIMARY}
               >
-                {claimMutation.isPending ? "Setting up…" : "Claim instance"}
-                {!claimMutation.isPending && <Sparkles className="size-4 shrink-0" />}
+                {claimMutation.isPending ? "Setting up…" : (
+                  <><Sparkles className="size-4" /> Claim instance</>
+                )}
               </button>
             </div>
           </div>
