@@ -3,6 +3,7 @@ import { redirect } from "next/navigation"
 
 import { SetupForm } from "@/components/auth/setup-form"
 import { SetupHeroCopy } from "@/components/auth/setup-hero-copy"
+import { MobileSetup } from "@/components/mobile/mobile-setup"
 import { SystemUnavailable } from "@/components/app-shell/system-unavailable"
 import { getRootRouteState } from "@/lib/utils/route-guards"
 
@@ -29,7 +30,14 @@ export default async function SetupPage() {
   }
 
   return (
-    <main className="relative flex min-h-svh bg-background">
+    <>
+      {/* Mobile (< md) */}
+      <div className="md:hidden">
+        <MobileSetup />
+      </div>
+
+      {/* Desktop (≥ md) */}
+      <main className="relative hidden min-h-svh bg-background md:flex">
       {/* Single full-bleed atmosphere so left gutter and right panel share the same wash (no seam). */}
       <div
         className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_90%_75%_at_100%_0%,rgba(255,75,51,0.22),transparent_55%),radial-gradient(ellipse_60%_50%_at_96%_6%,rgba(255,120,90,0.1),transparent_48%)]"
@@ -109,6 +117,7 @@ export default async function SetupPage() {
           </Link>
         </footer>
       </section>
-    </main>
+      </main>
+    </>
   )
 }

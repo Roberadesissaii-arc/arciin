@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation"
 
 import { DashboardShell } from "@/components/app-shell/dashboard-shell"
+import { MobileShell } from "@/components/mobile/mobile-shell"
 import { SystemUnavailable } from "@/components/app-shell/system-unavailable"
 import { SocketProvider } from "@/components/providers/socket-provider"
 import { UserPreferencesProvider } from "@/components/providers/user-preferences-provider"
@@ -34,12 +35,20 @@ export default async function DashboardLayout({
   }
 
   return (
-    <DashboardShell auth={state.auth}>
-      <UserPreferencesProvider>
-        <SocketProvider userId={state.auth.user.id}>
-          <GlobalDropzoneProvider>{children}</GlobalDropzoneProvider>
-        </SocketProvider>
-      </UserPreferencesProvider>
-    </DashboardShell>
+    <UserPreferencesProvider>
+      <SocketProvider userId={state.auth.user.id}>
+        {/* Mobile shell — only rendered on small screens */}
+        <div className="md:hidden">
+          <MobileShell>{children}</MobileShell>
+        </div>
+
+        {/* Desktop shell — only rendered on medium+ screens */}
+        <div className="hidden md:block">
+          <DashboardShell auth={state.auth}>
+            <GlobalDropzoneProvider>{children}</GlobalDropzoneProvider>
+          </DashboardShell>
+        </div>
+      </SocketProvider>
+    </UserPreferencesProvider>
   )
 }
