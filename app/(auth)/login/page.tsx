@@ -3,7 +3,7 @@ import { redirect } from "next/navigation"
 
 import { LoginForm } from "@/components/auth/login-form"
 import { LoginHeroCopy } from "@/components/auth/login-hero-copy"
-import { MobileLogin } from "@/components/mobile/mobile-login"
+import { MobileLogin } from "@/components/mobile/auth/mobile-login"
 import { SystemUnavailable } from "@/components/app-shell/system-unavailable"
 import { getRootRouteState } from "@/lib/utils/route-guards"
 

@@ -1,7 +1,7 @@
 "use client"
 
-import { MobileBottomNav } from "@/components/mobile/mobile-bottom-nav"
-import { MobileHeader } from "@/components/mobile/mobile-header"
+import { MobileBottomNav } from "@/components/mobile/shell/mobile-bottom-nav"
+import { MobileHeader } from "@/components/mobile/shell/mobile-header"
 
 interface MobileShellProps {
   children: React.ReactNode

@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation"
 
 import { DashboardShell } from "@/components/app-shell/dashboard-shell"
-import { MobileShell } from "@/components/mobile/mobile-shell"
+import { MobileShell } from "@/components/mobile/shell/mobile-shell"
 import { SystemUnavailable } from "@/components/app-shell/system-unavailable"
 import { SocketProvider } from "@/components/providers/socket-provider"
 import { UserPreferencesProvider } from "@/components/providers/user-preferences-provider"

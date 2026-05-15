@@ -4,7 +4,7 @@ import { QuickAccessCard } from "@/components/dashboard/quick-access-card"
 import { RecentUploadsCard } from "@/components/dashboard/recent-uploads-card"
 import { StorageOverviewCard } from "@/components/dashboard/storage-overview-card"
 import { SystemHealthCard } from "@/components/dashboard/system-health-card"
-import { MobileDashboard } from "@/components/mobile/mobile-dashboard"
+import { MobileDashboard } from "@/components/mobile/dashboard/mobile-dashboard"
 
 export default function DashboardPage() {
   return (
