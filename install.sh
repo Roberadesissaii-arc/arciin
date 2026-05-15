@@ -83,6 +83,30 @@ ensure_session_secret() {
   fi
 }
 
+ensure_setup_token() {
+  local env_file="${ROOT_DIR}/.env"
+  [[ -f "${env_file}" ]] || return 0
+
+  if grep -q '^ARCIIN_SETUP_TOKEN=dev-token' "${env_file}" 2>/dev/null; then
+    if command -v openssl >/dev/null 2>&1; then
+      local token
+      token="$(openssl rand -hex 24)"
+      log "Generating a random ARCIIN_SETUP_TOKEN in .env"
+      sed -i "s|^ARCIIN_SETUP_TOKEN=.*|ARCIIN_SETUP_TOKEN=${token}|" "${env_file}"
+    else
+      warn "openssl not found; ARCIIN_SETUP_TOKEN is still 'dev-token' — change it before production use"
+    fi
+  fi
+}
+
+check_ffmpeg() {
+  if ! command -v ffmpeg >/dev/null 2>&1; then
+    warn "ffmpeg is not available after installation — thumbnail and media probe features will not work"
+  else
+    log "ffmpeg is available: $(ffmpeg -version 2>&1 | head -1)"
+  fi
+}
+
 if [[ "${EUID}" -eq 0 ]]; then
   warn "Run this script as your normal user, not as root."
   exit 1
@@ -148,6 +172,7 @@ corepack prepare "pnpm@${DEFAULT_PNPM_VERSION}" --activate
 
 ensure_env_file
 ensure_session_secret
+ensure_setup_token
 
 log "Starting Redis and PostgreSQL"
 start_service redis-server
@@ -187,45 +212,55 @@ fi
 
 chmod +x "${ROOT_DIR}/scripts/arciin-init.sh" "${ROOT_DIR}/scripts/entrypoint-api.sh" 2>/dev/null || true
 
+check_ffmpeg
+
 SETUP_TOKEN="$(grep '^ARCIIN_SETUP_TOKEN=' "${ROOT_DIR}/.env" 2>/dev/null | cut -d= -f2- || echo 'dev-token')"
 PUBLIC_URL="$(grep '^ARCIIN_PUBLIC_URL=' "${ROOT_DIR}/.env" 2>/dev/null | cut -d= -f2- || echo 'http://localhost:3000')"
+SETUP_URL="${PUBLIC_URL}/setup?token=${SETUP_TOKEN}"
 
 cat <<EOF
 
-[arciin-install] Setup complete.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Arciin is ready.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Arciin is ready to run. No manual migration step is required.
+  1. Start the app:
+       pnpm dev
 
-Start the app:
-  pnpm dev
+  2. Open your setup link (one-time):
+       ${SETUP_URL}
 
-Then open:
-  ${PUBLIC_URL}
+     This link contains your setup token. Paste it into the setup form
+     to claim the instance and create your admin account.
 
-First-time setup:
-  Use setup token: ${SETUP_TOKEN}
-  (from ARCIIN_SETUP_TOKEN in .env)
+  Setup token (also in .env):
+    ${SETUP_TOKEN}
 
-What was initialized automatically:
-  - PostgreSQL role/database: arciin / arciin
-  - All Prisma migrations (including chat feedback, model profiles, webhooks, etc.)
-  - Seed data (default integrations placeholder)
-  - Storage folders under ARCIIN_DATA_DIR (objects, libraries, thumbnails, temp, logs)
-  - Prisma client generated
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  What was initialized automatically:
+    - PostgreSQL role/database: arciin / arciin
+    - All Prisma migrations applied
+    - Seed data (default integrations placeholder)
+    - Storage directories: objects, libraries, thumbnails, temp, logs
+    - Prisma client generated
+    - SESSION_SECRET randomized
+    - ARCIIN_SETUP_TOKEN randomized
 
-Optional installer flags:
-  ARCIIN_UPGRADE_SYSTEM=1 ./install.sh     # apt upgrade before install
-  ARCIIN_SKIP_DB_INIT=1 ./install.sh     # skip migrate/seed/storage (advanced)
+  Health checks:
+    redis-cli ping
+    pg_isready -h localhost -p 5432
 
-Health checks:
-  redis-cli ping
-  pg_isready -h localhost -p 5432
+  Optional flags:
+    ARCIIN_UPGRADE_SYSTEM=1 ./install.sh   # run apt upgrade first
+    ARCIIN_SKIP_DB_INIT=1 ./install.sh     # skip migrate/seed (advanced)
 
-Docker (alternative):
-  cp .env.example .env && docker compose up --build -d
-  (API container runs migrations on startup)
+  Docker (alternative):
+    cp .env.example .env
+    # edit .env: set ARCIIN_SETUP_TOKEN to a random value
+    docker compose up --build -d
+    # then open: http://localhost/setup?token=<your-token>
 
-Notes:
-  - Intended for local development on Debian/Ubuntu/WSL.
-  - Review .env for SESSION_SECRET and ARCIIN_SETUP_TOKEN before production.
+  Notes:
+    - Intended for Debian/Ubuntu/WSL. Review .env before production use.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 EOF
