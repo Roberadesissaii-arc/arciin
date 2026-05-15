@@ -1,0 +1,184 @@
+import { fetchApi } from "@/lib/api/client"
+
+/** POST URL for SSE chat — must bypass Next.js /api rewrite or the proxy buffers the whole stream. */
+export function getChatStreamPostUrl(): string {
+  const origin = process.env.NEXT_PUBLIC_ARCIIN_API_ORIGIN?.replace(/\/$/, "")
+  if (origin) return `${origin}/api/chat`
+  if (process.env.NODE_ENV === "development") return "http://localhost:4000/api/chat"
+  const base = (process.env.NEXT_PUBLIC_API_BASE_URL || "/api").replace(/\/$/, "")
+  if (base.startsWith("http")) return `${base}/chat`
+  if (typeof window !== "undefined") {
+    return `${window.location.origin}${base.startsWith("/") ? base : `/${base}`}/chat`
+  }
+  return "/api/chat"
+}
+
+export interface ChatInstanceContext {
+  libraries: { name: string; kind: string; count: number }[]
+  byMediaType: { type: string; count: number }[]
+  storageGb: number
+  lastUploadAt: string | null
+}
+
+export interface ChatConversationSummary {
+  id: string
+  title: string
+  createdAt: string
+  updatedAt: string
+  profile: { id: string; displayName: string; provider: string } | null
+  messages: { role: string; content: string }[]
+}
+
+export type ChatMessageFeedbackRating = "LIKE" | "DISLIKE"
+
+export interface ChatMessageRecord {
+  id: string
+  conversationId: string
+  role: string
+  content: string
+  inputTokens: number | null
+  outputTokens: number | null
+  totalTokens: number | null
+  feedbackRating: ChatMessageFeedbackRating | null
+  feedbackAt: string | null
+  createdAt: string
+}
+
+export interface ChatConversationDetail extends Omit<ChatConversationSummary, "messages"> {
+  messages: ChatMessageRecord[]
+}
+
+export function getChatConversations(signal?: AbortSignal) {
+  return fetchApi<ChatConversationSummary[]>("/chat/conversations", { method: "GET", signal })
+}
+
+export function getChatConversation(id: string, signal?: AbortSignal) {
+  return fetchApi<ChatConversationDetail>(`/chat/conversations/${id}`, { method: "GET", signal })
+}
+
+export function createChatConversation(input: { title: string; profileId?: string }) {
+  return fetchApi<{ id: string; title: string; createdAt: string; updatedAt: string }>(
+    "/chat/conversations",
+    { method: "POST", body: input },
+  )
+}
+
+export function saveChatMessages(input: {
+  conversationId: string
+  messages: {
+    role: string
+    content: string
+    inputTokens?: number
+    outputTokens?: number
+    totalTokens?: number
+  }[]
+}) {
+  return fetchApi<{
+    messages: {
+      id: string
+      role: string
+      feedbackRating: ChatMessageFeedbackRating | null
+      createdAt: string
+    }[]
+  }>("/chat/conversations/messages", { method: "POST", body: input })
+}
+
+export function setChatMessageFeedback(
+  messageId: string,
+  rating: ChatMessageFeedbackRating | null,
+) {
+  return fetchApi<{
+    id: string
+    feedbackRating: ChatMessageFeedbackRating | null
+    feedbackAt: string | null
+  }>(`/chat/messages/${messageId}/feedback`, { method: "PATCH", body: { rating } })
+}
+
+export function updateChatMessage(
+  messageId: string,
+  body: {
+    content: string
+    inputTokens?: number
+    outputTokens?: number
+    totalTokens?: number
+  },
+) {
+  return fetchApi<ChatMessageRecord>(`/chat/messages/${messageId}`, { method: "PATCH", body })
+}
+
+export function deleteChatConversation(id: string) {
+  return fetchApi<{ ok: boolean }>(`/chat/conversations/${id}`, { method: "DELETE" })
+}
+
+export function getChatInstanceContext(signal?: AbortSignal) {
+  return fetchApi<ChatInstanceContext>("/chat/context", { method: "GET", signal })
+}
+
+/** Base64 image blobs for the latest user message (Ollama vision). */
+export function getChatVisionRecent(limit: 1 | 2 | 3 = 1, signal?: AbortSignal) {
+  const n = Math.min(3, Math.max(1, limit))
+  return fetchApi<{ images: string[] }>(`/chat/vision-recent?limit=${n}`, { method: "GET", signal })
+}
+
+export type VisionSearchMatch = {
+  assetId: string
+  originalFilename: string
+  confidence: number
+  summary: string
+}
+
+export function postChatVisionSearch(body: {
+  query: string
+  profileId: string
+  model?: string
+  maxResults?: number
+}) {
+  return fetchApi<{ query: string; scanned: number; matches: VisionSearchMatch[] }>(
+    "/chat/vision-search",
+    { method: "POST", body },
+  )
+}
+
+export function postChatVisionSuggestRename(body: {
+  profileId: string
+  model?: string
+  assetId?: string
+}) {
+  return fetchApi<{
+    assetId: string
+    suggestedTitle: string
+    suggestedFilename: string
+    description: string
+  }>("/chat/vision-suggest-rename", { method: "POST", body })
+}
+
+export type OrganizeImageResult = {
+  assetId: string
+  originalFilename: string
+  status: "moved" | "skipped" | "failed"
+  folderName?: string
+  folderId?: string
+  createdFolder?: boolean
+  summary?: string
+  error?: string
+}
+
+export function postChatOrganizeImages(body: {
+  profileId: string
+  model?: string
+  maxAssets?: number
+}) {
+  return fetchApi<{
+    libraryId: string
+    libraryName: string
+    processed: number
+    results: OrganizeImageResult[]
+  }>("/chat/organize-images", { method: "POST", body })
+}
+
+export function renameChatConversation(id: string, title: string) {
+  return fetchApi<{ id: string; title: string }>(`/chat/conversations/${id}`, {
+    method: "PATCH",
+    body: { title },
+  })
+}

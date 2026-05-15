@@ -3,10 +3,11 @@
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import {
-  Bell, BookOpen, Boxes, ChevronLeft, ChevronRight,
-  ChevronsUpDown, Code2, Database, Files, HelpCircle, LayoutDashboard,
-  LogOut, Minus, MonitorDot, PackagePlus, Puzzle, RadioTower, Server,
-  Settings, ShieldCheck, Sparkles, UserCog, Webhook,
+  Bell, BookOpen, Boxes, Brain, ChevronLeft, ChevronRight,
+  ChevronsUpDown, Code2, Database, Files, GalleryVerticalEnd, HelpCircle, LayoutDashboard,
+  Library,
+  ListTree, LogOut, MessageSquare, Minus, MonitorDot, PackagePlus,
+  Settings, ShieldCheck, Terminal, UserCog,
 } from "lucide-react"
 import { toast } from "sonner"
 
@@ -41,37 +42,41 @@ const BORDER   = "rgba(255,255,255,0.07)"
 type NavItem = { id: string; label: string; icon: React.ElementType; href: string }
 
 const PRIMARY: NavItem[] = [
-  { id: "overview",     label: "Overview",     icon: LayoutDashboard, href: "/dashboard"    },
-  { id: "files",        label: "All Files",    icon: Files,           href: "/files"        },
-  { id: "activity",     label: "Activity",     icon: MonitorDot,  href: "/activity"     },
-  { id: "integrations", label: "Integrations", icon: PackagePlus, href: "/integrations" },
+  { id: "overview",      label: "Overview",      icon: LayoutDashboard, href: "/dashboard"     },
+  { id: "chat",          label: "AI Chat",       icon: MessageSquare,   href: "/chat"          },
+  { id: "files",         label: "All Files",     icon: Files,           href: "/files"         },
+  { id: "integrations",  label: "Integrations",  icon: PackagePlus,     href: "/integrations"  },
 ]
 
-const LOWER: NavItem[] = [
-  { id: "jobs",          label: "Jobs",          icon: Boxes,       href: "/jobs"                   },
-  { id: "api-keys",      label: "API Keys",      icon: Puzzle,      href: "/api-keys"               },
-  { id: "events",        label: "Events",        icon: RadioTower,  href: "/events"                 },
-  { id: "security",      label: "Security",      icon: ShieldCheck, href: "/settings/security"      },
-  { id: "storage",       label: "Storage",       icon: Database,    href: "/settings/storage"       },
-  { id: "webhooks",      label: "Webhooks",      icon: Webhook,     href: "/webhooks"               },
-  { id: "remote-access", label: "Remote Access", icon: Server,      href: "/settings/remote-access" },
+/** Flat sidebar links (same row style as Overview / AI Chat) — no section parent. */
+const SIDEBAR_SECONDARY_NAV: NavItem[] = [
+  { id: "logs",     label: "Logs",     icon: Terminal,   href: "/logs" },
+  { id: "jobs",     label: "Jobs",     icon: ListTree,   href: "/jobs" },
+  { id: "events",   label: "Events",   icon: GalleryVerticalEnd, href: "/events" },
+  { id: "models",   label: "Models",   icon: Boxes,      href: "/models" },
+  { id: "activity", label: "Activity", icon: MonitorDot, href: "/activity" },
+  { id: "security", label: "Security", icon: ShieldCheck, href: "/security" },
+  { id: "database", label: "Database", icon: Database,    href: "/database" },
 ]
 
 const BOTTOM: NavItem[] = [
   { id: "docs",          label: "Docs",          icon: BookOpen, href: "/docs"          },
   { id: "settings",      label: "Settings",      icon: Settings, href: "/settings"      },
-  { id: "notifications", label: "Notifications", icon: Bell,     href: "/notifications" },
+  { id: "notifications", label: "Notifications", icon: Bell,     href: "/settings?tab=notifications" },
 ]
 
 const LIBRARY_ROUTES: Record<string, string> = {
+  inbox:     "/inbox",
   videos:    "/videos",
   images:    "/images",
   music:     "/music",
   documents: "/documents",
 }
 
+const LIBRARY_ORDER = ["inbox", "videos", "images", "music", "documents"]
+
 function isActive(pathname: string, href: string) {
-  if (href === "/dashboard" || href === "/settings") return pathname === href
+  if (href === "/dashboard") return pathname === href
   return pathname === href || pathname.startsWith(`${href}/`)
 }
 
@@ -126,7 +131,8 @@ function AppSidebarInner({ auth }: { auth: AuthSession }) {
 
   const libraryItems = (libraries ?? [])
     .filter((lib) => LIBRARY_ROUTES[lib.slug] !== undefined)
-    .map((lib) => ({ id: lib.id, label: lib.name, href: LIBRARY_ROUTES[lib.slug]!, count: lib.assetCount }))
+    .map((lib) => ({ id: lib.id, label: lib.name, href: LIBRARY_ROUTES[lib.slug]!, count: lib.assetCount, slug: lib.slug }))
+    .sort((a, b) => LIBRARY_ORDER.indexOf(a.slug) - LIBRARY_ORDER.indexOf(b.slug))
 
   async function handleLogout() {
     try {
@@ -174,7 +180,7 @@ function AppSidebarInner({ auth }: { auth: AuthSession }) {
             )}
             style={{ color: SECT }}
           >
-            <Sparkles className="h-[15px] w-[15px] shrink-0" />
+            <Library className="h-[15px] w-[15px] shrink-0" />
             {!collapsed && (
               <>
                 <span className="flex-1 text-left">Libraries</span>
@@ -214,7 +220,7 @@ function AppSidebarInner({ auth }: { auth: AuthSession }) {
         <Divider />
 
         <div className="space-y-[1px]">
-          {LOWER.map((item) => (
+          {SIDEBAR_SECONDARY_NAV.map((item) => (
             <FlatLink key={item.id} {...item} collapsed={collapsed} pathname={pathname} />
           ))}
         </div>
@@ -295,7 +301,7 @@ function AppSidebarInner({ auth }: { auth: AuthSession }) {
               <DropdownMenuItem
                 className="cursor-pointer gap-2 text-[13px]"
                 style={{ color: TEXT_OFF }}
-                onClick={() => router.push("/settings/developer")}
+                onClick={() => router.push("/developer")}
               >
                 <Code2 className="h-3.5 w-3.5" />
                 Developer

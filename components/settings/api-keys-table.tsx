@@ -6,7 +6,6 @@ import { RotateCw, Trash2, X } from "lucide-react"
 import { toast } from "sonner"
 
 import { ApiKeyRawKeyBanner } from "@/components/settings/api-key-raw-key-banner"
-import { CreateApiKeyDialog } from "@/components/settings/create-api-key-dialog"
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -87,21 +86,18 @@ export function ApiKeysTable() {
 
   return (
     <>
-      <Card className="border-white/8 bg-white/[0.02]">
-        <CardHeader className="flex-row items-center justify-between">
-          <div>
-            <CardTitle className="text-white">API keys</CardTitle>
-            <CardDescription className="text-zinc-400">
-              Show the raw key once when created or rotated; manage by prefix and scope.
-            </CardDescription>
-          </div>
-          <CreateApiKeyDialog />
+      <Card className="border-border bg-card">
+        <CardHeader>
+          <CardTitle className="text-foreground">Your keys</CardTitle>
+          <CardDescription className="text-zinc-600">
+            Prefix, scopes, and last use. Create new keys from the intro above.
+          </CardDescription>
         </CardHeader>
         <CardContent>
           {apiKeysQuery.isLoading ? (
             <Skeleton className="h-56 rounded-3xl" />
           ) : apiKeysQuery.isError ? (
-            <div className="rounded-2xl border border-red-500/20 bg-red-500/5 p-4 text-sm text-red-200">
+            <div className="rounded-2xl border border-red-500/20 bg-red-500/5 p-4 text-sm text-red-800">
               {apiKeysQuery.error instanceof Error
                 ? apiKeysQuery.error.message
                 : "Could not load API keys."}
@@ -109,29 +105,29 @@ export function ApiKeysTable() {
           ) : (
             <Table>
               <TableHeader>
-                <TableRow className="border-white/8 hover:bg-transparent">
-                  <TableHead className="text-zinc-400">Name</TableHead>
-                  <TableHead className="text-zinc-400">Prefix</TableHead>
-                  <TableHead className="text-zinc-400">Scopes</TableHead>
-                  <TableHead className="text-zinc-400">Last used</TableHead>
-                  <TableHead className="text-right text-zinc-400">Actions</TableHead>
+                <TableRow className="border-border hover:bg-transparent">
+                  <TableHead className="font-semibold text-zinc-700">Name</TableHead>
+                  <TableHead className="font-semibold text-zinc-700">Prefix</TableHead>
+                  <TableHead className="font-semibold text-zinc-700">Scopes</TableHead>
+                  <TableHead className="font-semibold text-zinc-700">Last used</TableHead>
+                  <TableHead className="text-right font-semibold text-zinc-700">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {apiKeys.map((apiKey) => (
-                  <TableRow key={apiKey.id} className="border-white/8 hover:bg-white/[0.02]">
-                    <TableCell className="font-medium text-white">{apiKey.name}</TableCell>
-                    <TableCell className="font-mono text-zinc-300">{apiKey.keyPrefix}</TableCell>
+                  <TableRow key={apiKey.id} className="border-border hover:bg-card">
+                    <TableCell className="font-medium text-foreground">{apiKey.name}</TableCell>
+                    <TableCell className="font-mono text-sm text-zinc-800">{apiKey.keyPrefix}</TableCell>
                     <TableCell>
                       <div className="flex flex-wrap gap-2">
                         {apiKey.scopes.map((scope) => (
-                          <Badge key={scope} variant="outline" className="border-white/8 text-zinc-400">
+                          <Badge key={scope} variant="outline" className="border-border text-zinc-600">
                             {scope}
                           </Badge>
                         ))}
                       </div>
                     </TableCell>
-                    <TableCell className="text-zinc-400">
+                    <TableCell className="text-zinc-600">
                       {apiKey.lastUsedAt ? formatRelativeDate(apiKey.lastUsedAt) : "Never"}
                     </TableCell>
                     <TableCell className="text-right">
@@ -140,7 +136,7 @@ export function ApiKeysTable() {
                           type="button"
                           variant="outline"
                           size="sm"
-                          className="border-white/8 bg-white/[0.02] text-zinc-200 hover:bg-white/[0.05]"
+                          className="border-border bg-card text-foreground hover:bg-muted/50"
                           disabled={rotateMutation.isPending}
                           onClick={() => setConfirm({ kind: "rotate", id: apiKey.id, name: apiKey.name })}
                         >
@@ -151,7 +147,7 @@ export function ApiKeysTable() {
                           type="button"
                           variant="outline"
                           size="sm"
-                          className="border-white/8 bg-white/[0.02] text-zinc-200 hover:bg-white/[0.05]"
+                          className="border-border bg-card text-foreground hover:bg-muted/50"
                           disabled={revokeMutation.isPending}
                           onClick={() => setConfirm({ kind: "revoke", id: apiKey.id, name: apiKey.name })}
                         >
@@ -169,27 +165,27 @@ export function ApiKeysTable() {
       </Card>
 
       <AlertDialog open={!!confirm} onOpenChange={(open) => !open && setConfirm(null)}>
-        <AlertDialogContent className="border-white/10 bg-zinc-950 text-white">
+        <AlertDialogContent className="border-zinc-200 bg-white text-zinc-900 shadow-xl">
           <AlertDialogHeader>
-            <AlertDialogTitle>
+            <AlertDialogTitle className="text-zinc-900">
               {confirm?.kind === "rotate" ? "Rotate API key?" : "Revoke API key?"}
             </AlertDialogTitle>
-            <AlertDialogDescription className="text-zinc-400">
+            <AlertDialogDescription className="text-zinc-500">
               {confirm?.kind === "rotate" ? (
                 <>
-                  <span className="font-medium text-zinc-200">{confirm.name}</span> — the current secret
+                  <span className="font-medium text-zinc-800">{confirm.name}</span> — the current secret
                   stops working immediately. You will get one chance to copy the new key.
                 </>
               ) : (
                 <>
-                  <span className="font-medium text-zinc-200">{confirm?.name}</span> — integrations using
+                  <span className="font-medium text-zinc-800">{confirm?.name}</span> — integrations using
                   this key will fail until you replace it. This cannot be undone.
                 </>
               )}
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel className="border-white/10 bg-transparent text-zinc-300 hover:bg-white/10">
+          <AlertDialogFooter className="bg-white border-zinc-100">
+            <AlertDialogCancel className="border-zinc-200 bg-zinc-50 text-zinc-700 hover:bg-zinc-100">
               Cancel
             </AlertDialogCancel>
             <Button
@@ -238,24 +234,24 @@ export function ApiKeysTable() {
         <SheetContent
           side="right"
           showCloseButton={false}
-          className={cn(libraryGlassSheetPanel, "text-white")}
+          className={cn(libraryGlassSheetPanel, "dashboard-main text-foreground")}
         >
-          <SheetHeader className="relative shrink-0 space-y-1 border-b border-white/[0.06] p-2 pr-11">
+          <SheetHeader className="relative shrink-0 space-y-1 border-b border-zinc-200/80 p-2 pr-11">
             <SheetClose asChild>
               <Button
                 type="button"
                 variant="ghost"
                 size="icon-sm"
-                className="absolute top-2 right-2 text-muted-foreground hover:text-foreground"
+                className="absolute top-2 right-2 text-zinc-400 hover:text-zinc-700"
                 aria-label="Close"
               >
                 <X className="size-4" />
               </Button>
             </SheetClose>
-            <SheetTitle className="font-heading text-lg font-semibold tracking-tight text-[rgba(255,255,255,0.95)]">
+            <SheetTitle className="font-heading text-lg font-semibold tracking-tight text-zinc-900">
               New API secret
             </SheetTitle>
-            <SheetDescription className="text-[13px] leading-snug text-[rgba(255,255,255,0.45)]">
+            <SheetDescription className="text-[13px] leading-snug text-zinc-500">
               Key &quot;{revealKeyName}&quot; — store this somewhere safe. It replaces the previous value.
             </SheetDescription>
           </SheetHeader>
@@ -268,7 +264,7 @@ export function ApiKeysTable() {
               />
             ) : null}
           </div>
-          <SheetFooter className="shrink-0 border-t border-white/[0.06] p-2">
+          <SheetFooter className="shrink-0 border-t border-zinc-200/80 p-2">
             <Button
               type="button"
               className="h-10 w-full bg-primary text-white hover:bg-primary/90"

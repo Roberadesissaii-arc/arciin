@@ -5,6 +5,12 @@ import { create } from "zustand"
 import type { UploadStatus } from "@/lib/types/models"
 import { inferDestinationLabel } from "@/lib/utils/media-type"
 
+export type DuplicateConflict = {
+  file: File
+  existingAssetId: string
+  resolution: "replace" | "keep-both" | "skip" | null
+}
+
 export type UploadQueueItem = {
   id: string
   fileName: string
@@ -17,9 +23,16 @@ export type UploadQueueItem = {
   uploadId?: string
 }
 
+export type UploadContext = {
+  libraryId?: string
+  folderId?: string
+}
+
 type UploadStoreState = {
   queue: UploadQueueItem[]
   overlayVisible: boolean
+  uploadContext: UploadContext | null
+  pendingConflicts: DuplicateConflict[] | null
   addFiles: (files: File[]) => void
   addOrUpdate: (item: UploadQueueItem) => void
   updateProgress: (id: string, progress: number) => void
@@ -27,11 +40,15 @@ type UploadStoreState = {
   removeUpload: (id: string) => void
   clearCompleted: () => void
   setOverlayVisible: (visible: boolean) => void
+  setUploadContext: (ctx: UploadContext | null) => void
+  setPendingConflicts: (conflicts: DuplicateConflict[] | null) => void
 }
 
 export const useUploadStore = create<UploadStoreState>((set) => ({
   queue: [],
   overlayVisible: false,
+  uploadContext: null,
+  pendingConflicts: null,
   addFiles: (files) =>
     set((state) => ({
       queue: [
@@ -104,5 +121,13 @@ export const useUploadStore = create<UploadStoreState>((set) => ({
   setOverlayVisible: (overlayVisible) =>
     set(() => ({
       overlayVisible,
+    })),
+  setUploadContext: (uploadContext) =>
+    set(() => ({
+      uploadContext,
+    })),
+  setPendingConflicts: (pendingConflicts) =>
+    set(() => ({
+      pendingConflicts,
     })),
 }))

@@ -1,5 +1,11 @@
 import { fetchApi } from "@/lib/api/client"
-import type { AuthSession, LoginInput } from "@/lib/types/models"
+import type {
+  AuthSession,
+  ChangePasswordInput,
+  LoginInput,
+  SessionDetail,
+  UpdateProfileInput,
+} from "@/lib/types/models"
 
 export function getMe(signal?: AbortSignal) {
   return fetchApi<AuthSession>("/auth/me", {
@@ -18,5 +24,32 @@ export function login(input: LoginInput) {
 export function logout() {
   return fetchApi<{ success: true }>("/auth/logout", {
     method: "POST",
+  })
+}
+
+export function changePassword(input: ChangePasswordInput) {
+  return fetchApi<{ success: true }>("/auth/password", {
+    method: "PATCH",
+    body: input,
+  })
+}
+
+export function updateProfile(input: UpdateProfileInput) {
+  return fetchApi<AuthSession>("/auth/profile", {
+    method: "PATCH",
+    body: input,
+  })
+}
+
+export function getSessions(signal?: AbortSignal) {
+  return fetchApi<SessionDetail[]>("/auth/sessions", {
+    method: "GET",
+    signal,
+  })
+}
+
+export function revokeSession(id: string) {
+  return fetchApi<{ success: true }>(`/auth/sessions/${id}`, {
+    method: "DELETE",
   })
 }

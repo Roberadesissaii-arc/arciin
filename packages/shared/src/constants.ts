@@ -16,6 +16,16 @@ export const API_KEY_SCOPES = [
   "uploads:create",
   "activity:read",
   "events:subscribe",
+  "appdata:databases:read",
+  "appdata:databases:write",
+  "appdata:databases:delete",
+  "appdata:folders:read",
+  "appdata:folders:write",
+  "appdata:folders:delete",
+  "appdata:records:read",
+  "appdata:records:write",
+  "appdata:records:delete",
+  "appdata:admin",
   "admin",
 ] as const
 

@@ -3,10 +3,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 
 export function ActivityCard() {
   return (
-    <Card className="border-white/8 bg-white/[0.02]">
+    <Card className="border-border bg-card">
       <CardHeader>
-        <CardTitle className="text-white">Live activity</CardTitle>
-        <CardDescription className="text-zinc-400">
+        <CardTitle className="text-foreground">Live activity</CardTitle>
+        <CardDescription className="text-zinc-600">
           Recent events across uploads, assets, and system tasks.
         </CardDescription>
       </CardHeader>

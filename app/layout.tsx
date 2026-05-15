@@ -39,7 +39,7 @@ export default function RootLayout({
       suppressHydrationWarning
       className={`dark ${geistSans.variable} ${geistMono.variable} ${spaceGrotesk.variable} h-full`}
     >
-      <body className="relative min-h-full bg-[#08080d]">
+      <body className="relative min-h-full bg-[#09090b]">
         <AppAmbientBackground className="fixed inset-0 z-0" />
         <div className="relative z-10 min-h-full">
           <AppProviders>{children}</AppProviders>

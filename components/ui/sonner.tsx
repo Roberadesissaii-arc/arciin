@@ -2,52 +2,67 @@
 
 import { Toaster as Sonner, type ToasterProps } from "sonner"
 import { CircleCheckIcon, InfoIcon, TriangleAlertIcon, OctagonXIcon, Loader2Icon } from "lucide-react"
+import type { ToastStyle } from "@arciin/shared"
+
+type ArciinToasterProps = ToasterProps & {
+  toastStyle?: ToastStyle
+  showIcons?: boolean
+}
+
+const GAP_BY_STYLE: Record<ToastStyle, number> = {
+  sonner: 12,
+  minimal: 8,
+  bordered: 14,
+  "accent-bar": 18,
+}
 
 const Toaster = ({
   position = "bottom-right",
   closeButton = false,
   offset = { bottom: 24, right: 24 },
   mobileOffset = { bottom: 20, right: 16 },
-  gap = 12,
+  gap,
+  toastStyle = "sonner",
+  showIcons = true,
   ...props
-}: ToasterProps) => {
+}: ArciinToasterProps) => {
+  const resolvedGap = gap ?? GAP_BY_STYLE[toastStyle]
+
   return (
     <Sonner
-      theme="dark"
-      className="toaster group"
+      theme="light"
+      className={`toaster group toaster--${toastStyle}`}
       position={position}
       closeButton={closeButton}
       offset={offset}
       mobileOffset={mobileOffset}
-      gap={gap}
-      icons={{
-        success: (
-          <CircleCheckIcon className="size-[18px]" />
-        ),
-        info: (
-          <InfoIcon className="size-[18px]" />
-        ),
-        warning: (
-          <TriangleAlertIcon className="size-[18px]" />
-        ),
-        error: (
-          <OctagonXIcon className="size-[18px]" />
-        ),
-        loading: (
-          <Loader2Icon className="size-[18px] animate-spin" />
-        ),
-      }}
-      style={
-        {
-          "--normal-bg": "var(--popover)",
-          "--normal-text": "var(--popover-foreground)",
-          "--normal-border": "var(--border)",
-          "--border-radius": "var(--radius)",
-        } as React.CSSProperties
+      gap={resolvedGap}
+      visibleToasts={4}
+      expand={toastStyle === "accent-bar"}
+      icons={
+        showIcons
+          ? {
+              success: <CircleCheckIcon className="arciin-toast-icon-svg" />,
+              info: <InfoIcon className="arciin-toast-icon-svg" />,
+              warning: <TriangleAlertIcon className="arciin-toast-icon-svg" />,
+              error: <OctagonXIcon className="arciin-toast-icon-svg" />,
+              loading: <Loader2Icon className="arciin-toast-icon-svg animate-spin text-zinc-400" />,
+            }
+          : {
+              success: null,
+              info: null,
+              warning: null,
+              error: null,
+              loading: null,
+            }
       }
       toastOptions={{
         classNames: {
-          toast: "cn-toast",
+          toast: `arciin-toast arciin-toast--${toastStyle}`,
+          title: "arciin-toast-title",
+          description: "arciin-toast-description",
+          icon: "arciin-toast-icon",
+          content: "arciin-toast-content",
         },
       }}
       {...props}

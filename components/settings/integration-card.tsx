@@ -1,46 +1,103 @@
+import Link from "next/link"
+import { ExternalLink } from "lucide-react"
+
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import type { IntegrationSummary } from "@/lib/types/models"
 
-export function IntegrationCard({
-  integration,
-  cta,
-}: {
-  integration: IntegrationSummary
-  cta?: React.ReactNode
-}) {
+function typeBlurb(type: IntegrationSummary["type"]): string {
+  switch (type) {
+    case "PLEX":
+      return "Plex reads your disk through its own server. Arciin keeps files where you put them—use a compatible folder (e.g. Videos/Plex) until a full API link is supported."
+    case "S3":
+      return "When enabled, this connector will mirror or tier objects to S3-compatible storage. Not wired in the worker yet."
+    case "WEBHOOK":
+      return "Outbound webhooks are configured under Developer → Webhooks, not as a row here. This type is reserved if we ever mirror webhook config into integrations."
+    case "CUSTOM":
+      return "Custom integration slot for future instance-specific modules."
+    default:
+      return "Integration metadata from the database."
+  }
+}
+
+function typeHint(type: IntegrationSummary["type"]): string {
+  switch (type) {
+    case "PLEX":
+      return "Placeholder: organize libraries first, then connect Plex server details in a later release."
+    case "S3":
+      return "Reserved for object-storage replication jobs."
+    case "WEBHOOK":
+      return "Use the Webhooks page for HTTP callbacks."
+    case "CUSTOM":
+      return "Reserved for extensions."
+    default:
+      return ""
+  }
+}
+
+export function IntegrationCard({ integration }: { integration: IntegrationSummary }) {
+  const suggested =
+    typeof integration.config?.suggestedFolder === "string"
+      ? (integration.config.suggestedFolder as string)
+      : "Videos/Plex"
+
   return (
-    <Card className="border-white/8 bg-white/[0.02]">
+    <Card className="border-border bg-card">
       <CardHeader>
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <CardTitle className="text-white">{integration.name}</CardTitle>
-            <CardDescription className="text-zinc-400">
-              {integration.type === "PLEX"
-                ? "Organize compatible folders first, then wire in the full server connection later."
-                : "Future integration slot for the Arciin instance."}
-            </CardDescription>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0 space-y-1">
+            <CardTitle className="text-foreground">{integration.name}</CardTitle>
+            <p className="font-mono text-[11px] font-medium uppercase tracking-wide text-zinc-500">
+              {integration.type}
+            </p>
+            <CardDescription className="text-zinc-600">{typeBlurb(integration.type)}</CardDescription>
           </div>
           <Badge
             variant="outline"
-            className={integration.enabled ? "border-emerald-500/20 text-emerald-300" : "border-white/8 text-zinc-400"}
+            className={
+              integration.enabled
+                ? "shrink-0 border-emerald-500/40 bg-emerald-500/10 text-emerald-800"
+                : "shrink-0 border-border bg-muted/40 text-zinc-600"
+            }
           >
             {integration.enabled ? "Connected" : "Not connected"}
           </Badge>
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="rounded-2xl border border-white/8 bg-black/20 p-4 text-sm text-zinc-400">
-          {integration.type === "PLEX"
-            ? "Start with a Videos/Plex folder structure and enable server credentials later."
-            : "This integration slot is reserved for future self-hosted services."}
+        <div className="rounded-2xl border border-border bg-muted/50 p-4 text-sm text-zinc-700">
+          {typeHint(integration.type)}
         </div>
-        {cta || (
-          <Button variant="outline" className="border-white/8 bg-white/[0.02] text-zinc-200 hover:bg-white/[0.05]">
-            Coming soon
-          </Button>
-        )}
+
+        {integration.type === "PLEX" ? (
+          <div className="rounded-2xl border border-primary/20 bg-orange-50/50 p-4 text-sm text-zinc-800">
+            <span className="font-medium text-zinc-900">Suggested folder: </span>
+            <span className="font-mono text-zinc-800">{suggested}</span>
+            <p className="mt-2 text-zinc-600">
+              Create that path under your Videos library in Arciin so Plex’s library scanner sees the same tree.
+            </p>
+          </div>
+        ) : null}
+
+        <div className="flex flex-wrap gap-2">
+          {integration.type === "PLEX" ? (
+            <Button variant="outline" className="border-border" disabled>
+              Configure Plex (soon)
+            </Button>
+          ) : integration.type === "WEBHOOK" ? (
+            <Button asChild variant="outline" className="border-border">
+              <Link href="/developer/webhooks">
+                Open Webhooks
+                <ExternalLink className="ml-2 size-3.5 opacity-70" aria-hidden />
+              </Link>
+            </Button>
+          ) : (
+            <Button variant="outline" className="border-border" disabled>
+              Coming later
+            </Button>
+          )}
+        </div>
       </CardContent>
     </Card>
   )

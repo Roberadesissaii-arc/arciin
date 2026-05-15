@@ -31,11 +31,22 @@ function statusCopy(status: UploadQueueItemModel["status"]) {
 
 const AUTO_DISMISS_MS = 3800
 
+/** HTTP upload is done at 100% while the API may still report PROCESSING (thumbnails, metadata). */
+function isQueueComplete(item: UploadQueueItemModel) {
+  return (
+    item.status === "READY" ||
+    (item.status === "PROCESSING" && item.progress >= 100)
+  )
+}
+
 export function UploadQueueItem({ item }: { item: UploadQueueItemModel }) {
   const removeUpload = useUploadStore((state) => state.removeUpload)
 
   useEffect(() => {
-    if (item.status !== "READY") {
+    const complete =
+      item.status === "READY" ||
+      (item.status === "PROCESSING" && item.progress >= 100)
+    if (!complete) {
       return
     }
     const id = item.id
@@ -43,7 +54,7 @@ export function UploadQueueItem({ item }: { item: UploadQueueItemModel }) {
       removeUpload(id)
     }, AUTO_DISMISS_MS)
     return () => window.clearTimeout(timer)
-  }, [item.id, item.status, removeUpload])
+  }, [item.id, item.progress, item.status, removeUpload])
 
   const mediaType =
     item.destination === "Videos"
@@ -63,34 +74,34 @@ export function UploadQueueItem({ item }: { item: UploadQueueItemModel }) {
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: 12 }}
-      className="rounded-2xl border border-white/[0.08] bg-[#121218]/90 p-3"
+      className="rounded-2xl border border-zinc-200/90 bg-white p-3 shadow-sm ring-1 ring-black/[0.04]"
     >
       <div className="flex items-start gap-3">
-        <div className="flex size-10 items-center justify-center rounded-xl bg-white/[0.04] text-zinc-300">
+        <div className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-zinc-200/80 bg-zinc-100 text-zinc-600">
           <FileIcon className="size-4" />
         </div>
         <div className="min-w-0 flex-1">
-          <div className="truncate text-sm font-medium text-white">{item.fileName}</div>
-          <div className="mt-1 flex items-center gap-2 text-xs text-zinc-400">
+          <div className="truncate text-sm font-medium text-zinc-900">{item.fileName}</div>
+          <div className="mt-1 flex items-center gap-2 text-xs text-zinc-600">
             <span>{item.destination}</span>
-            <span className="size-1 rounded-full bg-zinc-700" />
+            <span className="size-1 shrink-0 rounded-full bg-zinc-400" />
             <span>{statusCopy(item.status)}</span>
           </div>
-          <Progress
-            value={item.progress}
-            className="mt-3 h-1.5 bg-white/[0.04]"
-          />
-          {item.error ? (
-            <div className="mt-2 text-xs text-red-300">{item.error}</div>
-          ) : null}
+          <div className="mt-3 flex items-center gap-3">
+            <Progress value={item.progress} className="h-1.5 flex-1 bg-zinc-200" />
+            <span className="w-11 shrink-0 text-right text-xs font-medium tabular-nums text-zinc-700">
+              {item.status === "FAILED" ? "—" : `${Math.min(100, Math.max(0, Math.round(item.progress)))}%`}
+            </span>
+          </div>
+          {item.error ? <div className="mt-2 text-xs font-medium text-red-700">{item.error}</div> : null}
         </div>
-        <div className="mt-1 text-zinc-400">
+        <div className="mt-1 shrink-0 text-zinc-600">
           {item.status === "FAILED" ? (
-            <AlertCircle className="size-4 text-red-400" />
-          ) : item.status === "READY" ? (
-            <CheckCircle2 className="size-4 text-emerald-400" />
+            <AlertCircle className="size-4 text-red-600" />
+          ) : isQueueComplete(item) ? (
+            <CheckCircle2 className="size-4 text-emerald-600" />
           ) : (
-            <LoaderCircle className="size-4 animate-spin text-[#FF8F66]" />
+            <LoaderCircle className="size-4 animate-spin text-primary" />
           )}
         </div>
       </div>

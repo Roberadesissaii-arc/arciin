@@ -22,7 +22,7 @@ import { libraryGlassSheetPanel } from "@/lib/library-glass-sheet"
 import { cn } from "@/lib/utils"
 
 const glassInput =
-  "h-10 border-white/[0.08] bg-white/[0.04] text-[rgba(255,255,255,0.95)] placeholder:text-[rgba(255,255,255,0.35)] backdrop-blur-sm focus-visible:ring-white/20"
+  "h-10 border-border bg-muted/40 text-foreground placeholder:text-muted-foreground focus-visible:ring-primary/20"
 
 export function CreateFolderDialog({
   libraryId,
@@ -47,9 +47,9 @@ export function CreateFolderDialog({
       <SheetContent
         side="right"
         showCloseButton={false}
-        className={cn(libraryGlassSheetPanel, "text-white")}
+        className={cn(libraryGlassSheetPanel, "dashboard-main text-foreground")}
       >
-        <SheetHeader className="relative shrink-0 space-y-1 border-b border-white/[0.06] p-2 pr-11">
+        <SheetHeader className="relative shrink-0 space-y-1 border-b border-border p-2 pr-11">
           <SheetClose asChild>
             <Button
               type="button"
@@ -61,10 +61,10 @@ export function CreateFolderDialog({
               <X className="size-4" />
             </Button>
           </SheetClose>
-          <SheetTitle className="font-heading text-lg font-semibold tracking-tight text-[rgba(255,255,255,0.95)]">
+          <SheetTitle className="font-heading text-lg font-semibold tracking-tight text-foreground">
             Create folder
           </SheetTitle>
-          <SheetDescription className="text-[13px] leading-snug text-[rgba(255,255,255,0.45)]">
+          <SheetDescription className="text-[13px] leading-snug text-muted-foreground">
             Add a nested folder inside this library to keep the archive organized.
           </SheetDescription>
         </SheetHeader>
@@ -73,7 +73,7 @@ export function CreateFolderDialog({
           <Field>
             <FieldLabel
               htmlFor="folderName"
-              className="text-[11px] font-semibold uppercase tracking-wider text-[rgba(255,255,255,0.3)]"
+              className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground"
             >
               Folder name
             </FieldLabel>
@@ -90,7 +90,7 @@ export function CreateFolderDialog({
           </Field>
         </div>
 
-        <SheetFooter className="shrink-0 border-t border-white/[0.06] p-2">
+        <SheetFooter className="shrink-0 border-t border-border p-2">
           <Button
             className="h-10 w-full bg-primary text-white hover:bg-primary/90"
             disabled={createFolderMutation.isPending}

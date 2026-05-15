@@ -1,18 +1,12 @@
 "use client"
 
 import { useState } from "react"
-import { Activity } from "lucide-react"
+import { Activity, RefreshCw } from "lucide-react"
 
 import { ActivityItem } from "@/components/activity/activity-item"
-import {
-  Pagination,
-  PaginationContent,
-  PaginationEllipsis,
-  PaginationItem,
-  PaginationLink,
-  PaginationNext,
-  PaginationPrevious,
-} from "@/components/ui/pagination"
+import { AppPagination } from "@/components/ui/app-pagination"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import {
   Empty,
   EmptyContent,
@@ -24,14 +18,9 @@ import {
 import { Skeleton } from "@/components/ui/skeleton"
 import { useActivity } from "@/hooks/use-activity"
 
-const PAGE_SIZE = 5
+const PAGE_SIZE = 10
 
-function pageNumbers(current: number, total: number): (number | "ellipsis")[] {
-  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1)
-  if (current <= 4) return [1, 2, 3, 4, 5, "ellipsis", total]
-  if (current >= total - 3) return [1, "ellipsis", total - 4, total - 3, total - 2, total - 1, total]
-  return [1, "ellipsis", current - 1, current, current + 1, "ellipsis", total]
-}
+// ── Limited view (dashboard widget) ──────────────────────────────────────────
 
 export function ActivityFeed({ limit }: { limit?: number }) {
   const [page, setPage] = useState(1)
@@ -39,9 +28,9 @@ export function ActivityFeed({ limit }: { limit?: number }) {
 
   if (activityQuery.isLoading) {
     return (
-      <div className="space-y-3">
-        {Array.from({ length: 3 }).map((_, i) => (
-          <Skeleton key={i} className="h-20 rounded-2xl" />
+      <div className="space-y-2">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <Skeleton key={i} className="h-16 rounded-2xl" />
         ))}
       </div>
     )
@@ -49,7 +38,7 @@ export function ActivityFeed({ limit }: { limit?: number }) {
 
   if (activityQuery.isError) {
     return (
-      <div className="rounded-2xl border border-red-500/20 bg-red-500/5 p-4 text-sm text-red-200">
+      <div className="rounded-2xl border border-red-500/25 bg-red-50 p-4 text-sm text-red-800">
         {activityQuery.error instanceof Error
           ? activityQuery.error.message
           : "Could not load activity."}
@@ -59,89 +48,77 @@ export function ActivityFeed({ limit }: { limit?: number }) {
 
   const all = activityQuery.data ?? []
 
-  // When limit is set (e.g. dashboard widget), just slice and show — no pagination
+  // Dashboard widget: just slice, no card/pagination
   if (limit !== undefined) {
     const items = all.slice(0, limit)
-    if (!items.length) return <ActivityEmpty />
+    if (!items.length) return <ActivityEmpty bare />
     return (
-      <div className="space-y-3">
-        {items.map((event) => <ActivityItem key={event.id} event={event} />)}
+      <div className="divide-y divide-border">
+        {items.map((event) => (
+          <ActivityItem key={event.id} event={event} />
+        ))}
       </div>
     )
   }
 
-  // Full page view — paginate at PAGE_SIZE
-  const totalPages = Math.max(1, Math.ceil(all.length / PAGE_SIZE))
-  const safePage   = Math.min(page, totalPages)
-  const pageItems  = all.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE)
-
+  // Full page view
   if (!all.length) return <ActivityEmpty />
 
+  const totalPages = Math.max(1, Math.ceil(all.length / PAGE_SIZE))
+  const safePage = Math.min(page, totalPages)
+  const pageItems = all.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE)
+
   return (
-    <div className="space-y-4">
-      {/* Entry count */}
-      <div className="flex items-center justify-between">
-        <span className="text-[13px] text-white/40">
-          {all.length} {all.length === 1 ? "event" : "events"} total
-        </span>
-        <span className="rounded-lg bg-white/[0.05] px-2.5 py-1 text-[11px] font-mono text-white/35">
-          Page {safePage} of {totalPages}
-        </span>
-      </div>
+    <Card className="border-border bg-card">
+      <CardHeader className="flex flex-row items-start justify-between gap-4">
+        <div>
+          <CardTitle className="text-foreground">Event log</CardTitle>
+          <CardDescription className="text-zinc-500">
+            {all.length} {all.length === 1 ? "event" : "events"} across your instance
+          </CardDescription>
+        </div>
 
-      {/* Items */}
-      <div className="space-y-3">
-        {pageItems.map((event) => <ActivityItem key={event.id} event={event} />)}
-      </div>
+        <div className="flex items-center gap-2">
+          {/* page indicator */}
+          {totalPages > 1 && (
+            <span className="rounded-lg border border-border bg-muted/50 px-2.5 py-1 text-[11px] font-mono text-muted-foreground">
+              {safePage} / {totalPages}
+            </span>
+          )}
+          <Button
+            size="sm"
+            className="gap-1.5 bg-primary text-white hover:bg-primary/90 disabled:opacity-40"
+            onClick={() => activityQuery.refetch()}
+            disabled={activityQuery.isFetching}
+          >
+            <RefreshCw className={`size-3.5 ${activityQuery.isFetching ? "animate-spin" : ""}`} />
+            Refresh
+          </Button>
+        </div>
+      </CardHeader>
 
-      {/* Pagination — only when there's more than one page */}
-      {totalPages > 1 && (
-        <Pagination>
-          <PaginationContent>
-            <PaginationItem>
-              <PaginationPrevious
-                href="#"
-                onClick={(e) => { e.preventDefault(); if (safePage > 1) setPage((p) => p - 1) }}
-                className={safePage === 1 ? "pointer-events-none opacity-40" : "cursor-pointer"}
-              />
-            </PaginationItem>
+      <CardContent className="px-0 pb-0">
+        <div className="divide-y divide-border">
+          {pageItems.map((event) => (
+            <ActivityItem key={event.id} event={event} />
+          ))}
+        </div>
 
-            {pageNumbers(safePage, totalPages).map((p, i) =>
-              p === "ellipsis" ? (
-                <PaginationItem key={`ell-${i}`}>
-                  <PaginationEllipsis />
-                </PaginationItem>
-              ) : (
-                <PaginationItem key={p}>
-                  <PaginationLink
-                    href="#"
-                    isActive={p === safePage}
-                    onClick={(e) => { e.preventDefault(); setPage(p) }}
-                    className="cursor-pointer"
-                  >
-                    {p}
-                  </PaginationLink>
-                </PaginationItem>
-              )
-            )}
-
-            <PaginationItem>
-              <PaginationNext
-                href="#"
-                onClick={(e) => { e.preventDefault(); if (safePage < totalPages) setPage((p) => p + 1) }}
-                className={safePage === totalPages ? "pointer-events-none opacity-40" : "cursor-pointer"}
-              />
-            </PaginationItem>
-          </PaginationContent>
-        </Pagination>
-      )}
-    </div>
+        {totalPages > 1 && (
+          <div className="border-t border-border px-5 py-3">
+            <AppPagination page={safePage} totalPages={totalPages} onPageChange={setPage} />
+          </div>
+        )}
+      </CardContent>
+    </Card>
   )
 }
 
-function ActivityEmpty() {
-  return (
-    <Empty className="border border-white/8 bg-white/[0.02]">
+// ── Empty state ───────────────────────────────────────────────────────────────
+
+function ActivityEmpty({ bare }: { bare?: boolean }) {
+  const inner = (
+    <Empty className={bare ? "" : "border border-border bg-card"}>
       <EmptyHeader>
         <EmptyMedia variant="icon">
           <Activity className="size-4" />
@@ -154,4 +131,5 @@ function ActivityEmpty() {
       <EmptyContent />
     </Empty>
   )
+  return inner
 }

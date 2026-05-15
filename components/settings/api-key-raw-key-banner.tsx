@@ -24,23 +24,23 @@ export function ApiKeyRawKeyBanner({
   hint?: string
 }) {
   return (
-    <div className="overflow-hidden rounded-xl border border-white/[0.08] bg-white/[0.04] p-3 backdrop-blur-sm">
+    <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white p-3 shadow-sm">
       <div className="flex min-w-0 items-start gap-2">
         <div className="min-w-0 flex-1">
-          <div className="text-sm font-medium text-[rgba(255,255,255,0.95)]">{title}</div>
+          <div className="text-[12px] font-semibold text-zinc-800">{title}</div>
           <p
-            className="mt-1.5 font-mono text-[13px] leading-snug tracking-tight text-zinc-400"
+            className="mt-1.5 font-mono text-[13px] leading-snug tracking-tight text-zinc-700"
             title={rawKey}
           >
             {formatApiKeyPreview(rawKey)}
           </p>
-          <p className="mt-1 text-[11px] text-[rgba(255,255,255,0.35)]">{hint}</p>
+          <p className="mt-1 text-[11px] text-zinc-400">{hint}</p>
         </div>
         <Button
           type="button"
           variant="outline"
           size="sm"
-          className="shrink-0 border-white/[0.1] bg-white/[0.06] text-zinc-100 hover:bg-white/[0.1]"
+          className="shrink-0 border-zinc-200 bg-zinc-50 text-zinc-700 hover:bg-zinc-100"
           onClick={async () => {
             try {
               await navigator.clipboard.writeText(rawKey)

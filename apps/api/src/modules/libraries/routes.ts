@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify"
 import { z } from "zod"
 
+import { buildRealtimeEvent } from "@/services/events/publish-event"
 import { authenticate, requireRole } from "@/services/security/auth"
 import { serializeLibrary } from "@/services/serializers"
 import { slugify } from "@/services/slug"
@@ -22,7 +23,7 @@ export async function registerLibraryRoutes(fastify: FastifyInstance) {
         include: {
           _count: {
             select: {
-              assets: true,
+              assets: { where: { deletedAt: null } },
               folders: true,
             },
           },
@@ -84,12 +85,22 @@ export async function registerLibraryRoutes(fastify: FastifyInstance) {
         include: {
           _count: {
             select: {
-              assets: true,
+              assets: { where: { deletedAt: null } },
               folders: true,
             },
           },
         },
       })
+
+      if (request.auth) {
+        await fastify.publishRealtimeEvent(
+          buildRealtimeEvent("library.created", {
+            userId: request.auth.user.id,
+            libraryId: library.id,
+            message: `Library "${library.name}" created.`,
+          })
+        )
+      }
 
       reply.status(201).send({
         data: serializeLibrary(library),
@@ -111,7 +122,7 @@ export async function registerLibraryRoutes(fastify: FastifyInstance) {
         include: {
           _count: {
             select: {
-              assets: true,
+              assets: { where: { deletedAt: null } },
               folders: true,
             },
           },
@@ -165,7 +176,7 @@ export async function registerLibraryRoutes(fastify: FastifyInstance) {
         include: {
           _count: {
             select: {
-              assets: true,
+              assets: { where: { deletedAt: null } },
               folders: true,
             },
           },
@@ -192,7 +203,7 @@ export async function registerLibraryRoutes(fastify: FastifyInstance) {
         include: {
           _count: {
             select: {
-              assets: true,
+              assets: { where: { deletedAt: null } },
               folders: true,
             },
           },

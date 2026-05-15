@@ -75,6 +75,12 @@ enum IntegrationType {
   CUSTOM
 }
 
+enum WebhookDeliveryStatus {
+  PENDING
+  SUCCESS
+  FAILED
+}
+
 model InstanceConfig {
   id                 String   @id @default(cuid())
   instanceName       String
@@ -82,6 +88,7 @@ model InstanceConfig {
   publicUrl          String?
   remoteAccessMode   String?  @default("local")
   remoteAccessConfig Json?
+  aiConfig           Json?
   initializedAt      DateTime
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
@@ -94,13 +101,66 @@ model User {
   passwordHash   String
   role           UserRole
   status         UserStatus      @default(ACTIVE)
+  preferences    Json?
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
-  sessions       Session[]
-  apiKeys        ApiKey[]
-  uploads        UploadSession[]
-  assets         Asset[]
-  activityEvents ActivityEvent[]
+  sessions          Session[]
+  apiKeys           ApiKey[]
+  uploads           UploadSession[]
+  assets            Asset[]
+  activityEvents    ActivityEvent[]
+  appDatabases      AppDatabase[]
+  chatConversations ChatConversation[]
+}
+
+/// Logical app database for API/automation: metadata + JSON in PostgreSQL (not library file storage).
+model AppDatabase {
+  id          String              @id @default(cuid())
+  name        String
+  slug        String              @unique
+  description String?
+  createdById String
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+  createdBy   User                @relation(fields: [createdById], references: [id], onDelete: Restrict)
+  folders     AppDatabaseFolder[]
+
+  @@index([createdById])
+}
+
+model AppDatabaseFolder {
+  id             String               @id @default(cuid())
+  databaseId     String
+  parentFolderId String?
+  name           String
+  slug           String
+  pathCache      String
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+  deletedAt      DateTime?
+  database       AppDatabase          @relation(fields: [databaseId], references: [id], onDelete: Cascade)
+  parentFolder   AppDatabaseFolder?   @relation("AppDbFolderTree", fields: [parentFolderId], references: [id], onDelete: SetNull)
+  childFolders   AppDatabaseFolder[]  @relation("AppDbFolderTree")
+  records        AppDatabaseRecord[]
+
+  @@unique([databaseId, pathCache])
+  @@index([databaseId])
+  @@index([parentFolderId])
+  @@index([deletedAt])
+}
+
+model AppDatabaseRecord {
+  id        String            @id @default(cuid())
+  folderId  String
+  name      String
+  payload   Json
+  mimeType  String?
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+  folder    AppDatabaseFolder @relation(fields: [folderId], references: [id], onDelete: Cascade)
+
+  @@unique([folderId, name])
+  @@index([folderId])
 }
 
 model Session {
@@ -135,15 +195,15 @@ model ApiKey {
 }
 
 model StorageLocation {
-  id         String          @id @default(cuid())
-  name       String
-  type       StorageType
-  rootPath   String
-  isDefault  Boolean         @default(false)
-  createdAt  DateTime        @default(now())
-  updatedAt  DateTime        @updatedAt
-  libraries  Library[]
-  objects    StorageObject[]
+  id        String          @id @default(cuid())
+  name      String
+  type      StorageType
+  rootPath  String
+  isDefault Boolean         @default(false)
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+  libraries Library[]
+  objects   StorageObject[]
 }
 
 model Library {
@@ -164,18 +224,18 @@ model Library {
 }
 
 model Folder {
-  id             String    @id @default(cuid())
+  id             String          @id @default(cuid())
   libraryId      String
   parentFolderId String?
   name           String
   slug           String
   pathCache      String
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
   deletedAt      DateTime?
-  library        Library   @relation(fields: [libraryId], references: [id], onDelete: Cascade)
-  parentFolder   Folder?   @relation("FolderTree", fields: [parentFolderId], references: [id], onDelete: SetNull)
-  childFolders   Folder[]  @relation("FolderTree")
+  library        Library         @relation(fields: [libraryId], references: [id], onDelete: Cascade)
+  parentFolder   Folder?         @relation("FolderTree", fields: [parentFolderId], references: [id], onDelete: SetNull)
+  childFolders   Folder[]        @relation("FolderTree")
   assets         Asset[]
   uploadSessions UploadSession[]
 
@@ -202,35 +262,35 @@ model StorageObject {
 }
 
 model Asset {
-  id              String       @id @default(cuid())
-  libraryId       String
-  folderId        String?
-  storageObjectId String
-  ownerId         String
-  filename        String
+  id               String          @id @default(cuid())
+  libraryId        String
+  folderId         String?
+  storageObjectId  String
+  ownerId          String
+  filename         String
   originalFilename String
-  title           String?
-  description     String?
-  mimeType        String
-  mediaType       MediaType
-  extension       String
-  sizeBytes       BigInt
-  checksumSha256  String
-  durationSeconds Float?
-  width           Int?
-  height          Int?
-  codec           String?
-  status          AssetStatus
-  processingError String?
-  createdAt       DateTime     @default(now())
-  updatedAt       DateTime     @updatedAt
-  deletedAt       DateTime?
-  library         Library      @relation(fields: [libraryId], references: [id], onDelete: Restrict)
-  folder          Folder?      @relation(fields: [folderId], references: [id], onDelete: SetNull)
-  storageObject   StorageObject @relation(fields: [storageObjectId], references: [id], onDelete: Restrict)
-  owner           User         @relation(fields: [ownerId], references: [id], onDelete: Restrict)
-  uploadSessions  UploadSession[]
-  tags            AssetTag[]
+  title            String?
+  description      String?
+  mimeType         String
+  mediaType        MediaType
+  extension        String
+  sizeBytes        BigInt
+  checksumSha256   String
+  durationSeconds  Float?
+  width            Int?
+  height           Int?
+  codec            String?
+  status           AssetStatus
+  processingError  String?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  deletedAt        DateTime?
+  library          Library         @relation(fields: [libraryId], references: [id], onDelete: Restrict)
+  folder           Folder?         @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  storageObject    StorageObject   @relation(fields: [storageObjectId], references: [id], onDelete: Restrict)
+  owner            User            @relation(fields: [ownerId], references: [id], onDelete: Restrict)
+  uploadSessions   UploadSession[]
+  tags             AssetTag[]
 
   @@index([libraryId])
   @@index([folderId])
@@ -240,25 +300,25 @@ model Asset {
 }
 
 model UploadSession {
-  id               String       @id @default(cuid())
-  userId           String
-  originalFilename String
-  mimeType         String?
-  sizeBytes        BigInt
-  status           UploadStatus
-  progress         Int          @default(0)
-  targetLibraryId  String?
-  targetFolderId   String?
+  id                String       @id @default(cuid())
+  userId            String
+  originalFilename  String
+  mimeType          String?
+  sizeBytes         BigInt
+  status            UploadStatus
+  progress          Int          @default(0)
+  targetLibraryId   String?
+  targetFolderId    String?
   detectedMediaType MediaType?
-  assetId          String?
-  error            String?
-  createdAt        DateTime     @default(now())
-  updatedAt        DateTime     @updatedAt
-  completedAt      DateTime?
-  user             User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  targetLibrary    Library?     @relation(fields: [targetLibraryId], references: [id], onDelete: SetNull)
-  targetFolder     Folder?      @relation(fields: [targetFolderId], references: [id], onDelete: SetNull)
-  asset            Asset?       @relation(fields: [assetId], references: [id], onDelete: SetNull)
+  assetId           String?
+  error             String?
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+  completedAt       DateTime?
+  user              User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  targetLibrary     Library?     @relation(fields: [targetLibraryId], references: [id], onDelete: SetNull)
+  targetFolder      Folder?      @relation(fields: [targetFolderId], references: [id], onDelete: SetNull)
+  asset             Asset?       @relation(fields: [assetId], references: [id], onDelete: SetNull)
 
   @@index([userId, status])
   @@index([createdAt])
@@ -308,6 +368,41 @@ model Integration {
   @@index([type])
 }
 
+model WebhookEndpoint {
+  id           String   @id @default(cuid())
+  name         String
+  url          String
+  enabled      Boolean  @default(true)
+  eventTypes   String[]
+  secretPrefix String
+  secretEnc    String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  deliveries WebhookDelivery[]
+
+  @@index([enabled])
+  @@index([createdAt])
+}
+
+model WebhookDelivery {
+  id           String                @id @default(cuid())
+  endpointId   String
+  eventType    String
+  status       WebhookDeliveryStatus
+  requestBody  Json
+  responseCode Int?
+  responseBody String?
+  durationMs   Int?
+  error        String?
+  createdAt    DateTime              @default(now())
+
+  endpoint WebhookEndpoint @relation(fields: [endpointId], references: [id], onDelete: Cascade)
+
+  @@index([endpointId, createdAt])
+  @@index([status])
+}
+
 model Tag {
   id        String     @id @default(cuid())
   name      String
@@ -320,8 +415,63 @@ model Tag {
 model AssetTag {
   assetId String
   tagId   String
-  asset   Asset @relation(fields: [assetId], references: [id], onDelete: Cascade)
-  tag     Tag   @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  asset   Asset  @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  tag     Tag    @relation(fields: [tagId], references: [id], onDelete: Cascade)
 
   @@id([assetId, tagId])
+}
+
+model ModelProfile {
+  id           String   @id @default(cuid())
+  provider     String   // "openai" | "anthropic" | "ollama" | "gemini" | "deepseek" | "grok" | "meta" | "qwen" | "elevenlabs" | "custom"
+  displayName  String
+  apiKey       String?
+  baseUrl      String?
+  defaultModel String?
+  isDefault    Boolean  @default(false)
+  isEnabled    Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  conversations ChatConversation[]
+
+  @@index([provider])
+}
+
+model ChatConversation {
+  id        String        @id @default(cuid())
+  userId    String
+  profileId String?
+  title     String
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  user     User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  profile  ModelProfile? @relation(fields: [profileId], references: [id], onDelete: SetNull)
+  messages ChatMessage[]
+
+  @@index([userId, createdAt])
+  @@index([profileId])
+}
+
+enum ChatMessageFeedbackRating {
+  LIKE
+  DISLIKE
+}
+
+model ChatMessage {
+  id             String                     @id @default(cuid())
+  conversationId String
+  role           String
+  content        String
+  inputTokens    Int?
+  outputTokens   Int?
+  totalTokens    Int?
+  feedbackRating ChatMessageFeedbackRating?
+  feedbackAt     DateTime?
+  createdAt      DateTime                   @default(now())
+
+  conversation ChatConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, createdAt])
 }

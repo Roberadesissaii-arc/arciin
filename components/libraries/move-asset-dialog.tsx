@@ -30,10 +30,10 @@ import { libraryGlassSheetPanel } from "@/lib/library-glass-sheet"
 import type { AssetSummary } from "@/lib/types/models"
 
 const selectTrigger =
-  "h-10 w-full min-w-0 border-white/[0.08] bg-white/[0.04] text-left text-sm text-[rgba(255,255,255,0.95)] backdrop-blur-sm hover:bg-white/[0.06] focus-visible:ring-white/20"
+  "h-10 w-full min-w-0 border-border bg-muted/40 text-left text-sm text-foreground hover:bg-muted/70 focus-visible:ring-primary/20"
 
 const selectContent =
-  "z-[120] max-h-60 border border-white/[0.08] bg-[rgba(12,12,16,0.96)] text-[rgba(255,255,255,0.95)] shadow-lg backdrop-blur-xl"
+  "z-[120] max-h-60 border border-border bg-popover text-foreground shadow-lg"
 
 export function MoveAssetDialog({ asset }: { asset: AssetSummary }) {
   const [libraryId, setLibraryId] = useState(asset.libraryId)
@@ -60,7 +60,7 @@ export function MoveAssetDialog({ asset }: { asset: AssetSummary }) {
         <Button
           variant="outline"
           size="sm"
-          className="border-white/8 bg-white/[0.02] text-zinc-200 hover:bg-white/[0.05]"
+          className="border-border bg-card text-foreground hover:bg-muted/50"
         >
           <ArrowRightLeft className="size-4" />
           Move
@@ -69,9 +69,9 @@ export function MoveAssetDialog({ asset }: { asset: AssetSummary }) {
       <SheetContent
         side="right"
         showCloseButton={false}
-        className={cn(libraryGlassSheetPanel)}
+        className={cn(libraryGlassSheetPanel, "dashboard-main text-foreground")}
       >
-        <SheetHeader className="relative shrink-0 space-y-1 border-b border-white/[0.06] p-2 pr-11">
+        <SheetHeader className="relative shrink-0 space-y-1 border-b border-border p-2 pr-11">
           <SheetClose asChild>
             <Button
               type="button"
@@ -83,10 +83,10 @@ export function MoveAssetDialog({ asset }: { asset: AssetSummary }) {
               <X className="size-4" />
             </Button>
           </SheetClose>
-          <SheetTitle className="font-heading text-lg font-semibold tracking-tight text-[rgba(255,255,255,0.95)]">
+          <SheetTitle className="font-heading text-lg font-semibold tracking-tight text-foreground">
             Move asset
           </SheetTitle>
-          <SheetDescription className="text-[13px] leading-snug text-[rgba(255,255,255,0.45)]">
+          <SheetDescription className="text-[13px] leading-snug text-muted-foreground">
             Choose a library, then a folder.
           </SheetDescription>
         </SheetHeader>
@@ -95,7 +95,7 @@ export function MoveAssetDialog({ asset }: { asset: AssetSummary }) {
           <div className="space-y-2">
             <Label
               htmlFor="move-library"
-              className="text-[11px] font-semibold uppercase tracking-wider text-[rgba(255,255,255,0.3)]"
+              className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground"
             >
               Library
             </Label>
@@ -129,7 +129,7 @@ export function MoveAssetDialog({ asset }: { asset: AssetSummary }) {
           <div className="space-y-2">
             <Label
               htmlFor="move-folder"
-              className="text-[11px] font-semibold uppercase tracking-wider text-[rgba(255,255,255,0.3)]"
+              className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground"
             >
               Folder
             </Label>
@@ -157,12 +157,12 @@ export function MoveAssetDialog({ asset }: { asset: AssetSummary }) {
               </SelectContent>
             </Select>
             {foldersQuery.isFetching ? (
-              <p className="text-xs text-[rgba(255,255,255,0.35)]">Loading folders…</p>
+              <p className="text-xs text-muted-foreground">Loading folders…</p>
             ) : null}
           </div>
         </div>
 
-        <SheetFooter className="shrink-0 border-t border-white/[0.06] p-2">
+        <SheetFooter className="shrink-0 border-t border-border p-2">
           <Button
             className="h-10 w-full bg-primary text-white hover:bg-primary/90"
             disabled={moveAssetMutation.isPending}

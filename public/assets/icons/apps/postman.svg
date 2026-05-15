@@ -1,0 +1,41 @@
+<svg width="180" height="180" viewBox="0 0 180 180" fill="none" xmlns="http://www.w3.org/2000/svg">
+<defs>
+  <filter id="psm_f0" x="-118.393%" y="17.036%" width="287%" height="287%" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+    <feFlood flood-opacity="0" result="bg"/><feBlend mode="normal" in="SourceGraphic" in2="bg" result="shape"/>
+    <feGaussianBlur stdDeviation="52" result="blur"/>
+  </filter>
+  <filter id="psm_f1" x="21.393%" y="-114.035%" width="267%" height="267%" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+    <feFlood flood-opacity="0" result="bg"/><feBlend mode="normal" in="SourceGraphic" in2="bg" result="shape"/>
+    <feGaussianBlur stdDeviation="52" result="blur"/>
+  </filter>
+  <mask id="psm_m0" style="mask-type:alpha" maskUnits="userSpaceOnUse" x="11" y="11" width="158" height="158">
+    <rect x="169" y="169" width="157.999" height="157.999" rx="32" transform="rotate(-180 169 169)" fill="#0A0C1E"/>
+  </mask>
+  <mask id="psm_m1" style="mask-type:alpha" maskUnits="userSpaceOnUse" x="11" y="11" width="158" height="158">
+    <rect x="10.9999" y="11" width="157.999" height="157.999" rx="32" fill="#0A0C1E"/>
+  </mask>
+  <linearGradient id="psm_bg1" x1="0%" y1="0%" x2="100%" y2="0%">
+    <stop offset="0%" stop-color="#FF6C37"/><stop offset="100%" stop-color="#FF6C37" stop-opacity="0"/>
+  </linearGradient>
+  <linearGradient id="psm_bg2" x1="0%" y1="0%" x2="100%" y2="0%">
+    <stop offset="0%" stop-color="#FF6C37"/><stop offset="100%" stop-color="#FF6C37" stop-opacity="0"/>
+  </linearGradient>
+</defs>
+<rect x="11.5" y="11.5" width="156.999" height="156.999" rx="31.5" fill="#171717" stroke="#2D2D2D"/>
+<rect x="11.5" y="11.5" width="156.999" height="156.999" rx="31.5" stroke="url(#psm_bg1)"/>
+<rect x="168.5" y="168.5" width="156.999" height="156.999" rx="31.5" transform="rotate(-180 168.5 168.5)" stroke="url(#psm_bg2)"/>
+<g mask="url(#psm_m0)"><g filter="url(#psm_f0)"><circle cx="25.107" cy="160.536" r="39.5" fill="#FF6C37"/></g></g>
+<g mask="url(#psm_m1)"><g filter="url(#psm_f1)"><circle cx="154.893" cy="19.464" r="39.5" fill="#FF6C37"/></g></g>
+<!-- Postman P logo centered -->
+<g transform="translate(45,38) scale(0.352)">
+  <path d="M254.953 144.253C263.911 74.122 214.384 10.005 144.381 1.047 74.378-7.912 10.005 41.616 1.047 111.619c-8.959 70.003 40.569 134.247 110.572 143.334 70.131 8.959 134.247-40.569 143.334-110.7z" fill="#FF6C37"/>
+  <g transform="translate(50.181 45.199)">
+    <path d="M124.018 36.985L70.012 90.992 54.783 75.762C107.893 22.652 113.14 27.259 124.018 36.985z" fill="#fff"/>
+    <path d="M85.497 106.477L70.78 91.76l54.006-54.007c14.461 14.589-7.167 38.265-39.289 68.724z" fill="#fff"/>
+    <path d="M55.039 76.146l10.878 10.878c.256.256.256.512 0 .768l-.128.128-22.524 4.863c-1.152.128-2.176-.64-2.432-1.792-.128-.64.128-1.28.512-1.664l13.054-13.054c.256-.256.64-.384.64-.128z" fill="#fff"/>
+    <path d="M152.557 7.039l-.256-.256-18.173 18.173 14.461 14.461c1.407-1.28 2.815-2.304 3.967-3.456 8.19-8.062 8.19-21.116.001-28.922z" fill="#fff"/>
+    <path d="M152.941 7.423l-.256-.256L134.385 25.21l14.461 14.461c1.407-1.28 2.815-2.304 3.967-3.456 8.19-8.062 8.318-21.116.128-28.792z" fill="#fff"/>
+    <path d="M126.194 39.289c-3.071-3.071-8.062-3.071-11.134 0L66.813 87.536l8.062 8.062 51.063-44.792c3.327-2.815 3.583-7.806.768-11.134-.256-.128-.384-.256-.512-.383z" fill="#fff"/>
+  </g>
+</g>
+</svg>

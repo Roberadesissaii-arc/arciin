@@ -16,7 +16,7 @@ import { libraryGlassCommandPaletteSurface } from "@/lib/library-glass-sheet"
 import { cn } from "@/lib/utils"
 
 const glassInput =
-  "h-10 border-white/[0.1] bg-[rgba(2,2,6,0.72)] text-[rgba(255,255,255,0.95)] placeholder:text-[rgba(255,255,255,0.32)] shadow-inner shadow-black/20 backdrop-blur-md focus-visible:border-white/[0.14] focus-visible:ring-white/15"
+  "h-10 border-border bg-muted/50 text-foreground placeholder:text-muted-foreground shadow-inner shadow-black/[0.04] backdrop-blur-md focus-visible:border-primary/30 focus-visible:ring-primary/15"
 
 function flattenItems(items: NavigationItem[]): NavigationItem[] {
   return items.flatMap((item) => [item, ...(item.children || [])])
@@ -53,11 +53,11 @@ export function CommandPalettePanel({ onClose }: { onClose: () => void }) {
     <div
       className={cn(
         libraryGlassCommandPaletteSurface,
-        "max-h-[min(70vh,440px)] min-h-0 bg-[rgba(4,4,10,0.62)]"
+        "dashboard-main max-h-[min(70vh,440px)] min-h-0"
       )}
     >
-      <div className="border-b border-white/[0.08] bg-black/30 px-3 py-2.5 backdrop-blur-md">
-        <p className="text-xs font-medium text-zinc-500">Jump to</p>
+      <div className="border-b border-zinc-200/80 bg-gradient-to-b from-orange-50/55 via-white/65 to-transparent px-3 py-2.5 backdrop-blur-md">
+        <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Jump to</p>
         <Input
           value={query}
           onChange={(event) => setQuery(event.target.value)}
@@ -74,21 +74,21 @@ export function CommandPalettePanel({ onClose }: { onClose: () => void }) {
               <button
                 key={`${item.href}-${item.title}`}
                 type="button"
-                className="flex w-full items-center justify-between rounded-lg border border-transparent px-3 py-2.5 text-left text-sm text-zinc-100 transition-colors hover:border-white/[0.08] hover:bg-white/[0.06]"
+                className="flex w-full items-center justify-between rounded-xl border border-transparent px-3 py-2.5 text-left text-sm text-foreground transition-colors hover:border-orange-200/50 hover:bg-orange-50/45 hover:shadow-sm"
                 onClick={() => {
                   router.push(item.href)
                   onClose()
                 }}
               >
                 <span className="flex min-w-0 items-center gap-3">
-                  <span className="flex size-8 shrink-0 items-center justify-center rounded-md border border-white/[0.06] bg-white/[0.05] text-zinc-400">
+                  <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-zinc-200/80 bg-white/70 text-zinc-600 shadow-sm">
                     <Icon className="size-4" />
                   </span>
-                  <span className="truncate">{item.title}</span>
+                  <span className="truncate font-medium">{item.title}</span>
                 </span>
                 <Badge
                   variant="outline"
-                  className="ml-2 shrink-0 border-white/[0.1] bg-transparent text-[10px] text-zinc-500"
+                  className="ml-2 shrink-0 border-zinc-200/90 bg-white/60 text-[10px] font-mono text-zinc-500"
                 >
                   {item.href}
                 </Badge>

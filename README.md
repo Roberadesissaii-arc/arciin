@@ -63,16 +63,16 @@ Arciin is a self-hosted private file, library, and media management platform. Th
 
 ```bash
 ./install.sh
-pnpm db:migrate
 pnpm dev
 ```
+
+The installer sets up PostgreSQL, Redis, Node.js, dependencies, applies all database migrations, seeds defaults, and creates storage directories. No separate `db:migrate` step is required.
 
 Optional installer flags:
 
 ```bash
 ARCIIN_UPGRADE_SYSTEM=1 ./install.sh
-ARCIIN_RUN_MIGRATIONS=1 ./install.sh
-ARCIIN_MIGRATION_NAME=my-local-change ARCIIN_RUN_MIGRATIONS=1 ./install.sh
+ARCIIN_SKIP_DB_INIT=1 ./install.sh
 ```
 
 Individual processes:

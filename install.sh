@@ -5,7 +5,6 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEFAULT_NODE_MAJOR=24
 DEFAULT_PNPM_VERSION=10.32.1
-DEFAULT_MIGRATION_NAME="arciin-bootstrap"
 
 log() {
   printf '\n[arciin-install] %s\n' "$1"
@@ -29,6 +28,58 @@ start_service() {
     sudo systemctl enable --now "$service_name" || warn "Could not enable/start ${service_name}"
   else
     sudo service "$service_name" start || warn "Could not start ${service_name}"
+  fi
+}
+
+ensure_postgres_role_and_db() {
+  if ! command -v psql >/dev/null 2>&1; then
+    warn "psql not found; skipping local PostgreSQL role/database setup"
+    return 0
+  fi
+
+  log "Ensuring default local PostgreSQL role and database exist"
+  if sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='arciin'" | grep -q 1; then
+    sudo -u postgres psql -c "ALTER ROLE arciin WITH LOGIN PASSWORD 'arciin' CREATEDB;"
+  else
+    sudo -u postgres psql -c "CREATE ROLE arciin WITH LOGIN PASSWORD 'arciin' CREATEDB;"
+  fi
+
+  if sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='arciin'" | grep -q 1; then
+    sudo -u postgres psql -c "ALTER DATABASE arciin OWNER TO arciin;"
+  else
+    sudo -u postgres psql -c "CREATE DATABASE arciin OWNER arciin;"
+  fi
+
+  sudo -u postgres psql -d arciin -c "GRANT ALL ON SCHEMA public TO arciin;" >/dev/null 2>&1 || true
+  sudo -u postgres psql -d arciin -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO arciin;" >/dev/null 2>&1 || true
+}
+
+ensure_env_file() {
+  if [[ ! -f "${ROOT_DIR}/.env" ]]; then
+    if [[ ! -f "${ROOT_DIR}/.env.example" ]]; then
+      warn ".env.example not found. Cannot create .env automatically."
+      exit 1
+    fi
+    log "Creating .env from .env.example"
+    cp "${ROOT_DIR}/.env.example" "${ROOT_DIR}/.env"
+  else
+    log ".env already exists, leaving it untouched"
+  fi
+}
+
+ensure_session_secret() {
+  local env_file="${ROOT_DIR}/.env"
+  [[ -f "${env_file}" ]] || return 0
+
+  if grep -q '^SESSION_SECRET=change-this-in-production' "${env_file}" 2>/dev/null; then
+    if command -v openssl >/dev/null 2>&1; then
+      local secret
+      secret="$(openssl rand -base64 32 | tr -d '\n')"
+      log "Generating a random SESSION_SECRET in .env"
+      sed -i "s|^SESSION_SECRET=.*|SESSION_SECRET=${secret}|" "${env_file}"
+    else
+      warn "openssl not found; update SESSION_SECRET in .env before production use"
+    fi
   fi
 }
 
@@ -95,17 +146,8 @@ log "Enabling pnpm through Corepack"
 corepack enable pnpm
 corepack prepare "pnpm@${DEFAULT_PNPM_VERSION}" --activate
 
-if [[ ! -f "${ROOT_DIR}/.env" ]]; then
-  if [[ ! -f "${ROOT_DIR}/.env.example" ]]; then
-    warn ".env.example not found. Cannot create .env automatically."
-    exit 1
-  fi
-
-  log "Creating .env from .env.example"
-  cp "${ROOT_DIR}/.env.example" "${ROOT_DIR}/.env"
-else
-  log ".env already exists, leaving it untouched"
-fi
+ensure_env_file
+ensure_session_secret
 
 log "Starting Redis and PostgreSQL"
 start_service redis-server
@@ -127,20 +169,7 @@ if command -v pg_isready >/dev/null 2>&1; then
   fi
 fi
 
-if command -v psql >/dev/null 2>&1; then
-  log "Ensuring default local PostgreSQL role and database exist"
-  if sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='arciin'" | grep -q 1; then
-    sudo -u postgres psql -c "ALTER ROLE arciin WITH LOGIN PASSWORD 'arciin' CREATEDB;"
-  else
-    sudo -u postgres psql -c "CREATE ROLE arciin WITH LOGIN PASSWORD 'arciin' CREATEDB;"
-  fi
-
-  if sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='arciin'" | grep -q 1; then
-    sudo -u postgres psql -c "ALTER DATABASE arciin OWNER TO arciin;"
-  else
-    sudo -u postgres psql -c "CREATE DATABASE arciin OWNER arciin;"
-  fi
-fi
+ensure_postgres_role_and_db
 
 cd "${ROOT_DIR}"
 
@@ -150,33 +179,53 @@ pnpm install
 log "Generating Prisma client"
 pnpm db:generate
 
-if [[ "${ARCIIN_RUN_MIGRATIONS:-0}" == "1" ]]; then
-  MIGRATION_NAME="${ARCIIN_MIGRATION_NAME:-${DEFAULT_MIGRATION_NAME}}"
-  log "Running database migrations"
-  pnpm exec prisma migrate dev --name "${MIGRATION_NAME}"
+if [[ "${ARCIIN_SKIP_DB_INIT:-0}" == "1" ]]; then
+  warn "Skipping database migrations, seed, and storage dirs (ARCIIN_SKIP_DB_INIT=1)"
 else
-  log "Skipping database migrations. Set ARCIIN_RUN_MIGRATIONS=1 to run them automatically."
+  bash "${ROOT_DIR}/scripts/arciin-init.sh"
 fi
 
-cat <<'EOF'
+chmod +x "${ROOT_DIR}/scripts/arciin-init.sh" "${ROOT_DIR}/scripts/entrypoint-api.sh" 2>/dev/null || true
+
+SETUP_TOKEN="$(grep '^ARCIIN_SETUP_TOKEN=' "${ROOT_DIR}/.env" 2>/dev/null | cut -d= -f2- || echo 'dev-token')"
+PUBLIC_URL="$(grep '^ARCIIN_PUBLIC_URL=' "${ROOT_DIR}/.env" 2>/dev/null | cut -d= -f2- || echo 'http://localhost:3000')"
+
+cat <<EOF
 
 [arciin-install] Setup complete.
 
-Next steps:
-  1. Review .env and adjust DATABASE_URL / REDIS_URL if you use non-default services.
-  2. Run: pnpm db:migrate
-  3. Start the app: pnpm dev
+Arciin is ready to run. No manual migration step is required.
 
-Optional:
-  ARCIIN_UPGRADE_SYSTEM=1 ./install.sh
-  ARCIIN_RUN_MIGRATIONS=1 ./install.sh
-  ARCIIN_MIGRATION_NAME=my-local-change ARCIIN_RUN_MIGRATIONS=1 ./install.sh
+Start the app:
+  pnpm dev
+
+Then open:
+  ${PUBLIC_URL}
+
+First-time setup:
+  Use setup token: ${SETUP_TOKEN}
+  (from ARCIIN_SETUP_TOKEN in .env)
+
+What was initialized automatically:
+  - PostgreSQL role/database: arciin / arciin
+  - All Prisma migrations (including chat feedback, model profiles, webhooks, etc.)
+  - Seed data (default integrations placeholder)
+  - Storage folders under ARCIIN_DATA_DIR (objects, libraries, thumbnails, temp, logs)
+  - Prisma client generated
+
+Optional installer flags:
+  ARCIIN_UPGRADE_SYSTEM=1 ./install.sh     # apt upgrade before install
+  ARCIIN_SKIP_DB_INIT=1 ./install.sh     # skip migrate/seed/storage (advanced)
 
 Health checks:
   redis-cli ping
   pg_isready -h localhost -p 5432
 
+Docker (alternative):
+  cp .env.example .env && docker compose up --build -d
+  (API container runs migrations on startup)
+
 Notes:
-  This installer is intended for local development on Debian/Ubuntu/WSL.
-  Production/self-hosted installs should use Docker Compose later.
+  - Intended for local development on Debian/Ubuntu/WSL.
+  - Review .env for SESSION_SECRET and ARCIIN_SETUP_TOKEN before production.
 EOF

@@ -34,10 +34,10 @@ export default function SupportPage() {
       <div className="grid gap-4 md:grid-cols-2">
         {resources.map((r) => (
           <a key={r.title} href={r.href} target={r.href.startsWith("http") ? "_blank" : undefined} rel="noopener noreferrer">
-            <Card className="h-full border-white/8 bg-white/[0.02] transition hover:border-[#FF4B33]/15 hover:bg-white/[0.03]">
+            <Card className="h-full border-border bg-card transition hover:border-[#FF4B33]/15 hover:bg-muted/30">
               <CardHeader>
-                <CardTitle className="text-white">{r.title}</CardTitle>
-                <CardDescription className="text-zinc-400">{r.description}</CardDescription>
+                <CardTitle className="text-foreground">{r.title}</CardTitle>
+                <CardDescription className="text-zinc-600">{r.description}</CardDescription>
               </CardHeader>
               <CardContent className="text-sm text-zinc-500">Open →</CardContent>
             </Card>

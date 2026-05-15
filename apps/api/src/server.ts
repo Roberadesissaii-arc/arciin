@@ -1,7 +1,11 @@
 import Fastify from "fastify"
 
+import { registerAdminRoutes } from "@/modules/admin/routes"
+import { registerChatRoutes } from "@/modules/chat/routes"
+import { registerModelRoutes } from "@/modules/models/routes"
 import { registerActivityRoutes } from "@/modules/activity/routes"
 import { registerApiKeyRoutes } from "@/modules/api-keys/routes"
+import { registerAppDatabaseRoutes } from "@/modules/app-databases/routes"
 import { registerAssetRoutes } from "@/modules/assets/routes"
 import { registerAuthRoutes } from "@/modules/auth/routes"
 import { registerFolderRoutes } from "@/modules/folders/routes"
@@ -11,6 +15,8 @@ import { registerJobRoutes } from "@/modules/jobs/routes"
 import { registerLibraryRoutes } from "@/modules/libraries/routes"
 import { registerSettingsRoutes } from "@/modules/settings/routes"
 import { registerUploadRoutes } from "@/modules/uploads/routes"
+import { registerWebhookRoutes } from "@/modules/webhooks/routes"
+import { registerApiProtection } from "@/plugins/api-protection"
 import { registerCookies } from "@/plugins/cookies"
 import { registerCors } from "@/plugins/cors"
 import { registerMultipart } from "@/plugins/multipart"
@@ -30,6 +36,7 @@ export async function createServer() {
   await registerMultipart(fastify)
   await registerPrisma(fastify)
   await registerRedis(fastify)
+  await registerApiProtection(fastify)
   await registerSocket(fastify)
   await ensureStorageDirectories()
 
@@ -54,7 +61,12 @@ export async function createServer() {
       await registerJobRoutes(api)
       await registerApiKeyRoutes(api)
       await registerSettingsRoutes(api)
+      await registerWebhookRoutes(api)
       await registerIntegrationRoutes(api)
+      await registerAppDatabaseRoutes(api)
+      await registerAdminRoutes(api)
+      await registerModelRoutes(api)
+      await registerChatRoutes(api)
     },
     {
       prefix: "/api",

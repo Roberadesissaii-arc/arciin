@@ -1,13 +1,10 @@
+import { JobsPageIntro } from "@/components/dashboard/jobs-page-intro"
 import { JobsList } from "@/components/dashboard/jobs-list"
-import { PageHeader } from "@/components/app-shell/page-header"
 
 export default function JobsPage() {
   return (
-    <div className="space-y-6">
-      <PageHeader
-        title="Jobs"
-        description="Background processing, cleanup passes, and future integration sync work."
-      />
+    <div className="space-y-6 pb-6">
+      <JobsPageIntro />
       <JobsList />
     </div>
   )

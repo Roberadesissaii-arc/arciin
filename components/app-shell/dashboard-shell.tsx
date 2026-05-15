@@ -1,6 +1,7 @@
 import { AppSidebar } from "@/components/app-shell/app-sidebar"
 import { DashboardMobileSidebarButton } from "@/components/app-shell/dashboard-mobile-sidebar-button"
 import { DashboardHeader } from "@/components/app-shell/dashboard-header"
+import { UploadOverlay } from "@/components/uploads/upload-overlay"
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import type { AuthSession } from "@/lib/types/models"
@@ -20,12 +21,18 @@ export function DashboardShell({
           className="relative z-10 flex min-h-0 flex-1 flex-row overflow-hidden bg-transparent"
         >
           <AppSidebar auth={auth} />
-          <SidebarInset className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          <SidebarInset className="relative dashboard-main flex min-h-0 flex-1 flex-col overflow-hidden bg-background text-foreground md:peer-data-[variant=inset]:!border-border md:peer-data-[variant=inset]:!bg-background md:peer-data-[variant=inset]:!text-foreground md:peer-data-[variant=inset]:!shadow-sm md:peer-data-[variant=inset]:!ring-zinc-200/40 md:peer-data-[variant=inset]:!backdrop-blur-none">
             <DashboardMobileSidebarButton />
             <DashboardHeader />
-            <div className="scrollbar-hide flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden px-3 py-4 sm:px-4 lg:px-5">
-              <div className="flex w-full min-w-0 flex-1 flex-col gap-6">{children}</div>
+            <div className="scrollbar-hide flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden bg-zinc-50/80 px-3 py-4 sm:px-4 lg:px-5">
+              <div
+                id="dashboard-scaled-content"
+                className="flex w-full min-h-0 min-w-0 flex-1 flex-col gap-6"
+              >
+                {children}
+              </div>
             </div>
+            <UploadOverlay />
           </SidebarInset>
         </SidebarProvider>
       </TooltipProvider>

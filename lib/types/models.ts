@@ -192,6 +192,41 @@ export type ApiKeySummary = {
   revokedAt?: string | null
 }
 
+export type AppDatabaseSummary = {
+  id: string
+  name: string
+  slug: string
+  description?: string | null
+  createdById: string
+  folderCount: number
+  createdAt: string
+  updatedAt: string
+}
+
+export type AppDatabaseFolderSummary = {
+  id: string
+  databaseId: string
+  parentFolderId?: string | null
+  name: string
+  slug: string
+  pathCache: string
+  recordCount: number
+  childFolderCount: number
+  createdAt: string
+  updatedAt: string
+  deletedAt?: string | null
+}
+
+export type AppDatabaseRecordSummary = {
+  id: string
+  folderId: string
+  name: string
+  payload: Record<string, unknown>
+  mimeType?: string | null
+  createdAt: string
+  updatedAt: string
+}
+
 export type IntegrationSummary = {
   id: string
   type: IntegrationType
@@ -200,6 +235,12 @@ export type IntegrationSummary = {
   config: Record<string, unknown>
   createdAt: string
   updatedAt: string
+}
+
+export type GeneralSettings = {
+  instanceName: string
+  version: string
+  initializedAt: string | null
 }
 
 export type StorageSettings = {
@@ -221,6 +262,104 @@ export type RemoteAccessSettings = {
   reverseProxyEnabled: boolean
   cloudflareTunnelEnabled: boolean
 }
+
+export type SecuritySettings = {
+  publicSignupEnabled: boolean
+  sessionTimeoutMinutes: number
+  loginAlertsEnabled: boolean
+  maxFailedLogins: number
+  /** Single IPs or CIDR strings; enforced at edge when supported. */
+  ipAllowlist: string[]
+  ipBlocklist: string[]
+  /** When true, only allowlisted IPs may use the HTTP API (after enforcement ships). */
+  enforceIpAllowlist: boolean
+  /** 0 = disabled. Enforced on all /api routes (Redis). */
+  apiGlobalRequestsPerMinute: number
+  /** 0 = disabled. Enforced per API key on Bearer auth. */
+  apiKeyRequestsPerMinute: number
+  /** When true, POST /api-keys rejects keys without an expiresAt date. */
+  requireApiKeyExpiry: boolean
+  /** 0 = unlimited. POST /api-keys rejects expiry dates beyond this many days. */
+  maxApiKeyExpiryDays: number
+}
+
+export type AiEmojiUsage = "none" | "low" | "medium" | "high"
+
+export type AiSettings = {
+  agent: boolean
+  autonomy: boolean
+  planning: boolean
+  showThinking: boolean
+  emojiUsage: AiEmojiUsage
+}
+
+/** Subset of Ollama `POST /api/show` JSON (fields vary by version). */
+export type OllamaModelShowData = {
+  parameters?: string
+  license?: string
+  template?: string
+  capabilities?: string[]
+  modified_at?: string
+  details?: {
+    parent_model?: string
+    format?: string
+    family?: string
+    families?: string[]
+    parameter_size?: string
+    quantization_level?: string
+  }
+  model_info?: Record<string, unknown>
+}
+
+export type AiSecuritySettings = {
+  blockInjection: boolean
+  redactSecrets: boolean
+  redactPII: boolean
+  readOnlyTools: boolean
+  requireToolApproval: boolean
+  hideLibraryNames: boolean
+  hideAssetCounts: boolean
+  hideStorageSize: boolean
+  hideUploadDates: boolean
+}
+
+export type ModelProvider =
+  | "openai"
+  | "anthropic"
+  | "ollama"
+  | "gemini"
+  | "deepseek"
+  | "grok"
+  | "meta"
+  | "qwen"
+  | "elevenlabs"
+  | "custom"
+
+export type ModelProfile = {
+  id: string
+  provider: ModelProvider | string
+  displayName: string
+  apiKeyMasked: string | null
+  hasApiKey: boolean
+  baseUrl: string | null
+  defaultModel: string | null
+  isDefault: boolean
+  isEnabled: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export type CreateModelProfileInput = {
+  provider: string
+  displayName: string
+  apiKey?: string | null
+  baseUrl?: string | null
+  defaultModel?: string | null
+  isDefault?: boolean
+  isEnabled?: boolean
+}
+
+export type UpdateModelProfileInput = Partial<CreateModelProfileInput>
 
 export type HealthStatus = {
   api: "online" | "offline"
@@ -249,6 +388,26 @@ export type LoginInput = {
   password: string
 }
 
+export type ChangePasswordInput = {
+  currentPassword: string
+  newPassword: string
+}
+
+/** PATCH /auth/profile — at least one field required (validated server-side). */
+export type UpdateProfileInput = {
+  name?: string
+  email?: string
+}
+
+export type SessionDetail = {
+  id: string
+  userAgent: string | null
+  ipAddress: string | null
+  createdAt: string
+  expiresAt: string
+  isCurrent: boolean
+}
+
 export type CreateFolderInput = {
   libraryId: string
   name: string
@@ -264,4 +423,43 @@ export type CreateApiKeyInput = {
 export type CreateApiKeyResult = {
   apiKey: ApiKeySummary
   rawKey: string
+}
+
+export type WebhookEndpointSummary = {
+  id: string
+  name: string
+  url: string
+  enabled: boolean
+  eventTypes: string[]
+  secretPrefix: string
+  createdAt: string
+  updatedAt: string
+}
+
+export type WebhookDeliverySummary = {
+  id: string
+  endpointId: string
+  eventType: string
+  status: "PENDING" | "SUCCESS" | "FAILED"
+  responseCode?: number | null
+  responseBody?: string | null
+  durationMs?: number | null
+  error?: string | null
+  createdAt: string
+}
+
+export type CreateWebhookEndpointInput = {
+  name: string
+  url: string
+  enabled?: boolean
+  eventTypes: string[]
+}
+
+export type CreateWebhookEndpointResult = {
+  endpoint: WebhookEndpointSummary
+  secret: string
+}
+
+export type UpdateWebhookEndpointInput = Partial<CreateWebhookEndpointInput> & {
+  rotateSecret?: boolean
 }

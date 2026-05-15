@@ -4,6 +4,7 @@ import { hash, verify } from "@node-rs/argon2"
 import type { FastifyReply, FastifyRequest } from "fastify"
 
 import { apiConfig } from "@/config"
+import { enforceApiKeyRateLimit } from "@/services/security/api-key-rate-limit"
 
 export async function hashPassword(password: string) {
   return hash(password, {
@@ -22,6 +23,25 @@ export function hashToken(token: string) {
   return createHash("sha256").update(token).digest("hex")
 }
 
+export function hashApiKey(rawKey: string) {
+  return createHash("sha256").update(rawKey).digest("hex")
+}
+
+/** API keys: `admin` or `appdata:admin` satisfy any app-data scope check. */
+export function scopeAllows(scopes: string[] | null | undefined, required: string) {
+  if (!scopes?.length) {
+    return false
+  }
+  if (scopes.includes("admin") || scopes.includes("appdata:admin")) {
+    return true
+  }
+  return scopes.includes(required)
+}
+
+export function scopeAllowsAny(scopes: string[] | null | undefined, required: string[]) {
+  return required.some((r) => scopeAllows(scopes, r))
+}
+
 export function generateOpaqueToken(bytes = 32) {
   return randomBytes(bytes).toString("hex")
 }
@@ -35,11 +55,17 @@ export async function createSession(
   userId: string,
   options?: {
     expiresInDays?: number
+    /** Session lifetime from now (overrides expiresInDays when set). */
+    expiresInMinutes?: number
   }
 ) {
   const rawToken = generateOpaqueToken()
   const expiresAt = new Date()
-  expiresAt.setDate(expiresAt.getDate() + (options?.expiresInDays ?? 30))
+  if (options?.expiresInMinutes != null && options.expiresInMinutes > 0) {
+    expiresAt.setMinutes(expiresAt.getMinutes() + options.expiresInMinutes)
+  } else {
+    expiresAt.setDate(expiresAt.getDate() + (options?.expiresInDays ?? 30))
+  }
 
   const session = await request.server.prisma.session.create({
     data: {
@@ -114,6 +140,129 @@ export async function authenticate(request: FastifyRequest, reply: FastifyReply)
   request.auth = {
     user: session.user,
     session,
+    apiKeyId: null,
+    apiKeyScopes: null,
+  }
+}
+
+/** Cookie session first, else `Authorization: Bearer arc_…` API key. */
+export async function authenticateFlexible(request: FastifyRequest, reply: FastifyReply) {
+  const session = await resolveSession(request)
+
+  if (session) {
+    request.auth = {
+      user: session.user,
+      session,
+      apiKeyId: null,
+      apiKeyScopes: null,
+    }
+    return
+  }
+
+  const authHeader = request.headers.authorization
+  if (!authHeader?.toLowerCase().startsWith("bearer ")) {
+    reply.status(401).send({
+      error: {
+        code: "UNAUTHENTICATED",
+        message: "Sign in or provide Authorization: Bearer <api_key>.",
+      },
+    })
+    return
+  }
+
+  const token = authHeader.slice(7).trim()
+  if (!token.startsWith("arc_")) {
+    reply.status(401).send({
+      error: {
+        code: "UNAUTHENTICATED",
+        message: "Invalid API key format.",
+      },
+    })
+    return
+  }
+
+  const row = await request.server.prisma.apiKey.findFirst({
+    where: {
+      keyHash: hashApiKey(token),
+      revokedAt: null,
+    },
+    include: {
+      user: true,
+    },
+  })
+
+  if (!row || row.user.status !== "ACTIVE") {
+    reply.status(401).send({
+      error: {
+        code: "UNAUTHENTICATED",
+        message: "Invalid or revoked API key.",
+      },
+    })
+    return
+  }
+
+  if (row.expiresAt && row.expiresAt < new Date()) {
+    reply.status(401).send({
+      error: {
+        code: "UNAUTHENTICATED",
+        message: "API key has expired.",
+      },
+    })
+    return
+  }
+
+  await request.server.prisma.apiKey.update({
+    where: { id: row.id },
+    data: { lastUsedAt: new Date() },
+  })
+
+  request.auth = {
+    user: row.user,
+    session: null,
+    apiKeyId: row.id,
+    apiKeyScopes: row.scopes,
+  }
+
+  const allowed = await enforceApiKeyRateLimit(request, reply)
+  if (!allowed) {
+    request.auth = undefined
+    return
+  }
+}
+
+export function requireSessionRolesOrApiKeyScopes(
+  sessionRoles: Array<"OWNER" | "ADMIN" | "MEMBER" | "VIEWER">,
+  apiKeyScopesAnyOf: string[]
+) {
+  return async (request: FastifyRequest, reply: FastifyReply) => {
+    await authenticateFlexible(request, reply)
+
+    if (!request.auth) {
+      return
+    }
+
+    if (request.auth.session) {
+      if (!sessionRoles.includes(request.auth.user.role)) {
+        reply.status(403).send({
+          error: {
+            code: "FORBIDDEN",
+            message: "You do not have access to this resource.",
+          },
+        })
+        return
+      }
+      return
+    }
+
+    if (!scopeAllowsAny(request.auth.apiKeyScopes, apiKeyScopesAnyOf)) {
+      reply.status(403).send({
+        error: {
+          code: "FORBIDDEN",
+          message: "This API key is missing a required scope.",
+        },
+      })
+      return
+    }
   }
 }
 

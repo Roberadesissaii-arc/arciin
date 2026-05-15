@@ -2,6 +2,8 @@ FROM node:20-alpine
 
 WORKDIR /app
 
+RUN apk add --no-cache bash postgresql-client
+
 RUN corepack enable
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
@@ -21,4 +23,6 @@ ENV API_PORT=4000
 
 EXPOSE 4000
 
-CMD ["pnpm", "tsx", "--tsconfig", "apps/api/tsconfig.json", "apps/api/src/index.ts"]
+RUN chmod +x scripts/arciin-init.sh scripts/entrypoint-api.sh
+
+CMD ["sh", "scripts/entrypoint-api.sh"]

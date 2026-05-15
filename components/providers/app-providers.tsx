@@ -1,13 +1,13 @@
 "use client"
 
 import { QueryProvider } from "@/components/providers/query-provider"
-import { Toaster } from "@/components/ui/sonner"
+import { AppearanceToaster } from "@/components/providers/appearance-toaster"
 
 export function AppProviders({ children }: { children: React.ReactNode }) {
   return (
     <QueryProvider>
       {children}
-      <Toaster />
+      <AppearanceToaster />
     </QueryProvider>
   )
 }

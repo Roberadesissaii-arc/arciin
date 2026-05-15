@@ -97,10 +97,10 @@ export async function registerInstanceRoutes(fastify: FastifyInstance) {
           instanceName: parsed.data.instanceName,
           storageRoot,
           publicUrl: apiConfig.ARCIIN_PUBLIC_URL,
-          remoteAccessMode: "local",
+          remoteAccessMode: "cloudflare-tunnel",
           remoteAccessConfig: {
             reverseProxyEnabled: false,
-            cloudflareTunnelEnabled: false,
+            cloudflareTunnelEnabled: true,
           },
           initializedAt: new Date(),
         },

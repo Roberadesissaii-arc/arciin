@@ -52,6 +52,11 @@ export async function registerUploadRoutes(fastify: FastifyInstance) {
         return
       }
 
+      const { targetLibraryId, targetFolderId } = (request.query ?? {}) as {
+        targetLibraryId?: string
+        targetFolderId?: string
+      }
+
       const instance = await fastify.prisma.instanceConfig.findFirst()
       const storageRoot = instance?.storageRoot
       const tempResult = await writeMultipartToTemp(file, storageRoot)
@@ -62,14 +67,15 @@ export async function registerUploadRoutes(fastify: FastifyInstance) {
         file.mimetype
       )
 
-      const targetLibrary = await fastify.prisma.library.findFirst({
-        where: {
-          kind: libraryKindForMediaType(analysis.mediaType),
-        },
-      }) || await fastify.prisma.library.findFirst({
-        where: {
-          kind: "INBOX",
-        },
+      // If caller specifies a library, use it — otherwise classify by media type
+      const targetLibrary = (
+        targetLibraryId
+          ? await fastify.prisma.library.findUnique({ where: { id: targetLibraryId } })
+          : null
+      ) ?? await fastify.prisma.library.findFirst({
+        where: { kind: libraryKindForMediaType(analysis.mediaType) },
+      }) ?? await fastify.prisma.library.findFirst({
+        where: { kind: "INBOX" },
       })
 
       if (!targetLibrary) {
@@ -120,6 +126,7 @@ export async function registerUploadRoutes(fastify: FastifyInstance) {
       const asset = await fastify.prisma.asset.create({
         data: {
           libraryId: targetLibrary.id,
+          folderId: targetFolderId ?? null,
           storageObjectId: storageObject.id,
           ownerId: request.auth.user.id,
           filename: `${tempResult.checksumSha256}.${analysis.extension || "bin"}`,
@@ -212,6 +219,17 @@ export async function registerUploadRoutes(fastify: FastifyInstance) {
           destination: targetLibrary.name,
         },
       })
+
+      // Always emit asset.created so the Events monitor shows every upload
+      await fastify.publishRealtimeEvent(
+        buildRealtimeEvent("asset.created", {
+          userId: request.auth.user.id,
+          libraryId: targetLibrary.id,
+          assetId: asset.id,
+          message: `${file.filename} added to ${targetLibrary.name}.`,
+          data: { mediaType: analysis.mediaType, destination: targetLibrary.name },
+        })
+      )
 
       if (!requiresProcessing) {
         await fastify.publishRealtimeEvent(

@@ -11,6 +11,27 @@ export const documentExtensions = new Set([
   "xlsx",
   "ppt",
   "pptx",
+  "pages",
+  "numbers",
+  "key",
+  "epub",
+])
+
+const documentMimeTypes = new Set([
+  "application/pdf",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.ms-excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/vnd.ms-powerpoint",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  "application/vnd.oasis.opendocument.text",
+  "application/vnd.oasis.opendocument.spreadsheet",
+  "application/epub+zip",
+  "text/plain",
+  "text/csv",
+  "text/rtf",
+  "application/rtf",
 ])
 
 export const archiveExtensions = new Set(["zip", "rar", "7z", "tar", "gz"])
@@ -35,7 +56,7 @@ export function inferMediaType(mimeType?: string | null, filename?: string | nul
     return "AUDIO"
   }
 
-  if (mimeType === "application/pdf" || documentExtensions.has(extension)) {
+  if (documentMimeTypes.has(mimeType ?? "") || documentExtensions.has(extension)) {
     return "DOCUMENT"
   }
 

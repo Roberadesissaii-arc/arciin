@@ -10,10 +10,10 @@ export function QuickAccessCard() {
   const librariesQuery = useLibraries()
 
   return (
-    <Card className="border-white/8 bg-white/[0.02]">
+    <Card className="border-border bg-card">
       <CardHeader>
-        <CardTitle className="text-white">Quick access</CardTitle>
-        <CardDescription className="text-zinc-400">
+        <CardTitle className="text-foreground">Quick access</CardTitle>
+        <CardDescription className="text-muted-foreground">
           Jump straight into the libraries you touch most.
         </CardDescription>
       </CardHeader>
@@ -22,14 +22,14 @@ export function QuickAccessCard() {
           <Link
             key={library.id}
             href={`/${library.slug}`}
-            className="flex items-center justify-between rounded-2xl border border-border/60 bg-muted/15 px-4 py-3 text-sm text-foreground transition-colors hover:border-border hover:bg-muted/30"
+            className="flex items-center justify-between rounded-2xl border border-border bg-muted/40 px-4 py-3 text-sm text-foreground transition-colors hover:border-border hover:bg-muted/60"
           >
             <span>{library.name}</span>
-            <ArrowUpRight className="size-4 text-zinc-500" />
+            <ArrowUpRight className="size-4 text-muted-foreground" />
           </Link>
         ))}
         {!librariesQuery.isLoading && !(librariesQuery.data || []).length ? (
-          <div className="rounded-2xl border border-white/8 bg-black/20 p-4 text-sm text-zinc-400">
+          <div className="rounded-2xl border border-border bg-muted/40 p-4 text-sm text-muted-foreground">
             Claim the instance and create default libraries to populate quick access.
           </div>
         ) : null}

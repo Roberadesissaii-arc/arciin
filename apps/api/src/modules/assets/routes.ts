@@ -5,14 +5,16 @@ import path from "node:path"
 import type { FastifyInstance } from "fastify"
 import { z } from "zod"
 
+import { buildRealtimeEvent } from "@/services/events/publish-event"
 import { recordActivity } from "@/services/activity/record-activity"
 import { requireRole } from "@/services/security/auth"
 import { serializeAsset } from "@/services/serializers"
 import { getStoragePaths } from "@/services/storage/local-storage"
 
 const assetUpdateSchema = z.object({
-  title: z.string().optional(),
-  description: z.string().optional(),
+  title: z.string().max(200).optional(),
+  description: z.string().max(2000).optional(),
+  originalFilename: z.string().min(1).max(255).optional(),
 })
 
 const assetMoveSchema = z.object({
@@ -33,32 +35,44 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
           folderId: z.string().optional(),
           mediaType: z.string().optional(),
           search: z.string().optional(),
+          ids: z.string().optional(),
         })
         .parse(request.query)
 
+      const idList = query.ids
+        ? query.ids.split(",").map((s) => s.trim()).filter(Boolean).slice(0, 20)
+        : undefined
+
       const assets = await fastify.prisma.asset.findMany({
-        where: {
-          deletedAt: null,
-          libraryId: query.libraryId,
-          folderId: query.folderId,
-          mediaType: query.mediaType as never,
-          OR: query.search
-            ? [
-                {
-                  originalFilename: {
-                    contains: query.search,
-                    mode: "insensitive",
-                  },
-                },
-                {
-                  title: {
-                    contains: query.search,
-                    mode: "insensitive",
-                  },
-                },
-              ]
-            : undefined,
-        },
+        where: idList?.length
+          ? {
+              deletedAt: null,
+              id: { in: idList },
+            }
+          : {
+              deletedAt: null,
+              ...(query.libraryId ? { libraryId: query.libraryId } : {}),
+              ...(query.folderId !== undefined ? { folderId: query.folderId } : {}),
+              ...(query.mediaType ? { mediaType: query.mediaType as never } : {}),
+              ...(query.search
+                ? {
+                    OR: [
+                      {
+                        originalFilename: {
+                          contains: query.search,
+                          mode: "insensitive",
+                        },
+                      },
+                      {
+                        title: {
+                          contains: query.search,
+                          mode: "insensitive",
+                        },
+                      },
+                    ],
+                  }
+                : {}),
+            },
         orderBy: {
           createdAt: "desc",
         },
@@ -158,6 +172,14 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
           entityType: "asset",
           entityId: asset.id,
         })
+        await fastify.publishRealtimeEvent(
+          buildRealtimeEvent("asset.deleted", {
+            userId: request.auth.user.id,
+            libraryId: asset.libraryId,
+            assetId: asset.id,
+            message: `${asset.originalFilename} deleted.`,
+          })
+        )
       }
 
       reply.send({
@@ -275,6 +297,15 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
             libraryId: nextLibraryId,
           },
         })
+        await fastify.publishRealtimeEvent(
+          buildRealtimeEvent("asset.moved", {
+            userId: request.auth.user.id,
+            libraryId: nextLibraryId,
+            assetId: asset.id,
+            message: `${asset.originalFilename} moved.`,
+            data: { folderId: nextFolderId, libraryId: nextLibraryId },
+          })
+        )
       }
 
       reply.send({
@@ -290,6 +321,15 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
     },
     async (request, reply) => {
       const params = z.object({ assetId: z.string() }).parse(request.params)
+      const query = z
+        .object({
+          /** Inline playback for `<audio>` / `<video>` previews (attachment breaks many browsers). */
+          inline: z.string().optional(),
+        })
+        .parse(request.query ?? {})
+      const inlinePreview =
+        query.inline === "1" || query.inline === "true"
+
       const asset = await fastify.prisma.asset.findUnique({
         where: {
           id: params.assetId,
@@ -310,12 +350,60 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
       }
 
       reply.header("content-type", asset.mimeType)
-      reply.header(
-        "content-disposition",
-        `attachment; filename="${asset.originalFilename}"`
-      )
+      if (inlinePreview) {
+        reply.header("content-disposition", "inline")
+      } else {
+        reply.header(
+          "content-disposition",
+          `attachment; filename="${asset.originalFilename}"`
+        )
+      }
 
       return reply.send(createReadStream(asset.storageObject.physicalPath))
+    }
+  )
+
+  fastify.post(
+    "/assets/check-duplicates",
+    {
+      preHandler: requireRole(["OWNER", "ADMIN", "MEMBER"]),
+    },
+    async (request, reply) => {
+      const parsed = z
+        .object({
+          filenames: z.array(z.string().min(1).max(255)).min(1).max(50),
+          libraryId: z.string().optional(),
+          folderId: z.string().nullable().optional(),
+        })
+        .safeParse(request.body)
+
+      if (!parsed.success) {
+        reply.status(400).send({
+          error: { code: "VALIDATION_ERROR", message: "Invalid payload." },
+        })
+        return
+      }
+
+      const { filenames, libraryId, folderId } = parsed.data
+
+      const existing = await fastify.prisma.asset.findMany({
+        where: {
+          deletedAt: null,
+          originalFilename: { in: filenames },
+          ...(libraryId ? { libraryId } : {}),
+          ...(folderId !== undefined ? { folderId: folderId ?? null } : {}),
+        },
+        select: { id: true, originalFilename: true },
+      })
+
+      reply.send({
+        data: {
+          duplicates: existing.map((a) => ({
+            filename: a.originalFilename,
+            assetId: a.id,
+          })),
+        },
+      })
     }
   )
 

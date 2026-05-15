@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from "node:crypto"
+import { randomBytes } from "node:crypto"
 
 import type { FastifyInstance } from "fastify"
 import { z } from "zod"
@@ -6,7 +6,7 @@ import { z } from "zod"
 import { API_KEY_SCOPES } from "@arciin/shared"
 
 import { recordActivity } from "@/services/activity/record-activity"
-import { requireRole } from "@/services/security/auth"
+import { hashApiKey, requireRole } from "@/services/security/auth"
 import { serializeApiKey } from "@/services/serializers"
 
 const createApiKeySchema = z.object({
@@ -14,10 +14,6 @@ const createApiKeySchema = z.object({
   scopes: z.array(z.enum(API_KEY_SCOPES)).min(1),
   expiresAt: z.string().optional(),
 })
-
-function hashApiKey(rawKey: string) {
-  return createHash("sha256").update(rawKey).digest("hex")
-}
 
 export async function registerApiKeyRoutes(fastify: FastifyInstance) {
   fastify.get(
@@ -58,6 +54,32 @@ export async function registerApiKeyRoutes(fastify: FastifyInstance) {
           },
         })
         return
+      }
+
+      // Enforce API key lifetime policy from security settings
+      const instance = await fastify.prisma.instanceConfig.findFirst()
+      const raw = (instance?.remoteAccessConfig as Record<string, unknown> | null) ?? {}
+      const sec = (raw.security as Record<string, unknown> | null) ?? {}
+      const requireExpiry = Boolean(sec.requireApiKeyExpiry ?? false)
+      const maxDays = Number(sec.maxApiKeyExpiryDays ?? 0)
+
+      if (requireExpiry && !parsed.data.expiresAt) {
+        reply.status(400).send({
+          error: { code: "KEY_EXPIRY_REQUIRED", message: "This instance requires all API keys to have an expiry date." },
+        })
+        return
+      }
+
+      if (maxDays > 0 && parsed.data.expiresAt) {
+        const expiry = new Date(parsed.data.expiresAt)
+        const maxExpiry = new Date()
+        maxExpiry.setDate(maxExpiry.getDate() + maxDays)
+        if (expiry > maxExpiry) {
+          reply.status(400).send({
+            error: { code: "KEY_EXPIRY_TOO_FAR", message: `API key expiry cannot exceed ${maxDays} days from now.` },
+          })
+          return
+        }
       }
 
       const rawKey = `arc_${randomBytes(24).toString("hex")}`

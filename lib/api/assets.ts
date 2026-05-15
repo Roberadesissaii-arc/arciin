@@ -48,3 +48,30 @@ export function deleteAsset(assetId: string) {
     method: "DELETE",
   })
 }
+
+export function updateAsset(
+  assetId: string,
+  input: { title?: string; description?: string; originalFilename?: string },
+) {
+  return fetchApi<AssetSummary>(`/assets/${assetId}`, { method: "PATCH", body: input })
+}
+
+export function getAssetsByIds(ids: string[], signal?: AbortSignal) {
+  if (ids.length === 0) return Promise.resolve([] as AssetSummary[])
+  return fetchApi<AssetSummary[]>(`/assets?ids=${encodeURIComponent(ids.join(","))}`, {
+    method: "GET",
+    signal,
+  })
+}
+
+export type DuplicateHit = { filename: string; assetId: string }
+
+export function checkDuplicates(
+  filenames: string[],
+  context: { libraryId?: string; folderId?: string | null } = {}
+) {
+  return fetchApi<{ duplicates: DuplicateHit[] }>("/assets/check-duplicates", {
+    method: "POST",
+    body: { filenames, ...context },
+  })
+}

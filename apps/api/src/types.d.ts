@@ -13,9 +13,12 @@ declare module "fastify" {
   }
 
   interface FastifyRequest {
+    /** Session sign-in and/or API key (Bearer). `session` is null when authenticated via API key only. */
     auth?: {
       user: User
-      session: Session
+      session: Session | null
+      apiKeyId?: string | null
+      apiKeyScopes?: string[] | null
     }
   }
 }

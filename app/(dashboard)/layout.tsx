@@ -3,6 +3,7 @@ import { redirect } from "next/navigation"
 import { DashboardShell } from "@/components/app-shell/dashboard-shell"
 import { SystemUnavailable } from "@/components/app-shell/system-unavailable"
 import { SocketProvider } from "@/components/providers/socket-provider"
+import { UserPreferencesProvider } from "@/components/providers/user-preferences-provider"
 import { GlobalDropzoneProvider } from "@/components/uploads/global-dropzone-provider"
 import { getRootRouteState } from "@/lib/utils/route-guards"
 
@@ -34,9 +35,11 @@ export default async function DashboardLayout({
 
   return (
     <DashboardShell auth={state.auth}>
-      <SocketProvider userId={state.auth.user.id}>
-        <GlobalDropzoneProvider>{children}</GlobalDropzoneProvider>
-      </SocketProvider>
+      <UserPreferencesProvider>
+        <SocketProvider userId={state.auth.user.id}>
+          <GlobalDropzoneProvider>{children}</GlobalDropzoneProvider>
+        </SocketProvider>
+      </UserPreferencesProvider>
     </DashboardShell>
   )
 }

@@ -12,15 +12,15 @@ export function LibrarySummaryCard() {
   const librariesQuery = useLibraries()
 
   return (
-    <Card className="border-white/[0.1] bg-white/[0.02]">
+    <Card className="border-border bg-card">
       <CardHeader>
         <div className="flex items-center gap-3">
           <div className={dashboardStatIconShell}>
             <Library className="size-5" />
           </div>
           <div>
-            <CardTitle className="text-white">Library overview</CardTitle>
-            <CardDescription className="text-zinc-400">
+            <CardTitle className="text-foreground">Library overview</CardTitle>
+            <CardDescription className="text-zinc-600">
               Default and custom libraries available on this instance.
             </CardDescription>
           </div>
@@ -34,7 +34,7 @@ export function LibrarySummaryCard() {
             ))}
           </div>
         ) : librariesQuery.isError ? (
-          <div className="rounded-2xl border border-red-500/20 bg-red-500/5 p-4 text-sm text-red-200">
+          <div className="rounded-2xl border border-red-500/20 bg-red-500/5 p-4 text-sm text-red-800">
             {librariesQuery.error instanceof Error
               ? librariesQuery.error.message
               : "Could not load libraries."}

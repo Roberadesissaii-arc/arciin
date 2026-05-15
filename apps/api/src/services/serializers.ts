@@ -1,6 +1,9 @@
 import type {
   ActivityEvent,
   ApiKey,
+  AppDatabase,
+  AppDatabaseFolder,
+  AppDatabaseRecord,
   Asset,
   Folder,
   Integration,
@@ -195,5 +198,54 @@ export function serializeStorageLocation(storageLocation: StorageLocation) {
     isDefault: storageLocation.isDefault,
     createdAt: storageLocation.createdAt.toISOString(),
     updatedAt: storageLocation.updatedAt.toISOString(),
+  }
+}
+
+export function serializeAppDatabase(
+  db: AppDatabase & {
+    _count?: { folders: number; records?: number }
+  }
+) {
+  return {
+    id: db.id,
+    name: db.name,
+    slug: db.slug,
+    description: db.description,
+    createdById: db.createdById,
+    folderCount: db._count?.folders ?? 0,
+    createdAt: db.createdAt.toISOString(),
+    updatedAt: db.updatedAt.toISOString(),
+  }
+}
+
+export function serializeAppDatabaseFolder(
+  folder: AppDatabaseFolder & {
+    _count?: { records?: number; childFolders?: number }
+  }
+) {
+  return {
+    id: folder.id,
+    databaseId: folder.databaseId,
+    parentFolderId: folder.parentFolderId,
+    name: folder.name,
+    slug: folder.slug,
+    pathCache: folder.pathCache,
+    recordCount: folder._count?.records ?? 0,
+    childFolderCount: folder._count?.childFolders ?? 0,
+    createdAt: folder.createdAt.toISOString(),
+    updatedAt: folder.updatedAt.toISOString(),
+    deletedAt: folder.deletedAt?.toISOString() ?? null,
+  }
+}
+
+export function serializeAppDatabaseRecord(record: AppDatabaseRecord) {
+  return {
+    id: record.id,
+    folderId: record.folderId,
+    name: record.name,
+    payload: record.payload,
+    mimeType: record.mimeType,
+    createdAt: record.createdAt.toISOString(),
+    updatedAt: record.updatedAt.toISOString(),
   }
 }

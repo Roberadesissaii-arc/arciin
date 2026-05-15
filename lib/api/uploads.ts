@@ -1,6 +1,19 @@
 import { fetchApi } from "@/lib/api/client"
 import type { UploadSessionSummary } from "@/lib/types/models"
 
+/** POST target for multipart uploads. Prefer the API origin so the browser skips Next.js (proxy buffers bodies with a low default cap). */
+function uploadPostUrl(): string {
+  const origin = process.env.NEXT_PUBLIC_ARCIIN_API_ORIGIN?.replace(/\/$/, "")
+  if (origin) {
+    return `${origin}/api/uploads`
+  }
+  if (process.env.NODE_ENV === "development") {
+    return "http://localhost:4000/api/uploads"
+  }
+  const apiBase = (process.env.NEXT_PUBLIC_API_BASE_URL || "/api").replace(/\/$/, "")
+  return `${apiBase}/uploads`
+}
+
 export function getUploads(signal?: AbortSignal) {
   return fetchApi<UploadSessionSummary[]>("/uploads", {
     method: "GET",
@@ -25,20 +38,25 @@ export function uploadFile(
   file: File,
   options?: {
     onProgress?: (progress: number) => void
+    targetLibraryId?: string
+    targetFolderId?: string
   }
 ) {
-  const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL || "/api"
+  const params = new URLSearchParams()
+  if (options?.targetLibraryId) params.set("targetLibraryId", options.targetLibraryId)
+  if (options?.targetFolderId)  params.set("targetFolderId",  options.targetFolderId)
+  const url = uploadPostUrl() + (params.size ? `?${params.toString()}` : "")
 
   return new Promise<UploadSessionSummary>((resolve, reject) => {
     const formData = new FormData()
     formData.append("file", file)
 
     const request = new XMLHttpRequest()
-    request.open("POST", `${apiBase}/uploads`)
+    request.open("POST", url)
     request.withCredentials = true
 
     request.upload.addEventListener("progress", (event) => {
-      if (event.lengthComputable) {
+      if (event.lengthComputable && event.total > 0) {
         options?.onProgress?.(Math.round((event.loaded / event.total) * 100))
       }
     })
@@ -51,6 +69,7 @@ export function uploadFile(
         }
 
         if (request.status >= 200 && request.status < 300 && payload.data) {
+          options?.onProgress?.(100)
           resolve(payload.data)
           return
         }

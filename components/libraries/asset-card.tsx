@@ -16,27 +16,27 @@ export function AssetCard({ asset }: { asset: AssetSummary }) {
   const deleteAssetMutation = useDeleteAsset()
 
   return (
-    <Card className="min-w-0 border-white/8 bg-white/[0.02] shadow-none">
+    <Card className="min-w-0 border-border bg-card shadow-none">
       <CardHeader className="space-y-0 pb-2 pt-2.5">
         <AssetPreview asset={asset} />
       </CardHeader>
       <CardContent className="space-y-3">
         <div>
-          <CardTitle className="truncate text-white">{asset.originalFilename}</CardTitle>
-          <div className="mt-1 flex min-w-0 flex-wrap items-center gap-2 text-xs text-zinc-400">
+          <CardTitle className="truncate text-foreground">{asset.originalFilename}</CardTitle>
+          <div className="mt-1 flex min-w-0 flex-wrap items-center gap-2 text-xs text-muted-foreground">
             <span>{formatBytes(asset.sizeBytes)}</span>
-            <span className="size-1 shrink-0 rounded-full bg-zinc-700" />
+            <span className="size-1 shrink-0 rounded-full bg-border" />
             <Badge className="rounded-md border-0 bg-primary px-2 py-0 text-[11px] font-semibold text-primary-foreground shadow-none hover:bg-primary/90">
               {asset.mediaType}
             </Badge>
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Badge className="rounded-md border-0 bg-zinc-800 px-2 py-0 text-[11px] font-medium text-zinc-200 shadow-none hover:bg-zinc-800">
+          <Badge className="rounded-md border-0 bg-muted px-2 py-0 text-[11px] font-medium text-muted-foreground shadow-none hover:bg-muted">
             {asset.status}
           </Badge>
           {asset.width && asset.height ? (
-            <Badge className="rounded-md border-0 bg-zinc-800 px-2 py-0 text-[11px] font-medium text-zinc-300 shadow-none hover:bg-zinc-800">
+            <Badge className="rounded-md border-0 bg-muted px-2 py-0 text-[11px] font-medium text-muted-foreground shadow-none hover:bg-muted">
               {asset.width} × {asset.height}
             </Badge>
           ) : null}
@@ -46,7 +46,7 @@ export function AssetCard({ asset }: { asset: AssetSummary }) {
         <Button
           asChild
           variant="outline"
-          className="flex-1 border-white/8 bg-white/[0.02] text-zinc-200 hover:bg-white/[0.05]"
+          className="flex-1 border-border bg-card text-foreground hover:bg-muted/50"
         >
           <a href={`/api/assets/${asset.id}/download`}>
             <Download className="size-4" />
@@ -56,7 +56,7 @@ export function AssetCard({ asset }: { asset: AssetSummary }) {
         <MoveAssetDialog asset={asset} />
         <Button
           variant="outline"
-          className="border-white/8 bg-white/[0.02] text-zinc-200 hover:bg-white/[0.05]"
+          className="border-border bg-card text-foreground hover:bg-muted/50"
           onClick={async () => {
             try {
               await deleteAssetMutation.mutateAsync(asset.id)

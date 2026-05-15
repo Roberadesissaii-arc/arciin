@@ -24,6 +24,17 @@ export async function registerJobRoutes(fastify: FastifyInstance) {
     }
   )
 
+  fastify.delete(
+    "/jobs",
+    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    async (_request, reply) => {
+      const { count } = await fastify.prisma.job.deleteMany({
+        where: { status: { in: ["COMPLETED", "FAILED"] } },
+      })
+      reply.send({ data: { cleared: count } })
+    }
+  )
+
   fastify.get(
     "/jobs/:jobId",
     {

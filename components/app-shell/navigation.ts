@@ -1,23 +1,23 @@
 import type { LucideIcon } from "lucide-react"
 import {
   Activity,
-  Bell,
-  BookOpen,
   Boxes,
   Brain,
+  Code2,
   Database,
   Files,
+  GalleryVerticalEnd,
+  KeyRound,
+  LayoutDashboard,
+  MessageSquare,
   Plug,
-  Puzzle,
-  RadioTower,
   Server,
   Settings,
   ShieldCheck,
   Terminal,
+  User,
   Users,
   Webhook,
-  LayoutDashboard,
-  KeyRound,
 } from "lucide-react"
 
 export type NavigationItem = {
@@ -28,115 +28,85 @@ export type NavigationItem = {
   children?: NavigationItem[]
 }
 
-export type SidebarNavEntry = {
-  title: string
-  href: string
-  icon: LucideIcon
-  items?: { title: string; href: string; count?: number }[]
-}
-
-/**
- * Band 1 — 4 top flat items.
- * Uploads removed (already on dashboard); Activity promoted here.
- */
-export const sidebarNavPrimary: SidebarNavEntry[] = [
-  { title: "Overview",     href: "/dashboard",    icon: LayoutDashboard },
-  { title: "All Files",    href: "/files",        icon: Files           },
-  { title: "Activity",     href: "/activity",     icon: Activity        },
-  { title: "Integrations", href: "/integrations", icon: Plug            },
-]
-
-/**
- * Band 2 — 8 lower flat items.
- * Order: Jobs → API Keys → Events → Users → Security → Storage → Webhooks → Remote Access
- * (Remote Access at the end — longest label; Webhooks before it)
- */
-export const sidebarNavLower: SidebarNavEntry[] = [
-  { title: "Jobs",          href: "/jobs",                  icon: Boxes        },
-  { title: "API Keys",      href: "/api-keys",              icon: Puzzle       },
-  { title: "Events",        href: "/events",                icon: RadioTower   },
-  { title: "Users",         href: "/settings/users",        icon: Brain        },
-  { title: "Security",      href: "/settings/security",     icon: ShieldCheck  },
-  { title: "Storage",       href: "/settings/storage",      icon: Database     },
-  { title: "Webhooks",      href: "/webhooks",              icon: Webhook      },
-  { title: "Remote Access", href: "/settings/remote-access",icon: Server       },
-]
-
-/** Footer bottom strip — Docs / Settings / Notifications (mirrors Arceclaw) */
-export const sidebarNavBottom: SidebarNavEntry[] = [
-  { title: "Docs",          href: "/docs",          icon: BookOpen },
-  { title: "Settings",      href: "/settings",      icon: Settings },
-  { title: "Notifications", href: "/notifications", icon: Bell     },
-]
-
-/** Legacy arrays kept for command palette and other non-sidebar code */
+/** Navigation arrays used by the command palette */
 export const primaryNavigation: NavigationItem[] = [
-  { title: "Overview",   href: "/dashboard",  icon: LayoutDashboard },
-  { title: "All Files",  href: "/files",      icon: Files           },
-  { title: "Activity",   href: "/activity",   icon: Activity        },
-  { title: "Integrations",href: "/integrations",icon: Plug          },
+  { title: "Overview", href: "/dashboard", icon: LayoutDashboard },
+  { title: "AI Chat", href: "/chat", icon: MessageSquare },
+  { title: "All Files", href: "/files", icon: Files },
+  { title: "Integrations", href: "/integrations", icon: Plug },
 ]
 
 export const operationsNavigation: NavigationItem[] = [
-  { title: "Activity", href: "/activity",  icon: Terminal },
-  { title: "Jobs",     href: "/jobs",      icon: Boxes    },
+  { title: "Logs", href: "/logs", icon: Terminal },
+  { title: "Jobs", href: "/jobs", icon: Boxes },
+  { title: "Events", href: "/events", icon: GalleryVerticalEnd },
+  { title: "Models", href: "/models", icon: Brain },
+  { title: "Activity", href: "/activity", icon: Activity },
+  { title: "Security", href: "/security", icon: ShieldCheck },
+  { title: "Database", href: "/database", icon: Database },
 ]
 
 export const developerNavigation: NavigationItem[] = [
-  { title: "API Keys", href: "/api-keys", icon: KeyRound  },
-  { title: "Events",   href: "/events",   icon: RadioTower},
-  { title: "Webhooks", href: "/webhooks", icon: Webhook   },
+  { title: "Developer hub", href: "/developer", icon: Code2 },
+  { title: "API Keys", href: "/developer/api-keys", icon: KeyRound },
+  { title: "Events", href: "/events", icon: GalleryVerticalEnd },
+  { title: "Webhooks", href: "/developer/webhooks", icon: Webhook },
+  { title: "WebSockets", href: "/developer/web-sockets", icon: Server },
 ]
 
 export const systemNavigation: NavigationItem[] = [
+  { title: "Account",       href: "/account",               icon: User       },
   { title: "Storage",       href: "/settings/storage",      icon: Database   },
   { title: "Users",         href: "/settings/users",        icon: Users      },
-  { title: "Security",      href: "/settings/security",     icon: ShieldCheck},
-  { title: "Remote Access", href: "/settings/remote-access",icon: Server     },
+  { title: "Security",      href: "/security",              icon: ShieldCheck},
   { title: "Settings",      href: "/settings",              icon: Settings   },
 ]
 
 const pageTitles = new Map<string, string>([
   ["/dashboard",              "Overview"],
+  ["/chat",                   "AI Chat"],
+  ["/models",                 "Models"],
   ["/files",                  "All Files"],
+  ["/inbox",                  "Inbox"],
   ["/videos",                 "Videos"],
   ["/images",                 "Images"],
   ["/music",                  "Music"],
   ["/documents",              "Documents"],
-  ["/uploads",                "Uploads"],
   ["/activity",               "Activity"],
-  ["/jobs",                   "Jobs"],
-  ["/api-keys",               "API Keys"],
-  ["/events",                 "Events"],
-  ["/webhooks",               "Webhooks"],
-  ["/integrations",           "Integrations"],
-  ["/settings",               "Settings"],
-  ["/settings/storage",       "Storage"],
-  ["/settings/remote-access", "Remote Access"],
+  ["/jobs", "Jobs"],
+  ["/developer", "Developer"],
+  ["/developer/api-keys", "API keys"],
+  ["/developer/webhooks", "Webhooks"],
+  ["/developer/web-sockets", "WebSockets"],
+  ["/api-keys", "API keys"],
+  ["/events", "Events"],
+  ["/webhooks", "Webhooks"],
+  ["/database", "Database"],
+  ["/integrations", "Integrations"],
+  ["/settings", "Settings"],
+  ["/settings/storage", "Storage"],
+  ["/settings/domain", "Domain"],
+  ["/settings/remote-access", "WebSockets"],
+  ["/security",               "Security"],
   ["/settings/security",      "Security"],
   ["/settings/users",         "Users"],
-  ["/notifications",          "Notifications"],
   ["/docs",                   "Docs"],
+  ["/account",                "Account"],
   ["/setup",                  "Setup"],
   ["/login",                  "Login"],
 ])
 
 export function getPageTitle(pathname: string) {
-  return pageTitles.get(pathname) ?? "Arciin"
+  const exact = pageTitles.get(pathname)
+  if (exact) return exact
+  if (pathname.startsWith("/security")) return "Security"
+  if (pathname.startsWith("/chat")) return "AI Chat"
+  if (pathname.startsWith("/models")) return "Models"
+  if (pathname.startsWith("/database/")) return "Database"
+  if (pathname.startsWith("/developer/api-keys")) return "API keys"
+  if (pathname.startsWith("/developer/webhooks")) return "Webhooks"
+  if (pathname.startsWith("/developer/web-sockets")) return "WebSockets"
+  if (pathname.startsWith("/developer")) return "Developer"
+  return "Arciin"
 }
 
-export type SidebarProjectItem = {
-  name: string
-  href: string
-  icon: LucideIcon
-}
-
-// Kept for compatibility — unused by sidebar since NavLibraries fetches live
-export const sidebarNavMiddle: SidebarNavEntry[] = []
-export const sidebarMainNav: SidebarNavEntry[] = [
-  ...sidebarNavPrimary,
-  ...sidebarNavLower,
-]
-
-// Kept for nav-projects.tsx compatibility
-export const sidebarProjectNav: SidebarProjectItem[] = []

@@ -1,13 +1,25 @@
 import { fetchApi } from "@/lib/api/client"
 import type {
+  AiSecuritySettings,
+  AiSettings,
   ApiKeySummary,
   CreateApiKeyInput,
   CreateApiKeyResult,
+  GeneralSettings,
   IntegrationSummary,
   JobSummary,
   RemoteAccessSettings,
+  SecuritySettings,
   StorageSettings,
 } from "@/lib/types/models"
+
+export function getGeneralSettings(signal?: AbortSignal) {
+  return fetchApi<GeneralSettings>("/settings/general", { method: "GET", signal })
+}
+
+export function updateGeneralSettings(instanceName: string) {
+  return fetchApi<GeneralSettings>("/settings/general", { method: "PATCH", body: { instanceName } })
+}
 
 export function getStorageSettings(signal?: AbortSignal) {
   return fetchApi<StorageSettings>("/settings/storage", {
@@ -46,6 +58,10 @@ export function getJobs(signal?: AbortSignal) {
   })
 }
 
+export function clearJobs() {
+  return fetchApi<{ cleared: number }>("/jobs", { method: "DELETE" })
+}
+
 export function getApiKeys(signal?: AbortSignal) {
   return fetchApi<ApiKeySummary[]>("/api-keys", {
     method: "GET",
@@ -71,6 +87,84 @@ export function rotateApiKey(id: string) {
     method: "POST",
     body: {},
   })
+}
+
+export function getSecuritySettings(signal?: AbortSignal) {
+  return fetchApi<SecuritySettings>("/settings/security", { method: "GET", signal })
+}
+
+export function updateSecuritySettings(input: Partial<SecuritySettings>) {
+  return fetchApi<SecuritySettings>("/settings/security", { method: "PATCH", body: input })
+}
+
+export type ApiProtectionStatus = {
+  activeApiKeys: number
+  requestsThisMinute: number | null
+  globalLimitPerMinute: number
+  globalLimitEnabled: boolean
+  perKeyLimitPerMinute: number
+  perKeyLimitEnabled: boolean
+  allowlistCount: number
+  blocklistCount: number
+  enforceIpAllowlist: boolean
+  requireApiKeyExpiry: boolean
+  maxApiKeyExpiryDays: number
+}
+
+export function getApiProtectionStatus(signal?: AbortSignal) {
+  return fetchApi<ApiProtectionStatus>("/settings/api-protection/status", { method: "GET", signal })
+}
+
+export type AccessControlStatus = {
+  instanceInitialized: boolean
+  setupLocked: boolean
+  userCount: number
+  activeSessions: number
+  ownerCount: number
+  publicSignupEnabled: boolean
+  sessionTimeoutMinutes: number
+  loginAlertsEnabled: boolean
+  maxFailedLogins: number
+  passwordHashing: string
+  sessionStorage: string
+  cookieFlags: string
+}
+
+export function getAccessControlStatus(signal?: AbortSignal) {
+  return fetchApi<AccessControlStatus>("/settings/access-control/status", { method: "GET", signal })
+}
+
+export function revokeAllSessionsExceptCurrent() {
+  return fetchApi<{ revoked: number }>("/settings/access-control/revoke-all-sessions", {
+    method: "POST",
+    body: {},
+  })
+}
+
+export function patchApiProtectionIpRule(body: {
+  action: "block" | "allow" | "unblock" | "disallow"
+  ip: string
+}) {
+  return fetchApi<{ ipBlocklist: string[]; ipAllowlist: string[] }>(
+    "/settings/api-protection/ip-rules",
+    { method: "POST", body },
+  )
+}
+
+export function getAiSettings(signal?: AbortSignal) {
+  return fetchApi<AiSettings>("/settings/ai", { method: "GET", signal })
+}
+
+export function updateAiSettings(input: Partial<AiSettings>) {
+  return fetchApi<AiSettings>("/settings/ai", { method: "PATCH", body: input })
+}
+
+export function getAiSecuritySettings(signal?: AbortSignal) {
+  return fetchApi<AiSecuritySettings>("/settings/ai-security", { method: "GET", signal })
+}
+
+export function updateAiSecuritySettings(input: Partial<AiSecuritySettings>) {
+  return fetchApi<AiSecuritySettings>("/settings/ai-security", { method: "PATCH", body: input })
 }
 
 export function getIntegrations(signal?: AbortSignal) {

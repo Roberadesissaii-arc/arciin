@@ -186,7 +186,7 @@ function Sidebar({
           data-sidebar="sidebar"
           data-slot="sidebar"
           data-mobile="true"
-          className="w-(--sidebar-width) border-r border-white/[0.08] bg-[rgba(8,8,13,0.42)] p-0 text-sidebar-foreground shadow-none ring-1 ring-white/[0.06] backdrop-blur-2xl [&>button]:hidden"
+          className="w-(--sidebar-width) border-r border-white/[0.08] bg-[rgba(9,9,11,0.42)] p-0 text-sidebar-foreground shadow-none ring-1 ring-white/[0.06] backdrop-blur-2xl [&>button]:hidden"
           style={
             {
               "--sidebar-width": SIDEBAR_WIDTH_MOBILE,
@@ -242,7 +242,7 @@ function Sidebar({
           data-sidebar="sidebar"
           data-slot="sidebar-inner"
           className={cn(
-            "flex size-full flex-col rounded-xl border border-white/[0.07] bg-[rgba(8,8,13,0.55)] shadow-none ring-0 backdrop-blur-xl",
+            "flex size-full flex-col rounded-xl border border-white/[0.07] bg-[rgba(9,9,11,0.55)] shadow-none ring-0 backdrop-blur-xl",
             "group-data-[variant=floating]:ring-1 group-data-[variant=floating]:ring-white/[0.08]"
           )}
         >
@@ -309,7 +309,7 @@ function SidebarInset({ className, ...props }: React.ComponentProps<"main">) {
     <main
       data-slot="sidebar-inset"
       className={cn(
-        "relative flex w-full flex-1 flex-col bg-transparent md:peer-data-[variant=inset]:m-2 md:peer-data-[variant=inset]:ml-2 md:peer-data-[variant=inset]:rounded-xl md:peer-data-[variant=inset]:border md:peer-data-[variant=inset]:border-white/[0.08] md:peer-data-[variant=inset]:bg-[rgba(8,8,13,0.52)] md:peer-data-[variant=inset]:text-card-foreground md:peer-data-[variant=inset]:shadow-none md:peer-data-[variant=inset]:ring-1 md:peer-data-[variant=inset]:ring-white/[0.06] md:peer-data-[variant=inset]:backdrop-blur-2xl",
+        "relative flex w-full flex-1 flex-col bg-transparent md:peer-data-[variant=inset]:m-2 md:peer-data-[variant=inset]:ml-2 md:peer-data-[variant=inset]:rounded-xl md:peer-data-[variant=inset]:border md:peer-data-[variant=inset]:border-white/[0.08] md:peer-data-[variant=inset]:bg-[rgba(9,9,11,0.52)] md:peer-data-[variant=inset]:text-card-foreground md:peer-data-[variant=inset]:shadow-none md:peer-data-[variant=inset]:ring-1 md:peer-data-[variant=inset]:ring-white/[0.06] md:peer-data-[variant=inset]:backdrop-blur-2xl",
         className
       )}
       {...props}

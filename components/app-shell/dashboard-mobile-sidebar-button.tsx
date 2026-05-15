@@ -17,7 +17,7 @@ export function DashboardMobileSidebarButton() {
       type="button"
       variant="outline"
       size="icon"
-      className="fixed top-3 left-3 z-30 h-9 w-9 rounded-xl border-white/[0.1] bg-[rgba(15,15,20,0.55)] shadow-none backdrop-blur-xl md:hidden"
+      className="fixed top-3 left-3 z-30 h-9 w-9 rounded-xl border-border bg-background/95 shadow-sm ring-1 ring-black/[0.04] backdrop-blur-xl md:hidden"
       onClick={() => setOpenMobile(true)}
     >
       <Menu className="size-4" aria-hidden />

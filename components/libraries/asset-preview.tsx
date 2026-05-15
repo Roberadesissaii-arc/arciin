@@ -16,7 +16,7 @@ function ImageOrIconPreview({ asset }: { asset: AssetSummary }) {
 
   if (tryThumb && !thumbFailed) {
     return (
-      <div className="relative aspect-[4/3] overflow-hidden rounded-xl border border-white/8 bg-black/25">
+      <div className="relative aspect-[4/3] overflow-hidden rounded-xl border border-border bg-zinc-100">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={thumbSrc}
@@ -30,7 +30,7 @@ function ImageOrIconPreview({ asset }: { asset: AssetSummary }) {
   }
 
   return (
-    <div className="flex aspect-[4/3] items-center justify-center rounded-xl border border-white/8 bg-black/25 text-zinc-300">
+    <div className="flex aspect-[4/3] items-center justify-center rounded-xl border border-border bg-muted text-zinc-600">
       <Icon className="size-8" />
     </div>
   )
@@ -42,7 +42,7 @@ function VideoAssetPreview({ asset }: { asset: AssetSummary }) {
   const [hover, setHover] = useState(false)
   const [thumbFailed, setThumbFailed] = useState(false)
   const thumbSrc = `/api/assets/${asset.id}/thumbnail?v=${encodeURIComponent(asset.updatedAt)}`
-  const videoSrc = `/api/assets/${asset.id}/download`
+  const videoSrc = `/api/assets/${asset.id}/download?inline=1`
 
   useEffect(() => {
     const el = videoRef.current
@@ -59,7 +59,7 @@ function VideoAssetPreview({ asset }: { asset: AssetSummary }) {
 
   return (
     <div
-      className="relative aspect-[4/3] overflow-hidden rounded-xl border border-white/8 bg-black/40"
+      className="relative aspect-[4/3] overflow-hidden rounded-xl border border-border bg-muted/60"
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
     >
@@ -76,7 +76,7 @@ function VideoAssetPreview({ asset }: { asset: AssetSummary }) {
       {!thumbFailed ? (
         <div
           className={cn(
-            "absolute inset-0 z-10 bg-black/20 transition-opacity duration-200",
+            "absolute inset-0 z-10 bg-muted/40 transition-opacity duration-200",
             hover ? "pointer-events-none opacity-0" : "opacity-100"
           )}
         >
@@ -92,7 +92,7 @@ function VideoAssetPreview({ asset }: { asset: AssetSummary }) {
       ) : (
         <div
           className={cn(
-            "absolute inset-0 z-10 flex items-center justify-center bg-black/50 text-zinc-300 transition-opacity duration-200",
+            "absolute inset-0 z-10 flex items-center justify-center bg-zinc-900/65 text-white transition-opacity duration-200",
             hover ? "pointer-events-none opacity-0" : "opacity-100"
           )}
         >
@@ -104,9 +104,146 @@ function VideoAssetPreview({ asset }: { asset: AssetSummary }) {
   )
 }
 
+/** Inline `Content-Disposition` so `<audio>` / `<video>` can play in the page (attachment is for file downloads). */
+const INLINE_DOWNLOAD = "?inline=1"
+
+type AudioPlayMode = "idle" | "hover_preview" | "sound"
+
+/** Hover = muted loop preview; click = play with sound (user gesture). Centered hero icon like the login panel. */
+function AudioAssetPreview({ asset }: { asset: AssetSummary }) {
+  const Icon = mediaTypeIcons.AUDIO
+  const audioRef = useRef<HTMLAudioElement>(null)
+  const hoverRef = useRef(false)
+  const [playMode, setPlayMode] = useState<AudioPlayMode>("idle")
+  const [thumbFailed, setThumbFailed] = useState(false)
+  const thumbSrc = `/api/assets/${asset.id}/thumbnail?v=${encodeURIComponent(asset.updatedAt)}`
+  const audioSrc = `/api/assets/${asset.id}/download${INLINE_DOWNLOAD}`
+
+  useEffect(() => {
+    const el = audioRef.current
+    if (!el) return
+    if (playMode === "sound") {
+      el.muted = false
+      void el.play().catch(() => {})
+      return
+    }
+    if (playMode === "hover_preview") {
+      el.muted = true
+      void el.play().catch(() => {})
+      return
+    }
+    el.pause()
+    el.currentTime = 0
+    el.muted = true
+  }, [playMode])
+
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      aria-label="Audio preview: hover for muted preview, click to play with sound"
+      className="relative aspect-[4/3] cursor-pointer overflow-hidden rounded-xl border border-white/[0.08] bg-[#09090b] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-[#09090b]"
+      onMouseEnter={() => {
+        hoverRef.current = true
+        setPlayMode((m) => (m === "sound" ? "sound" : "hover_preview"))
+      }}
+      onMouseLeave={() => {
+        hoverRef.current = false
+        setPlayMode("idle")
+      }}
+      onClick={(e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        setPlayMode((m) => {
+          if (m === "sound") {
+            return hoverRef.current ? "hover_preview" : "idle"
+          }
+          return "sound"
+        })
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault()
+          setPlayMode((m) => {
+            if (m === "sound") {
+              return hoverRef.current ? "hover_preview" : "idle"
+            }
+            return "sound"
+          })
+        }
+      }}
+    >
+      {/* Ambient stack — aligned with login left panel */}
+      <div
+        className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(255,75,51,0.14)_0%,rgba(9,9,11,0.06)_32%,rgba(9,9,11,0.38)_58%,transparent_100%)]"
+        aria-hidden
+      />
+      <div
+        className="pointer-events-none absolute -top-[18%] left-1/2 aspect-[1.35] w-[min(100%,420px)] -translate-x-1/2 bg-[radial-gradient(ellipse_at_50%_38%,rgba(255,75,51,0.42)_0%,rgba(255,79,18,0.1)_44%,transparent_72%)] blur-[48px]"
+        aria-hidden
+      />
+      <div
+        className="pointer-events-none absolute -top-[8%] left-[12%] h-[55%] w-[55%] bg-[radial-gradient(ellipse_at_center,rgba(255,120,90,0.2)_0%,transparent_68%)] blur-[40px]"
+        aria-hidden
+      />
+      <div
+        className="pointer-events-none absolute inset-0 bg-[linear-gradient(145deg,rgba(255,75,51,0.07)_0%,transparent_46%)]"
+        aria-hidden
+      />
+
+      <audio
+        ref={audioRef}
+        className="pointer-events-none absolute inset-0 h-px w-px opacity-0"
+        src={audioSrc}
+        playsInline
+        loop
+        preload="metadata"
+      />
+
+      {!thumbFailed ? (
+        <div
+          className={cn(
+            "pointer-events-none absolute inset-0 z-10 transition-opacity duration-200",
+            playMode === "hover_preview" || playMode === "sound" ? "opacity-[0.12]" : "opacity-100",
+          )}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={thumbSrc}
+            alt=""
+            className="size-full object-cover"
+            loading="lazy"
+            onError={() => setThumbFailed(true)}
+          />
+        </div>
+      ) : null}
+
+      <div className="pointer-events-none absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 px-4 text-center">
+        <Icon
+          className={cn(
+            "size-20 shrink-0 text-white drop-shadow-[0_2px_24px_rgba(0,0,0,0.55)] transition-transform duration-300 sm:size-28",
+            (playMode === "hover_preview" || playMode === "sound") && "scale-[1.03]",
+          )}
+          aria-hidden
+        />
+        <p className="text-[11px] font-medium leading-snug text-white/85 sm:text-xs">
+          {playMode === "sound" ? "Click again to stop" : "Hover: muted preview · Click: play with sound"}
+        </p>
+      </div>
+
+      <span className="sr-only">
+        Audio — hover for muted preview, click to play with sound, click again to stop
+      </span>
+    </div>
+  )
+}
+
 export function AssetPreview({ asset }: { asset: AssetSummary }) {
   if (asset.mediaType === "VIDEO") {
     return <VideoAssetPreview asset={asset} />
+  }
+  if (asset.mediaType === "AUDIO") {
+    return <AudioAssetPreview asset={asset} />
   }
 
   return <ImageOrIconPreview asset={asset} />

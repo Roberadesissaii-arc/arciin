@@ -83,10 +83,10 @@ That root contains:
 
 ## Prisma in containers
 
-The API and worker images run `pnpm db:generate` during image build.
+The API image runs `pnpm db:generate` during build. On container start, `scripts/entrypoint-api.sh` runs `prisma migrate deploy`, seeds defaults, creates storage directories, then starts the API. No manual migration step is required after `docker compose up`.
 
-Run migrations after the database is reachable:
+To re-run initialization manually:
 
 ```bash
-docker compose exec api pnpm db:migrate
+docker compose exec api pnpm db:init
 ```

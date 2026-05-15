@@ -59,17 +59,17 @@ export function DashboardHeader() {
   const leafCrumb = crumbs.length > 0 ? crumbs[crumbs.length - 1] : null
 
   return (
-    <header className="shrink-0 border-b border-white/[0.08] bg-[rgba(8,8,13,0.5)] backdrop-blur-xl">
+    <header className="shrink-0 border-b border-border bg-background/90 backdrop-blur-xl">
       <div className="flex flex-col gap-3 px-3 py-3 pt-12 md:flex-row md:items-center md:justify-between md:gap-4 md:pt-3 lg:px-5">
         <div className="flex min-w-0 flex-1 items-center md:flex-initial">
-          <div className="min-w-0 rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-2 ring-1 ring-white/[0.06] backdrop-blur-md">
+          <div className="min-w-0 rounded-xl border border-border bg-card px-3 py-2 shadow-sm ring-1 ring-black/[0.04]">
             <Breadcrumb className="min-w-0">
               <BreadcrumbList className="flex-nowrap text-muted-foreground">
                 <BreadcrumbItem>
                   <BreadcrumbLink asChild>
                     <Link
                       href="/dashboard"
-                      className="font-medium text-foreground/90 transition-colors hover:text-foreground"
+                      className="font-medium text-foreground transition-colors hover:text-primary"
                     >
                       Arciin
                     </Link>
@@ -82,7 +82,7 @@ export function DashboardHeader() {
                       <BreadcrumbLink asChild>
                         <Link
                           href={parentCrumb.href}
-                          className="transition-colors hover:text-foreground"
+                          className="transition-colors hover:text-primary"
                         >
                           {parentCrumb.label}
                         </Link>
@@ -107,11 +107,11 @@ export function DashboardHeader() {
 
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2 md:min-w-0 md:justify-end">
           <DropdownMenu open={commandOpen} onOpenChange={setCommandOpen}>
-            <div className="flex min-w-0 w-full max-w-2xl flex-1 items-center gap-2 rounded-xl border border-white/[0.1] bg-[rgba(5,5,10,0.72)] p-2 ring-1 ring-white/[0.07] shadow-[0_12px_40px_-12px_rgba(0,0,0,0.55)] backdrop-blur-xl md:gap-2">
-              <div className="hidden min-w-0 shrink-0 items-center gap-2 rounded-lg border border-white/[0.1] bg-black/35 px-2.5 py-1.5 text-xs text-zinc-400 backdrop-blur-md md:flex">
+            <div className="flex min-w-0 w-full max-w-2xl flex-1 items-center gap-2 rounded-xl border border-border bg-card p-2 shadow-sm ring-1 ring-black/[0.04] backdrop-blur-xl md:gap-2">
+              <div className="hidden min-w-0 shrink-0 items-center gap-2 rounded-lg border border-border bg-muted/60 px-2.5 py-1.5 text-xs text-muted-foreground backdrop-blur-md md:flex">
                 <span
                   className={`size-2 shrink-0 rounded-full ${
-                    connected ? "bg-zinc-300" : "bg-zinc-500/60"
+                    connected ? "bg-emerald-500" : "bg-zinc-300"
                   }`}
                 />
                 <span className="truncate">{connected ? "Realtime live" : "Realtime idle"}</span>
@@ -120,11 +120,11 @@ export function DashboardHeader() {
                 <Button
                   variant="outline"
                   size="default"
-                  className="h-9 min-w-0 flex-1 justify-start gap-2 border-white/[0.1] bg-black/45 px-3 text-sm text-zinc-100 shadow-none backdrop-blur-md hover:bg-black/55 sm:min-w-[10rem]"
+                  className="h-9 min-w-0 flex-1 justify-start gap-2 border-border bg-background px-3 text-sm text-foreground shadow-none hover:bg-muted sm:min-w-[10rem]"
                 >
-                  <Search className="size-4 shrink-0 text-zinc-500" />
+                  <Search className="size-4 shrink-0 text-muted-foreground" />
                   <span className="hidden min-w-0 truncate sm:inline">Search</span>
-                  <span className="ml-auto hidden shrink-0 items-center gap-1 rounded-md border border-white/[0.1] bg-black/40 px-1.5 py-0.5 text-[11px] text-zinc-500 backdrop-blur-sm lg:inline-flex">
+                  <span className="ml-auto hidden shrink-0 items-center gap-1 rounded-md border border-border bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground lg:inline-flex">
                     <Command className="size-3" />
                     K
                   </span>
@@ -162,7 +162,7 @@ export function DashboardHeader() {
               side="bottom"
               sideOffset={14}
               collisionPadding={16}
-              className="z-50 w-[var(--radix-dropdown-menu-trigger-width)] min-w-0 border-0 bg-transparent p-0 shadow-none"
+              className="z-50 w-[var(--radix-dropdown-menu-trigger-width)] min-w-0 max-w-[min(96vw,36rem)] overflow-visible border-0 bg-transparent p-1 shadow-[0_20px_60px_-18px_rgba(0,0,0,0.22)]"
             >
               <CommandPalettePanel onClose={() => setCommandOpen(false)} />
             </DropdownMenuContent>

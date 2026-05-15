@@ -405,7 +405,7 @@ export function SetupForm() {
                         }}
                       />
                     </div>
-                    <span className="truncate text-sm font-medium text-white">{library}</span>
+                    <span className="truncate text-sm font-medium text-foreground">{library}</span>
                     <span className="line-clamp-2 text-[11px] leading-snug text-zinc-400">
                       {libraryMeta[library].description}
                     </span>
