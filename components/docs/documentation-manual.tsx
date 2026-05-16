@@ -565,7 +565,7 @@ export function DocumentationManual() {
     const validSectionIds = new Set(toc.map((t) => t.href.slice(1)))
     const hash = typeof window !== "undefined" ? window.location.hash.slice(1) : ""
     if (hash && validSectionIds.has(hash)) {
-      scrollToSection(hash, false)
+      queueMicrotask(() => scrollToSection(hash, false))
     }
 
     pickActive()

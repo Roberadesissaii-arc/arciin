@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useState } from "react"
 
 import {
   AlertDialog,
@@ -46,17 +46,21 @@ export function VaultEntryEditDialog({
     category: "",
   })
 
-  useEffect(() => {
-    if (!entry || !open) return
+  const resetDraftFromEntry = (source: PasswordVaultEntry) => {
     setDraft({
-      name: entry.name,
-      username: entry.username ?? "",
-      password: entry.password ?? "",
-      url: entry.url ?? "",
-      notes: entry.notes ?? "",
-      category: entry.category ?? "",
+      name: source.name,
+      username: source.username ?? "",
+      password: source.password ?? "",
+      url: source.url ?? "",
+      notes: source.notes ?? "",
+      category: source.category ?? "",
     })
-  }, [entry, open])
+  }
+
+  const handleOpenChange = (next: boolean) => {
+    if (next && entry) resetDraftFromEntry(entry)
+    onOpenChange(next)
+  }
 
   const submit = async () => {
     if (!entry || !draft.name.trim()) return
@@ -64,7 +68,7 @@ export function VaultEntryEditDialog({
   }
 
   return (
-    <AlertDialog open={open} onOpenChange={onOpenChange}>
+    <AlertDialog open={open} onOpenChange={handleOpenChange}>
       <AlertDialogContent className="max-w-md">
         <AlertDialogHeader>
           <AlertDialogTitle>Edit credential</AlertDialogTitle>

@@ -4,7 +4,6 @@ import {
   createContext,
   useCallback,
   useContext,
-  useEffect,
   useMemo,
   useState,
   type ReactNode,
@@ -35,8 +34,18 @@ export function AssetSelectionProvider({
   assets: AssetSummary[]
   children: ReactNode
 }) {
-  const [selectedIds, setSelectedIdsState] = useState<Set<string>>(() => new Set())
+  const [rawSelectedIds, setSelectedIdsState] = useState<Set<string>>(() => new Set())
   const [lastSelectedId, setLastSelectedId] = useState<string | null>(null)
+
+  const visibleIds = useMemo(() => new Set(assets.map((a) => a.id)), [assets])
+
+  const selectedIds = useMemo(() => {
+    const next = new Set<string>()
+    for (const id of rawSelectedIds) {
+      if (visibleIds.has(id)) next.add(id)
+    }
+    return next
+  }, [rawSelectedIds, visibleIds])
 
   const setSelectedIds = useCallback((ids: Iterable<string>) => {
     setSelectedIdsState(new Set(ids))
@@ -94,17 +103,6 @@ export function AssetSelectionProvider({
   const selectAllVisible = useCallback(() => {
     setSelectedIdsState(new Set(assets.map((a) => a.id)))
     if (assets[0]) setLastSelectedId(assets[0].id)
-  }, [assets])
-
-  useEffect(() => {
-    const visible = new Set(assets.map((a) => a.id))
-    setSelectedIdsState((prev) => {
-      const next = new Set<string>()
-      for (const id of prev) {
-        if (visible.has(id)) next.add(id)
-      }
-      return next.size === prev.size ? prev : next
-    })
   }, [assets])
 
   const selectedAssets = useMemo(

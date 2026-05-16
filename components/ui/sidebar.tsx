@@ -107,7 +107,10 @@ function SidebarProvider({
 
   // After hydration: tablet → collapsed; desktop → cookie preference.
   const setOpenRef = React.useRef(setOpen)
-  setOpenRef.current = setOpen
+
+  React.useEffect(() => {
+    setOpenRef.current = setOpen
+  })
 
   const syncSidebarOpenForViewport = React.useCallback(() => {
     const mq = window.matchMedia(TABLET_SIDEBAR_MEDIA)

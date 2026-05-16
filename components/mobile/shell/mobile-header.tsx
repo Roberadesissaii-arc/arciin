@@ -70,13 +70,13 @@ export function MobileHeader({
             >
               <Search className="size-[18px]" />
             </button>
-            <button
-              type="button"
+            <Link
+              href="/notifications"
               className="relative flex size-9 items-center justify-center rounded-xl text-zinc-400 transition-colors active:bg-white/[0.06] active:text-white"
               aria-label="Notifications"
             >
               <Bell className="size-[18px]" />
-            </button>
+            </Link>
           </>
         )}
       </div>

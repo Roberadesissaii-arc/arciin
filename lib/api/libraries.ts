@@ -23,8 +23,8 @@ export function getFolders(libraryId: string, signal?: AbortSignal) {
 }
 
 export function createFolder(input: CreateFolderInput) {
-  const { libraryId: _lid, ...body } = input
-  return fetchApi<FolderSummary>(`/libraries/${input.libraryId}/folders`, {
+  const { libraryId, ...body } = input
+  return fetchApi<FolderSummary>(`/libraries/${libraryId}/folders`, {
     method: "POST",
     body,
   })

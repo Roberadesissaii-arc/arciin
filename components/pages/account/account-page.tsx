@@ -21,6 +21,7 @@ import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 
 import { DashboardPageIntro } from "@/components/app-shell/dashboard-page-intro"
+import { UserIdentityAvatar } from "@/components/app-shell/user-identity-avatar"
 import { SectionHeader } from "@/components/settings/settings-panel-primitives"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -127,8 +128,6 @@ function IdentityPanel() {
 
   const dirty =
     user && (name.trim() !== user.name || email.trim().toLowerCase() !== user.email.toLowerCase())
-  const letter = (user?.name || "?")[0]?.toUpperCase() ?? "?"
-
   if (meQuery.isLoading) {
     return (
       <div className="space-y-6">
@@ -148,12 +147,10 @@ function IdentityPanel() {
       />
 
       <div className="flex flex-col gap-4 border-b border-border pb-6 sm:flex-row sm:items-center">
-        <div
-          className="flex size-16 shrink-0 items-center justify-center rounded-2xl bg-primary text-xl font-bold text-primary-foreground shadow-sm"
-          aria-hidden
-        >
-          {letter}
-        </div>
+        <UserIdentityAvatar
+          name={user?.name ?? "?"}
+          className="size-16 rounded-2xl text-xl"
+        />
         <div className="min-w-0 space-y-1.5">
           <div className="flex flex-wrap items-center gap-2">
             <p className="text-base font-semibold text-foreground">{user?.name}</p>

@@ -155,10 +155,11 @@ export function PasswordVaultPage() {
 
   useEffect(() => {
     if (vaultQuery.isLoading || autoPrompted) return
-    if (lockRequired && !secretsVisible) {
+    if (!lockRequired || secretsVisible) return
+    queueMicrotask(() => {
       setAutoPrompted(true)
       setUnlockOpen(true)
-    }
+    })
   }, [vaultQuery.isLoading, lockRequired, secretsVisible, autoPrompted])
 
   const requestUnlockForReveal = (entryId: string) => {

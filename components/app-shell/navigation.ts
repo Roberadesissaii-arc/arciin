@@ -1,6 +1,7 @@
 import type { LucideIcon } from "lucide-react"
 import {
   Activity,
+  Bell,
   Boxes,
   Brain,
   Code2,
@@ -41,6 +42,7 @@ export const operationsNavigation: NavigationItem[] = [
   { title: "Logs", href: "/logs", icon: Terminal },
   { title: "Jobs", href: "/jobs", icon: Boxes },
   { title: "Events", href: "/events", icon: GalleryVerticalEnd },
+  { title: "Notifications", href: "/notifications", icon: Bell },
   { title: "Models", href: "/models", icon: Brain },
   { title: "Activity", href: "/activity", icon: Activity },
   { title: "Security", href: "/security", icon: ShieldCheck },
@@ -75,6 +77,7 @@ const pageTitles = new Map<string, string>([
   ["/music",                  "Music"],
   ["/documents",              "Documents"],
   ["/activity",               "Activity"],
+  ["/notifications",          "Notifications"],
   ["/jobs", "Jobs"],
   ["/developer", "Developer"],
   ["/developer/api-keys", "API keys"],

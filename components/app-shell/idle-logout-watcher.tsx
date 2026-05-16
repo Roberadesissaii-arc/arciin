@@ -23,7 +23,7 @@ const CHECK_INTERVAL_MS = 15_000
 export function IdleLogoutWatcher() {
   const router = useRouter()
   const logoutMutation = useLogout()
-  const lastActivityRef = useRef(Date.now())
+  const lastActivityRef = useRef(0)
   const loggingOutRef = useRef(false)
 
   const settingsQuery = useQuery({

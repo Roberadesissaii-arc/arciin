@@ -58,13 +58,13 @@ export function DashboardHomeIntro() {
     refetchInterval: 30_000,
   })
 
-  const libraries = librariesQuery.data ?? []
   const uploads = uploadsQuery.data ?? []
   const events = activityQuery.data ?? []
 
   const totalAssets = useMemo(
-    () => libraries.reduce((sum, lib) => sum + (lib.assetCount ?? 0), 0),
-    [libraries],
+    () =>
+      (librariesQuery.data ?? []).reduce((sum, lib) => sum + (lib.assetCount ?? 0), 0),
+    [librariesQuery.data],
   )
 
   const activeUploads = uploads.filter((u) => ACTIVE_UPLOAD.has(u.status)).length
@@ -143,7 +143,9 @@ export function DashboardHomeIntro() {
         },
         {
           label: "Libraries",
-          value: librariesQuery.isLoading ? "…" : libraries.length.toLocaleString(),
+          value: librariesQuery.isLoading
+            ? "…"
+            : (librariesQuery.data ?? []).length.toLocaleString(),
         },
         {
           label: "Storage used",

@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import { Folder, PencilLine, Trash2, X } from "lucide-react"
@@ -55,12 +55,13 @@ export function FolderCard({ folder, librarySlug }: { folder: FolderSummary; lib
   const updateMutation = useUpdateFolder()
   const deleteMutation = useDeleteFolder()
 
-  useEffect(() => {
-    if (renameOpen) {
+  const handleRenameOpenChange = (next: boolean) => {
+    if (next) {
       setRenameName(folder.name)
       setRenameError(undefined)
     }
-  }, [renameOpen, folder.name])
+    setRenameOpen(next)
+  }
 
   const navigateAfterRenameIfNeeded = (newSlug: string) => {
     if (pathname === `/${librarySlug}/${folder.slug}` && newSlug !== folder.slug) {
@@ -117,7 +118,13 @@ export function FolderCard({ folder, librarySlug }: { folder: FolderSummary; lib
             <Link href={href}>Open folder</Link>
           </ContextMenuItem>
           <ContextMenuSeparator />
-          <ContextMenuItem onSelect={() => setRenameOpen(true)}>
+          <ContextMenuItem
+            onSelect={() => {
+              setRenameName(folder.name)
+              setRenameError(undefined)
+              setRenameOpen(true)
+            }}
+          >
             <PencilLine className="size-4" />
             Rename…
           </ContextMenuItem>
@@ -131,7 +138,7 @@ export function FolderCard({ folder, librarySlug }: { folder: FolderSummary; lib
         </ContextMenuContent>
       </ContextMenu>
 
-      <Sheet open={renameOpen} onOpenChange={setRenameOpen}>
+      <Sheet open={renameOpen} onOpenChange={handleRenameOpenChange}>
         <SheetContent
           side="right"
           showCloseButton={false}

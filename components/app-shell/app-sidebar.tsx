@@ -11,7 +11,7 @@ import {
 } from "lucide-react"
 import { toast } from "sonner"
 
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { UserIdentityAvatar } from "@/components/app-shell/user-identity-avatar"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -63,7 +63,7 @@ const SIDEBAR_SECONDARY_NAV: NavItem[] = [
 const BOTTOM: NavItem[] = [
   { id: "docs",          label: "Docs",          icon: BookOpen, href: "/docs"          },
   { id: "settings",      label: "Settings",      icon: Settings, href: "/settings"      },
-  { id: "notifications", label: "Notifications", icon: Bell,     href: "/settings?tab=notifications" },
+  { id: "notifications", label: "Notifications", icon: Bell,     href: "/notifications" },
 ]
 
 const LIBRARY_ROUTES: Record<string, string> = {
@@ -79,10 +79,6 @@ const LIBRARY_ORDER = ["inbox", "videos", "images", "music", "documents"]
 function isActive(pathname: string, href: string) {
   if (href === "/dashboard") return pathname === href
   return pathname === href || pathname.startsWith(`${href}/`)
-}
-
-function initials(name: string) {
-  return name.split(" ").slice(0, 2).map((p) => p.charAt(0).toUpperCase()).join("")
 }
 
 // ── flat link ──────────────────────────────────────────────────────────────
@@ -249,14 +245,9 @@ function AppSidebarInner({ auth }: { auth: AuthSession }) {
               onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.03)" }}
             >
               <div className="relative shrink-0">
-                <Avatar className="h-8 w-8 rounded-lg">
-                  <AvatarFallback className="rounded-lg bg-zinc-800 text-[13px] font-bold text-white">
-                    {initials(auth.user.name)}
-                  </AvatarFallback>
-                </Avatar>
+                <UserIdentityAvatar name={auth.user.name} size="sm" />
                 <span
-                  className="absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full border-[2px] border-sidebar"
-                  style={{ background: "#4ade80" }}
+                  className="absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full border-2 border-[#18181B] bg-emerald-400"
                   aria-hidden
                 />
               </div>
@@ -280,46 +271,46 @@ function AppSidebarInner({ auth }: { auth: AuthSession }) {
             side="top"
             align="start"
             sideOffset={8}
-            className="w-56 rounded-xl p-1"
-            style={{ background: "#111118", border: `1px solid ${BORDER}`, boxShadow: "0 8px 32px rgba(0,0,0,0.5)" }}
+            className={cn(
+              "w-56 rounded-xl border border-white/10 bg-[#18181B] p-1 text-zinc-300 shadow-xl ring-1 ring-black/40",
+              "backdrop-blur-xl",
+            )}
           >
-            <DropdownMenuLabel className="px-2 pb-2 pt-1.5">
-              <p className="text-[13px] font-semibold text-white">{auth.user.name}</p>
-              <p className="mt-0.5 text-[11px] font-normal" style={{ color: "rgba(255,255,255,0.35)" }}>
-                {auth.user.email}
-              </p>
+            <DropdownMenuLabel className="flex items-center gap-2.5 px-2 pb-2 pt-1.5 font-normal">
+              <UserIdentityAvatar name={auth.user.name} size="sm" />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-[13px] font-semibold text-white">{auth.user.name}</p>
+                <p className="mt-0.5 truncate text-[11px] text-zinc-500">{auth.user.email}</p>
+              </div>
             </DropdownMenuLabel>
-            <DropdownMenuSeparator style={{ background: BORDER }} />
+            <DropdownMenuSeparator className="bg-white/10" />
             <DropdownMenuGroup>
               <DropdownMenuItem
-                className="cursor-pointer gap-2 text-[13px]"
-                style={{ color: TEXT_OFF }}
+                className="cursor-pointer gap-2 rounded-lg text-[13px] text-zinc-400 focus:bg-white/[0.06] focus:text-white data-highlighted:bg-white/[0.06] data-highlighted:text-white"
                 onClick={() => router.push("/support")}
               >
                 <HelpCircle className="h-3.5 w-3.5" />
                 Support
               </DropdownMenuItem>
               <DropdownMenuItem
-                className="cursor-pointer gap-2 text-[13px]"
-                style={{ color: TEXT_OFF }}
+                className="cursor-pointer gap-2 rounded-lg text-[13px] text-zinc-400 focus:bg-white/[0.06] focus:text-white data-highlighted:bg-white/[0.06] data-highlighted:text-white"
                 onClick={() => router.push("/developer")}
               >
                 <Code2 className="h-3.5 w-3.5" />
                 Developer
               </DropdownMenuItem>
               <DropdownMenuItem
-                className="cursor-pointer gap-2 text-[13px]"
-                style={{ color: TEXT_OFF }}
+                className="cursor-pointer gap-2 rounded-lg text-[13px] text-zinc-400 focus:bg-white/[0.06] focus:text-white data-highlighted:bg-white/[0.06] data-highlighted:text-white"
                 onClick={() => router.push("/account")}
               >
                 <UserCog className="h-3.5 w-3.5" />
                 Edit Profile
               </DropdownMenuItem>
             </DropdownMenuGroup>
-            <DropdownMenuSeparator style={{ background: BORDER }} />
+            <DropdownMenuSeparator className="bg-white/10" />
             <DropdownMenuItem
-              className="cursor-pointer gap-2 text-[13px]"
-              style={{ color: "#f87171" }}
+              variant="destructive"
+              className="cursor-pointer gap-2 rounded-lg text-[13px] text-red-400 focus:bg-red-500/10 focus:text-red-300 data-highlighted:bg-red-500/10 data-highlighted:text-red-300"
               disabled={logoutMutation.isPending}
               onClick={handleLogout}
             >

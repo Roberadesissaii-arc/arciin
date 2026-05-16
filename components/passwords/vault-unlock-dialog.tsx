@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import { Lock } from "lucide-react"
 
 import {
@@ -44,12 +44,13 @@ export function VaultUnlockDialog({
   const [password, setPassword] = useState("")
   const [pin, setPin] = useState("")
 
-  useEffect(() => {
-    if (!open) {
+  const handleOpenChange = (next: boolean) => {
+    if (!next) {
       setPassword("")
       setPin("")
     }
-  }, [open])
+    onOpenChange(next)
+  }
 
   const isPin = mode === "pin"
   const resolvedTitle = title ?? (isPin ? "Enter vault PIN" : "Unlock password vault")
@@ -71,7 +72,7 @@ export function VaultUnlockDialog({
   const canSubmit = isPin ? pin.length === 6 : password.trim().length > 0
 
   return (
-    <AlertDialog open={open} onOpenChange={onOpenChange}>
+    <AlertDialog open={open} onOpenChange={handleOpenChange}>
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle className="flex items-center gap-2">

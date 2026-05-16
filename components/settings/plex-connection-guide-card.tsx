@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query"
 import { MonitorPlay } from "lucide-react"
 
 import { MediaServerGuideCard } from "@/components/settings/media-server-guide-card"
+import { PlexInstallPlaybook } from "@/components/settings/plex-install-playbook"
 import { getPlexStatus } from "@/lib/api/integrations"
 import { queryKeys } from "@/lib/api/query-keys"
 import { buildConnectorPathExamples } from "@/lib/integrations/connector-paths"
@@ -12,16 +13,16 @@ const PLEX_DOWNLOAD_URL = "https://www.plex.tv/media-server-downloads/"
 
 const STEPS = [
   {
-    title: "Install Plex Media Server",
-    body: "Download and install Plex on the same machine (or any host that can read your Arciin storage folder). Plex runs separately from Arciin.",
-  },
-  {
     title: "Enable Plex folders in Arciin",
-    body: "In the Plex card above, turn on Use Plex folders so Videos, Images, and Music each get a Plex folder and uploads mirror to disk.",
+    body: "Turn on Use Plex folders on the Plex card so Videos, Images, and Music each get a Plex folder and uploads mirror to disk.",
   },
   {
-    title: "Add Plex libraries",
-    body: "In Plex → Settings → Manage → Libraries, add folders that match the Plex paths listed below for this server.",
+    title: "Install Plex on your server",
+    body: "Use the Docker Compose file below (/srv/plex) or install manually—Plex runs separately from Arciin but reads the same folders.",
+  },
+  {
+    title: "Map Plex libraries",
+    body: "Point Plex Movies, Photos, and Music libraries at the host paths in the install guide (matches Videos/Images/Music → Plex).",
   },
   {
     title: "Scan and watch",

@@ -35,7 +35,7 @@ function SelectableAssetsContainerInner({
   defaultLibraryId?: string
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
-  const { assets, selectedIds, setSelectedIds, clear, selectOnly } = useAssetSelectionRequired()
+  const { selectedIds, setSelectedIds, clear, selectOnly } = useAssetSelectionRequired()
   const hasSelection = selectedIds.size > 0
   const [marquee, setMarquee] = useState<{
     start: Point
