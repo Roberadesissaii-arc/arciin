@@ -8,7 +8,7 @@ import {
   getConnectorStatus,
   type MediaConnectorDef,
 } from "@/services/integrations/library-media-connector"
-import { recordActivity } from "@/services/activity/record-activity"
+import { recordAndBroadcastActivity } from "@/services/activity/record-and-broadcast-activity"
 import { requireRole } from "@/services/security/auth"
 import { serializeIntegration } from "@/services/serializers"
 
@@ -57,7 +57,7 @@ export function registerMediaConnectorRoutes(
       const result = await ensureConnectorFolders(fastify.prisma, def)
 
       if (request.auth) {
-        await recordActivity(fastify.prisma, {
+        await recordAndBroadcastActivity(fastify, {
           userId: request.auth.user.id,
           type: def.foldersActivityType,
           title: `${displayName} folders ready`,
@@ -110,7 +110,7 @@ export function registerMediaConnectorRoutes(
       }
 
       if (request.auth && parsed.data.enabled !== undefined) {
-        await recordActivity(fastify.prisma, {
+        await recordAndBroadcastActivity(fastify, {
           userId: request.auth.user.id,
           type: parsed.data.enabled ? def.enabledActivityType : def.disabledActivityType,
           title: parsed.data.enabled ? `${displayName} layout enabled` : `${displayName} layout disabled`,

@@ -6,7 +6,7 @@ import { z } from "zod"
 import { JOB_TYPES } from "@arciin/shared"
 
 import { buildRealtimeEvent } from "@/services/events/publish-event"
-import { recordActivity } from "@/services/activity/record-activity"
+import { recordAndBroadcastActivity } from "@/services/activity/record-and-broadcast-activity"
 import { mediaQueue } from "@/services/jobs/queues"
 import { requireSessionRolesOrApiKeyScopes } from "@/services/security/auth"
 import { serializeUpload } from "@/services/serializers"
@@ -234,7 +234,7 @@ export async function registerUploadRoutes(fastify: FastifyInstance) {
 
       await syncAssetToPlexMirror(fastify.prisma, asset.id).catch(() => {})
 
-      await recordActivity(fastify.prisma, {
+      await recordAndBroadcastActivity(fastify, {
         userId: request.auth.user.id,
         type: "upload.completed",
         title: "Upload stored",

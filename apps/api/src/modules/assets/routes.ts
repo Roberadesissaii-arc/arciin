@@ -9,7 +9,7 @@ import { resolveArciinStorageRoot } from "@arciin/shared"
 
 import { apiConfig } from "@/config"
 import { buildRealtimeEvent } from "@/services/events/publish-event"
-import { recordActivity } from "@/services/activity/record-activity"
+import { recordAndBroadcastActivity } from "@/services/activity/record-and-broadcast-activity"
 import {
   ensureThumbnailWritten,
   renderImageWebpThumbnailBuffer,
@@ -229,7 +229,7 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
       })
 
       if (request.auth) {
-        await recordActivity(fastify.prisma, {
+        await recordAndBroadcastActivity(fastify, {
           userId: request.auth.user.id,
           type: "asset.deleted",
           title: "Asset deleted",
@@ -371,7 +371,7 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
       }
 
       if (request.auth) {
-        await recordActivity(fastify.prisma, {
+        await recordAndBroadcastActivity(fastify, {
           userId: request.auth.user.id,
           type: "asset.moved",
           title: "Asset moved",

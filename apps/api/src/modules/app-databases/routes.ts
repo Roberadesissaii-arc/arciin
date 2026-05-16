@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify"
 import type { Prisma } from "@prisma/client"
 import { z } from "zod"
 
-import { recordActivity } from "@/services/activity/record-activity"
+import { recordAndBroadcastActivity } from "@/services/activity/record-and-broadcast-activity"
 import { requireSessionRolesOrApiKeyScopes } from "@/services/security/auth"
 import {
   serializeAppDatabase,
@@ -191,7 +191,7 @@ export async function registerAppDatabaseRoutes(fastify: FastifyInstance) {
         })
       })
 
-      await recordActivity(fastify.prisma, {
+      await recordAndBroadcastActivity(fastify, {
         userId,
         type: "appdata.database.created",
         title: "App data database created",
@@ -246,7 +246,7 @@ export async function registerAppDatabaseRoutes(fastify: FastifyInstance) {
       })
 
       if (request.auth) {
-        await recordActivity(fastify.prisma, {
+        await recordAndBroadcastActivity(fastify, {
           userId: request.auth.user.id,
           type: "appdata.database.deleted",
           title: "App data database deleted",
@@ -377,7 +377,7 @@ export async function registerAppDatabaseRoutes(fastify: FastifyInstance) {
       }
 
       if (request.auth) {
-        await recordActivity(fastify.prisma, {
+        await recordAndBroadcastActivity(fastify, {
           userId: request.auth.user.id,
           type: "appdata.folder.created",
           title: "App data folder created",

@@ -2,7 +2,7 @@ import type { PrismaClient } from "@prisma/client"
 import type { AiLibraryToolAccess } from "@arciin/shared"
 import { libraryAllowsFolderMutations, libraryAllowsOrganize } from "@arciin/shared"
 
-import { recordActivity } from "@/services/activity/record-activity"
+import { recordAndBroadcastActivity } from "@/services/activity/record-and-broadcast-activity"
 import { organizeImagesLibrary } from "@/services/chat/organize-images-library"
 import {
   loadImageCandidatesForVision,
@@ -19,6 +19,7 @@ export type ArciinChatToolContext = {
   userId: string
   /** Defaults to full access when omitted. */
   libraryToolAccess?: AiLibraryToolAccess
+  publishRealtimeEvent?: (event: import("@arciin/shared").RealtimeEvent) => Promise<void>
 }
 
 export const ARCIIN_CHAT_TOOLS = [
@@ -177,6 +178,7 @@ export async function executeArciinChatTool(
       model: ctx.model,
       userId: ctx.userId,
       maxAssets,
+      publishRealtimeEvent: ctx.publishRealtimeEvent,
     })
     return {
       libraryName: result.libraryName,
@@ -238,14 +240,17 @@ export async function executeArciinChatTool(
         },
       })
 
-      await recordActivity(ctx.prisma, {
+      await recordAndBroadcastActivity(
+        { prisma: ctx.prisma, publishRealtimeEvent: ctx.publishRealtimeEvent },
+        {
         userId: ctx.userId,
         type: "folder.created",
         title: "Folder created",
         message: `${folder.name} was created.`,
         entityType: "folder",
         entityId: folder.id,
-      })
+      },
+    )
 
       return {
         success: true,
@@ -340,14 +345,17 @@ export async function executeArciinChatTool(
       data: { deletedAt: new Date() },
     })
 
-    await recordActivity(ctx.prisma, {
-      userId: ctx.userId,
-      type: "folder.deleted",
-      title: "Folder deleted",
-      message: `${existing.name} was removed.`,
-      entityType: "folder",
-      entityId: existing.id,
-    })
+    await recordAndBroadcastActivity(
+      { prisma: ctx.prisma, publishRealtimeEvent: ctx.publishRealtimeEvent },
+      {
+        userId: ctx.userId,
+        type: "folder.deleted",
+        title: "Folder deleted",
+        message: `${existing.name} was removed.`,
+        entityType: "folder",
+        entityId: existing.id,
+      },
+    )
 
     return {
       success: true,

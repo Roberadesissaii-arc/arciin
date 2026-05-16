@@ -5,7 +5,7 @@ import { z } from "zod"
 
 import { API_KEY_SCOPES } from "@arciin/shared"
 
-import { recordActivity } from "@/services/activity/record-activity"
+import { recordAndBroadcastActivity } from "@/services/activity/record-and-broadcast-activity"
 import { hashApiKey, requireRole } from "@/services/security/auth"
 import { serializeApiKey } from "@/services/serializers"
 
@@ -95,7 +95,7 @@ export async function registerApiKeyRoutes(fastify: FastifyInstance) {
         },
       })
 
-      await recordActivity(fastify.prisma, {
+      await recordAndBroadcastActivity(fastify, {
         userId: request.auth.user.id,
         type: "api-key.created",
         title: "API key created",
@@ -149,7 +149,7 @@ export async function registerApiKeyRoutes(fastify: FastifyInstance) {
       })
 
       if (request.auth) {
-        await recordActivity(fastify.prisma, {
+        await recordAndBroadcastActivity(fastify, {
           userId: request.auth.user.id,
           type: "api-key.rotated",
           title: "API key rotated",
@@ -186,7 +186,7 @@ export async function registerApiKeyRoutes(fastify: FastifyInstance) {
       })
 
       if (request.auth) {
-        await recordActivity(fastify.prisma, {
+        await recordAndBroadcastActivity(fastify, {
           userId: request.auth.user.id,
           type: "api-key.revoked",
           title: "API key revoked",

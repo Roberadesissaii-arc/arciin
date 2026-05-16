@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify"
 
+import { buildRealtimeEvent } from "@/services/events/publish-event"
 import { loadAccessControlSettings } from "@/services/security/access-control-settings"
 
 const FAIL_WINDOW_SEC = 900
@@ -37,13 +38,23 @@ export async function recordFailedLogin(
   }
 
   if (settings.loginAlertsEnabled) {
-    await fastify.prisma.activityEvent.create({
+    const row = await fastify.prisma.activityEvent.create({
       data: {
         type: "auth.login_failed",
         title: "Failed sign-in attempt",
         message: `Failed login for ${email.toLowerCase()} from ${request.ip}.`,
       },
     })
+    await fastify.publishRealtimeEvent(
+      buildRealtimeEvent("activity.created", {
+        message: row.message ?? undefined,
+        data: {
+          type: row.type,
+          title: row.title,
+          activityId: row.id,
+        },
+      }),
+    )
   }
 
   if (attempts >= settings.maxFailedLogins) {

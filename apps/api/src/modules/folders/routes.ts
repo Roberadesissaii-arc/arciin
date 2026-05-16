@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify"
 import { z } from "zod"
 
-import { recordActivity } from "@/services/activity/record-activity"
+import { recordAndBroadcastActivity } from "@/services/activity/record-and-broadcast-activity"
 import { requireSessionRolesOrApiKeyScopes } from "@/services/security/auth"
 import { serializeFolder } from "@/services/serializers"
 import { slugify } from "@/services/slug"
@@ -126,7 +126,7 @@ export async function registerFolderRoutes(fastify: FastifyInstance) {
       })
 
       if (request.auth) {
-        await recordActivity(fastify.prisma, {
+        await recordAndBroadcastActivity(fastify, {
           userId: request.auth.user.id,
           type: "folder.created",
           title: "Folder created",

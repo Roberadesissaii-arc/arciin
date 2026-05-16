@@ -4,7 +4,6 @@ import {
   applyPrivacyToChatContext,
   buildAiSecuritySystemAppend,
   buildAiSystemAppend,
-  isPasswordRelatedChatQuery,
   isPasswordRelatedConversation,
   isVaultListingQuery,
   recentUserVaultContextText,
@@ -482,6 +481,7 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
           model,
           userId: request.auth!.user.id,
           maxAssets: parsed.data.maxAssets,
+          publishRealtimeEvent: fastify.publishRealtimeEvent,
         })
         reply.send({ data: result })
       } catch (err) {
@@ -853,6 +853,7 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
               model,
               userId: request.auth!.user.id,
               libraryToolAccess: security.libraryToolAccess,
+              publishRealtimeEvent: fastify.publishRealtimeEvent,
             },
             ai: { agent: aiSettings.agent, autonomy: aiSettings.autonomy },
             security: {

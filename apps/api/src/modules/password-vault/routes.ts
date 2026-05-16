@@ -133,11 +133,13 @@ function redactSecrets<T extends { password: string | null }>(
   visible: boolean,
 ): T & { passwordLength?: number; hasPassword?: boolean } {
   if (visible) {
-    const { passwordLength: _pl, hasPassword: _hp, ...rest } = entry as T & {
+    const copy = { ...entry } as T & {
       passwordLength?: number
       hasPassword?: boolean
     }
-    return rest as T
+    delete copy.passwordLength
+    delete copy.hasPassword
+    return copy as T
   }
   const hasPassword = Boolean(entry.password)
   return {
@@ -396,7 +398,8 @@ export async function registerPasswordVaultRoutes(fastify: FastifyInstance) {
         }
       }
 
-      const { accountPassword: _ignored, ...displayPatch } = parsed.data
+      const { accountPassword, ...displayPatch } = parsed.data
+      void accountPassword
       const nextAi = mergePasswordVaultDisplay(instance.aiConfig, displayPatch)
       await fastify.prisma.instanceConfig.update({
         where: { id: instance.id },

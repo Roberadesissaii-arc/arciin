@@ -1,6 +1,6 @@
 import type { PrismaClient } from "@prisma/client"
 
-import { recordActivity } from "@/services/activity/record-activity"
+import { recordAndBroadcastActivity } from "@/services/activity/record-and-broadcast-activity"
 import { slugify } from "@/services/slug"
 
 import {
@@ -108,6 +108,7 @@ export async function organizeImagesLibrary(opts: {
   model: string
   userId: string
   maxAssets?: number
+  publishRealtimeEvent?: (event: import("@arciin/shared").RealtimeEvent) => Promise<void>
 }): Promise<{
   libraryId: string
   libraryName: string
@@ -194,7 +195,9 @@ export async function organizeImagesLibrary(opts: {
         data: { folderId: folder.id },
       })
 
-      await recordActivity(opts.prisma, {
+      await recordAndBroadcastActivity(
+        { prisma: opts.prisma, publishRealtimeEvent: opts.publishRealtimeEvent },
+        {
         userId: opts.userId,
         type: "asset.moved",
         title: "Image organized",
@@ -202,17 +205,21 @@ export async function organizeImagesLibrary(opts: {
         entityType: "asset",
         entityId: asset.id,
         metadata: { folderId: folder.id, organizedByAi: true },
-      })
+      },
+      )
 
       if (created) {
-        await recordActivity(opts.prisma, {
-          userId: opts.userId,
-          type: "folder.created",
-          title: "Folder created",
-          message: `${folder.name} was created while organizing images.`,
-          entityType: "folder",
-          entityId: folder.id,
-        })
+        await recordAndBroadcastActivity(
+          { prisma: opts.prisma, publishRealtimeEvent: opts.publishRealtimeEvent },
+          {
+            userId: opts.userId,
+            type: "folder.created",
+            title: "Folder created",
+            message: `${folder.name} was created while organizing images.`,
+            entityType: "folder",
+            entityId: folder.id,
+          },
+        )
       }
 
       results.push({

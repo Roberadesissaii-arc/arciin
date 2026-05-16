@@ -5,7 +5,7 @@ import { z } from "zod"
 
 import { SOCKET_EVENT_TYPES } from "@arciin/shared"
 
-import { recordActivity } from "@/services/activity/record-activity"
+import { recordAndBroadcastActivity } from "@/services/activity/record-and-broadcast-activity"
 import { encryptSecret, decryptSecret, signBody } from "@/services/security/encryption"
 import { requireRole } from "@/services/security/auth"
 
@@ -142,7 +142,7 @@ export async function registerWebhookRoutes(fastify: FastifyInstance) {
         },
       })
 
-      await recordActivity(fastify.prisma, {
+      await recordAndBroadcastActivity(fastify, {
         userId: request.auth.user.id,
         type: "webhook.created",
         title: "Webhook created",
@@ -220,7 +220,7 @@ export async function registerWebhookRoutes(fastify: FastifyInstance) {
         },
       })
 
-      await recordActivity(fastify.prisma, {
+      await recordAndBroadcastActivity(fastify, {
         userId: request.auth.user.id,
         type: rotatedSecret ? "webhook.secret-rotated" : "webhook.updated",
         title: rotatedSecret ? "Webhook secret rotated" : "Webhook updated",
@@ -269,7 +269,7 @@ export async function registerWebhookRoutes(fastify: FastifyInstance) {
       })
 
       if (request.auth) {
-        await recordActivity(fastify.prisma, {
+        await recordAndBroadcastActivity(fastify, {
           userId: request.auth.user.id,
           type: "webhook.deleted",
           title: "Webhook deleted",
@@ -357,7 +357,7 @@ export async function registerWebhookRoutes(fastify: FastifyInstance) {
       })
 
       if (request.auth) {
-        await recordActivity(fastify.prisma, {
+        await recordAndBroadcastActivity(fastify, {
           userId: request.auth.user.id,
           type: result.ok ? "webhook.test-succeeded" : "webhook.test-failed",
           title: result.ok ? "Webhook test delivered" : "Webhook test failed",
