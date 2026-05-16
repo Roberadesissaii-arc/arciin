@@ -14,15 +14,16 @@ import {
 } from "lucide-react"
 
 import { IntegrationCard } from "@/components/settings/integration-card"
+import {
+  DEFAULT_JELLYFIN_INTEGRATION,
+  DEFAULT_PLEX_INTEGRATION,
+  JELLYFIN_INTEGRATION_ID,
+  PLEX_INTEGRATION_ID,
+} from "@/lib/api/integrations"
+import { JellyfinConnectionGuideCard } from "@/components/settings/jellyfin-connection-guide-card"
+import { PlexConnectionGuideCard } from "@/components/settings/plex-connection-guide-card"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import {
-  Empty,
-  EmptyContent,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyTitle,
-} from "@/components/ui/empty"
 import { Skeleton } from "@/components/ui/skeleton"
 import { getIntegrations } from "@/lib/api/settings"
 import { queryKeys } from "@/lib/api/query-keys"
@@ -120,12 +121,16 @@ function IntegrationFlow() {
 function PlannedConnectorCard({
   title,
   description,
+  className,
 }: {
   title: string
   description: string
+  className?: string
 }) {
   return (
-    <Card className="border border-dashed border-primary/25 bg-gradient-to-br from-primary/[0.06] to-card">
+    <Card
+      className={`flex h-full min-h-0 flex-col border border-dashed border-primary/25 bg-gradient-to-br from-primary/[0.06] to-card ${className ?? ""}`}
+    >
       <CardHeader className="pb-2">
         <div className="flex items-center gap-2">
           <Plug className="size-5 shrink-0 text-primary" aria-hidden />
@@ -154,9 +159,15 @@ export function IntegrationsGrid() {
         <Skeleton className="h-48 rounded-2xl" />
         <div>
           <Skeleton className="mb-4 h-5 w-40" />
-          <div className="grid gap-4 xl:grid-cols-2">
-            <Skeleton className="h-56 rounded-2xl" />
-            <Skeleton className="h-56 rounded-2xl" />
+          <div className="space-y-4">
+            <div className="grid gap-4 lg:grid-cols-2">
+              <Skeleton className="h-56 rounded-2xl" />
+              <Skeleton className="h-56 rounded-2xl" />
+            </div>
+            <div className="grid gap-4 lg:grid-cols-2">
+              <Skeleton className="h-64 rounded-2xl" />
+              <Skeleton className="h-64 rounded-2xl" />
+            </div>
           </div>
         </div>
       </div>
@@ -187,28 +198,39 @@ export function IntegrationsGrid() {
       <section aria-labelledby="integrations-connectors">
         <SectionTitle id="integrations-connectors">Connectors</SectionTitle>
         <SectionLead>
-          Rows below are persisted in the <span className="font-mono text-foreground">integrations</span> table.
-          Plex is a placeholder today: organize folders first, then a future release can attach server credentials and
-          health checks—without changing where files live on disk.
+          Plex and Jellyfin are live connectors—same folder + disk mirror model. Turn on{" "}
+          <span className="font-medium text-foreground">Use … folders</span> on each card, then follow the install guides
+          below. S3 replication and other platform work stays in the Roadmap.
         </SectionLead>
-        {sorted.length === 0 ? (
-          <Empty className="rounded-2xl border border-dashed border-border bg-muted/20">
-            <EmptyHeader>
-              <EmptyTitle>No integrations yet</EmptyTitle>
-              <EmptyDescription>
-                Run <span className="font-mono text-foreground">pnpm db:seed</span> after setup so the default Plex
-                placeholder exists.
-              </EmptyDescription>
-            </EmptyHeader>
-            <EmptyContent />
-          </Empty>
-        ) : (
-          <div className="grid gap-4 xl:grid-cols-2">
-            {sorted.map((integration) => (
-              <IntegrationCard key={integration.id} integration={integration} />
-            ))}
-          </div>
-        )}
+        {(() => {
+          const plex =
+            sorted.find((i) => i.type === "PLEX" || i.id === PLEX_INTEGRATION_ID) ?? DEFAULT_PLEX_INTEGRATION
+          const jellyfin =
+            sorted.find((i) => i.id === JELLYFIN_INTEGRATION_ID) ?? DEFAULT_JELLYFIN_INTEGRATION
+          const others = sorted.filter(
+            (i) => i.type !== "PLEX" && i.id !== PLEX_INTEGRATION_ID && i.id !== JELLYFIN_INTEGRATION_ID,
+          )
+
+          return (
+            <div className="space-y-4">
+              <div className="grid items-stretch gap-4 lg:grid-cols-2 [&>*]:h-full [&>*]:min-h-0">
+                <IntegrationCard integration={plex} />
+                <IntegrationCard integration={jellyfin} />
+              </div>
+              <div className="grid items-stretch gap-4 lg:grid-cols-2 [&>*]:h-full [&>*]:min-h-0">
+                <PlexConnectionGuideCard />
+                <JellyfinConnectionGuideCard />
+              </div>
+              {others.length > 0 ? (
+                <div className="grid gap-4 lg:grid-cols-2">
+                  {others.map((integration) => (
+                    <IntegrationCard key={integration.id} integration={integration} />
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          )
+        })()}
       </section>
 
       <section aria-labelledby="integrations-developer">
@@ -257,8 +279,8 @@ export function IntegrationsGrid() {
       <section aria-labelledby="integrations-roadmap">
         <SectionTitle id="integrations-roadmap">Roadmap</SectionTitle>
         <SectionLead>
-          Upcoming connector slots—no fake enabled toggles until the worker and API are wired. Icons match the accent
-          used above so the page reads as one system.
+          Upcoming work (dashed cards). Object storage replication and extra sync targets are planned separately from
+          the live Plex and Jellyfin connectors above.
         </SectionLead>
         <div className="grid gap-4 lg:grid-cols-3">
           <PlannedConnectorCard
@@ -267,7 +289,7 @@ export function IntegrationsGrid() {
           />
           <PlannedConnectorCard
             title="Additional media targets"
-            description="More self-hosted targets (Jellyfin hints, backup sinks) without requiring a cloud account—same library layout rules."
+            description="Backup sinks and sync targets without requiring a cloud account—same library layout rules as Plex."
           />
           <Card className="flex flex-col border border-dashed border-primary/25 bg-gradient-to-br from-primary/[0.06] to-card">
             <CardHeader className="pb-2">

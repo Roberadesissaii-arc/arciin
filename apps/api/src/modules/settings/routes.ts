@@ -3,6 +3,7 @@ import path from "node:path"
 
 import {
   AI_EMOJI_USAGE_LEVELS,
+  AI_LIBRARY_TOOL_ACCESS_LEVELS,
   normalizeIpRule,
   parseAccessControlConfig,
   parseAiConfig,
@@ -16,7 +17,13 @@ import { apiConfig } from "@/config"
 import { invalidateAccessControlCache } from "@/services/security/access-control-settings"
 import { invalidateApiProtectionCache } from "@/services/security/instance-security"
 import { hashToken, requireRole } from "@/services/security/auth"
-import { directoryUsageBytes } from "@/services/storage/local-storage"
+import { ClearInstanceContentError, clearInstanceContent } from "@/services/settings/clear-instance-content"
+import {
+  getCloudflareTunnelState,
+  startCloudflareQuickTunnel,
+  stopCloudflareQuickTunnel,
+} from "@/services/remote-access/cloudflare-tunnel"
+import { resolveStorageUsageBytes } from "@/services/storage/local-storage"
 
 const generalSchema = z.object({
   instanceName: z.string().min(1).max(80),
@@ -46,18 +53,43 @@ const aiSecuritySchema = z.object({
   redactSecrets:       z.boolean().optional(),
   redactPII:           z.boolean().optional(),
   readOnlyTools:       z.boolean().optional(),
+  libraryToolAccess:   z.enum(AI_LIBRARY_TOOL_ACCESS_LEVELS).optional(),
   requireToolApproval: z.boolean().optional(),
   hideLibraryNames:    z.boolean().optional(),
   hideAssetCounts:     z.boolean().optional(),
   hideStorageSize:     z.boolean().optional(),
   hideUploadDates:     z.boolean().optional(),
+  passwordVaultAiAccess: z.enum(["blocked", "count_only", "metadata"]).optional(),
+  passwordVaultAiShare: z
+    .object({
+      names: z.boolean().optional(),
+      usernames: z.boolean().optional(),
+      urls: z.boolean().optional(),
+      notes: z.boolean().optional(),
+    })
+    .optional(),
+  passwordQueriesLocalAiOnly: z.boolean().optional(),
 })
+
+const clearDataSchema = z
+  .object({
+    password: z.string().min(1),
+    clearChat: z.boolean(),
+    clearMedia: z.boolean(),
+    clearAppData: z.boolean().optional(),
+  })
+  .refine((b) => b.clearChat || b.clearMedia || Boolean(b.clearAppData), {
+    message: "Select at least one category to clear.",
+    path: ["clearMedia"],
+  })
 
 const securitySchema = z.object({
   publicSignupEnabled: z.boolean().optional(),
   sessionTimeoutMinutes: z.number().int().min(5).max(43200).optional(),
   loginAlertsEnabled: z.boolean().optional(),
   maxFailedLogins: z.number().int().min(3).max(100).optional(),
+  idleLogoutEnabled: z.boolean().optional(),
+  idleLogoutMinutes: z.number().int().min(5).max(480).optional(),
   ipAllowlist: z.array(z.string().max(120)).max(512).optional(),
   ipBlocklist: z.array(z.string().max(120)).max(512).optional(),
   enforceIpAllowlist: z.boolean().optional(),
@@ -119,7 +151,11 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
       })
 
       const storageRoot = instance?.storageRoot || defaultStorage?.rootPath || "./data/arciin"
-      const usageBytes = await directoryUsageBytes(storageRoot)
+      const storageAgg = await fastify.prisma.storageObject.aggregate({
+        _sum: { sizeBytes: true },
+      })
+      const trackedBytes = Number(storageAgg._sum.sizeBytes ?? 0)
+      const usageBytes = await resolveStorageUsageBytes(storageRoot, trackedBytes)
       const objectCount = await fastify.prisma.storageObject.count()
       let writable = true
       let totalBytes: number | null = null
@@ -207,7 +243,16 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
           storageRoot,
           defaultLocationId: null,
           writable: true,
-          usageBytes: await directoryUsageBytes(storageRoot),
+          usageBytes: await resolveStorageUsageBytes(
+            storageRoot,
+            Number(
+              (
+                await fastify.prisma.storageObject.aggregate({
+                  _sum: { sizeBytes: true },
+                })
+              )._sum.sizeBytes ?? 0,
+            ),
+          ),
           objectCount: await fastify.prisma.storageObject.count(),
           totalBytes: null,
           availableBytes: null,
@@ -316,6 +361,95 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
   )
 
   fastify.get(
+    "/settings/cloudflare-tunnel",
+    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    async (_request, reply) => {
+      const tunnel = getCloudflareTunnelState()
+      const instance = await fastify.prisma.instanceConfig.findFirst()
+      reply.send({
+        data: {
+          ...tunnel,
+          cloudflareTunnelEnabled: Boolean(
+            (instance?.remoteAccessConfig as Record<string, unknown> | null)?.cloudflareTunnelEnabled,
+          ),
+          publicUrl: instance?.publicUrl ?? null,
+        },
+      })
+    },
+  )
+
+  fastify.post(
+    "/settings/cloudflare-tunnel/start",
+    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    async (request, reply) => {
+      const instance = await fastify.prisma.instanceConfig.findFirst()
+      if (!instance) {
+        reply.status(409).send({
+          error: {
+            code: "INSTANCE_NOT_READY",
+            message: "Claim the instance before starting a tunnel.",
+          },
+        })
+        return
+      }
+
+      const localTarget = process.env.ARCIIN_PUBLIC_URL || "http://localhost:3000"
+
+      try {
+        const url = await startCloudflareQuickTunnel(localTarget)
+        const prevConfig = (instance.remoteAccessConfig as Record<string, unknown> | null) || {}
+        await fastify.prisma.instanceConfig.update({
+          where: { id: instance.id },
+          data: {
+            publicUrl: url,
+            remoteAccessMode: "cloudflare-tunnel",
+            remoteAccessConfig: {
+              ...prevConfig,
+              cloudflareTunnelEnabled: true,
+              reverseProxyEnabled: false,
+            },
+          },
+        })
+
+        if (request.auth) {
+          await fastify.prisma.activityEvent.create({
+            data: {
+              userId: request.auth.user.id,
+              type: "settings.cloudflare_tunnel_started",
+              title: "Cloudflare quick tunnel started",
+              message: `Public URL set to ${url}`,
+            },
+          })
+        }
+
+        reply.send({
+          data: {
+            ...getCloudflareTunnelState(),
+            publicUrl: url,
+            cloudflareTunnelEnabled: true,
+          },
+        })
+      } catch (error) {
+        reply.status(503).send({
+          error: {
+            code: "CLOUDFLARE_TUNNEL_FAILED",
+            message: error instanceof Error ? error.message : "Could not start Cloudflare tunnel.",
+          },
+        })
+      }
+    },
+  )
+
+  fastify.post(
+    "/settings/cloudflare-tunnel/stop",
+    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    async (_request, reply) => {
+      stopCloudflareQuickTunnel()
+      reply.send({ data: getCloudflareTunnelState() })
+    },
+  )
+
+  fastify.get(
     "/settings/security",
     { preHandler: requireRole(["OWNER", "ADMIN"]) },
     async (_request, reply) => {
@@ -335,6 +469,11 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
           apiKeyRequestsPerMinute:    Number(sec.apiKeyRequestsPerMinute ?? 0),
           requireApiKeyExpiry:        Boolean(sec.requireApiKeyExpiry ?? false),
           maxApiKeyExpiryDays:        Number(sec.maxApiKeyExpiryDays ?? 0),
+          idleLogoutEnabled:          sec.idleLogoutEnabled !== false,
+          idleLogoutMinutes:          Math.min(
+            480,
+            Math.max(5, Number(sec.idleLogoutMinutes ?? 30)),
+          ),
         },
       })
     }
@@ -368,6 +507,11 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
         apiKeyRequestsPerMinute:    parsed.data.apiKeyRequestsPerMinute    ?? Number(prevSec.apiKeyRequestsPerMinute ?? 0),
         requireApiKeyExpiry:        parsed.data.requireApiKeyExpiry        ?? Boolean(prevSec.requireApiKeyExpiry ?? false),
         maxApiKeyExpiryDays:        parsed.data.maxApiKeyExpiryDays        ?? Number(prevSec.maxApiKeyExpiryDays ?? 0),
+        idleLogoutEnabled:          parsed.data.idleLogoutEnabled          ?? prevSec.idleLogoutEnabled !== false,
+        idleLogoutMinutes:          parsed.data.idleLogoutMinutes          ?? Math.min(
+          480,
+          Math.max(5, Number(prevSec.idleLogoutMinutes ?? 30)),
+        ),
       }
       await fastify.prisma.instanceConfig.update({
         where: { id: instance.id },
@@ -404,6 +548,8 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
           sessionTimeoutMinutes: access.sessionTimeoutMinutes,
           loginAlertsEnabled: access.loginAlertsEnabled,
           maxFailedLogins: access.maxFailedLogins,
+          idleLogoutEnabled: access.idleLogoutEnabled,
+          idleLogoutMinutes: access.idleLogoutMinutes,
           passwordHashing: "Argon2id",
           sessionStorage: "hashed",
           cookieFlags: "httpOnly, SameSite=Lax",
@@ -618,8 +764,66 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
       const prev = getAiCfg(instance)
       const prevSec = (prev.security as Record<string, unknown> | null) ?? {}
       const nextSec: Record<string, unknown> = { ...prevSec, ...Object.fromEntries(Object.entries(parsed.data).filter(([, v]) => v !== undefined)) }
+      if (parsed.data.libraryToolAccess !== undefined) {
+        nextSec.libraryToolAccess = parsed.data.libraryToolAccess
+        nextSec.readOnlyTools = parsed.data.libraryToolAccess === "vision_only"
+      } else if (parsed.data.readOnlyTools !== undefined) {
+        nextSec.libraryToolAccess = parsed.data.readOnlyTools ? "vision_only" : "full"
+        nextSec.readOnlyTools = parsed.data.readOnlyTools
+      }
       await fastify.prisma.instanceConfig.update({ where: { id: instance.id }, data: { aiConfig: { ...prev, security: nextSec } as unknown as import("@prisma/client").Prisma.InputJsonValue } })
       reply.send({ data: parseAiSecurityConfig(nextSec) })
     }
+  )
+
+  fastify.post(
+    "/settings/clear-data",
+    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    async (request, reply) => {
+      const parsed = clearDataSchema.safeParse(request.body)
+      if (!parsed.success) {
+        reply.status(400).send({
+          error: {
+            code: "VALIDATION_ERROR",
+            message: "Invalid clear-data payload.",
+            details: parsed.error.flatten(),
+          },
+        })
+        return
+      }
+
+      const user = request.auth!.user
+      try {
+        await clearInstanceContent(fastify.prisma, user.id, parsed.data.password, {
+          clearChat: parsed.data.clearChat,
+          clearMedia: parsed.data.clearMedia,
+          clearAppData: parsed.data.clearAppData ?? false,
+        })
+      } catch (err) {
+        if (err instanceof ClearInstanceContentError) {
+          if (err.code === "INVALID_PASSWORD") {
+            reply.status(401).send({
+              error: { code: "INVALID_PASSWORD", message: err.message },
+            })
+            return
+          }
+          if (err.code === "NOTHING_SELECTED") {
+            reply.status(400).send({
+              error: { code: "VALIDATION_ERROR", message: err.message },
+            })
+            return
+          }
+        }
+        reply.status(500).send({
+          error: {
+            code: "CLEAR_FAILED",
+            message: err instanceof Error ? err.message : "Could not clear instance data.",
+          },
+        })
+        return
+      }
+
+      reply.send({ data: { ok: true as const } })
+    },
   )
 }

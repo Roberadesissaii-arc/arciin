@@ -1,6 +1,9 @@
 import Link from "next/link"
 import { ExternalLink } from "lucide-react"
 
+import { JELLYFIN_INTEGRATION_ID } from "@/lib/api/integrations"
+import { JellyfinIntegrationCard } from "@/components/settings/jellyfin-integration-card"
+import { PlexIntegrationCard } from "@/components/settings/plex-integration-card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -9,7 +12,7 @@ import type { IntegrationSummary } from "@/lib/types/models"
 function typeBlurb(type: IntegrationSummary["type"]): string {
   switch (type) {
     case "PLEX":
-      return "Plex reads your disk through its own server. Arciin keeps files where you put them—use a compatible folder (e.g. Videos/Plex) until a full API link is supported."
+      return "Plex reads your disk through its own server. Arciin keeps files where you put them."
     case "S3":
       return "When enabled, this connector will mirror or tier objects to S3-compatible storage. Not wired in the worker yet."
     case "WEBHOOK":
@@ -23,8 +26,6 @@ function typeBlurb(type: IntegrationSummary["type"]): string {
 
 function typeHint(type: IntegrationSummary["type"]): string {
   switch (type) {
-    case "PLEX":
-      return "Placeholder: organize libraries first, then connect Plex server details in a later release."
     case "S3":
       return "Reserved for object-storage replication jobs."
     case "WEBHOOK":
@@ -37,13 +38,16 @@ function typeHint(type: IntegrationSummary["type"]): string {
 }
 
 export function IntegrationCard({ integration }: { integration: IntegrationSummary }) {
-  const suggested =
-    typeof integration.config?.suggestedFolder === "string"
-      ? (integration.config.suggestedFolder as string)
-      : "Videos/Plex"
+  if (integration.type === "PLEX") {
+    return <PlexIntegrationCard integration={integration} />
+  }
+
+  if (integration.id === JELLYFIN_INTEGRATION_ID) {
+    return <JellyfinIntegrationCard integration={integration} />
+  }
 
   return (
-    <Card className="border-border bg-card">
+    <Card className="flex h-full min-h-0 flex-col border-border bg-card">
       <CardHeader>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0 space-y-1">
@@ -66,26 +70,14 @@ export function IntegrationCard({ integration }: { integration: IntegrationSumma
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="rounded-2xl border border-border bg-muted/50 p-4 text-sm text-zinc-700">
-          {typeHint(integration.type)}
-        </div>
-
-        {integration.type === "PLEX" ? (
-          <div className="rounded-2xl border border-primary/20 bg-orange-50/50 p-4 text-sm text-zinc-800">
-            <span className="font-medium text-zinc-900">Suggested folder: </span>
-            <span className="font-mono text-zinc-800">{suggested}</span>
-            <p className="mt-2 text-zinc-600">
-              Create that path under your Videos library in Arciin so Plex’s library scanner sees the same tree.
-            </p>
+        {typeHint(integration.type) ? (
+          <div className="rounded-2xl border border-border bg-muted/50 p-4 text-sm text-zinc-700">
+            {typeHint(integration.type)}
           </div>
         ) : null}
 
         <div className="flex flex-wrap gap-2">
-          {integration.type === "PLEX" ? (
-            <Button variant="outline" className="border-border" disabled>
-              Configure Plex (soon)
-            </Button>
-          ) : integration.type === "WEBHOOK" ? (
+          {integration.type === "WEBHOOK" ? (
             <Button asChild variant="outline" className="border-border">
               <Link href="/developer/webhooks">
                 Open Webhooks

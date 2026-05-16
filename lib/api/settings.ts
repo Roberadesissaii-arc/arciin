@@ -8,6 +8,7 @@ import type {
   GeneralSettings,
   IntegrationSummary,
   JobSummary,
+  CloudflareTunnelStatus,
   RemoteAccessSettings,
   SecuritySettings,
   StorageSettings,
@@ -48,6 +49,27 @@ export function updateRemoteAccessSettings(input: Partial<RemoteAccessSettings>)
   return fetchApi<RemoteAccessSettings>("/settings/remote-access", {
     method: "PATCH",
     body: input,
+  })
+}
+
+export function getCloudflareTunnelStatus(signal?: AbortSignal) {
+  return fetchApi<CloudflareTunnelStatus>("/settings/cloudflare-tunnel", {
+    method: "GET",
+    signal,
+  })
+}
+
+export function startCloudflareTunnel() {
+  return fetchApi<CloudflareTunnelStatus>("/settings/cloudflare-tunnel/start", {
+    method: "POST",
+    body: {},
+  })
+}
+
+export function stopCloudflareTunnel() {
+  return fetchApi<CloudflareTunnelStatus>("/settings/cloudflare-tunnel/stop", {
+    method: "POST",
+    body: {},
   })
 }
 
@@ -165,6 +187,25 @@ export function getAiSecuritySettings(signal?: AbortSignal) {
 
 export function updateAiSecuritySettings(input: Partial<AiSecuritySettings>) {
   return fetchApi<AiSecuritySettings>("/settings/ai-security", { method: "PATCH", body: input })
+}
+
+export type ClearInstanceDataInput = {
+  password: string
+  clearChat: boolean
+  clearMedia: boolean
+  clearAppData?: boolean
+}
+
+export function clearInstanceData(input: ClearInstanceDataInput) {
+  return fetchApi<{ ok: true }>("/settings/clear-data", {
+    method: "POST",
+    body: {
+      password: input.password,
+      clearChat: input.clearChat,
+      clearMedia: input.clearMedia,
+      clearAppData: input.clearAppData ?? false,
+    },
+  })
 }
 
 export function getIntegrations(signal?: AbortSignal) {

@@ -86,7 +86,7 @@ export function RemoteAccessPanel() {
               install <code className="text-foreground">cloudflared</code>—you run it on the server. Put the URL
               Cloudflare prints (or your own hostname) under{" "}
               <Link href="/settings?tab=domain" className="font-medium text-primary underline-offset-4 hover:underline">
-                Settings → Domain → Public base URL
+                Settings → Domain
               </Link>
               .
             </CardDescription>

@@ -1,0 +1,61 @@
+"use client"
+
+import type { ReactNode } from "react"
+
+import {
+  SETTINGS_GROUP_LABELS,
+  SETTINGS_NAV,
+  type SettingsTab,
+} from "@/components/settings/settings-nav-config"
+
+export function SettingsShell({
+  tab,
+  onTabChange,
+  children,
+}: {
+  tab: SettingsTab
+  onTabChange: (tab: SettingsTab) => void
+  children: ReactNode
+}) {
+  return (
+    <div className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-start sm:gap-5">
+      <div className="shrink-0 overflow-hidden rounded-2xl border border-border bg-card shadow-sm sm:sticky sm:top-4 sm:w-60 sm:self-start">
+        <nav className="flex gap-1 overflow-x-auto px-2.5 py-2.5 scrollbar-hide sm:block sm:space-y-3 sm:overflow-visible sm:px-2.5 sm:py-3.5">
+          {SETTINGS_NAV.map((group, gi) => (
+            <div key={SETTINGS_GROUP_LABELS[gi]} className="sm:space-y-0.5">
+              <p className="hidden px-3 pb-1.5 pt-0.5 text-[11px] font-semibold uppercase tracking-wider text-zinc-500 sm:block">
+                {SETTINGS_GROUP_LABELS[gi]}
+              </p>
+              <div className="flex gap-1 sm:flex-col sm:gap-0.5">
+                {group.map(({ id, label, icon: Icon }) => {
+                  const active = tab === id
+                  return (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => onTabChange(id)}
+                      className={
+                        active
+                          ? "settings-nav-active shrink-0 whitespace-nowrap rounded-xl border px-3 py-2.5 text-left text-[12px] font-medium transition-colors sm:w-full"
+                          : "shrink-0 whitespace-nowrap rounded-xl border border-transparent px-3 py-2.5 text-left text-[12px] font-medium text-zinc-600 transition-colors hover:bg-zinc-100 hover:text-zinc-900 sm:w-full"
+                      }
+                    >
+                      <span className="flex items-center gap-3">
+                        <Icon className="size-4 shrink-0 opacity-90" />
+                        {label}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          ))}
+        </nav>
+      </div>
+
+      <div className="min-w-0 flex-1 overflow-x-auto rounded-2xl border border-border bg-card px-4 py-5 shadow-sm sm:px-7 sm:py-6">
+        {children}
+      </div>
+    </div>
+  )
+}
