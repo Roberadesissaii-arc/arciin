@@ -20,10 +20,13 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { useIsMobile } from "@/hooks/use-mobile"
+import { cn } from "@/lib/utils"
 import { useUiStore } from "@/lib/stores/ui-store"
 import { useSocketStore } from "@/lib/stores/socket-store"
 
 export function DashboardHeader() {
+  const isMobile = useIsMobile()
   const pathname = usePathname()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const commandOpen = useUiStore((state) => state.commandOpen)
@@ -60,7 +63,13 @@ export function DashboardHeader() {
 
   return (
     <header className="shrink-0 border-b border-border bg-background/90 backdrop-blur-xl">
-      <div className="flex flex-col gap-3 px-3 py-3 pt-12 md:flex-row md:items-center md:justify-between md:gap-4 md:pt-3 lg:px-5">
+      <div
+        className={cn(
+          "flex flex-col gap-3 px-3 py-3 md:flex-row md:items-center md:justify-between md:gap-4 md:pt-3 lg:px-5",
+          isMobile && "pt-12",
+        )}
+      >
+        {!isMobile ? (
         <div className="flex min-w-0 flex-1 items-center md:flex-initial">
           <div className="min-w-0 rounded-xl border border-border bg-card px-3 py-2 shadow-sm ring-1 ring-black/[0.04]">
             <Breadcrumb className="min-w-0">
@@ -104,6 +113,7 @@ export function DashboardHeader() {
             </Breadcrumb>
           </div>
         </div>
+        ) : null}
 
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2 md:min-w-0 md:justify-end">
           <DropdownMenu open={commandOpen} onOpenChange={setCommandOpen}>

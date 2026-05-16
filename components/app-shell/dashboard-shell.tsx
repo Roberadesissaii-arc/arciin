@@ -1,4 +1,7 @@
 import { AppSidebar } from "@/components/app-shell/app-sidebar"
+import { IdleLogoutWatcher } from "@/components/app-shell/idle-logout-watcher"
+import { MobileWebUnavailable } from "@/components/app-shell/mobile-web-unavailable"
+import { DashboardContentArea } from "@/components/app-shell/dashboard-content-area"
 import { DashboardMobileSidebarButton } from "@/components/app-shell/dashboard-mobile-sidebar-button"
 import { DashboardHeader } from "@/components/app-shell/dashboard-header"
 import { UploadOverlay } from "@/components/uploads/upload-overlay"
@@ -14,7 +17,10 @@ export function DashboardShell({
   auth: AuthSession
 }) {
   return (
-    <div className="relative flex h-[100dvh] max-h-[100dvh] min-h-0 w-full flex-col overflow-hidden bg-transparent">
+    <>
+      <MobileWebUnavailable className="md:hidden" />
+      <div className="relative hidden h-[100dvh] max-h-[100dvh] min-h-0 w-full flex-col overflow-hidden bg-transparent md:flex">
+      <IdleLogoutWatcher />
       <TooltipProvider delayDuration={0}>
         <SidebarProvider
           defaultOpen
@@ -24,18 +30,14 @@ export function DashboardShell({
           <SidebarInset className="relative dashboard-main flex min-h-0 flex-1 flex-col overflow-hidden bg-background text-foreground md:peer-data-[variant=inset]:!border-border md:peer-data-[variant=inset]:!bg-background md:peer-data-[variant=inset]:!text-foreground md:peer-data-[variant=inset]:!shadow-sm md:peer-data-[variant=inset]:!ring-zinc-200/40 md:peer-data-[variant=inset]:!backdrop-blur-none">
             <DashboardMobileSidebarButton />
             <DashboardHeader />
-            <div className="scrollbar-hide flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden bg-zinc-50/80 px-3 py-4 sm:px-4 lg:px-5">
-              <div
-                id="dashboard-scaled-content"
-                className="flex w-full min-h-0 min-w-0 flex-1 flex-col gap-6"
-              >
-                {children}
-              </div>
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-zinc-50/80">
+              <DashboardContentArea>{children}</DashboardContentArea>
             </div>
             <UploadOverlay />
           </SidebarInset>
         </SidebarProvider>
       </TooltipProvider>
-    </div>
+      </div>
+    </>
   )
 }

@@ -7,6 +7,7 @@ import {
   Database,
   Files,
   GalleryVerticalEnd,
+  FingerprintPattern,
   KeyRound,
   LayoutDashboard,
   MessageSquare,
@@ -44,6 +45,7 @@ export const operationsNavigation: NavigationItem[] = [
   { title: "Activity", href: "/activity", icon: Activity },
   { title: "Security", href: "/security", icon: ShieldCheck },
   { title: "Database", href: "/database", icon: Database },
+  { title: "Passwords", href: "/passwords", icon: FingerprintPattern },
 ]
 
 export const developerNavigation: NavigationItem[] = [
@@ -82,6 +84,7 @@ const pageTitles = new Map<string, string>([
   ["/events", "Events"],
   ["/webhooks", "Webhooks"],
   ["/database", "Database"],
+  ["/passwords", "Passwords"],
   ["/integrations", "Integrations"],
   ["/settings", "Settings"],
   ["/settings/storage", "Storage"],

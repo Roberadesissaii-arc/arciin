@@ -27,6 +27,7 @@ export default async function DashboardLayout({
   if (state.kind === "unavailable") {
     return (
       <SystemUnavailable
+        contextLabel="Dashboard"
         title="The dashboard shell is waiting for Arciin."
         description="The UI is ready, but the API must be online before the authenticated app can load."
       />

@@ -4,7 +4,7 @@ import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import {
   Bell, BookOpen, Boxes, ChevronLeft, ChevronRight,
-  ChevronsUpDown, Code2, Database, Files, GalleryVerticalEnd, HelpCircle, LayoutDashboard,
+  ChevronsUpDown, Code2, Database, Files, FingerprintPattern, GalleryVerticalEnd, HelpCircle, LayoutDashboard,
   Library,
   ListTree, LogOut, MessageSquare, Minus, MonitorDot, PackagePlus,
   Settings, ShieldCheck, Terminal, UserCog,
@@ -57,6 +57,7 @@ const SIDEBAR_SECONDARY_NAV: NavItem[] = [
   { id: "activity", label: "Activity", icon: MonitorDot, href: "/activity" },
   { id: "security", label: "Security", icon: ShieldCheck, href: "/security" },
   { id: "database", label: "Database", icon: Database,    href: "/database" },
+  { id: "passwords", label: "Passwords", icon: FingerprintPattern, href: "/passwords" },
 ]
 
 const BOTTOM: NavItem[] = [
