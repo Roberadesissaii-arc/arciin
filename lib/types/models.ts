@@ -1,3 +1,5 @@
+import type { AiLibraryToolAccess } from "@arciin/shared"
+
 export type UserRole = "OWNER" | "ADMIN" | "MEMBER" | "VIEWER"
 
 export type UserStatus = "ACTIVE" | "DISABLED"
@@ -53,7 +55,10 @@ export type SessionSummary = {
 
 export type AuthSession = {
   user: UserSummary
-  session: SessionSummary
+  /** Present for browser cookie sessions; null when using API key only. */
+  session: SessionSummary | null
+  apiKeyId?: string | null
+  apiKeyScopes?: string[] | null
 }
 
 export type InstanceStatus = {
@@ -263,11 +268,58 @@ export type RemoteAccessSettings = {
   cloudflareTunnelEnabled: boolean
 }
 
+export type CloudflareTunnelStatus = {
+  running: boolean
+  url: string | null
+  localTarget: string | null
+  error: string | null
+  cloudflareTunnelEnabled: boolean
+  publicUrl?: string | null
+}
+
+export type PasswordImportEntry = {
+  name: string
+  url?: string
+  username?: string
+  password?: string
+  notes?: string
+  category?: string
+}
+
+export type PasswordVaultDisplaySettings = {
+  showUsername: boolean
+  showUrl: boolean
+  showNotes: boolean
+  showCategory: boolean
+  showPasswordColumn: boolean
+  maskStyle: "dots" | "asterisk" | "block"
+  revealByDefault: boolean
+  lockSidebarVault: boolean
+}
+
+export type PasswordVaultEntry = {
+  id: string
+  name: string
+  username: string | null
+  password: string | null
+  /** Present when password is redacted so the UI can still render a mask. */
+  passwordLength?: number | null
+  hasPassword?: boolean
+  url: string | null
+  notes: string | null
+  category: string | null
+  importSource: string | null
+  createdAt: string
+  updatedAt: string
+}
+
 export type SecuritySettings = {
   publicSignupEnabled: boolean
   sessionTimeoutMinutes: number
   loginAlertsEnabled: boolean
   maxFailedLogins: number
+  idleLogoutEnabled: boolean
+  idleLogoutMinutes: number
   /** Single IPs or CIDR strings; enforced at edge when supported. */
   ipAllowlist: string[]
   ipBlocklist: string[]
@@ -315,12 +367,24 @@ export type AiSecuritySettings = {
   blockInjection: boolean
   redactSecrets: boolean
   redactPII: boolean
+  /** Derived from `libraryToolAccess === "vision_only"` for compatibility. */
   readOnlyTools: boolean
+  /** What the chat agent may do via library server tools. */
+  libraryToolAccess: AiLibraryToolAccess
   requireToolApproval: boolean
   hideLibraryNames: boolean
   hideAssetCounts: boolean
   hideStorageSize: boolean
   hideUploadDates: boolean
+  /** blocked | count_only | metadata (secrets always [VAULT_ENCRYPTED] for AI). */
+  passwordVaultAiAccess: "blocked" | "count_only" | "metadata"
+  passwordVaultAiShare: {
+    names: boolean
+    usernames: boolean
+    urls: boolean
+    notes: boolean
+  }
+  passwordQueriesLocalAiOnly: boolean
 }
 
 export type ModelProvider =
@@ -411,7 +475,8 @@ export type SessionDetail = {
 export type CreateFolderInput = {
   libraryId: string
   name: string
-  parentFolderId?: string
+  /** Omit, or pass `null` / `""` for a folder at the library root. */
+  parentFolderId?: string | null
 }
 
 export type CreateApiKeyInput = {

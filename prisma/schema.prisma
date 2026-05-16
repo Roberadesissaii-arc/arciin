@@ -94,6 +94,19 @@ model InstanceConfig {
   updatedAt          DateTime @updatedAt
 }
 
+/// Encrypted credential rows (AES-256-GCM). Plaintext never sent to AI providers.
+model PasswordVaultEntry {
+  id         String   @id @default(cuid())
+  ciphertext String   @db.Text
+  iv         String
+  authTag    String
+  importSource String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([createdAt])
+}
+
 model User {
   id             String          @id @default(cuid())
   name           String
@@ -282,6 +295,8 @@ model Asset {
   codec            String?
   status           AssetStatus
   processingError  String?
+  /// Relative path under storage root for Plex-visible library mirror (e.g. libraries/videos/plex/file.mp4).
+  libraryMirrorPath String?
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
   deletedAt        DateTime?

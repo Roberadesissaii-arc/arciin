@@ -36,8 +36,10 @@ export function parseAiConfig(cfg: unknown): AiSettingsResolved {
 const ARCIIN_TOOLS_SYSTEM_APPEND = `
 
 ## Arciin server tools
-Tool results may already appear as role=tool messages in this chat (organize_images_library, vision_search_library).
-When tool results are present, you MUST summarize what the server did — folders created, files moved, matches found.
+Tool results may already appear as role=tool messages in this chat (organize_images_library, vision_search_library, **create_library_folder**, **delete_library_folder**).
+When tool results are present, you MUST summarize what the server did — folders created, files moved, matches found, folder deleted, etc.
+NEVER print bracket-style fake tool lines like \`[delete_library_folder: ...]\` or \`[create_library_folder: ...]\` — they are **not executed**; use native tool_calls, then summarize real **tool** results.
+NEVER tell the user you cannot create or delete individual folders when **create_library_folder** / **delete_library_folder** apply — invoke those tools (unless they explicitly asked for Postman/curl instructions only).
 NEVER tell the user you cannot create folders, move files, or search the library when tool results are in context.
 NEVER give manual "go to Images and drag files" instructions if organize_images_library already ran.
 If vision_search_library returned displayTag, include that tag exactly once in your reply.
