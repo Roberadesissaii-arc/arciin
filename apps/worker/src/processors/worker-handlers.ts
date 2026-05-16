@@ -10,6 +10,9 @@ import type { Prisma } from "@prisma/client"
 import { prisma } from "@arciin/database"
 import {
   JOB_TYPES,
+  VIDEO_THUMBNAIL_PLACEHOLDER_SVG,
+  candidateStorageObjectPaths,
+  resolveArciinStorageRoot,
   type AnalyzeFilePayload,
   type CalculateStorageUsagePayload,
   type CleanupTempFilesPayload,
@@ -18,6 +21,7 @@ import {
   type PlexSyncPlaceholderPayload,
 } from "@arciin/shared"
 
+import { workerConfig } from "@/config"
 import { createRealtimeEvent, publishRealtimeEvent } from "@/services/realtime"
 
 async function markJob(
@@ -80,29 +84,69 @@ async function detectMetadata(filePath: string) {
   }
 }
 
-async function generateThumbnail(assetId: string, filePath: string, storageRoot: string) {
+async function generateThumbnail(
+  assetId: string,
+  filePath: string,
+  storageRoot: string,
+  mediaType: string,
+) {
   const thumbnailsDir = path.join(storageRoot, "thumbnails")
   await mkdir(thumbnailsDir, { recursive: true })
   const thumbnailPath = path.join(thumbnailsDir, `${assetId}.webp`)
 
   try {
-    if (filePath.match(/\.(png|jpe?g|webp|gif|bmp)$/i)) {
-      await sharp(filePath).resize(640, 360, { fit: "inside" }).webp().toFile(thumbnailPath)
+    if (mediaType === "IMAGE") {
+      await sharp(filePath, { failOn: "none" })
+        .rotate()
+        .resize(640, 360, { fit: "inside" })
+        .webp({ quality: 82 })
+        .toFile(thumbnailPath)
       return thumbnailPath
     }
 
-    await execa("ffmpeg", [
-      "-y",
-      "-i",
-      filePath,
-      "-frames:v",
-      "1",
-      "-vf",
-      "scale=640:-1",
-      thumbnailPath,
-    ])
+    if (filePath.match(/\.(png|jpe?g|webp|gif|bmp)$/i)) {
+      await sharp(filePath, { failOn: "none" })
+        .rotate()
+        .resize(640, 360, { fit: "inside" })
+        .webp({ quality: 82 })
+        .toFile(thumbnailPath)
+      return thumbnailPath
+    }
 
-    return thumbnailPath
+    if (mediaType === "VIDEO" || filePath.match(/\.(mov|mp4|mpe?g|webm|mkv|avi|m4v)$/i)) {
+      const r = await execa(
+        "ffmpeg",
+        [
+          "-hide_banner",
+          "-loglevel",
+          "error",
+          "-y",
+          "-i",
+          filePath,
+          "-frames:v",
+          "1",
+          "-vf",
+          "scale=640:-1",
+          thumbnailPath,
+        ],
+        { timeout: 120_000, reject: false },
+      )
+      if (r.exitCode === 0) {
+        try {
+          await access(thumbnailPath)
+          return thumbnailPath
+        } catch {
+          /* use placeholder */
+        }
+      }
+      await sharp(Buffer.from(VIDEO_THUMBNAIL_PLACEHOLDER_SVG))
+        .resize(640, 360)
+        .webp({ quality: 80 })
+        .toFile(thumbnailPath)
+      return thumbnailPath
+    }
+
+    return null
   } catch {
     return null
   }
@@ -120,7 +164,10 @@ export async function handleMediaJob(
 
   const asset = await prisma.asset.findUnique({
     where: { id: data.assetId },
-    include: { storageObject: true },
+    include: {
+      storageObject: true,
+      library: { select: { storageLocation: { select: { rootPath: true } } } },
+    },
   })
 
   if (!asset) {
@@ -128,10 +175,32 @@ export async function handleMediaJob(
   }
 
   const instance = await prisma.instanceConfig.findFirst()
-  const storageRoot = instance?.storageRoot || path.dirname(path.dirname(asset.storageObject.physicalPath))
+
+  let objectFilePath: string | null = null
+  for (const p of candidateStorageObjectPaths(
+    instance?.storageRoot ?? null,
+    asset.storageObject.physicalPath,
+    asset.storageObject.objectKey,
+    [path.resolve(workerConfig.ARCIIN_DATA_DIR), asset.library?.storageLocation?.rootPath],
+  )) {
+    try {
+      await access(p)
+      objectFilePath = p
+      break
+    } catch {
+      continue
+    }
+  }
+
+  if (!objectFilePath) {
+    await markJobFailure(data.jobRecordId, new Error("Original file missing on disk."))
+    return
+  }
+
+  const storageRoot = resolveArciinStorageRoot(instance?.storageRoot, objectFilePath)
 
   if (name === JOB_TYPES.analyzeFile || name === JOB_TYPES.extractMetadata) {
-    const metadata = await detectMetadata(asset.storageObject.physicalPath)
+    const metadata = await detectMetadata(objectFilePath)
 
     await prisma.asset.update({
       where: { id: asset.id },
@@ -187,8 +256,9 @@ export async function handleMediaJob(
   if (name === JOB_TYPES.generateThumbnail) {
     const thumbnailPath = await generateThumbnail(
       asset.id,
-      asset.storageObject.physicalPath,
-      storageRoot
+      objectFilePath,
+      storageRoot,
+      asset.mediaType,
     )
 
     await prisma.asset.update({

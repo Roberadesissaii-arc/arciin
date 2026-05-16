@@ -1,19 +1,23 @@
 "use client"
 
-import { createContext, useContext, useEffect, useRef, useState } from "react"
-import type { ReactNode } from "react"
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react"
+import type { MouseEvent, ReactNode } from "react"
 import Link from "next/link"
+import { ChevronDown } from "lucide-react"
 import { API_KEY_SCOPES } from "@arciin/shared"
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { cn } from "@/lib/utils"
 
 const apiBase  = process.env.NEXT_PUBLIC_API_BASE_URL  || "/api"
 const socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL   || "http://localhost:4000"
 const publicUrl = process.env.NEXT_PUBLIC_ARCIIN_PUBLIC_URL || "http://localhost:3000"
+const directApiOrigin = (process.env.NEXT_PUBLIC_ARCIIN_API_ORIGIN || "http://localhost:4000").replace(/\/$/, "")
 const BASE = apiBase.startsWith("http") ? apiBase : `${publicUrl}${apiBase}`
 
 const toc = [
   { href: "#overview",  label: "Overview" },
   { href: "#urls",       label: "URLs & environment" },
+  { href: "#external-apps", label: "Your website & API keys" },
   { href: "#playground", label: "API explorer" },
   { href: "#rest",       label: "Authentication" },
   { href: "#api-keys",  label: "API keys" },
@@ -30,10 +34,15 @@ const toc = [
 
 // ── Language context ───────────────────────────────────────────────────────────
 
-type Lang = "node" | "python" | "curl"
+type Lang = "node" | "python" | "curl" | "postman"
 const LangCtx = createContext<{ lang: Lang; set: (l: Lang) => void }>({ lang: "node", set: () => {} })
 
-const LANG_LABELS: Record<Lang, string> = { node: "Node.js", python: "Python", curl: "curl" }
+const LANG_LABELS: Record<Lang, string> = {
+  node: "Node.js",
+  python: "Python",
+  curl: "curl",
+  postman: "Postman",
+}
 
 // ── Primitives ─────────────────────────────────────────────────────────────────
 
@@ -61,16 +70,54 @@ function CodeBlock({ title, lang = "js", children }: { title?: string; lang?: st
   )
 }
 
+/** Shown when Postman tab is selected and a block has no custom `postman` text. Uses REST base from env. */
+function defaultPostmanInstructions() {
+  return `JSON REST base for this manual (paste as URL prefix in Postman):
+
+${BASE}
+
+Setup:
+1. New → HTTP request.
+2. Full URL = base above + path from the curl tab (e.g. …/libraries, …/auth/me). Paths are like /libraries — not /api-keys/libraries.
+3. Authorization → Bearer Token → your arc_live_… key (or Headers: Authorization = Bearer …).
+4. Accept: application/json.
+
+Wrong URL (HTML login / 404): http://localhost:3000/api-keys/libraries
+That path does not exist. To list libraries use:
+GET ${BASE}/libraries
+(scopes: libraries:read). The /api-keys routes only manage key records (admin), not library folders.`
+}
+
 /** Shows a code block only when lang matches. Falls back gracefully when no code provided. */
-function MultiCode({ node, python, curl, title }: { node?: string; python?: string; curl?: string; title?: string }) {
+function MultiCode({
+  node,
+  python,
+  curl,
+  postman,
+  title,
+}: {
+  node?: string
+  python?: string
+  curl?: string
+  /** Postman-specific steps; if omitted, a generic guide + this manual's base URL is shown. */
+  postman?: string
+  title?: string
+}) {
   const { lang } = useContext(LangCtx)
-  const code = lang === "python" ? python : lang === "curl" ? curl : node
+  const code =
+    lang === "postman"
+      ? (postman ?? defaultPostmanInstructions())
+      : lang === "python"
+        ? python
+        : lang === "curl"
+          ? curl
+          : node
   if (!code) {
-    const fallback = node ?? python ?? curl
-    if (!fallback) return null
+    const fallback = node ?? python ?? curl ?? postman ?? defaultPostmanInstructions()
     return <CodeBlock title={title} lang="js">{fallback}</CodeBlock>
   }
-  const fileType = lang === "python" ? "python" : lang === "curl" ? "sh" : "js"
+  const fileType =
+    lang === "postman" ? "txt" : lang === "python" ? "python" : lang === "curl" ? "sh" : "js"
   return <CodeBlock title={title} lang={fileType}>{code}</CodeBlock>
 }
 
@@ -95,11 +142,18 @@ function DocH2({ id, children }: { id: string; children: ReactNode }) {
     </h2>
   )
 }
-function DocH3({ children }: { children: ReactNode }) {
-  return <h3 className="text-[15px] font-semibold text-zinc-900">{children}</h3>
+function DocH3({ id, children, className }: { id?: string; children: ReactNode; className?: string }) {
+  return (
+    <h3
+      id={id}
+      className={cn("scroll-mt-28 text-[15px] font-semibold tracking-tight text-zinc-900", className)}
+    >
+      {children}
+    </h3>
+  )
 }
-function DocP({ children }: { children: ReactNode }) {
-  return <p className="text-[15px] leading-7 text-zinc-700">{children}</p>
+function DocP({ children, className }: { children: ReactNode; className?: string }) {
+  return <p className={cn("text-[15px] leading-7 text-zinc-700", className)}>{children}</p>
 }
 function IC({ children }: { children: ReactNode }) {
   return <code className="rounded bg-zinc-200/80 px-1.5 py-0.5 font-mono text-[12px] text-zinc-900">{children}</code>
@@ -114,14 +168,84 @@ function EndpointRow({ method, path, desc }: { method: string; path: string; des
     method === "POST" ? "bg-blue-100 text-blue-800" :
     method === "PATCH" ? "bg-amber-100 text-amber-800" :
     "bg-red-100 text-red-800"
+  const withPlaceholders = path.replace(/:[a-zA-Z]+/g, "{id}")
+  const pathPart = withPlaceholders.startsWith("/") ? withPlaceholders : `/${withPlaceholders}`
   return (
-    <div className="flex items-start gap-3 rounded-xl border border-zinc-100 bg-white px-3 py-2.5 shadow-sm">
-      <span className={`mt-0.5 shrink-0 rounded-md px-2 py-0.5 font-mono text-[11px] font-bold ${color}`}>{method}</span>
-      <div className="min-w-0 flex-1">
+    <div className="flex flex-col gap-1.5 rounded-xl border border-zinc-100 bg-white px-3 py-2.5 shadow-sm sm:flex-row sm:items-start sm:gap-3">
+      <span className={`mt-0.5 w-fit shrink-0 rounded-md px-2 py-0.5 font-mono text-[11px] font-bold ${color}`}>{method}</span>
+      <div className="min-w-0 flex-1 space-y-1">
         <span className="font-mono text-[13px] text-zinc-900">{path}</span>
-        <p className="mt-0.5 text-[12px] text-zinc-500">{desc}</p>
+        <p className="text-[12px] text-zinc-500">{desc}</p>
+        <p className="break-all font-mono text-[11px] leading-relaxed text-zinc-400">
+          → <span className="text-zinc-600">full URL shape:</span> {BASE}
+          {pathPart}
+        </p>
       </div>
     </div>
+  )
+}
+
+/** Expandable list of method + full URL + copy — like Git-style “copy link” for each verb. */
+function RequestUrlsCheatsheet({
+  label,
+  requests,
+}: {
+  label: string
+  requests: { method: string; fullPath: string; hint?: string }[]
+}) {
+  const [copied, setCopied] = useState<string | null>(null)
+  function copy(text: string, key: string) {
+    void navigator.clipboard.writeText(text).then(() => {
+      setCopied(key)
+      setTimeout(() => setCopied(null), 2000)
+    })
+  }
+  return (
+    <Collapsible defaultOpen className="rounded-xl border border-zinc-200/90 bg-zinc-50/80 shadow-sm">
+      <CollapsibleTrigger className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-[13px] font-semibold text-zinc-800 transition-colors hover:bg-zinc-100/80 [&[data-state=open]>svg]:rotate-180">
+        {label}
+        <ChevronDown className="size-4 shrink-0 text-zinc-500 transition-transform duration-200" aria-hidden />
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        <div className="space-y-2 border-t border-zinc-200/80 px-4 pb-4 pt-2">
+          {requests.map((req) => {
+            const url = `${BASE}${req.fullPath.startsWith("/") ? req.fullPath : `/${req.fullPath}`}`
+            const key = `${req.method}:${req.fullPath}`
+            return (
+              <div
+                key={key}
+                className="flex flex-col gap-2 rounded-lg border border-zinc-200 bg-white px-3 py-2.5 sm:flex-row sm:items-start sm:justify-between sm:gap-3"
+              >
+                <div className="min-w-0 flex-1 space-y-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span
+                      className={cn(
+                        "rounded-md px-2 py-0.5 font-mono text-[10px] font-bold uppercase",
+                        req.method === "GET" && "bg-emerald-100 text-emerald-800",
+                        req.method === "POST" && "bg-blue-100 text-blue-800",
+                        req.method === "PATCH" && "bg-amber-100 text-amber-800",
+                        req.method === "DELETE" && "bg-red-100 text-red-800",
+                      )}
+                    >
+                      {req.method}
+                    </span>
+                    {req.hint ? <span className="text-[11px] text-zinc-500">{req.hint}</span> : null}
+                  </div>
+                  <code className="block break-all font-mono text-[12px] leading-relaxed text-zinc-800">{url}</code>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => copy(url, key)}
+                  className="shrink-0 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-primary transition-colors hover:border-primary/40 hover:bg-primary/[0.06]"
+                >
+                  {copied === key ? "Copied" : "Copy URL"}
+                </button>
+              </div>
+            )
+          })}
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
   )
 }
 
@@ -365,25 +489,92 @@ function ApiPlayground() {
   )
 }
 
+/** Dashboard content scrolls in an inner `overflow-y-auto` pane, not the window — default `#hash` links do not move that pane. */
+function nearestScrollableAncestor(start: HTMLElement | null): HTMLElement | null {
+  let el: HTMLElement | null = start?.parentElement ?? null
+  while (el) {
+    const { overflowY } = getComputedStyle(el)
+    if (overflowY === "auto" || overflowY === "scroll" || overflowY === "overlay") {
+      return el
+    }
+    el = el.parentElement
+  }
+  return null
+}
+
 // ── Main export ───────────────────────────────────────────────────────────────
 
 export function DocumentationManual() {
   const [activeId, setActiveId] = useState("overview")
   const [lang, setLang] = useState<Lang>("node")
-  const observerRef = useRef<IntersectionObserver | null>(null)
+  const articleRef = useRef<HTMLElement>(null)
+
+  const scrollToSection = useCallback((id: string, smooth = true) => {
+    const el = document.getElementById(id)
+    if (!el) return
+    el.scrollIntoView({ behavior: smooth ? "smooth" : "auto", block: "start" })
+    setActiveId(id)
+    const nextHash = `#${id}`
+    if (typeof window !== "undefined" && window.location.hash !== nextHash) {
+      window.history.replaceState(null, "", nextHash)
+    }
+  }, [])
+
+  const onTocClick = useCallback(
+    (id: string, e: MouseEvent<HTMLAnchorElement>) => {
+      if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return
+      e.preventDefault()
+      scrollToSection(id)
+    },
+    [scrollToSection],
+  )
 
   useEffect(() => {
-    const headings = Array.from(document.querySelectorAll<HTMLElement>("h2[id]"))
-    observerRef.current?.disconnect()
-    observerRef.current = new IntersectionObserver(
-      (entries) => {
-        for (const e of entries) { if (e.isIntersecting) { setActiveId(e.target.id); break } }
-      },
-      { rootMargin: "-10% 0% -70% 0%", threshold: 0 },
-    )
-    headings.forEach((el) => observerRef.current!.observe(el))
-    return () => observerRef.current?.disconnect()
-  }, [])
+    const article = articleRef.current
+    if (!article) return
+
+    const firstHeading = article.querySelector<HTMLElement>("h2[id]")
+    const scrollRoot = nearestScrollableAncestor(firstHeading ?? article)
+
+    const pickActive = () => {
+      const headings = Array.from(article.querySelectorAll<HTMLElement>("h2[id]"))
+      if (headings.length === 0) return
+
+      const offset = 96
+      const line = scrollRoot ? scrollRoot.getBoundingClientRect().top + offset : offset
+
+      let current = headings[0].id
+      for (const h of headings) {
+        if (h.getBoundingClientRect().top <= line) current = h.id
+        else break
+      }
+      setActiveId((prev) => (prev === current ? prev : current))
+
+      if (typeof window !== "undefined") {
+        const nextHash = `#${current}`
+        if (window.location.hash !== nextHash) {
+          window.history.replaceState(null, "", nextHash)
+        }
+      }
+    }
+
+    const target: HTMLElement | Window = scrollRoot ?? window
+    target.addEventListener("scroll", pickActive, { passive: true })
+    window.addEventListener("resize", pickActive)
+
+    const validSectionIds = new Set(toc.map((t) => t.href.slice(1)))
+    const hash = typeof window !== "undefined" ? window.location.hash.slice(1) : ""
+    if (hash && validSectionIds.has(hash)) {
+      scrollToSection(hash, false)
+    }
+
+    pickActive()
+
+    return () => {
+      target.removeEventListener("scroll", pickActive)
+      window.removeEventListener("resize", pickActive)
+    }
+  }, [scrollToSection])
 
   return (
     <LangCtx.Provider value={{ lang, set: setLang }}>
@@ -397,8 +588,21 @@ export function DocumentationManual() {
               const id = href.slice(1)
               const active = activeId === id
               return (
-                <li key={href} className={cn("border-l-2 transition-colors", active ? "border-primary" : "border-transparent")}>
-                  <a href={href} className={cn("block rounded-r-lg py-1.5 pl-3 pr-2 text-[13px] transition-colors", active ? "font-semibold text-primary" : "text-zinc-500 hover:text-zinc-900")}>
+                <li
+                  key={href}
+                  className={cn(
+                    "rounded-lg border-l-[3px] transition-colors",
+                    active ? "border-primary bg-primary/[0.1]" : "border-transparent hover:bg-zinc-100/70",
+                  )}
+                >
+                  <a
+                    href={href}
+                    onClick={(e) => onTocClick(id, e)}
+                    className={cn(
+                      "block rounded-r-md py-2 pl-3 pr-2 text-[13px] transition-colors",
+                      active ? "font-semibold text-primary" : "text-zinc-600 hover:text-zinc-900",
+                    )}
+                  >
                     {label}
                   </a>
                 </li>
@@ -415,15 +619,31 @@ export function DocumentationManual() {
           <LangPicker />
 
           {/* ── Article ────────────────────────────────────────────────────── */}
-          <article className="space-y-12 border-t border-zinc-200/80 pt-5 xl:border-t-0 xl:pt-0">
+          <article ref={articleRef} className="space-y-12 border-t border-zinc-200/80 pt-5 xl:border-t-0 xl:pt-0">
 
             {/* Mobile pill nav */}
             <nav className="rounded-2xl border border-dashed border-zinc-300 bg-zinc-50/80 p-4 xl:hidden">
               <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-500">Jump to</p>
               <div className="flex flex-wrap gap-2">
-                {toc.map(({ href, label }) => (
-                  <a key={href} href={href} className="rounded-full border border-zinc-200 bg-white px-3 py-1 text-xs font-medium text-zinc-700 shadow-sm hover:border-primary/30 hover:text-primary">{label}</a>
-                ))}
+                {toc.map(({ href, label }) => {
+                  const id = href.slice(1)
+                  const active = activeId === id
+                  return (
+                    <a
+                      key={href}
+                      href={href}
+                      onClick={(e) => onTocClick(id, e)}
+                      className={cn(
+                        "rounded-full border px-3 py-1 text-xs font-medium shadow-sm transition-colors",
+                        active
+                          ? "border-primary/50 bg-primary/[0.12] text-primary"
+                          : "border-zinc-200 bg-white text-zinc-700 hover:border-primary/30 hover:text-primary",
+                      )}
+                    >
+                      {label}
+                    </a>
+                  )
+                })}
               </div>
             </nav>
 
@@ -460,8 +680,9 @@ export function DocumentationManual() {
             <DocH2 id="urls">URLs &amp; environment</DocH2>
             <div className="grid gap-3 sm:grid-cols-2">
               {[
-                { label: "Web app",       value: publicUrl, note: "Session cookie is set on this origin." },
-                { label: "REST API base", value: BASE,      note: "Prefix for every endpoint in this manual." },
+                { label: "Web app",       value: publicUrl, note: "Browser UI. Session cookie is set here after email/password login." },
+                { label: "REST API base", value: BASE,      note: "Use this string as PREFIX: every path in this manual is appended to it (e.g. base + \"/libraries\")." },
+                { label: "Direct API (optional)", value: `${directApiOrigin}/api`, note: "Bypass Next.js by calling Fastify on its port when the proxy is not involved.", wide: true },
                 { label: "Socket.IO server", value: socketUrl, note: "Connect socket.io-client to this origin.", wide: true },
               ].map((r) => (
                 <div key={r.label} className={cn("rounded-xl border border-zinc-200 bg-white p-4 shadow-sm", (r as { label: string; value: string; note: string; wide?: boolean }).wide && "sm:col-span-2")}>
@@ -471,9 +692,11 @@ export function DocumentationManual() {
                 </div>
               ))}
             </div>
-            <CodeBlock title=".env" lang="sh">{`NEXT_PUBLIC_API_BASE_URL=http://localhost:4000/api
+            <CodeBlock title=".env" lang="sh">{`NEXT_PUBLIC_API_BASE_URL=/api
+NEXT_PUBLIC_ARCIIN_API_ORIGIN=http://localhost:4000
 NEXT_PUBLIC_SOCKET_URL=http://localhost:4000
 NEXT_PUBLIC_ARCIIN_PUBLIC_URL=http://localhost:3000
+ARCIIN_API_URL=http://localhost:4000
 DATABASE_URL=postgresql://user:pass@localhost:5432/arciin
 REDIS_URL=redis://localhost:6379
 SESSION_SECRET=replace-with-64-char-random-string`}</CodeBlock>
@@ -481,7 +704,36 @@ SESSION_SECRET=replace-with-64-char-random-string`}</CodeBlock>
 
           <Sep />
 
-          {/* ── API Playground ────────────────────────────────────────────── */}
+          {/* ── External apps ─────────────────────────────────────────────── */}
+          <section className="space-y-5">
+            <DocH2 id="external-apps">Your website, another server &amp; API keys</DocH2>
+            <DocP>
+              <strong className="text-zinc-900">You do not use your Arciin email/password inside your own app.</strong> That login only exists for humans using the Arciin web UI in a browser (it sets an httpOnly session cookie on the Arciin origin).
+            </DocP>
+            <DocP>
+              To call Arciin from <strong className="text-zinc-900">your website backend, a script, or curl</strong>, create an <strong className="text-zinc-900">API key</strong> once in Arciin (<Link href="/developer/api-keys" className="font-medium text-primary underline-offset-4 hover:underline">Developer → API Keys</Link>), choose the <strong className="text-zinc-900">scopes</strong> you need (e.g. <IC>libraries:read</IC>, <IC>assets:read</IC>, <IC>uploads:create</IC>), and store the raw key server-side—same idea as a Supabase service role or Firebase server key: one secret represents that integration.
+            </DocP>
+            <Callout variant="warning" title='Why you saw "Sign in" or 401'>
+              <p>
+                Every JSON API request must send <strong className="text-zinc-900">either</strong> the browser session cookie (only works from the Arciin web app, same origin) <strong className="text-zinc-900">or</strong> an <IC>Authorization: Bearer arc_…</IC> header with a valid API key. If you paste only <IC>http://IP:4000/api/libraries</IC> in the browser address bar, there is <strong className="text-zinc-900">no</strong> cookie and <strong className="text-zinc-900">no</strong> Bearer header—you will get 401. That is expected: use curl/your server with the header instead.
+              </p>
+            </Callout>
+            <DocH3>Copy-paste: list libraries from another machine (LAN IP)</DocH3>
+            <DocP>
+              Replace <IC>YOUR_KEY</IC> with your API key, <IC>192.168.x.x</IC> with your server IP. The REST prefix is always <IC>/api</IC> then the path from this manual (e.g. <IC>/libraries</IC>).
+            </DocP>
+            <CodeBlock title="curl (direct to Fastify)" lang="sh">{`curl -sS -H "Authorization: Bearer YOUR_KEY" \\
+  -H "Accept: application/json" \\
+  "${directApiOrigin}/api/libraries"`}</CodeBlock>
+            <CodeBlock title="curl (via Next.js proxy on :3000, same as browser origin)" lang="sh">{`curl -sS -H "Authorization: Bearer YOUR_KEY" \\
+  -H "Accept: application/json" \\
+  "${publicUrl}/api/libraries"`}</CodeBlock>
+            <DocP>
+              Your separate product’s <strong className="text-zinc-900">user accounts</strong> (Google login, etc.) stay in <em>your</em> app. Arciin does not replace that. The API key ties automation to <strong className="text-zinc-900">one Arciin user</strong> on the server—the owner of the key—so keep keys on the server and never ship them to browsers if the key can write or upload.
+            </DocP>
+          </section>
+
+          <Sep />
           <section className="space-y-5">
             <DocH2 id="playground">API explorer</DocH2>
             <DocP>Try any endpoint directly from this page. Paste your API key in the Authorization header, pick a method, enter a path relative to the base URL, and hit <strong className="text-zinc-900">Send</strong>. The response appears below with status code and latency.</DocP>
@@ -496,57 +748,87 @@ SESSION_SECRET=replace-with-64-char-random-string`}</CodeBlock>
           {/* ── Auth ──────────────────────────────────────────────────────── */}
           <section className="space-y-5">
             <DocH2 id="rest">Authentication</DocH2>
-            <DocP>Two auth mechanisms are supported. <strong className="text-zinc-900">Session cookie</strong> for browser/same-origin use; <strong className="text-zinc-900">API key Bearer token</strong> for automation and scripts.</DocP>
+            <DocP>Two auth mechanisms are supported. <strong className="text-zinc-900">Session cookie</strong> for the Arciin web UI only (same origin as the app). <strong className="text-zinc-900">API key Bearer token</strong> for scripts, curl, and your own backends—this is how you integrate without &quot;logging in&quot; with a password on every request.</DocP>
 
             <DocH3>Reusable helper (start here)</DocH3>
+            <DocP className="text-zinc-600">
+              Below, <IC>{BASE}</IC> is your <strong className="text-zinc-900">REST API base</strong> (same value as in &quot;URLs &amp; environment&quot;). Every request is <IC>{BASE}</IC> + path, e.g. <IC>{BASE}/auth/me</IC>.
+            </DocP>
+            <RequestUrlsCheatsheet
+              label="Copy full URL — GET current user"
+              requests={[
+                { method: "GET", fullPath: "/auth/me", hint: "Bearer API key or session cookie" },
+              ]}
+            />
             <MultiCode
               title="Helper — paste once, use everywhere"
-              node={`const API_KEY = process.env.ARCIIN_KEY ?? "arc_live_your_key_here";
-const API     = "${BASE}";
+              postman={`Environment: arciin_base = ${BASE}, arciin_key = arc_live_…
 
+GET {{arciin_base}}/auth/me  ·  Authorization: Bearer {{arciin_key}}
+
+List libraries: GET {{arciin_base}}/libraries`}
+              node={`const API_KEY = process.env.ARCIIN_KEY ?? "arc_live_your_key_here";
+const BASE = "${BASE}"; // same as docs "REST API base"
+
+// One-off: full URL is \`\${BASE}/auth/me\`
+const res = await fetch(\`\${BASE}/auth/me\`, {
+  headers: {
+    Authorization: \`Bearer \${API_KEY}\`,
+    Accept: "application/json",
+  },
+});
+const body = await res.json();
+if (!res.ok) throw new Error(JSON.stringify(body));
+console.log(body.data.user.name);
+
+// Reusable helper (path only, still uses full BASE above):
 async function arciin(method, path, body) {
-  const res = await fetch(API + path, {
+  const res = await fetch(BASE + path, {
     method,
     headers: {
       "Content-Type": "application/json",
-      "Accept":        "application/json",
-      "Authorization": \`Bearer \${API_KEY}\`,
+      Accept: "application/json",
+      Authorization: \`Bearer \${API_KEY}\`,
     },
-    body: body ? JSON.stringify(body) : undefined,
+    body: body != null ? JSON.stringify(body) : undefined,
   });
-  if (!res.ok) {
-    const { error } = await res.json();
-    throw new Error(\`\${error.code}: \${error.message}\`);
-  }
-  return res.json(); // { data: … } or { data: …, meta: … }
+  const j = await res.json();
+  if (!res.ok) throw new Error(JSON.stringify(j));
+  return j;
 }
-
-// Test it
-const { data } = await arciin("GET", "/auth/me");
-console.log(data.user.name);`}
-              python={`import requests, os
+// Example full URLs: \`\${BASE}/libraries\`, \`\${BASE}/assets\` …`}
+              python={`import os, requests
 
 API_KEY = os.getenv("ARCIIN_KEY", "arc_live_your_key_here")
-API     = "${BASE}"
+API = "${BASE}"  # full REST base — request URL is always API + path
 
+# One-off: requests.get("http://localhost:3000/api/auth/me") style
+r = requests.get(
+    f"{API}/auth/me",
+    headers={"Authorization": f"Bearer {API_KEY}", "Accept": "application/json"},
+    timeout=60,
+)
+r.raise_for_status()
+print(r.json()["data"]["user"]["name"])
+
+# Session helper
 s = requests.Session()
-s.headers.update({
-    "Authorization": f"Bearer {API_KEY}",
-    "Accept":        "application/json",
-})
+s.headers.update({"Authorization": f"Bearer {API_KEY}", "Accept": "application/json"})
 
 def arciin(method, path, **kwargs):
     r = s.request(method, API + path, **kwargs)
     r.raise_for_status()
-    return r.json()
+    return r.json()`}
+              curl={`# Full URL for "who am I" is: ${BASE}/auth/me
+export ARCIIN_KEY="arc_live_your_key_here"
+curl -sS \\
+  -H "Authorization: Bearer $ARCIIN_KEY" \\
+  -H "Accept: application/json" \\
+  "${BASE}/auth/me" | jq .
 
-# Test it
-data = arciin("GET", "/auth/me")["data"]
-print(data["user"]["name"])`}
-              curl={`export ARCIIN_KEY="arc_live_your_key_here"
+# Reuse base for other routes (same as docs REST base):
 export API="${BASE}"
 
-# Convenience alias — use in every example below
 arc() {
   curl -sS \\
     -H "Authorization: Bearer $ARCIIN_KEY" \\
@@ -555,12 +837,19 @@ arc() {
     "$@"
 }
 
-# Test it
 arc "$API/auth/me" | jq .data.user.name`}
             />
 
             <DocH3>Login with email + password (browser session)</DocH3>
             <MultiCode
+              postman={`Email/password login sets a cookie — in Postman use the Cookie jar, not Bearer:
+
+1. POST ${BASE}/auth/login
+   Body → raw JSON: {"email":"…","password":"…"}
+2. Postman saves cookies for the host if "Automatically follow redirects" / cookies enabled.
+3. GET ${BASE}/auth/me with no Bearer header — cookie sent.
+
+For automation prefer API keys (Bearer) instead of scraping cookies.`}
               node={`// Browser only — sets httpOnly session cookie
 await fetch("${BASE}/auth/login", {
   method: "POST",
@@ -580,11 +869,15 @@ s.post("${BASE}/auth/login",
 # Cookie is attached automatically
 me = s.get("${BASE}/auth/me").json()
 print(me["data"]["user"]["name"])`}
-              curl={`# Log in and save cookie jar
-arc -c cookies.txt -X POST "$API/auth/login" \\
+              curl={`# Same REST base as the rest of this manual:
+export API="${BASE}"
+
+# POST full URL: $API/auth/login
+curl -c cookies.txt -sS -X POST "$API/auth/login" \\
+  -H "Content-Type: application/json" \\
   -d '{"email":"admin@example.com","password":"secret"}'
 
-# Reuse the session cookie
+# GET full URL: $API/auth/me (cookie sent via -b)
 curl -sS -b cookies.txt "$API/auth/me" | jq .`}
             />
             <Callout variant="warning" title="Never paste live session cookies into chat or logs">
@@ -605,24 +898,87 @@ curl -sS -b cookies.txt "$API/auth/me" | jq .`}
               <EndpointRow method="DELETE" path="/api-keys/:id"      desc="Revoke permanently" />
             </div>
 
+            <DocP className="text-zinc-600">
+              Managing keys is often done from the UI; from scripts you call <IC>POST {BASE}/api-keys</IC> with an <strong className="text-zinc-900">admin session cookie</strong> or a key that already has permission to create keys.
+            </DocP>
+            <RequestUrlsCheatsheet
+              label="Copy full URLs — API keys admin routes"
+              requests={[
+                { method: "GET", fullPath: "/api-keys", hint: "List keys" },
+                { method: "POST", fullPath: "/api-keys", hint: "Create — body: name, scopes" },
+                { method: "DELETE", fullPath: "/api-keys/{keyId}", hint: "Revoke — substitute id" },
+              ]}
+            />
+
             <MultiCode
               title="Create an API key"
-              node={`const { data } = await arciin("POST", "/api-keys", {
-  name:   "Uploader bot",
-  scopes: ["uploads:create", "assets:read"],
+              postman={`POST ${BASE}/api-keys
+Authorization: Bearer YOUR_ADMIN_OR_SESSION — creating keys usually needs a logged-in admin; from Postman you can use cookie session after login, or call from the app UI.
+
+Body (raw JSON):
+{
+  "name": "My integration",
+  "scopes": ["libraries:read", "uploads:create", "assets:read"]
+}
+
+Response: copy data.rawKey once.
+
+Then use that key as Bearer on all other requests (GET ${BASE}/libraries, etc.).`}
+              node={`const API_KEY = process.env.ARCIIN_KEY ?? "arc_live_admin_or_existing_key";
+const BASE = "${BASE}";
+const auth = {
+  Authorization: \`Bearer \${API_KEY}\`,
+  Accept: "application/json",
+  "Content-Type": "application/json",
+} as const;
+
+// POST — full URL: \`\${BASE}/api-keys\`
+const res = await fetch(\`\${BASE}/api-keys\`, {
+  method: "POST",
+  headers: auth,
+  body: JSON.stringify({
+    name: "Uploader bot",
+    scopes: ["uploads:create", "assets:read"],
+  }),
 });
+const json = await res.json();
+if (!res.ok) throw new Error(JSON.stringify(json));
+const { data } = json;
 console.log(data.rawKey);  // "arc_live_abc…" — save this now
-console.log(data.prefix);  // shown in UI for identification`}
-              python={`result = arciin("POST", "/api-keys", json={
-    "name":   "Uploader bot",
-    "scopes": ["uploads:create", "assets:read"],
-})["data"]
-print(result["rawKey"])   # arc_live_abc… — save now
-print(result["prefix"])`}
-              curl={`arc -X POST "$API/api-keys" -d '{
-  "name":   "Uploader bot",
-  "scopes": ["uploads:create","assets:read"]
-}' | jq '{key:.data.rawKey,prefix:.data.prefix}'`}
+console.log(data.prefix);`}
+              python={`import os, requests
+
+API_KEY = os.getenv("ARCIIN_KEY", "arc_live_admin_or_existing_key")
+API = "${BASE}"  # full URL prefix
+
+# POST — request URL = f"{API}/api-keys"
+r = requests.post(
+    f"{API}/api-keys",
+    headers={
+        "Authorization": f"Bearer {API_KEY}",
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+    },
+    json={
+        "name": "Uploader bot",
+        "scopes": ["uploads:create", "assets:read"],
+    },
+    timeout=60,
+)
+r.raise_for_status()
+data = r.json()["data"]
+print(data["rawKey"])
+print(data["prefix"])`}
+              curl={`export ARCIIN_KEY="arc_live_admin_or_existing_key"
+export API="${BASE}"
+
+# POST full URL: $API/api-keys
+curl -sS -X POST "$API/api-keys" \\
+  -H "Authorization: Bearer $ARCIIN_KEY" \\
+  -H "Accept: application/json" \\
+  -H "Content-Type: application/json" \\
+  -d '{"name":"Uploader bot","scopes":["uploads:create","assets:read"]}' \\
+  | jq '{key:.data.rawKey,prefix:.data.prefix}'`}
             />
 
             <DocH3>Available scopes</DocH3>
@@ -639,58 +995,277 @@ print(result["prefix"])`}
           <Sep />
 
           {/* ── Libraries ─────────────────────────────────────────────────── */}
-          <section className="space-y-5">
+          <section className="space-y-8">
             <DocH2 id="libraries">Libraries &amp; folders</DocH2>
-            <DocP>Libraries are the top-level containers (Videos, Images, Music, Documents, Inbox). Each has a folder tree you can create and navigate.</DocP>
-            <div className="space-y-2">
-              <EndpointRow method="GET"    path="/libraries"                    desc="List all libraries with asset counts" />
-              <EndpointRow method="GET"    path="/libraries/:id"                desc="Get a single library" />
-              <EndpointRow method="POST"   path="/libraries"                    desc="Create a library" />
-              <EndpointRow method="PATCH"  path="/libraries/:id"                desc="Update name / description / icon" />
-              <EndpointRow method="DELETE" path="/libraries/:id"                desc="Delete library and all assets" />
-              <EndpointRow method="GET"    path="/libraries/:id/folders"        desc="List folders inside a library" />
-              <EndpointRow method="POST"   path="/libraries/:id/folders"        desc="Create a folder" />
-              <EndpointRow method="PATCH"  path="/folders/:folderId"            desc="Rename or move a folder" />
-              <EndpointRow method="DELETE" path="/folders/:folderId"            desc="Delete a folder" />
+            <DocP>
+              Arciin ships with <strong className="text-zinc-900">five fixed libraries</strong>. You do{" "}
+              <strong className="text-zinc-900">not</strong> create new top-level libraries through the API — you{" "}
+              <strong className="text-zinc-900">organize inside them</strong> with <strong className="text-zinc-900">folders</strong>, then upload or move assets.
+            </DocP>
+
+            <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white text-[13px] shadow-sm">
+              <div className="border-b border-zinc-100 bg-zinc-50 px-4 py-2 text-[11px] font-bold uppercase tracking-wide text-zinc-500">
+                Default libraries (stable <IC>slug</IC> · use <IC>slug</IC> as <IC>librarySlug</IC> on <IC>POST /uploads</IC>)
+              </div>
+              <table className="w-full border-collapse text-left">
+                <thead>
+                  <tr className="border-b border-zinc-100 text-[11px] uppercase tracking-wide text-zinc-500">
+                    <th className="px-4 py-2 font-semibold">Library</th>
+                    <th className="px-4 py-2 font-semibold">slug</th>
+                    <th className="px-4 py-2 font-semibold">Typical use</th>
+                  </tr>
+                </thead>
+                <tbody className="text-zinc-800">
+                  {[
+                    ["Videos", "videos", "Video files; optional subfolders (e.g. year, project)."],
+                    ["Images", "images", "Photos & image assets."],
+                    ["Music", "music", "Audio tracks & albums."],
+                    ["Documents", "documents", "PDFs, docs, archives."],
+                    ["Inbox", "inbox", "Unclassified or catch-all uploads."],
+                  ].map(([name, slug, note]) => (
+                    <tr key={slug} className="border-b border-zinc-50 last:border-0">
+                      <td className="px-4 py-2.5 font-medium">{name}</td>
+                      <td className="px-4 py-2.5 font-mono text-[12px] text-primary">{slug}</td>
+                      <td className="px-4 py-2.5 text-zinc-600">{note}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
 
-            <MultiCode
-              title="List libraries + create a folder"
-              node={`// List all libraries
-const { data: libs } = await arciin("GET", "/libraries");
-libs.forEach(l => console.log(\`\${l.name} — \${l.assetCount} assets\`));
+            <Callout variant="warning" title="POST /libraries is disabled">
+              <p>
+                Calling <IC>POST {BASE}/libraries</IC> returns <strong className="text-zinc-900">403</strong> with code{" "}
+                <IC>LIBRARY_CREATION_DISABLED</IC>. Use folder routes under an existing library instead.
+              </p>
+            </Callout>
 
-const videoLib = libs.find(l => l.slug === "videos");
+            <Callout variant="warning" title="403 FORBIDDEN — API key missing scope">
+              <p>
+                If <IC>GET …/libraries</IC> returns <IC>{"This API key is missing a required scope."}</IC>, add{" "}
+                <IC>libraries:read</IC> on your key. Folder create/delete/rename needs <IC>libraries:write</IC>. Edit keys under{" "}
+                <Link className="font-medium text-primary underline-offset-4 hover:underline" href="/developer/api-keys">
+                  Developer → API keys
+                </Link>
+                .
+              </p>
+            </Callout>
 
-// Create a folder inside the Videos library
-const { data: folder } = await arciin(
-  "POST", \`/libraries/\${videoLib.id}/folders\`,
-  { name: "2024" }
-);
-console.log(folder.pathCache); // "/2024"`}
-              python={`# List all libraries
-libs = arciin("GET", "/libraries")["data"]
-for l in libs:
-    print(f"{l['name']} — {l['assetCount']} assets")
+            <div className="space-y-2 rounded-xl border border-zinc-100 bg-zinc-50/50 p-3">
+              <p className="text-[12px] font-semibold text-zinc-700">Quick reference — library &amp; folder routes</p>
+              <EndpointRow method="GET"    path="/libraries"             desc="List the five libraries (+ counts). Scope: libraries:read" />
+              <EndpointRow method="GET"    path="/libraries/:libraryId" desc="One library by id. Scope: libraries:read" />
+              <EndpointRow method="POST"   path="/libraries"            desc="Disabled — returns 403 LIBRARY_CREATION_DISABLED" />
+              <EndpointRow method="PATCH"  path="/libraries/:libraryId" desc="Update metadata (advanced). Scope: libraries:write" />
+              <EndpointRow method="DELETE" path="/libraries/:libraryId" desc="Only non-default / legacy custom libraries; defaults return 409. Scope: libraries:write" />
+              <EndpointRow method="GET"    path="/libraries/:libraryId/folders" desc="List folders in that library. Scope: libraries:read" />
+              <EndpointRow method="POST"   path="/libraries/:libraryId/folders" desc="Create folder (optional parentFolderId). Scope: libraries:write" />
+              <EndpointRow method="PATCH"  path="/folders/:folderId"    desc="Rename folder. Scope: libraries:write" />
+              <EndpointRow method="DELETE" path="/folders/:folderId"   desc="Soft-delete folder (and descendants). Scope: libraries:write" />
+            </div>
 
-video_lib = next(l for l in libs if l["slug"] == "videos")
+            <Callout variant="warning" title="Postman: wrong URL">
+              <p>
+                <IC>http://localhost:3000/api-keys/libraries</IC> is not a JSON library route. Use <IC>GET {BASE}/libraries</IC> with Bearer + <IC>libraries:read</IC>.
+              </p>
+            </Callout>
 
-# Create a folder
-folder = arciin(
-    "POST", f"/libraries/{video_lib['id']}/folders",
-    json={"name": "2024"}
-)["data"]
-print(folder["pathCache"])  # /2024`}
-              curl={`# List libraries
-arc "$API/libraries" | jq '.data[] | {name,assetCount}'
+            <DocP className="text-zinc-600">
+              <strong className="text-zinc-900">REST base</strong> for all examples: <IC>{BASE}</IC> (every path is <IC>{BASE}/…</IC>).
+            </DocP>
 
-# Get the Videos library id
-VID_ID=$(arc "$API/libraries" | jq -r '.data[] | select(.slug=="videos") | .id')
-
-# Create a folder
-arc -X POST "$API/libraries/$VID_ID/folders" \\
-  -d '{"name":"2024"}' | jq .data.pathCache`}
+            <RequestUrlsCheatsheet
+              label="Copy full URLs — common library &amp; folder calls"
+              requests={[
+                { method: "GET", fullPath: "/libraries", hint: "libraries:read" },
+                { method: "GET", fullPath: "/libraries/{libraryId}/folders", hint: "libraries:read" },
+                { method: "POST", fullPath: "/libraries/{libraryId}/folders", hint: "libraries:write — JSON body" },
+                { method: "PATCH", fullPath: "/folders/{folderId}", hint: "libraries:write" },
+                { method: "DELETE", fullPath: "/folders/{folderId}", hint: "libraries:write" },
+              ]}
             />
+
+            <DocH3>Find a library id from its slug</DocH3>
+            <DocP>
+              Folder routes need <IC>libraryId</IC> (a CUID/UUID from your instance). List libraries once, then pick by <IC>slug</IC> (e.g. <IC>videos</IC>).
+            </DocP>
+            <EndpointRow method="GET" path="/libraries" desc="Returns data[] with id, name, slug, assetCount, …" />
+            <MultiCode
+              title="GET /libraries — resolve Videos"
+              postman={`GET ${BASE}/libraries
+Authorization: Bearer {{key}} (scope libraries:read)`}
+              node={`const API_KEY = process.env.ARCIIN_KEY ?? "arc_live_your_key_here";
+const BASE = "${BASE}";
+const res = await fetch(\`\${BASE}/libraries\`, {
+  headers: { Authorization: \`Bearer \${API_KEY}\`, Accept: "application/json" },
+});
+const json = await res.json();
+if (!res.ok) throw new Error(JSON.stringify(json));
+const videos = json.data.find((l) => l.slug === "videos");
+console.log(videos.id); // use as libraryId below`}
+              python={`import os, requests
+API_KEY = os.getenv("ARCIIN_KEY", "arc_live_your_key_here")
+API = "${BASE}"
+r = requests.get(f"{API}/libraries", headers={"Authorization": f"Bearer {API_KEY}", "Accept": "application/json"})
+r.raise_for_status()
+videos = next(l for l in r.json()["data"] if l["slug"] == "videos")
+print(videos["id"])`}
+              curl={`export ARCIIN_KEY="arc_live_your_key_here" API="${BASE}"
+curl -sS -H "Authorization: Bearer $ARCIIN_KEY" -H "Accept: application/json" \\
+  "$API/libraries" | jq '.data[] | select(.slug=="videos") | .id'`}
+            />
+
+            <DocH3>List folders inside a specific library</DocH3>
+            <DocP>
+              After you have <IC>libraryId</IC>, list its folder tree. Response order follows <IC>pathCache</IC>.
+            </DocP>
+            <EndpointRow method="GET" path="/libraries/:libraryId/folders" desc="Scope: libraries:read" />
+            <MultiCode
+              title="GET /libraries/{libraryId}/folders"
+              postman={`GET ${BASE}/libraries/{{library_id}}/folders`}
+              node={`// LIB_ID = id from GET /libraries (e.g. videos library)
+const LIB_ID = "paste-library-id";
+const API_KEY = process.env.ARCIIN_KEY ?? "arc_live_your_key_here";
+const BASE = "${BASE}";
+const res = await fetch(\`\${BASE}/libraries/\${LIB_ID}/folders\`, {
+  headers: { Authorization: \`Bearer \${API_KEY}\`, Accept: "application/json" },
+});
+console.log(JSON.stringify(await res.json(), null, 2));`}
+              python={`import os, requests
+API = "${BASE}"
+API_KEY = os.getenv("ARCIIN_KEY", "arc_live_your_key_here")
+LIB_ID = "paste-library-id"
+r = requests.get(
+    f"{API}/libraries/{LIB_ID}/folders",
+    headers={"Authorization": f"Bearer {API_KEY}", "Accept": "application/json"},
+)
+print(r.json())`}
+              curl={`curl -sS -H "Authorization: Bearer $ARCIIN_KEY" -H "Accept: application/json" \\
+  "$API/libraries/$LIB_ID/folders" | jq .`}
+            />
+
+            <DocH3>Create a folder inside a library (or inside another folder)</DocH3>
+            <DocP>
+              <IC>POST {BASE}/libraries/&lt;libraryId&gt;/folders</IC> with JSON <IC>{"{ \"name\": \"2024\" }"}</IC> creates a root-level folder. Optional{" "}
+              <IC>parentFolderId</IC>: another folder&apos;s id in the same library to nest under; omit it or send <IC>null</IC> for the library root.
+            </DocP>
+            <EndpointRow method="POST" path="/libraries/:libraryId/folders" desc='Body: { name, parentFolderId? }. Scope: libraries:write' />
+            <MultiCode
+              title="POST /libraries/{libraryId}/folders"
+              postman={`POST ${BASE}/libraries/{{library_id}}/folders
+Body: { "name": "2024" } or { "name": "raw", "parentFolderId": "{{parent_folder_id}}" }`}
+              node={`const API_KEY = process.env.ARCIIN_KEY ?? "arc_live_your_key_here";
+const BASE = "${BASE}";
+const auth = { Authorization: \`Bearer \${API_KEY}\`, Accept: "application/json", "Content-Type": "application/json" } as const;
+
+const libs = (await (await fetch(\`\${BASE}/libraries\`, { headers: auth })).json()).data;
+const lib = libs.find((l) => l.slug === "videos");
+const res = await fetch(\`\${BASE}/libraries/\${lib.id}/folders\`, {
+  method: "POST",
+  headers: auth,
+  body: JSON.stringify({ name: "2024" }), // or { name: "raw", parentFolderId: "…" }
+});
+const json = await res.json();
+if (!res.ok) throw new Error(JSON.stringify(json));
+const folder = json.data;
+console.log(folder.id, folder.pathCache);`}
+              python={`import os, requests
+API = "${BASE}"
+API_KEY = os.getenv("ARCIIN_KEY", "arc_live_your_key_here")
+h = {"Authorization": f"Bearer {API_KEY}", "Accept": "application/json", "Content-Type": "application/json"}
+lib = next(l for l in requests.get(f"{API}/libraries", headers=h).json()["data"] if l["slug"] == "videos")
+r = requests.post(f"{API}/libraries/{lib['id']}/folders", headers=h, json={"name": "2024"})
+r.raise_for_status()
+print(r.json()["data"]["pathCache"])`}
+              curl={`VID=$(curl -sS -H "Authorization: Bearer $ARCIIN_KEY" -H "Accept: application/json" "$API/libraries" | jq -r '.data[]|select(.slug=="videos")|.id')
+curl -sS -X POST "$API/libraries/$VID/folders" \\
+  -H "Authorization: Bearer $ARCIIN_KEY" -H "Content-Type: application/json" \\
+  -d '{"name":"2024"}' | jq .data`}
+            />
+
+            <DocH3>Rename a folder</DocH3>
+            <DocP>
+              Use the folder&apos;s <IC>id</IC> from list or create response — not the library id.
+            </DocP>
+            <EndpointRow method="PATCH" path="/folders/:folderId" desc='Body JSON: {"name":"New name"}. Scope: libraries:write' />
+            <MultiCode
+              title="PATCH /folders/{folderId}"
+              postman={`PATCH ${BASE}/folders/{{folder_id}}
+Body: { "name": "Renamed" }`}
+              node={`const API_KEY = process.env.ARCIIN_KEY ?? "arc_live_your_key_here";
+const BASE = "${BASE}";
+const FOLDER_ID = "paste-folder-id";
+const res = await fetch(\`\${BASE}/folders/\${FOLDER_ID}\`, {
+  method: "PATCH",
+  headers: {
+    Authorization: \`Bearer \${API_KEY}\`,
+    "Content-Type": "application/json",
+    Accept: "application/json",
+  },
+  body: JSON.stringify({ name: "Renamed" }),
+});
+console.log(await res.json());`}
+              python={`import os, requests
+API = "${BASE}"
+API_KEY = os.getenv("ARCIIN_KEY", "arc_live_your_key_here")
+FID = "paste-folder-id"
+requests.patch(
+    f"{API}/folders/{FID}",
+    headers={"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"},
+    json={"name": "Renamed"},
+).raise_for_status()`}
+              curl={`curl -sS -X PATCH "$API/folders/$FOLDER_ID" \\
+  -H "Authorization: Bearer $ARCIIN_KEY" -H "Content-Type: application/json" \\
+  -d '{"name":"Renamed"}' | jq .`}
+            />
+
+            <DocH3>Delete a folder you created</DocH3>
+            <DocP>
+              <IC>DELETE</IC> soft-deletes the folder and any child folders under the same path prefix. Ensure assets are moved or deleted first if your policy requires empty folders only.
+            </DocP>
+            <EndpointRow method="DELETE" path="/folders/:folderId" desc="Scope: libraries:write" />
+            <MultiCode
+              title="DELETE /folders/{folderId}"
+              postman={`DELETE ${BASE}/folders/{{folder_id}}`}
+              node={`const API_KEY = process.env.ARCIIN_KEY ?? "arc_live_your_key_here";
+const BASE = "${BASE}";
+const FOLDER_ID = "paste-folder-id";
+const res = await fetch(\`\${BASE}/folders/\${FOLDER_ID}\`, {
+  method: "DELETE",
+  headers: { Authorization: \`Bearer \${API_KEY}\`, Accept: "application/json" },
+});
+console.log(await res.json());`}
+              python={`import os, requests
+API = "${BASE}"
+API_KEY = os.getenv("ARCIIN_KEY", "arc_live_your_key_here")
+FID = "paste-folder-id"
+requests.delete(
+    f"{API}/folders/{FID}",
+    headers={"Authorization": f"Bearer {API_KEY}", "Accept": "application/json"},
+).raise_for_status()`}
+              curl={`curl -sS -X DELETE "$API/folders/$FOLDER_ID" \\
+  -H "Authorization: Bearer $ARCIIN_KEY" -H "Accept: application/json"`}
+            />
+
+            <DocH3>Upload files into a library</DocH3>
+            <DocP>
+              Uploads do not use <IC>libraryId</IC> in the first step — they use <IC>librarySlug</IC> (e.g. <IC>videos</IC>, <IC>inbox</IC>). Optional <IC>folderId</IC> targets a folder inside that library. See the full three-step flow (initiate → PUT bytes → complete) under{" "}
+              <a
+                href="#uploads"
+                className="font-medium text-primary underline-offset-4 hover:underline"
+                onClick={(e) => {
+                  if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return
+                  e.preventDefault()
+                  scrollToSection("uploads")
+                }}
+              >
+                File uploads
+              </a>
+              .
+            </DocP>
+            <DocP className="text-zinc-600">
+              Typical <IC>POST {BASE}/uploads</IC> body fields: <IC>filename</IC>, <IC>size</IC>, <IC>librarySlug</IC> (<IC>videos</IC> | <IC>images</IC> | <IC>music</IC> | <IC>documents</IC> | <IC>inbox</IC>), optional <IC>folderId</IC>.
+            </DocP>
           </section>
 
           <Sep />
@@ -709,67 +1284,204 @@ arc -X POST "$API/libraries/$VID_ID/folders" \\
               <EndpointRow method="DELETE" path="/assets/:id"               desc="Soft-delete an asset" />
             </div>
 
+            <DocP className="text-zinc-600">
+              All asset routes are <IC>{BASE}/assets</IC> and <IC>{BASE}/assets/&lt;id&gt;/…</IC>. Filtering uses query strings on the list URL.
+            </DocP>
+            <RequestUrlsCheatsheet
+              label="Copy full URLs — common asset calls"
+              requests={[
+                { method: "GET", fullPath: "/assets?libraryId={libraryId}&page=1&limit=20", hint: "List — substitute libraryId" },
+                { method: "GET", fullPath: "/assets/{assetId}/download", hint: "Download file (redirect)" },
+                { method: "PATCH", fullPath: "/assets/{assetId}", hint: "Update title / description" },
+                { method: "POST", fullPath: "/assets/{assetId}/move", hint: "Move to another library or folder" },
+              ]}
+            />
+
             <MultiCode
               title="List assets (paginated)"
-              node={`const { data, meta } = await arciin("GET",
-  "/assets?libraryId=" + videoLibId + "&page=1&limit=20");
+              postman={`GET {{base}}/assets?libraryId={{library_id}}&page=1&limit=20
+Authorization: Bearer {{key}} (needs assets:read)`}
+              node={`const API_KEY = process.env.ARCIIN_KEY ?? "arc_live_your_key_here";
+const BASE = "${BASE}";
+const videoLibId = "REPLACE_WITH_LIBRARY_UUID";
+const auth = {
+  Authorization: \`Bearer \${API_KEY}\`,
+  Accept: "application/json",
+} as const;
 
-data.forEach(a => console.log(a.title, a.mimeType, a.size));
+const q = new URLSearchParams({
+  libraryId: videoLibId,
+  page: "1",
+  limit: "20",
+});
+// GET full URL: \`\${BASE}/assets?\${q}\`
+const res = await fetch(\`\${BASE}/assets?\${q}\`, { headers: auth });
+const body = await res.json();
+if (!res.ok) throw new Error(JSON.stringify(body));
+const { data, meta } = body;
+data.forEach((a) => console.log(a.title, a.mimeType, a.size));
 console.log(\`Page \${meta.page} of \${meta.pageCount}\`);`}
-              python={`result = arciin("GET", f"/assets?libraryId={video_lib_id}&page=1&limit=20")
+              python={`import os, requests
+from urllib.parse import urlencode
+
+API_KEY = os.getenv("ARCIIN_KEY", "arc_live_your_key_here")
+API = "${BASE}"
+video_lib_id = "REPLACE_WITH_LIBRARY_UUID"
+
+params = urlencode({"libraryId": video_lib_id, "page": 1, "limit": 20})
+# GET request URL = f"{API}/assets?{params}"
+r = requests.get(
+    f"{API}/assets?{params}",
+    headers={"Authorization": f"Bearer {API_KEY}", "Accept": "application/json"},
+    timeout=60,
+)
+r.raise_for_status()
+result = r.json()
 for a in result["data"]:
     print(a["title"], a["mimeType"], a["size"])
 meta = result["meta"]
 print(f"Page {meta['page']} of {meta['pageCount']}")`}
-              curl={`arc "$API/assets?libraryId=$VID_ID&page=1&limit=20" \\
+              curl={`export ARCIIN_KEY="arc_live_your_key_here"
+export API="${BASE}"
+VID_ID="REPLACE_WITH_LIBRARY_UUID"
+
+# GET full URL: $API/assets?libraryId=…&page=1&limit=20
+curl -sS \\
+  -H "Authorization: Bearer $ARCIIN_KEY" \\
+  -H "Accept: application/json" \\
+  "$API/assets?libraryId=$VID_ID&page=1&limit=20" \\
   | jq '.data[] | {title,mimeType,size}'`}
             />
 
             <MultiCode
               title="Download a file"
-              node={`// Follows redirect to the actual file
-const res = await fetch(\`${BASE}/assets/\${assetId}/download\`, {
-  headers: { Authorization: \`Bearer \${API_KEY}\` },
+              postman={`GET {{base}}/assets/{{asset_id}}/download
+Authorization: Bearer {{key}}
+(Send and follow redirects — save response to file.)`}
+              node={`import fs from "node:fs";
+
+const API_KEY = process.env.ARCIIN_KEY ?? "arc_live_your_key_here";
+const BASE = "${BASE}";
+const assetId = "REPLACE_WITH_ASSET_ID";
+
+// GET full URL: \`\${BASE}/assets/\${assetId}/download\`
+const res = await fetch(\`\${BASE}/assets/\${assetId}/download\`, {
+  headers: {
+    Authorization: \`Bearer \${API_KEY}\`,
+    Accept: "*/*",
+  },
   redirect: "follow",
 });
+if (!res.ok) throw new Error(await res.text());
 const buffer = Buffer.from(await res.arrayBuffer());
 fs.writeFileSync("file.mp4", buffer);`}
-              python={`import shutil
-r = s.get(f"{API}/assets/{asset_id}/download", stream=True)
-with open("file.mp4", "wb") as f:
-    shutil.copyfileobj(r.raw, f)`}
-              curl={`curl -sS -L \\
+              python={`import os, requests
+
+API_KEY = os.getenv("ARCIIN_KEY", "arc_live_your_key_here")
+API = "${BASE}"
+asset_id = "REPLACE_WITH_ASSET_ID"
+
+# GET URL: f"{API}/assets/{asset_id}/download"
+with requests.get(
+    f"{API}/assets/{asset_id}/download",
+    headers={"Authorization": f"Bearer {API_KEY}"},
+    stream=True,
+    timeout=300,
+) as r:
+    r.raise_for_status()
+    with open("file.mp4", "wb") as f:
+        for chunk in r.iter_content(chunk_size=65536):
+            f.write(chunk)`}
+              curl={`export ARCIIN_KEY="arc_live_your_key_here"
+export API="${BASE}"
+ASSET_ID="REPLACE_WITH_ASSET_ID"
+
+# GET full URL: $API/assets/$ASSET_ID/download
+curl -sS -L \\
   -H "Authorization: Bearer $ARCIIN_KEY" \\
   "$API/assets/$ASSET_ID/download" -o file.mp4`}
             />
 
             <MultiCode
               title="Update metadata + move"
-              node={`// Update
-await arciin("PATCH", \`/assets/\${assetId}\`, {
-  title: "Summer Road Trip 2024",
-  description: "Coastal drive from Lisbon to Porto.",
+              postman={`PATCH {{base}}/assets/{{asset_id}}
+Body: { "title": "…", "description": "…" }
+
+POST {{base}}/assets/{{asset_id}}/move
+Body: { "targetLibraryId": "…", "targetFolderId": null }`}
+              node={`const API_KEY = process.env.ARCIIN_KEY ?? "arc_live_your_key_here";
+const BASE = "${BASE}";
+const auth = (ct?: boolean) => ({
+  Authorization: \`Bearer \${API_KEY}\`,
+  Accept: "application/json",
+  ...(ct ? { "Content-Type": "application/json" } : {}),
 });
 
-// Move to a different folder
-await arciin("POST", \`/assets/\${assetId}/move\`, {
-  targetLibraryId: imagesLibId,
-  targetFolderId:  null, // root of library
-});`}
-              python={`# Update
-arciin("PATCH", f"/assets/{asset_id}",
-    json={"title": "Summer Road Trip 2024"})
+const assetId = "…";
+const imagesLibId = "…";
 
-# Move
-arciin("POST", f"/assets/{asset_id}/move",
-    json={"targetLibraryId": images_lib_id, "targetFolderId": None})`}
-              curl={`# Update
-arc -X PATCH "$API/assets/$ASSET_ID" \\
+// PATCH — full URL: \`\${BASE}/assets/\${assetId}\`
+let res = await fetch(\`\${BASE}/assets/\${assetId}\`, {
+  method: "PATCH",
+  headers: auth(true),
+  body: JSON.stringify({
+    title: "Summer Road Trip 2024",
+    description: "Coastal drive from Lisbon to Porto.",
+  }),
+});
+let json = await res.json();
+if (!res.ok) throw new Error(JSON.stringify(json));
+
+// POST — full URL: \`\${BASE}/assets/\${assetId}/move\`
+res = await fetch(\`\${BASE}/assets/\${assetId}/move\`, {
+  method: "POST",
+  headers: auth(true),
+  body: JSON.stringify({
+    targetLibraryId: imagesLibId,
+    targetFolderId: null,
+  }),
+});
+json = await res.json();
+if (!res.ok) throw new Error(JSON.stringify(json));`}
+              python={`import os, requests
+
+API_KEY = os.getenv("ARCIIN_KEY", "arc_live_your_key_here")
+API = "${BASE}"
+s = requests.Session()
+s.headers.update({"Authorization": f"Bearer {API_KEY}", "Accept": "application/json"})
+
+asset_id = "…"
+images_lib_id = "…"
+
+# PATCH — URL f"{API}/assets/{asset_id}"
+s.patch(
+    f"{API}/assets/{asset_id}",
+    json={"title": "Summer Road Trip 2024"},
+    timeout=60,
+).raise_for_status()
+
+# POST — URL f"{API}/assets/{asset_id}/move"
+s.post(
+    f"{API}/assets/{asset_id}/move",
+    json={"targetLibraryId": images_lib_id, "targetFolderId": None},
+    timeout=60,
+).raise_for_status()`}
+              curl={`export ARCIIN_KEY="arc_live_your_key_here"
+export API="${BASE}"
+ASSET_ID="…"
+IMG_LIB_ID="…"
+
+# PATCH full URL: $API/assets/$ASSET_ID
+curl -sS -X PATCH "$API/assets/$ASSET_ID" \\
+  -H "Authorization: Bearer $ARCIIN_KEY" \\
+  -H "Content-Type: application/json" -H "Accept: application/json" \\
   -d '{"title":"Summer Road Trip 2024"}' | jq .data.title
 
-# Move
-arc -X POST "$API/assets/$ASSET_ID/move" \\
-  -d '{"targetLibraryId":"'$IMG_LIB_ID'","targetFolderId":null}'`}
+# POST full URL: $API/assets/$ASSET_ID/move
+curl -sS -X POST "$API/assets/$ASSET_ID/move" \\
+  -H "Authorization: Bearer $ARCIIN_KEY" \\
+  -H "Content-Type: application/json" -H "Accept: application/json" \\
+  -d '{"targetLibraryId":"'"$IMG_LIB_ID"'","targetFolderId":null}'`}
             />
           </section>
 
@@ -779,6 +1491,9 @@ arc -X POST "$API/assets/$ASSET_ID/move" \\
           <section className="space-y-5">
             <DocH2 id="uploads">File uploads</DocH2>
             <DocP>Three-step flow: <strong className="text-zinc-900">initiate</strong> a session → <strong className="text-zinc-900">send bytes</strong> → <strong className="text-zinc-900">complete</strong> to trigger classification and workers.</DocP>
+            <DocP className="text-zinc-600">
+              Upload JSON endpoints are <IC>{BASE}/uploads</IC>, <IC>{BASE}/uploads/&lt;id&gt;</IC>, and <IC>{BASE}/uploads/&lt;id&gt;/complete</IC>. Bytes go to <IC>uploadUrl</IC> from the initiate response (may be the same host or a signed URL).
+            </DocP>
             <div className="space-y-2">
               <EndpointRow method="POST" path="/uploads"                    desc="Initiate — returns uploadId + uploadUrl" />
               <EndpointRow method="GET"  path="/uploads/:id"                desc="Get session status" />
@@ -786,25 +1501,52 @@ arc -X POST "$API/assets/$ASSET_ID/move" \\
               <EndpointRow method="POST" path="/uploads/:id/cancel"         desc="Abandon and remove temp file" />
             </div>
 
+            <RequestUrlsCheatsheet
+              label="Copy full URLs — upload flow"
+              requests={[
+                { method: "POST", fullPath: "/uploads", hint: "Initiate — body: filename, size, librarySlug" },
+                { method: "POST", fullPath: "/uploads/{uploadId}/complete", hint: "Finalise after bytes sent" },
+              ]}
+            />
+
             <MultiCode
               title="Full upload flow"
+              postman={`1. POST ${BASE}/uploads — JSON body filename, size, librarySlug
+2. PUT to data.uploadUrl (see response) with file body
+3. POST ${BASE}/uploads/{{upload_id}}/complete`}
               node={`import fs from "node:fs";
 import path from "node:path";
 import FormData from "form-data"; // npm i form-data
+
+const API_KEY = process.env.ARCIIN_KEY ?? "arc_live_your_key_here";
+const BASE = "${BASE}";
+const auth = {
+  Authorization: \`Bearer \${API_KEY}\`,
+  Accept: "application/json",
+  "Content-Type": "application/json",
+} as const;
 
 const FILE = "./video.mp4";
 const filename = path.basename(FILE);
 const size = fs.statSync(FILE).size;
 
-// 1 · Initiate
-const { data: session } = await arciin("POST", "/uploads", {
-  filename, size,
-  librarySlug: "videos",  // or: images | music | documents | inbox
-  folderId: null,         // optional folder within the library
+// 1 · Initiate — full URL: \`\${BASE}/uploads\`
+let res = await fetch(\`\${BASE}/uploads\`, {
+  method: "POST",
+  headers: auth,
+  body: JSON.stringify({
+    filename,
+    size,
+    librarySlug: "videos",
+    folderId: null,
+  }),
 });
+let json = await res.json();
+if (!res.ok) throw new Error(JSON.stringify(json));
+const session = json.data;
 console.log("Session:", session.id, session.status);
 
-// 2 · Send bytes
+// 2 · Send bytes to uploadUrl from the server
 const form = new FormData();
 form.append("file", fs.createReadStream(FILE), filename);
 await fetch(session.uploadUrl, {
@@ -813,8 +1555,14 @@ await fetch(session.uploadUrl, {
   headers: { ...form.getHeaders(), Authorization: \`Bearer \${API_KEY}\` },
 });
 
-// 3 · Complete
-const { data: asset } = await arciin("POST", \`/uploads/\${session.id}/complete\`);
+// 3 · Complete — full URL: \`\${BASE}/uploads/\${session.id}/complete\`
+res = await fetch(\`\${BASE}/uploads/\${session.id}/complete\`, {
+  method: "POST",
+  headers: { ...auth },
+});
+json = await res.json();
+if (!res.ok) throw new Error(JSON.stringify(json));
+const asset = json.data;
 console.log("Asset created:", asset.id, asset.title);`}
               python={`import os, requests, shutil
 from pathlib import Path
@@ -842,24 +1590,27 @@ asset = requests.post(
     f"{API}/uploads/{session['id']}/complete", headers=hdrs
 ).json()["data"]
 print("Asset:", asset["id"], asset["title"])`}
-              curl={`FILE="video.mp4"
+              curl={`export ARCIIN_KEY="arc_live_your_key_here"
+export API="${BASE}"
+FILE="video.mp4"
 
-# 1 · Initiate
-SESSION=$(arc -X POST "$API/uploads" -d "{
-  \\"filename\\":\\"$FILE\\",
-  \\"size\\":$(stat -c%s $FILE),
-  \\"librarySlug\\":\\"videos\\"
-}")
-UPLOAD_ID=$(echo $SESSION | jq -r '.data.id')
-UPLOAD_URL=$(echo $SESSION | jq -r '.data.uploadUrl')
+# 1 · POST full URL: $API/uploads
+SESSION=$(curl -sS -X POST "$API/uploads" \\
+  -H "Authorization: Bearer $ARCIIN_KEY" \\
+  -H "Content-Type: application/json" -H "Accept: application/json" \\
+  -d "{\\"filename\\":\\"$FILE\\",\\"size\\":$(stat -c%s "$FILE"),\\"librarySlug\\":\\"videos\\",\\"folderId\\":null}")
+UPLOAD_ID=$(echo "$SESSION" | jq -r '.data.id')
+UPLOAD_URL=$(echo "$SESSION" | jq -r '.data.uploadUrl')
 
-# 2 · Send bytes
+# 2 · PUT file bytes to uploadUrl from step 1
 curl -sS -X PUT "$UPLOAD_URL" \\
   -H "Authorization: Bearer $ARCIIN_KEY" \\
   -F "file=@$FILE"
 
-# 3 · Complete
-arc -X POST "$API/uploads/$UPLOAD_ID/complete" | jq .data.id`}
+# 3 · POST full URL: $API/uploads/$UPLOAD_ID/complete
+curl -sS -X POST "$API/uploads/$UPLOAD_ID/complete" \\
+  -H "Authorization: Bearer $ARCIIN_KEY" \\
+  -H "Accept: application/json" | jq .data.id`}
             />
           </section>
 
@@ -887,103 +1638,226 @@ arc -X POST "$API/uploads/$UPLOAD_ID/complete" | jq .data.id`}
               ].map(([m, p, d]) => <EndpointRow key={`${m}-${p}`} method={m} path={p} desc={d} />)}
             </div>
 
+            <DocP className="text-zinc-600">
+              Base path for this feature is <IC>{BASE}/app-databases</IC> — same <IC>{BASE}</IC> as everywhere else in this manual.
+            </DocP>
+            <RequestUrlsCheatsheet
+              label="Copy full URLs — app databases"
+              requests={[
+                { method: "POST", fullPath: "/app-databases", hint: "Create DB" },
+                { method: "GET", fullPath: "/app-databases/{dbId}/folders", hint: "List tables" },
+                { method: "POST", fullPath: "/app-database-folders/{tableId}/records", hint: "Create record" },
+              ]}
+            />
+
             <MultiCode
               title="Create a database and write records"
-              node={`// 1 · Create database
-const { data: db } = await arciin("POST", "/app-databases", {
-  name:        "ecommerce",
-  description: "Orders and products for my storefront",
+              postman={`POST ${BASE}/app-databases
+POST ${BASE}/app-databases/{{db_id}}/folders
+POST ${BASE}/app-database-folders/{{table_id}}/records`}
+              node={`const API_KEY = process.env.ARCIIN_KEY ?? "arc_live_your_key_here";
+const BASE = "${BASE}";
+const auth = (body?: object) => ({
+  headers: {
+    Authorization: \`Bearer \${API_KEY}\`,
+    Accept: "application/json",
+    ...(body
+      ? { "Content-Type": "application/json" }
+      : {}),
+  },
+  ...(body ? { body: JSON.stringify(body) } : {}),
+} as RequestInit);
+
+// 1 · POST — full URL: \`\${BASE}/app-databases\`
+let res = await fetch(\`\${BASE}/app-databases\`, {
+  method: "POST",
+  ...auth({
+    name: "ecommerce",
+    description: "Orders and products for my storefront",
+  }),
 });
+let json = await res.json();
+if (!res.ok) throw new Error(JSON.stringify(json));
+const db = json.data;
 
-// 2 · List tables (Default already exists)
-const { data: tables } = await arciin("GET", \`/app-databases/\${db.id}/folders\`);
-const defaultTable = tables.find(t => t.name === "Default");
+// 2 · GET — full URL: \`\${BASE}/app-databases/\${db.id}/folders\`
+res = await fetch(\`\${BASE}/app-databases/\${db.id}/folders\`, {
+  method: "GET",
+  ...auth(),
+});
+json = await res.json();
+if (!res.ok) throw new Error(JSON.stringify(json));
+const tables = json.data as { id: string; name: string }[];
+console.log("Tables:", tables.map((t) => t.name));
 
-// 3 · Create an "orders" table
-const { data: ordersTable } = await arciin(
-  "POST", \`/app-databases/\${db.id}/folders\`,
-  { name: "orders" }
-);
+// 3 · POST — full URL: \`\${BASE}/app-databases/\${db.id}/folders\`
+res = await fetch(\`\${BASE}/app-databases/\${db.id}/folders\`, {
+  method: "POST",
+  ...auth({ name: "orders" }),
+});
+json = await res.json();
+if (!res.ok) throw new Error(JSON.stringify(json));
+const ordersTable = json.data;
 
-// 4 · Insert a record
-const { data: record } = await arciin(
-  "POST", \`/app-database-folders/\${ordersTable.id}/records\`,
-  {
-    name:    "order-1042",
+// 4 · POST — full URL: \`\${BASE}/app-database-folders/\${ordersTable.id}/records\`
+res = await fetch(\`\${BASE}/app-database-folders/\${ordersTable.id}/records\`, {
+  method: "POST",
+  ...auth({
+    name: "order-1042",
     payload: { customerId: "usr_abc", total: 99.98, status: "pending" },
-  }
-);
+  }),
+});
+json = await res.json();
+if (!res.ok) throw new Error(JSON.stringify(json));
+const record = json.data;
 console.log("Created:", record.id);`}
-              python={`# 1 · Create database
-db = arciin("POST", "/app-databases", json={
-    "name": "ecommerce",
-    "description": "Orders and products",
-})["data"]
+              python={`import os, requests
 
-# 2 · Get the auto-created Default table
-tables = arciin("GET", f"/app-databases/{db['id']}/folders")["data"]
+API_KEY = os.getenv("ARCIIN_KEY", "arc_live_your_key_here")
+API = "${BASE}"
+s = requests.Session()
+s.headers.update({"Authorization": f"Bearer {API_KEY}", "Accept": "application/json"})
 
-# 3 · Create an orders table
-orders_table = arciin(
-    "POST", f"/app-databases/{db['id']}/folders",
-    json={"name": "orders"}
-)["data"]
-
-# 4 · Insert a record
-record = arciin(
-    "POST", f"/app-database-folders/{orders_table['id']}/records",
+# 1 · POST — URL f"{API}/app-databases"
+r = s.post(
+    f"{API}/app-databases",
     json={
-        "name":    "order-1042",
+        "name": "ecommerce",
+        "description": "Orders and products",
+    },
+    timeout=60,
+)
+r.raise_for_status()
+db = r.json()["data"]
+
+# 2 · GET — URL f"{API}/app-databases/{id}/folders"
+tables = s.get(f"{API}/app-databases/{db['id']}/folders", timeout=60).json()["data"]
+
+# 3 · POST table — URL f"{API}/app-databases/{id}/folders"
+orders_table = s.post(
+    f"{API}/app-databases/{db['id']}/folders",
+    json={"name": "orders"},
+    timeout=60,
+).json()["data"]
+
+# 4 · POST record — URL f"{API}/app-database-folders/{id}/records"
+record = s.post(
+    f"{API}/app-database-folders/{orders_table['id']}/records",
+    json={
+        "name": "order-1042",
         "payload": {"customerId": "usr_abc", "total": 99.98, "status": "pending"},
-    }
-)["data"]
+    },
+    timeout=60,
+).json()["data"]
 print("Created:", record["id"])`}
-              curl={`# 1 · Create database
-DB_ID=$(arc -X POST "$API/app-databases" \\
+              curl={`export ARCIIN_KEY="arc_live_your_key_here"
+export API="${BASE}"
+
+# 1 · POST full URL: $API/app-databases
+DB_ID=$(curl -sS -X POST "$API/app-databases" \\
+  -H "Authorization: Bearer $ARCIIN_KEY" \\
+  -H "Content-Type: application/json" -H "Accept: application/json" \\
   -d '{"name":"ecommerce","description":"Orders and products"}' \\
   | jq -r '.data.id')
 
-# 2 · Create orders table
-TBL_ID=$(arc -X POST "$API/app-databases/$DB_ID/folders" \\
+# 2 · POST full URL: $API/app-databases/$DB_ID/folders
+TBL_ID=$(curl -sS -X POST "$API/app-databases/$DB_ID/folders" \\
+  -H "Authorization: Bearer $ARCIIN_KEY" \\
+  -H "Content-Type: application/json" -H "Accept: application/json" \\
   -d '{"name":"orders"}' | jq -r '.data.id')
 
-# 3 · Insert record
-arc -X POST "$API/app-database-folders/$TBL_ID/records" -d '{
-  "name": "order-1042",
-  "payload": {"customerId":"usr_abc","total":99.98,"status":"pending"}
-}' | jq .data.id`}
+# 3 · POST full URL: $API/app-database-folders/$TBL_ID/records
+curl -sS -X POST "$API/app-database-folders/$TBL_ID/records" \\
+  -H "Authorization: Bearer $ARCIIN_KEY" \\
+  -H "Content-Type: application/json" -H "Accept: application/json" \\
+  -d '{"name":"order-1042","payload":{"customerId":"usr_abc","total":99.98,"status":"pending"}}' \\
+  | jq .data.id`}
             />
 
             <MultiCode
               title="Read, update, delete records"
-              node={`// List all records in a table
-const { data: records } = await arciin("GET", \`/app-database-folders/\${tableId}/records\`);
+              postman={`GET {{base}}/app-database-folders/{{table_id}}/records
+PATCH {{base}}/app-database-records/{{record_id}}
+DELETE {{base}}/app-database-records/{{record_id}}`}
+              node={`const API_KEY = process.env.ARCIIN_KEY ?? "arc_live_your_key_here";
+const BASE = "${BASE}";
+const h = {
+  Authorization: \`Bearer \${API_KEY}\`,
+  Accept: "application/json",
+};
+const tableId = "…";
+const recordId = "…";
 
-// Update a record
-await arciin("PATCH", \`/app-database-records/\${recordId}\`, {
-  payload: { ...existingPayload, status: "shipped" },
+// GET — full URL: \`\${BASE}/app-database-folders/\${tableId}/records\`
+let res = await fetch(
+  \`\${BASE}/app-database-folders/\${tableId}/records\`,
+  { headers: h },
+);
+let json = await res.json();
+if (!res.ok) throw new Error(JSON.stringify(json));
+const { data: records } = json;
+
+// PATCH — full URL: \`\${BASE}/app-database-records/\${recordId}\`
+res = await fetch(\`\${BASE}/app-database-records/\${recordId}\`, {
+  method: "PATCH",
+  headers: { ...h, "Content-Type": "application/json" },
+  body: JSON.stringify({
+    payload: { status: "shipped" },
+  }),
 });
+json = await res.json();
+if (!res.ok) throw new Error(JSON.stringify(json));
 
-// Delete a record
-await arciin("DELETE", \`/app-database-records/\${recordId}\`);`}
-              python={`# List records
-records = arciin("GET", f"/app-database-folders/{table_id}/records")["data"]
+// DELETE — full URL: \`\${BASE}/app-database-records/\${recordId}\`
+res = await fetch(\`\${BASE}/app-database-records/\${recordId}\`, {
+  method: "DELETE",
+  headers: h,
+});
+if (!res.ok) {
+  json = await res.json();
+  throw new Error(JSON.stringify(json));
+}`}
+              python={`import os, requests
 
-# Update
-arciin("PATCH", f"/app-database-records/{record_id}",
-    json={"payload": {**existing, "status": "shipped"}})
+API_KEY = os.getenv("ARCIIN_KEY", "arc_live_your_key_here")
+API = "${BASE}"
+s = requests.Session()
+s.headers.update({"Authorization": f"Bearer {API_KEY}", "Accept": "application/json"})
 
-# Delete
-arciin("DELETE", f"/app-database-records/{record_id}")`}
-              curl={`# List records
-arc "$API/app-database-folders/$TBL_ID/records" | jq '.data[] | {name,payload}'
+table_id = "…"
+record_id = "…"
 
-# Update
-arc -X PATCH "$API/app-database-records/$REC_ID" \\
+# GET — f"{API}/app-database-folders/{table_id}/records"
+records = s.get(f"{API}/app-database-folders/{table_id}/records", timeout=60).json()["data"]
+
+# PATCH — f"{API}/app-database-records/{record_id}"
+s.patch(
+    f"{API}/app-database-records/{record_id}",
+    json={"payload": {"status": "shipped"}},
+    timeout=60,
+).raise_for_status()
+
+# DELETE — f"{API}/app-database-records/{record_id}"
+s.delete(f"{API}/app-database-records/{record_id}", timeout=60).raise_for_status()`}
+              curl={`export ARCIIN_KEY="arc_live_your_key_here"
+export API="${BASE}"
+TBL_ID="…"
+REC_ID="…"
+
+# GET full URL: $API/app-database-folders/$TBL_ID/records
+curl -sS "$API/app-database-folders/$TBL_ID/records" \\
+  -H "Authorization: Bearer $ARCIIN_KEY" \\
+  -H "Accept: application/json" | jq '.data[] | {name,payload}'
+
+# PATCH full URL: $API/app-database-records/$REC_ID
+curl -sS -X PATCH "$API/app-database-records/$REC_ID" \\
+  -H "Authorization: Bearer $ARCIIN_KEY" \\
+  -H "Content-Type: application/json" \\
   -d '{"payload":{"status":"shipped"}}'
 
-# Delete
-arc -X DELETE "$API/app-database-records/$REC_ID"`}
+# DELETE full URL: $API/app-database-records/$REC_ID
+curl -sS -X DELETE "$API/app-database-records/$REC_ID" \\
+  -H "Authorization: Bearer $ARCIIN_KEY"`}
             />
           </section>
 

@@ -13,6 +13,7 @@ import { registerInstanceRoutes } from "@/modules/instance/routes"
 import { registerIntegrationRoutes } from "@/modules/integrations/routes"
 import { registerJobRoutes } from "@/modules/jobs/routes"
 import { registerLibraryRoutes } from "@/modules/libraries/routes"
+import { registerPasswordVaultRoutes } from "@/modules/password-vault/routes"
 import { registerSettingsRoutes } from "@/modules/settings/routes"
 import { registerUploadRoutes } from "@/modules/uploads/routes"
 import { registerWebhookRoutes } from "@/modules/webhooks/routes"
@@ -61,6 +62,7 @@ export async function createServer() {
       await registerJobRoutes(api)
       await registerApiKeyRoutes(api)
       await registerSettingsRoutes(api)
+      await registerPasswordVaultRoutes(api)
       await registerWebhookRoutes(api)
       await registerIntegrationRoutes(api)
       await registerAppDatabaseRoutes(api)

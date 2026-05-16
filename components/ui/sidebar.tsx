@@ -4,7 +4,11 @@ import * as React from "react"
 import { cva, type VariantProps } from "class-variance-authority"
 import { Slot } from "radix-ui"
 
-import { useIsMobile } from "@/hooks/use-mobile"
+import {
+  DESKTOP_BREAKPOINT,
+  MOBILE_BREAKPOINT,
+  useIsMobile,
+} from "@/hooks/use-mobile"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -30,6 +34,14 @@ const SIDEBAR_WIDTH = "16rem"
 const SIDEBAR_WIDTH_MOBILE = "18rem"
 const SIDEBAR_WIDTH_ICON = "3rem"
 const SIDEBAR_KEYBOARD_SHORTCUT = "b"
+
+const TABLET_SIDEBAR_MEDIA = `(min-width: ${MOBILE_BREAKPOINT}px) and (max-width: ${DESKTOP_BREAKPOINT - 1}px)`
+
+function readSidebarOpenCookie(): boolean | null {
+  if (typeof document === "undefined") return null
+  const match = document.cookie.match(/(?:^|; )sidebar_state=(true|false)/)
+  return match ? match[1] === "true" : null
+}
 
 type SidebarContextProps = {
   state: "expanded" | "collapsed"
@@ -70,6 +82,7 @@ function SidebarProvider({
 
   // This is the internal state of the sidebar.
   // We use openProp and setOpenProp for control from outside the component.
+  // Match SSR: always use defaultOpen on first render; sync viewport/cookie after mount.
   const [_open, _setOpen] = React.useState(defaultOpen)
   const open = openProp ?? _open
   const setOpen = React.useCallback(
@@ -91,6 +104,37 @@ function SidebarProvider({
   const toggleSidebar = React.useCallback(() => {
     return isMobile ? setOpenMobile((open) => !open) : setOpen((open) => !open)
   }, [isMobile, setOpen, setOpenMobile])
+
+  // After hydration: tablet → collapsed; desktop → cookie preference.
+  const setOpenRef = React.useRef(setOpen)
+  setOpenRef.current = setOpen
+
+  const syncSidebarOpenForViewport = React.useCallback(() => {
+    const mq = window.matchMedia(TABLET_SIDEBAR_MEDIA)
+    if (mq.matches) {
+      setOpenRef.current(false)
+      return
+    }
+    const cookie = readSidebarOpenCookie()
+    if (cookie !== null) setOpenRef.current(cookie)
+  }, [])
+
+  React.useLayoutEffect(() => {
+    if (isMobile || openProp !== undefined) return
+    syncSidebarOpenForViewport()
+  }, [isMobile, openProp, syncSidebarOpenForViewport])
+
+  React.useEffect(() => {
+    if (isMobile || openProp !== undefined) return
+
+    const mq = window.matchMedia(TABLET_SIDEBAR_MEDIA)
+    const onViewportChange = () => {
+      if (mq.matches) setOpenRef.current(false)
+    }
+
+    mq.addEventListener("change", onViewportChange)
+    return () => mq.removeEventListener("change", onViewportChange)
+  }, [isMobile, openProp])
 
   // Adds a keyboard shortcut to toggle the sidebar.
   React.useEffect(() => {
@@ -186,7 +230,7 @@ function Sidebar({
           data-sidebar="sidebar"
           data-slot="sidebar"
           data-mobile="true"
-          className="w-(--sidebar-width) border-r border-white/[0.08] bg-[rgba(9,9,11,0.42)] p-0 text-sidebar-foreground shadow-none ring-1 ring-white/[0.06] backdrop-blur-2xl [&>button]:hidden"
+          className="w-(--sidebar-width) border-r border-white/[0.07] bg-[rgba(9,9,11,0.55)] p-0 text-sidebar-foreground shadow-none ring-0 backdrop-blur-xl [&>button]:hidden"
           style={
             {
               "--sidebar-width": SIDEBAR_WIDTH_MOBILE,

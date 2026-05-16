@@ -112,6 +112,7 @@ export default function AppDataDatabasesPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.appDatabases })
       queryClient.invalidateQueries({ queryKey: queryKeys.adminTables })
+      queryClient.invalidateQueries({ queryKey: queryKeys.chatContext })
       setOpen(false)
       setName(generateName())
       setDescription("")
@@ -127,6 +128,7 @@ export default function AppDataDatabasesPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.appDatabases })
       queryClient.invalidateQueries({ queryKey: queryKeys.adminTables })
+      queryClient.invalidateQueries({ queryKey: queryKeys.chatContext })
       toast.success("Database deleted.")
     },
     onError: (e) => {

@@ -22,6 +22,7 @@ export default async function SetupPage() {
   if (state.kind === "unavailable") {
     return (
       <SystemUnavailable
+        contextLabel="Setup"
         title="Setup is waiting for the instance service."
         description="The claim screen is ready, but Arciin cannot verify setup state until the API is available."
       />

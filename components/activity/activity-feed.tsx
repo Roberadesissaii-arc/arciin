@@ -17,12 +17,13 @@ import {
 } from "@/components/ui/empty"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useActivity } from "@/hooks/use-activity"
+import { cn } from "@/lib/utils"
 
 const PAGE_SIZE = 10
 
 // ── Limited view (dashboard widget) ──────────────────────────────────────────
 
-export function ActivityFeed({ limit }: { limit?: number }) {
+export function ActivityFeed({ limit, tall = false }: { limit?: number; tall?: boolean }) {
   const [page, setPage] = useState(1)
   const activityQuery = useActivity()
 
@@ -53,7 +54,11 @@ export function ActivityFeed({ limit }: { limit?: number }) {
     const items = all.slice(0, limit)
     if (!items.length) return <ActivityEmpty bare />
     return (
-      <div className="divide-y divide-border">
+      <div
+        className={cn(
+          "divide-y divide-border",
+          tall && "min-h-0 flex-1 overflow-y-auto",
+        )}>
         {items.map((event) => (
           <ActivityItem key={event.id} event={event} />
         ))}

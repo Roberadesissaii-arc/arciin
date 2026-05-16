@@ -12,10 +12,11 @@ import type { FastifyInstance } from "fastify"
 import { z } from "zod"
 
 import { apiConfig } from "@/config"
-import { serializeAuth } from "@/services/serializers"
+import { serializeAuth, serializeSession, serializeUser } from "@/services/serializers"
 import { loadAccessControlSettings } from "@/services/security/access-control-settings"
 import {
   authenticate,
+  authenticateFlexible,
   clearSessionCookie,
   createSession,
   hashPassword,
@@ -90,7 +91,7 @@ export async function registerAuthRoutes(fastify: FastifyInstance) {
   fastify.get(
     "/auth/me",
     {
-      preHandler: authenticate,
+      preHandler: authenticateFlexible,
     },
     async (request, reply) => {
       if (!request.auth) {
@@ -98,7 +99,12 @@ export async function registerAuthRoutes(fastify: FastifyInstance) {
       }
 
       reply.send({
-        data: serializeAuth(request.auth.user, request.auth.session!),
+        data: {
+          user: serializeUser(request.auth.user),
+          session: request.auth.session ? serializeSession(request.auth.session) : null,
+          apiKeyId: request.auth.apiKeyId ?? null,
+          apiKeyScopes: request.auth.apiKeyScopes ?? null,
+        },
       })
     }
   )

@@ -18,7 +18,10 @@ const createAppDatabaseSchema = z.object({
 
 const createAppFolderSchema = z.object({
   name: z.string().min(1).max(100),
-  parentFolderId: z.string().optional(),
+  parentFolderId: z.preprocess(
+    (v) => (v === null || v === undefined || v === "" ? undefined : v),
+    z.string().optional(),
+  ),
 })
 
 const updateAppFolderSchema = z.object({

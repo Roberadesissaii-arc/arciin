@@ -127,7 +127,26 @@ export async function registerInstanceRoutes(fastify: FastifyInstance) {
           enabled: false,
           config: {
             status: "not_connected",
-            suggestedFolder: "Videos/Plex",
+            plexFolderName: "Plex",
+            librarySlugs: ["videos", "images", "music"],
+            foldersReady: false,
+          },
+        },
+      })
+
+      await tx.integration.upsert({
+        where: { id: "jellyfin-connector" },
+        update: {},
+        create: {
+          id: "jellyfin-connector",
+          name: "Jellyfin",
+          type: "CUSTOM",
+          enabled: false,
+          config: {
+            status: "not_connected",
+            connectorKind: "jellyfin",
+            librarySlugs: ["videos", "images", "music"],
+            foldersReady: false,
           },
         },
       })

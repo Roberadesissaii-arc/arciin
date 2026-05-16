@@ -22,6 +22,7 @@ export default async function LoginPage() {
   if (state.kind === "unavailable") {
     return (
       <SystemUnavailable
+        contextLabel="Sign in"
         title="Sign-in is waiting for the instance service."
         description="Arciin needs the API online before it can verify sessions or authenticate the owner account."
       />

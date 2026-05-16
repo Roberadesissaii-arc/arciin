@@ -8,9 +8,10 @@ import { JOB_TYPES } from "@arciin/shared"
 import { buildRealtimeEvent } from "@/services/events/publish-event"
 import { recordActivity } from "@/services/activity/record-activity"
 import { mediaQueue } from "@/services/jobs/queues"
-import { requireRole } from "@/services/security/auth"
+import { requireSessionRolesOrApiKeyScopes } from "@/services/security/auth"
 import { serializeUpload } from "@/services/serializers"
 import { analyzeStoredFile } from "@/services/classification/media-classification"
+import { resolveUploadFolderId, syncAssetToPlexMirror } from "@/services/integrations/plex"
 import {
   createObjectStoragePath,
   moveTempToObject,
@@ -37,7 +38,10 @@ export async function registerUploadRoutes(fastify: FastifyInstance) {
   fastify.post(
     "/uploads",
     {
-      preHandler: requireRole(["OWNER", "ADMIN", "MEMBER"]),
+      preHandler: requireSessionRolesOrApiKeyScopes(
+        ["OWNER", "ADMIN", "MEMBER"],
+        ["uploads:create"],
+      ),
     },
     async (request, reply) => {
       const file = await request.file()
@@ -136,12 +140,19 @@ export async function registerUploadRoutes(fastify: FastifyInstance) {
         await removeTempFile(tempResult.tempPath)
       }
 
+      const resolvedFolderId = await resolveUploadFolderId(
+        fastify.prisma,
+        targetLibrary.id,
+        targetLibrary.slug,
+        targetFolderId,
+      )
+
       const requiresProcessing = analysis.mediaType === "VIDEO" || analysis.mediaType === "IMAGE" || analysis.mediaType === "AUDIO"
 
       const asset = await fastify.prisma.asset.create({
         data: {
           libraryId: targetLibrary.id,
-          folderId: targetFolderId ?? null,
+          folderId: resolvedFolderId ?? null,
           storageObjectId: storageObject.id,
           ownerId: request.auth.user.id,
           filename: `${tempResult.checksumSha256}.${analysis.extension || "bin"}`,
@@ -221,6 +232,8 @@ export async function registerUploadRoutes(fastify: FastifyInstance) {
         }
       }
 
+      await syncAssetToPlexMirror(fastify.prisma, asset.id).catch(() => {})
+
       await recordActivity(fastify.prisma, {
         userId: request.auth.user.id,
         type: "upload.completed",
@@ -273,7 +286,10 @@ export async function registerUploadRoutes(fastify: FastifyInstance) {
   fastify.get(
     "/uploads",
     {
-      preHandler: requireRole(["OWNER", "ADMIN", "MEMBER", "VIEWER"]),
+      preHandler: requireSessionRolesOrApiKeyScopes(
+        ["OWNER", "ADMIN", "MEMBER", "VIEWER"],
+        ["assets:read", "activity:read", "uploads:create"],
+      ),
     },
     async (_request, reply) => {
       const uploads = await fastify.prisma.uploadSession.findMany({
@@ -295,7 +311,10 @@ export async function registerUploadRoutes(fastify: FastifyInstance) {
   fastify.get(
     "/uploads/:uploadId",
     {
-      preHandler: requireRole(["OWNER", "ADMIN", "MEMBER", "VIEWER"]),
+      preHandler: requireSessionRolesOrApiKeyScopes(
+        ["OWNER", "ADMIN", "MEMBER", "VIEWER"],
+        ["assets:read", "activity:read", "uploads:create"],
+      ),
     },
     async (request, reply) => {
       const params = z.object({ uploadId: z.string() }).parse(request.params)
@@ -327,7 +346,10 @@ export async function registerUploadRoutes(fastify: FastifyInstance) {
   fastify.post(
     "/uploads/:uploadId/complete",
     {
-      preHandler: requireRole(["OWNER", "ADMIN", "MEMBER"]),
+      preHandler: requireSessionRolesOrApiKeyScopes(
+        ["OWNER", "ADMIN", "MEMBER"],
+        ["uploads:create"],
+      ),
     },
     async (request, reply) => {
       if (!request.auth) return
@@ -369,7 +391,10 @@ export async function registerUploadRoutes(fastify: FastifyInstance) {
   fastify.post(
     "/uploads/:uploadId/cancel",
     {
-      preHandler: requireRole(["OWNER", "ADMIN", "MEMBER"]),
+      preHandler: requireSessionRolesOrApiKeyScopes(
+        ["OWNER", "ADMIN", "MEMBER"],
+        ["uploads:create"],
+      ),
     },
     async (request, reply) => {
       if (!request.auth) return
