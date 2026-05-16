@@ -1,15 +1,25 @@
 import { createReadStream } from "node:fs"
-import { access } from "node:fs/promises"
+import { access, mkdir, writeFile } from "node:fs/promises"
 import path from "node:path"
 
 import type { FastifyInstance } from "fastify"
 import { z } from "zod"
 
+import { resolveArciinStorageRoot } from "@arciin/shared"
+
+import { apiConfig } from "@/config"
 import { buildRealtimeEvent } from "@/services/events/publish-event"
 import { recordActivity } from "@/services/activity/record-activity"
-import { requireRole } from "@/services/security/auth"
+import {
+  ensureThumbnailWritten,
+  renderImageWebpThumbnailBuffer,
+  renderVideoPlaceholderWebpBuffer,
+  renderImagePlaceholderWebpBuffer,
+  resolveReadableObjectPath,
+  resolvedThumbnailPath,
+} from "@/services/media/thumbnail-cache"
+import { requireSessionRolesOrApiKeyScopes } from "@/services/security/auth"
 import { serializeAsset } from "@/services/serializers"
-import { getStoragePaths } from "@/services/storage/local-storage"
 
 const assetUpdateSchema = z.object({
   title: z.string().max(200).optional(),
@@ -26,7 +36,10 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
   fastify.get(
     "/assets",
     {
-      preHandler: requireRole(["OWNER", "ADMIN", "MEMBER", "VIEWER"]),
+      preHandler: requireSessionRolesOrApiKeyScopes(
+        ["OWNER", "ADMIN", "MEMBER", "VIEWER"],
+        ["assets:read"],
+      ),
     },
     async (request, reply) => {
       const query = z
@@ -88,7 +101,10 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
   fastify.get(
     "/assets/:assetId",
     {
-      preHandler: requireRole(["OWNER", "ADMIN", "MEMBER", "VIEWER"]),
+      preHandler: requireSessionRolesOrApiKeyScopes(
+        ["OWNER", "ADMIN", "MEMBER", "VIEWER"],
+        ["assets:read"],
+      ),
     },
     async (request, reply) => {
       const params = z.object({ assetId: z.string() }).parse(request.params)
@@ -117,7 +133,10 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
   fastify.patch(
     "/assets/:assetId",
     {
-      preHandler: requireRole(["OWNER", "ADMIN", "MEMBER"]),
+      preHandler: requireSessionRolesOrApiKeyScopes(
+        ["OWNER", "ADMIN", "MEMBER"],
+        ["assets:write"],
+      ),
     },
     async (request, reply) => {
       const params = z.object({ assetId: z.string() }).parse(request.params)
@@ -164,7 +183,10 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
   fastify.delete(
     "/assets/:assetId",
     {
-      preHandler: requireRole(["OWNER", "ADMIN", "MEMBER"]),
+      preHandler: requireSessionRolesOrApiKeyScopes(
+        ["OWNER", "ADMIN", "MEMBER"],
+        ["assets:write"],
+      ),
     },
     async (request, reply) => {
       const params = z.object({ assetId: z.string() }).parse(request.params)
@@ -220,7 +242,10 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
   fastify.post(
     "/assets/:assetId/move",
     {
-      preHandler: requireRole(["OWNER", "ADMIN", "MEMBER"]),
+      preHandler: requireSessionRolesOrApiKeyScopes(
+        ["OWNER", "ADMIN", "MEMBER"],
+        ["assets:write"],
+      ),
     },
     async (request, reply) => {
       const params = z.object({ assetId: z.string() }).parse(request.params)
@@ -344,7 +369,10 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
   fastify.get(
     "/assets/:assetId/download",
     {
-      preHandler: requireRole(["OWNER", "ADMIN", "MEMBER", "VIEWER"]),
+      preHandler: requireSessionRolesOrApiKeyScopes(
+        ["OWNER", "ADMIN", "MEMBER", "VIEWER"],
+        ["assets:read"],
+      ),
     },
     async (request, reply) => {
       const params = z.object({ assetId: z.string() }).parse(request.params)
@@ -363,6 +391,7 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
         },
         include: {
           storageObject: true,
+          library: { select: { storageLocation: { select: { rootPath: true } } } },
         },
       })
 
@@ -391,11 +420,30 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
         )
       }
 
-      // Prevent path traversal: verify the physical path is inside the storage root.
+      // Prevent path traversal: object must live under resolved storage root.
       const instance = await fastify.prisma.instanceConfig.findFirst()
-      const storageRoot = path.resolve(instance?.storageRoot ?? "")
-      const resolvedPath = path.resolve(asset.storageObject.physicalPath)
-      if (!resolvedPath.startsWith(storageRoot + path.sep) && resolvedPath !== storageRoot) {
+      const resolvedSrc =
+        (await resolveReadableObjectPath({
+          configuredStorageRoot: instance?.storageRoot,
+          physicalPath: asset.storageObject.physicalPath,
+          objectKey: asset.storageObject.objectKey,
+          extraRoots: [apiConfig.dataDir, asset.library?.storageLocation?.rootPath],
+        })) ?? null
+
+      if (!resolvedSrc) {
+        reply.status(404).send({
+          error: {
+            code: "STORAGE_FILE_NOT_FOUND",
+            message: "Original file is missing on the server.",
+          },
+        })
+        return
+      }
+
+      const storageRoot = resolveArciinStorageRoot(instance?.storageRoot, resolvedSrc)
+      const resolvedRoot = path.resolve(storageRoot)
+      const resolvedPath = path.resolve(resolvedSrc)
+      if (!resolvedPath.startsWith(resolvedRoot + path.sep) && resolvedPath !== resolvedRoot) {
         reply.status(403).send({
           error: {
             code: "FORBIDDEN",
@@ -412,7 +460,10 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
   fastify.post(
     "/assets/check-duplicates",
     {
-      preHandler: requireRole(["OWNER", "ADMIN", "MEMBER"]),
+      preHandler: requireSessionRolesOrApiKeyScopes(
+        ["OWNER", "ADMIN", "MEMBER"],
+        ["assets:write"],
+      ),
     },
     async (request, reply) => {
       const parsed = z
@@ -456,30 +507,122 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
   fastify.get(
     "/assets/:assetId/thumbnail",
     {
-      preHandler: requireRole(["OWNER", "ADMIN", "MEMBER", "VIEWER"]),
+      preHandler: requireSessionRolesOrApiKeyScopes(
+        ["OWNER", "ADMIN", "MEMBER", "VIEWER"],
+        ["assets:read"],
+      ),
     },
     async (request, reply) => {
       const params = z.object({ assetId: z.string() }).parse(request.params)
-      const instance = await fastify.prisma.instanceConfig.findFirst()
-      const thumbnailPath = path.join(
-        getStoragePaths(instance?.storageRoot).thumbnailsDir,
-        `${params.assetId}.webp`
-      )
+      const asset = await fastify.prisma.asset.findFirst({
+        where: { id: params.assetId, deletedAt: null },
+        include: {
+          storageObject: true,
+          library: { select: { storageLocation: { select: { rootPath: true } } } },
+        },
+      })
 
-      try {
-        await access(thumbnailPath)
-      } catch {
+      if (!asset?.storageObject) {
         reply.status(404).send({
           error: {
-            code: "THUMBNAIL_NOT_FOUND",
-            message: "Thumbnail not found.",
+            code: "ASSET_NOT_FOUND",
+            message: "Asset not found.",
           },
         })
         return
       }
 
-      reply.header("content-type", "image/webp")
-      return reply.send(createReadStream(thumbnailPath))
+      const instance = await fastify.prisma.instanceConfig.findFirst()
+
+      const sourcePathResolved = await resolveReadableObjectPath({
+        configuredStorageRoot: instance?.storageRoot,
+        physicalPath: asset.storageObject.physicalPath,
+        objectKey: asset.storageObject.objectKey,
+        extraRoots: [apiConfig.dataDir, asset.library?.storageLocation?.rootPath],
+      })
+
+      if (!sourcePathResolved) {
+        if (asset.mediaType === "IMAGE") {
+          const placeholder = await renderImagePlaceholderWebpBuffer()
+          reply.header("content-type", "image/webp")
+          reply.header("Cache-Control", "no-store")
+          return reply.send(placeholder)
+        }
+        if (asset.mediaType === "VIDEO") {
+          const placeholder = await renderVideoPlaceholderWebpBuffer()
+          reply.header("content-type", "image/webp")
+          reply.header("Cache-Control", "no-store")
+          return reply.send(placeholder)
+        }
+        reply.status(404).send({
+          error: {
+            code: "STORAGE_FILE_NOT_FOUND",
+            message: "Original file is missing on the server (check storage root and data directory).",
+          },
+        })
+        return
+      }
+
+      const thumbnailPath = resolvedThumbnailPath(
+        instance?.storageRoot,
+        asset.id,
+        sourcePathResolved,
+      )
+
+      let hadFile = false
+      try {
+        await access(thumbnailPath)
+        hadFile = true
+      } catch {
+        /* generate below */
+      }
+
+      if (!hadFile && (asset.mediaType === "VIDEO" || asset.mediaType === "IMAGE")) {
+        await ensureThumbnailWritten({
+          assetId: asset.id,
+          mediaType: asset.mediaType,
+          sourcePath: sourcePathResolved,
+          thumbnailPath,
+        })
+      }
+
+      try {
+        await access(thumbnailPath)
+        reply.header("content-type", "image/webp")
+        reply.header("Cache-Control", "private, max-age=86400")
+        return reply.send(createReadStream(thumbnailPath))
+      } catch {
+        /* try in-memory fallbacks */
+      }
+
+      if (asset.mediaType === "IMAGE") {
+        const inline =
+          (await renderImageWebpThumbnailBuffer(sourcePathResolved)) ??
+          (await renderImagePlaceholderWebpBuffer())
+        reply.header("content-type", "image/webp")
+        reply.header("Cache-Control", "private, max-age=3600")
+        void mkdir(path.dirname(thumbnailPath), { recursive: true }).then(() =>
+          writeFile(thumbnailPath, inline).catch(() => {}),
+        )
+        return reply.send(inline)
+      }
+
+      if (asset.mediaType === "VIDEO") {
+        const inline = await renderVideoPlaceholderWebpBuffer()
+        reply.header("content-type", "image/webp")
+        reply.header("Cache-Control", "private, max-age=3600")
+        void mkdir(path.dirname(thumbnailPath), { recursive: true }).then(() =>
+          writeFile(thumbnailPath, inline).catch(() => {}),
+        )
+        return reply.send(inline)
+      }
+
+      reply.status(404).send({
+        error: {
+          code: "THUMBNAIL_NOT_FOUND",
+          message: "Thumbnail not found.",
+        },
+      })
     }
   )
 }

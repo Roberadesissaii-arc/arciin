@@ -1,5 +1,2 @@
-/**
- * Header icon chip on dashboard cards — visible on light surfaces (orange tint).
- */
 export const dashboardStatIconShell =
-  "flex size-11 shrink-0 items-center justify-center rounded-2xl border border-primary/25 bg-orange-50/90 text-primary shadow-sm"
+  "flex size-10 shrink-0 items-center justify-center rounded-xl bg-[rgba(255,75,51,0.08)] text-[#ff4f12] ring-1 ring-inset ring-[rgba(255,75,51,0.15)]"

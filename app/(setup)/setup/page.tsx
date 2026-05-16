@@ -3,7 +3,6 @@ import { redirect } from "next/navigation"
 
 import { SetupForm } from "@/components/auth/setup-form"
 import { SetupHeroCopy } from "@/components/auth/setup-hero-copy"
-import { MobileSetup } from "@/components/mobile/auth/mobile-setup"
 import { SystemUnavailable } from "@/components/app-shell/system-unavailable"
 import { getRootRouteState } from "@/lib/utils/route-guards"
 
@@ -30,15 +29,7 @@ export default async function SetupPage() {
   }
 
   return (
-    <>
-      {/* Mobile (< md) */}
-      <div className="md:hidden">
-        <MobileSetup />
-      </div>
-
-      {/* Desktop (≥ md) */}
-      <main className="relative hidden min-h-svh bg-background md:flex">
-      {/* Single full-bleed atmosphere so left gutter and right panel share the same wash (no seam). */}
+    <main className="relative flex min-h-svh bg-background">
       <div
         className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_90%_75%_at_100%_0%,rgba(255,75,51,0.22),transparent_55%),radial-gradient(ellipse_60%_50%_at_96%_6%,rgba(255,120,90,0.1),transparent_48%)]"
         aria-hidden
@@ -50,7 +41,6 @@ export default async function SetupPage() {
 
       <section className="relative z-0 hidden lg:flex lg:w-[48%] xl:w-[45%] lg:p-5">
         <div className="relative flex-1 overflow-hidden rounded-[28px] border border-white/[0.07] bg-background shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-          {/* Soft wash + diffuse glow only (no stacked rings / circles). */}
           <div
             className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(255,75,51,0.12)_0%,rgba(9,9,11,0.06)_28%,rgba(9,9,11,0.35)_55%,transparent_100%)]"
             aria-hidden
@@ -117,7 +107,6 @@ export default async function SetupPage() {
           </Link>
         </footer>
       </section>
-      </main>
-    </>
+    </main>
   )
 }

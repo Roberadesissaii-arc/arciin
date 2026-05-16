@@ -26,21 +26,12 @@ const spaceGrotesk = localFont({
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
-  viewportFit: "cover",
   themeColor: "#09090b",
 }
 
 export const metadata: Metadata = {
   title: "Arciin",
   description: "Your server, your control.",
-  manifest: "/manifest.webmanifest",
-  appleWebApp: {
-    capable: true,
-    statusBarStyle: "black-translucent",
-    title: "Arciin",
-  },
   formatDetection: {
     telephone: false,
   },

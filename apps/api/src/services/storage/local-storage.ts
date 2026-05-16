@@ -124,6 +124,15 @@ export async function assertStorageWritable(rootPath: string) {
   }
 }
 
+/** Prefer tracked object bytes when a directory walk returns zero (wrong path, permissions). */
+export async function resolveStorageUsageBytes(
+  storageRoot: string,
+  trackedBytes: number,
+): Promise<number> {
+  const directoryBytes = await directoryUsageBytes(storageRoot)
+  return Math.max(directoryBytes, trackedBytes)
+}
+
 export async function directoryUsageBytes(directory: string): Promise<number> {
   try {
     const entries = await readdir(directory, {

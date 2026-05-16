@@ -1,34 +1,23 @@
 "use client"
 
+import Link from "next/link"
 import { useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { HardDrive } from "lucide-react"
+import { ChevronRight, HardDrive } from "lucide-react"
 
 import { getStorageSettings } from "@/lib/api/settings"
 import { queryKeys } from "@/lib/api/query-keys"
 import { formatBytes } from "@/lib/utils/format-bytes"
+import { resolveStorageUsagePercent } from "@/lib/utils/storage-usage"
 import type { StorageSettings } from "@/lib/types/models"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { dashboardStatIconShell } from "@/lib/dashboard-card-styles"
 import { Progress } from "@/components/ui/progress"
 import { Skeleton } from "@/components/ui/skeleton"
+import { cn } from "@/lib/utils"
 
-function resolveUsagePercent(storage: StorageSettings): number | null {
-  let total = storage.totalBytes ?? null
-  if (total == null && storage.availableBytes != null && storage.availableBytes >= 0) {
-    const inferred = storage.usageBytes + storage.availableBytes
-    if (inferred > 0) {
-      total = inferred
-    }
-  }
-  if (total != null && total > 0) {
-    return Math.min(100, Math.round((storage.usageBytes / total) * 100))
-  }
-  return null
-}
-
-export function StorageOverviewCard() {
+export function StorageOverviewCard({ className }: { className?: string }) {
   const storageQuery = useQuery({
     queryKey: queryKeys.storageSettings,
     queryFn: ({ signal }) => getStorageSettings(signal),
@@ -37,19 +26,17 @@ export function StorageOverviewCard() {
   const storage = storageQuery.data
 
   const usagePercent = useMemo(() => {
-    if (!storage) {
-      return null
-    }
-    return resolveUsagePercent(storage)
+    if (!storage) return null
+    return resolveStorageUsagePercent(storage)
   }, [storage])
 
   if (storageQuery.isLoading) {
-    return <Skeleton className="h-56 rounded-3xl" />
+    return <Skeleton className={cn("h-52 rounded-3xl", className)} />
   }
 
   if (storageQuery.isError) {
     return (
-      <Card className="border-red-500/20 bg-red-500/5">
+      <Card className={cn("border-red-500/20 bg-red-500/5", className)}>
         <CardHeader>
           <CardTitle className="text-red-900">Storage is unavailable</CardTitle>
           <CardDescription className="text-red-800">
@@ -62,46 +49,27 @@ export function StorageOverviewCard() {
     )
   }
 
-  if (!storage) {
-    return null
-  }
+  if (!storage) return null
 
-  const capacityLabel = (() => {
-    if (storage.totalBytes && storage.totalBytes > 0) {
-      return (
-        <>
-          {formatBytes(storage.usageBytes)} / {formatBytes(storage.totalBytes)}
-        </>
-      )
-    }
-    if (storage.availableBytes != null && storage.availableBytes >= 0) {
-      return (
-        <>
-          {formatBytes(storage.usageBytes)} used · {formatBytes(storage.availableBytes)} reported free
-        </>
-      )
-    }
-    return "Disk capacity not reported — usage is still tracked below."
-  })()
+  const capacityLabel = formatCapacityLabel(storage)
 
   return (
-    <Card className="relative overflow-hidden border-border bg-card shadow-none">
-      <div className="pointer-events-none absolute inset-0" aria-hidden>
-        <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,75,51,0.12)_0%,rgba(244,244,245,0.75)_38%,transparent_58%)]" />
-        <div className="absolute -top-28 left-1/2 aspect-[1.4] w-[min(100%,420px)] -translate-x-1/2 bg-[radial-gradient(ellipse_at_50%_30%,rgba(255,75,51,0.42)_0%,rgba(255,75,51,0.1)_45%,transparent_70%)] blur-[56px]" />
-        <div className="absolute -top-16 right-[8%] h-[200px] w-[min(45%,240px)] bg-[radial-gradient(ellipse_at_center,rgba(255,120,90,0.2)_0%,transparent_68%)] blur-[40px]" />
-      </div>
-
-      <CardHeader className="relative z-10 space-y-3">
-        <div className="flex items-center justify-between gap-3">
+    <Card
+      className={cn(
+        "border-border bg-card shadow-sm",
+        className,
+      )}
+    >
+      <CardHeader className="space-y-3">
+        <div className="flex items-start justify-between gap-3">
           <div className="flex min-w-0 items-center gap-3">
             <div className={dashboardStatIconShell}>
               <HardDrive className="size-5" />
             </div>
             <div className="min-w-0">
-              <CardTitle className="text-foreground">Storage usage</CardTitle>
+              <CardTitle className="text-foreground">Storage</CardTitle>
               <CardDescription className="text-zinc-600">
-                Managed local object storage for this instance.
+                Local object storage for this instance.
               </CardDescription>
             </div>
           </div>
@@ -116,45 +84,53 @@ export function StorageOverviewCard() {
           </Badge>
         </div>
       </CardHeader>
-      <CardContent className="relative z-10 space-y-5">
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="rounded-2xl border border-border bg-muted/40 p-4">
-            <div className="text-sm font-medium text-zinc-600">Used</div>
-            <div className="mt-2 text-2xl font-semibold text-foreground">
+      <CardContent className="space-y-4">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="rounded-2xl border border-border bg-zinc-50/80 px-4 py-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Used</p>
+            <p className="mt-1 text-2xl font-semibold tabular-nums text-foreground">
               {formatBytes(storage.usageBytes)}
-            </div>
+            </p>
           </div>
-          <div className="rounded-2xl border border-border bg-muted/40 p-4">
-            <div className="text-sm font-medium text-zinc-600">Objects</div>
-            <div className="mt-2 text-2xl font-semibold text-foreground">
-              {storage.objectCount}
-            </div>
-          </div>
-        </div>
-        <div className="space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-sm font-medium text-zinc-600">
-            <span>Storage root</span>
-            <span className="max-w-[min(100%,28rem)] truncate font-mono text-xs text-zinc-800 sm:text-sm">
-              {storage.storageRoot}
-            </span>
-          </div>
-          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs text-zinc-600">
-            <span className="font-semibold text-zinc-700">Capacity</span>
-            <span className="text-right text-zinc-800">{capacityLabel}</span>
-          </div>
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between text-[11px] font-semibold uppercase tracking-wider text-zinc-600">
-              <span>Usage</span>
-              {usagePercent != null ? (
-                <span className="font-medium text-primary">{usagePercent}%</span>
-              ) : (
-                <span className="text-zinc-600">No disk total</span>
-              )}
-            </div>
-            <Progress value={usagePercent} className="h-3" />
+          <div className="rounded-2xl border border-border bg-zinc-50/80 px-4 py-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Objects</p>
+            <p className="mt-1 text-2xl font-semibold tabular-nums text-foreground">
+              {storage.objectCount.toLocaleString()}
+            </p>
           </div>
         </div>
+
+        <div className="space-y-2">
+          <div className="flex items-center justify-between text-xs font-medium text-zinc-600">
+            <span>Usage</span>
+            {usagePercent != null ? (
+              <span className="font-semibold text-primary">{usagePercent}%</span>
+            ) : (
+              <span>Capacity not reported</span>
+            )}
+          </div>
+          <Progress value={usagePercent} className="h-2.5" />
+          <p className="text-xs text-zinc-600">{capacityLabel}</p>
+        </div>
+
+        <Link
+          href="/settings/storage"
+          className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:text-primary/80"
+        >
+          Storage settings
+          <ChevronRight className="size-4" />
+        </Link>
       </CardContent>
     </Card>
   )
+}
+
+function formatCapacityLabel(storage: StorageSettings) {
+  if (storage.totalBytes && storage.totalBytes > 0) {
+    return `${formatBytes(storage.usageBytes)} of ${formatBytes(storage.totalBytes)} on disk`
+  }
+  if (storage.availableBytes != null && storage.availableBytes >= 0) {
+    return `${formatBytes(storage.usageBytes)} used · ${formatBytes(storage.availableBytes)} free (reported)`
+  }
+  return "Disk total unavailable — usage is still tracked."
 }

@@ -16,7 +16,7 @@ function ImageOrIconPreview({ asset }: { asset: AssetSummary }) {
 
   if (tryThumb && !thumbFailed) {
     return (
-      <div className="relative aspect-[4/3] overflow-hidden rounded-xl border border-border bg-zinc-100">
+      <div className="relative aspect-[4/3] overflow-hidden rounded-xl border border-white/[0.07] bg-[#0f0f0f]">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={thumbSrc}
@@ -30,8 +30,8 @@ function ImageOrIconPreview({ asset }: { asset: AssetSummary }) {
   }
 
   return (
-    <div className="flex aspect-[4/3] items-center justify-center rounded-xl border border-border bg-muted text-zinc-600">
-      <Icon className="size-8" />
+    <div className="flex aspect-[4/3] items-center justify-center rounded-xl border border-white/[0.06] bg-white/[0.03] text-zinc-500">
+      <Icon className="size-7" />
     </div>
   )
 }
@@ -59,7 +59,7 @@ function VideoAssetPreview({ asset }: { asset: AssetSummary }) {
 
   return (
     <div
-      className="relative aspect-[4/3] overflow-hidden rounded-xl border border-border bg-muted/60"
+      className="relative aspect-[4/3] overflow-hidden rounded-xl border border-white/[0.07] bg-[#0f0f0f]"
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
     >

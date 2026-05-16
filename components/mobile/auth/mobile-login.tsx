@@ -1,41 +1,10 @@
 "use client"
 
-import { useState } from "react"
-import { useRouter } from "next/navigation"
-import { useForm } from "react-hook-form"
-import { Eye, EyeOff, Server, ShieldCheck } from "lucide-react"
-import { toast } from "sonner"
+import Link from "next/link"
 
-import { useLogin } from "@/hooks/use-auth"
-import { loginSchema, type LoginSchema } from "@/lib/validation/auth"
+import { LoginForm } from "@/components/auth/login-form"
 
 export function MobileLogin() {
-  const router = useRouter()
-  const loginMutation = useLogin()
-  const [showPassword, setShowPassword] = useState(false)
-  const form = useForm<LoginSchema>({
-    defaultValues: { email: "", password: "" },
-  })
-
-  const onSubmit = form.handleSubmit(async (values) => {
-    const parsed = loginSchema.safeParse(values)
-    if (!parsed.success) {
-      const fieldErrors = parsed.error.flatten().fieldErrors
-      Object.entries(fieldErrors).forEach(([field, messages]) => {
-        const msg = messages?.[0]
-        if (msg) form.setError(field as keyof LoginSchema, { type: "manual", message: msg })
-      })
-      return
-    }
-    try {
-      await loginMutation.mutateAsync(parsed.data)
-      router.push("/dashboard")
-      router.refresh()
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not sign in.")
-    }
-  })
-
   return (
     <div
       className="relative flex min-h-[100dvh] flex-col bg-[#09090b]"
@@ -44,145 +13,70 @@ export function MobileLogin() {
         paddingBottom: "env(safe-area-inset-bottom)",
       }}
     >
-      {/* ── Atmosphere ──────────────────────────────────────────────────── */}
+      {/* Atmosphere — identical to desktop login */}
       <div
         className="pointer-events-none fixed inset-0"
         aria-hidden
         style={{
           background: [
-            "radial-gradient(ellipse 80% 55% at 50% -5%, rgba(255,79,18,0.22) 0%, transparent 65%)",
-            "radial-gradient(ellipse 50% 30% at 85% 10%, rgba(255,120,60,0.10) 0%, transparent 55%)",
+            "radial-gradient(ellipse 90% 75% at 100% 0%, rgba(255,75,51,0.22), transparent 55%)",
+            "radial-gradient(ellipse 60% 50% at 96% 6%, rgba(255,120,90,0.1), transparent 48%)",
           ].join(","),
         }}
       />
-      {/* Subtle grid overlay */}
       <div
-        className="pointer-events-none fixed inset-0 opacity-[0.025]"
+        className="pointer-events-none fixed inset-0"
         aria-hidden
-        style={{
-          backgroundImage:
-            "linear-gradient(rgba(255,255,255,0.5) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.5) 1px, transparent 1px)",
-          backgroundSize: "40px 40px",
-        }}
+        style={{ background: "linear-gradient(145deg, rgba(255,75,51,0.07) 0%, transparent 42%)" }}
       />
 
-      {/* ── Content ─────────────────────────────────────────────────────── */}
-      <div className="relative z-10 flex flex-1 flex-col justify-center px-7 pb-10 pt-16">
-
-        {/* Brand */}
-        <div className="mb-10">
-          {/* Icon mark */}
-          <div
-            className="mb-5 flex size-[52px] items-center justify-center rounded-[16px]"
-            style={{
-              background: "linear-gradient(135deg, #ff4f12 0%, #cc2e00 100%)",
-              boxShadow: "0 8px 32px rgba(255,79,18,0.35), 0 0 0 1px rgba(255,79,18,0.2)",
-            }}
-          >
-            <Server className="size-[22px] text-white" />
+      {/* Brand wordmark */}
+      <header className="relative z-10 shrink-0 px-7">
+        <div className="flex h-16 items-center">
+          <div>
+            <p className="font-heading text-[15px] font-semibold tracking-tight text-white">
+              Arciin
+            </p>
+            <p className="text-[10px] font-medium uppercase tracking-[0.2em] text-zinc-500">
+              Sign in
+            </p>
           </div>
+        </div>
+      </header>
 
-          {/* Name */}
-          <h1 className="font-heading text-[32px] font-bold tracking-tight text-white leading-none">
-            Arciin
+      {/* Form content */}
+      <div className="relative z-10 flex flex-1 flex-col justify-center px-7 py-6">
+        <div className="mb-8 space-y-2">
+          <h1 className="font-heading text-[28px] font-semibold tracking-tight text-white leading-none">
+            Sign in
           </h1>
-
-          {/* One-line tagline */}
-          <p
-            className="mt-2 text-[14px]"
-            style={{ color: "rgba(255,255,255,0.38)" }}
-          >
-            Sign in to your instance
+          <p className="text-[14px] leading-relaxed text-zinc-400">
+            Use the email and password for this Arciin instance. Need to claim the server first?{" "}
+            <Link href="/setup" className="text-zinc-200 underline-offset-4 hover:underline">
+              Start setup
+            </Link>
+            .
           </p>
         </div>
 
-        {/* Form */}
-        <form className="flex flex-col gap-3" onSubmit={onSubmit}>
-          {/* Email */}
-          <div>
-            <div
-              className="flex items-center gap-3 rounded-2xl px-4 transition-all"
-              style={{
-                background: "rgba(255,255,255,0.05)",
-                border: "1px solid rgba(255,255,255,0.1)",
-              }}
-            >
-              <input
-                type="email"
-                autoComplete="email"
-                placeholder="Email"
-                className="flex-1 bg-transparent py-[15px] text-[16px] text-white placeholder-zinc-600 outline-none"
-                {...form.register("email")}
-              />
-            </div>
-            {form.formState.errors.email && (
-              <p className="mt-1.5 px-1 text-[12px] text-red-400">
-                {form.formState.errors.email.message}
-              </p>
-            )}
-          </div>
-
-          {/* Password */}
-          <div>
-            <div
-              className="flex items-center gap-3 rounded-2xl px-4 transition-all"
-              style={{
-                background: "rgba(255,255,255,0.05)",
-                border: "1px solid rgba(255,255,255,0.1)",
-              }}
-            >
-              <input
-                type={showPassword ? "text" : "password"}
-                autoComplete="current-password"
-                placeholder="Password"
-                className="flex-1 bg-transparent py-[15px] text-[16px] text-white placeholder-zinc-600 outline-none"
-                {...form.register("password")}
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword((v) => !v)}
-                className="shrink-0 text-zinc-600 transition active:text-zinc-300"
-                aria-label={showPassword ? "Hide" : "Show"}
-              >
-                {showPassword
-                  ? <EyeOff className="size-[18px]" />
-                  : <Eye className="size-[18px]" />}
-              </button>
-            </div>
-            {form.formState.errors.password && (
-              <p className="mt-1.5 px-1 text-[12px] text-red-400">
-                {form.formState.errors.password.message}
-              </p>
-            )}
-          </div>
-
-          {/* Submit */}
-          <button
-            type="submit"
-            disabled={loginMutation.isPending}
-            className="mt-2 w-full rounded-2xl py-[15px] text-[15px] font-semibold text-white transition-all active:scale-[0.98] disabled:opacity-55"
-            style={{
-              background: "linear-gradient(135deg, #ff4f12 0%, #ff6a33 100%)",
-              boxShadow: "0 4px 24px rgba(255,79,18,0.35), 0 0 0 1px rgba(255,79,18,0.15)",
-            }}
-          >
-            {loginMutation.isPending ? "Signing in…" : "Sign in"}
-          </button>
-        </form>
-
-        {/* Trust footer */}
-        <div
-          className="mt-10 flex items-center justify-center gap-1.5"
-        >
-          <ShieldCheck className="size-3.5" style={{ color: "rgba(255,255,255,0.2)" }} />
-          <span
-            className="text-[12px]"
-            style={{ color: "rgba(255,255,255,0.2)" }}
-          >
-            Local authentication · data stays on your server
-          </span>
-        </div>
+        <LoginForm />
       </div>
+
+      {/* Footer */}
+      <footer className="relative z-10 shrink-0 flex justify-end gap-6 border-t border-white/[0.06] px-7 py-4">
+        <Link
+          href="/legal/privacy"
+          className="text-[11px] text-zinc-500 underline-offset-4 hover:text-zinc-300 hover:underline transition-colors"
+        >
+          Privacy
+        </Link>
+        <Link
+          href="/legal/terms"
+          className="text-[11px] text-zinc-500 underline-offset-4 hover:text-zinc-300 hover:underline transition-colors"
+        >
+          Terms
+        </Link>
+      </footer>
     </div>
   )
 }
