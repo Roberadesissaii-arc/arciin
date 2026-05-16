@@ -7,6 +7,7 @@ import { PageHeader } from "@/components/app-shell/page-header"
 import { BrowserSectionHeading } from "@/components/libraries/browser-section-heading"
 import { AssetGrid } from "@/components/libraries/asset-grid"
 import { AssetTable } from "@/components/libraries/asset-table"
+import { SelectableAssetsContainer } from "@/components/libraries/selectable-assets-container"
 import { CreateFolderDialog } from "@/components/libraries/create-folder-dialog"
 import { FolderGrid } from "@/components/libraries/folder-grid"
 import { Button } from "@/components/ui/button"
@@ -130,11 +131,13 @@ export function LibraryBrowser({
           >
             <BrowserSectionHeading>Assets</BrowserSectionHeading>
             {assets.length ? (
-              view === "grid" ? (
-                <AssetGrid assets={assets} />
-              ) : (
-                <AssetTable assets={assets} />
-              )
+              <SelectableAssetsContainer assets={assets} defaultLibraryId={library?.id}>
+                {view === "grid" ? (
+                  <AssetGrid assets={assets} />
+                ) : (
+                  <AssetTable assets={assets} />
+                )}
+              </SelectableAssetsContainer>
             ) : (
               <Empty className="border border-border bg-card py-16">
                 <EmptyHeader>

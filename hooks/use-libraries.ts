@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 
-import { createFolder, getFolders, getLibraries, getLibrary } from "@/lib/api/libraries"
+import { createFolder, deleteFolder, getFolders, getLibraries, getLibrary, updateFolder } from "@/lib/api/libraries"
 import { queryKeys } from "@/lib/api/query-keys"
 import type { CreateFolderInput } from "@/lib/types/models"
 
@@ -35,9 +35,43 @@ export function useCreateFolder() {
   return useMutation({
     mutationFn: (input: CreateFolderInput) => createFolder(input),
     onSuccess: (folder) => {
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.folders(folder.libraryId, folder.parentFolderId),
+      void queryClient.invalidateQueries({
+        predicate: (q) =>
+          Array.isArray(q.queryKey) && q.queryKey[0] === "folders" && q.queryKey[1] === folder.libraryId,
       })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.libraries })
+    },
+  })
+}
+
+function invalidateLibraryFolderTree(queryClient: ReturnType<typeof useQueryClient>, libraryId: string) {
+  void queryClient.invalidateQueries({
+    predicate: (q) =>
+      Array.isArray(q.queryKey) && q.queryKey[0] === "folders" && q.queryKey[1] === libraryId,
+  })
+  void queryClient.invalidateQueries({ queryKey: queryKeys.libraries })
+  void queryClient.invalidateQueries({ queryKey: ["assets"] })
+}
+
+export function useUpdateFolder() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (variables: { folderId: string; libraryId: string; name: string }) =>
+      updateFolder(variables.folderId, { name: variables.name }),
+    onSuccess: (_, variables) => {
+      invalidateLibraryFolderTree(queryClient, variables.libraryId)
+    },
+  })
+}
+
+export function useDeleteFolder() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (variables: { folderId: string; libraryId: string }) => deleteFolder(variables.folderId),
+    onSuccess: (_, variables) => {
+      invalidateLibraryFolderTree(queryClient, variables.libraryId)
     },
   })
 }

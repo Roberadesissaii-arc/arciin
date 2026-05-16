@@ -23,8 +23,22 @@ export function getFolders(libraryId: string, signal?: AbortSignal) {
 }
 
 export function createFolder(input: CreateFolderInput) {
+  const { libraryId: _lid, ...body } = input
   return fetchApi<FolderSummary>(`/libraries/${input.libraryId}/folders`, {
     method: "POST",
-    body: input,
+    body,
+  })
+}
+
+export function updateFolder(folderId: string, body: { name: string }) {
+  return fetchApi<FolderSummary>(`/folders/${folderId}`, {
+    method: "PATCH",
+    body,
+  })
+}
+
+export function deleteFolder(folderId: string) {
+  return fetchApi<{ success: boolean }>(`/folders/${folderId}`, {
+    method: "DELETE",
   })
 }

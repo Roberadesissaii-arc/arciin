@@ -16,7 +16,7 @@ function ImageOrIconPreview({ asset }: { asset: AssetSummary }) {
 
   if (tryThumb && !thumbFailed) {
     return (
-      <div className="relative aspect-[4/3] overflow-hidden rounded-xl border border-white/[0.07] bg-[#0f0f0f]">
+      <div className="relative aspect-[4/3] overflow-hidden rounded-xl border border-border bg-muted/40">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={thumbSrc}
@@ -30,7 +30,7 @@ function ImageOrIconPreview({ asset }: { asset: AssetSummary }) {
   }
 
   return (
-    <div className="flex aspect-[4/3] items-center justify-center rounded-xl border border-white/[0.06] bg-white/[0.03] text-zinc-500">
+    <div className="flex aspect-[4/3] items-center justify-center rounded-xl border border-border bg-muted/30 text-muted-foreground">
       <Icon className="size-7" />
     </div>
   )
@@ -59,7 +59,7 @@ function VideoAssetPreview({ asset }: { asset: AssetSummary }) {
 
   return (
     <div
-      className="relative aspect-[4/3] overflow-hidden rounded-xl border border-white/[0.07] bg-[#0f0f0f]"
+      className="relative aspect-[4/3] overflow-hidden rounded-xl border border-border bg-muted/40"
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
     >
@@ -92,7 +92,7 @@ function VideoAssetPreview({ asset }: { asset: AssetSummary }) {
       ) : (
         <div
           className={cn(
-            "absolute inset-0 z-10 flex items-center justify-center bg-zinc-900/65 text-white transition-opacity duration-200",
+            "absolute inset-0 z-10 flex items-center justify-center bg-muted/80 text-muted-foreground transition-opacity duration-200",
             hover ? "pointer-events-none opacity-0" : "opacity-100"
           )}
         >
@@ -142,7 +142,7 @@ function AudioAssetPreview({ asset }: { asset: AssetSummary }) {
       role="button"
       tabIndex={0}
       aria-label="Audio preview: hover for muted preview, click to play with sound"
-      className="relative aspect-[4/3] cursor-pointer overflow-hidden rounded-xl border border-white/[0.08] bg-[#09090b] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-[#09090b]"
+      className="relative aspect-[4/3] cursor-pointer overflow-hidden rounded-xl border border-border bg-gradient-to-b from-[var(--arciin-accent-soft,#fff7ed)] via-zinc-50 to-zinc-100/90 shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background"
       onMouseEnter={() => {
         hoverRef.current = true
         setPlayMode((m) => (m === "sound" ? "sound" : "hover_preview"))
@@ -173,21 +173,12 @@ function AudioAssetPreview({ asset }: { asset: AssetSummary }) {
         }
       }}
     >
-      {/* Ambient stack — aligned with login left panel */}
       <div
-        className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(255,75,51,0.14)_0%,rgba(9,9,11,0.06)_32%,rgba(9,9,11,0.38)_58%,transparent_100%)]"
+        className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(255,79,18,0.12)_0%,transparent_55%)]"
         aria-hidden
       />
       <div
-        className="pointer-events-none absolute -top-[18%] left-1/2 aspect-[1.35] w-[min(100%,420px)] -translate-x-1/2 bg-[radial-gradient(ellipse_at_50%_38%,rgba(255,75,51,0.42)_0%,rgba(255,79,18,0.1)_44%,transparent_72%)] blur-[48px]"
-        aria-hidden
-      />
-      <div
-        className="pointer-events-none absolute -top-[8%] left-[12%] h-[55%] w-[55%] bg-[radial-gradient(ellipse_at_center,rgba(255,120,90,0.2)_0%,transparent_68%)] blur-[40px]"
-        aria-hidden
-      />
-      <div
-        className="pointer-events-none absolute inset-0 bg-[linear-gradient(145deg,rgba(255,75,51,0.07)_0%,transparent_46%)]"
+        className="pointer-events-none absolute -top-[18%] left-1/2 aspect-[1.35] w-[min(100%,420px)] -translate-x-1/2 bg-[radial-gradient(ellipse_at_50%_38%,rgba(255,79,18,0.22)_0%,transparent_72%)] blur-[48px]"
         aria-hidden
       />
 
@@ -221,12 +212,12 @@ function AudioAssetPreview({ asset }: { asset: AssetSummary }) {
       <div className="pointer-events-none absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 px-4 text-center">
         <Icon
           className={cn(
-            "size-20 shrink-0 text-white drop-shadow-[0_2px_24px_rgba(0,0,0,0.55)] transition-transform duration-300 sm:size-28",
+            "size-20 shrink-0 text-primary/90 transition-transform duration-300 sm:size-28",
             (playMode === "hover_preview" || playMode === "sound") && "scale-[1.03]",
           )}
           aria-hidden
         />
-        <p className="text-[11px] font-medium leading-snug text-white/85 sm:text-xs">
+        <p className="text-[11px] font-medium leading-snug text-zinc-600 sm:text-xs">
           {playMode === "sound" ? "Click again to stop" : "Hover: muted preview · Click: play with sound"}
         </p>
       </div>

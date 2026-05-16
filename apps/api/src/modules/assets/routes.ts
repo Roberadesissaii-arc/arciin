@@ -18,6 +18,18 @@ import {
   resolveReadableObjectPath,
   resolvedThumbnailPath,
 } from "@/services/media/thumbnail-cache"
+import {
+  assetIsInJellyfinFolder,
+  clearAssetJellyfinMirror,
+  syncAssetToJellyfinMirror,
+} from "@/services/integrations/jellyfin"
+import {
+  assetIsInPlexFolder,
+  clearAssetMirrorIfLeavingConnectorFolders,
+  clearAssetPlexMirror,
+  syncAssetToPlexMirror,
+} from "@/services/integrations/plex"
+import { PLEX_CONNECTOR_DEF, JELLYFIN_CONNECTOR_DEF } from "@/services/integrations/library-media-connector"
 import { requireSessionRolesOrApiKeyScopes } from "@/services/security/auth"
 import { serializeAsset } from "@/services/serializers"
 
@@ -202,6 +214,9 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
         return
       }
 
+      await clearAssetPlexMirror(fastify.prisma, params.assetId).catch(() => {})
+      await clearAssetJellyfinMirror(fastify.prisma, params.assetId).catch(() => {})
+
       const asset = await fastify.prisma.asset.update({
         where: {
           id: params.assetId,
@@ -209,6 +224,7 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
         data: {
           status: "DELETED",
           deletedAt: new Date(),
+          libraryMirrorPath: null,
         },
       })
 
@@ -335,6 +351,24 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
           libraryId: nextLibraryId,
         },
       })
+
+      const targetFolder = nextFolderId
+        ? await fastify.prisma.folder.findUnique({ where: { id: nextFolderId } })
+        : null
+
+      if (assetIsInPlexFolder(targetFolder)) {
+        await syncAssetToPlexMirror(fastify.prisma, asset.id).catch(() => {})
+      } else if (assetIsInJellyfinFolder(targetFolder)) {
+        await syncAssetToJellyfinMirror(fastify.prisma, asset.id).catch(() => {})
+      } else {
+        await clearAssetMirrorIfLeavingConnectorFolders(
+          fastify.prisma,
+          asset.id,
+          targetFolder,
+          PLEX_CONNECTOR_DEF,
+          JELLYFIN_CONNECTOR_DEF,
+        ).catch(() => {})
+      }
 
       if (request.auth) {
         await recordActivity(fastify.prisma, {

@@ -1,8 +1,7 @@
 import type { FastifyInstance } from "fastify"
 import { z } from "zod"
 
-import { buildRealtimeEvent } from "@/services/events/publish-event"
-import { authenticate, requireRole } from "@/services/security/auth"
+import { requireSessionRolesOrApiKeyScopes } from "@/services/security/auth"
 import { serializeLibrary } from "@/services/serializers"
 import { slugify } from "@/services/slug"
 
@@ -16,7 +15,10 @@ export async function registerLibraryRoutes(fastify: FastifyInstance) {
   fastify.get(
     "/libraries",
     {
-      preHandler: authenticate,
+      preHandler: requireSessionRolesOrApiKeyScopes(
+        ["OWNER", "ADMIN", "MEMBER", "VIEWER"],
+        ["libraries:read"],
+      ),
     },
     async (_request, reply) => {
       const libraries = await fastify.prisma.library.findMany({
@@ -40,79 +42,31 @@ export async function registerLibraryRoutes(fastify: FastifyInstance) {
     }
   )
 
+  /** Top-level libraries are fixed at instance setup (Videos, Images, Music, Documents, Inbox). Organize with folders instead. */
   fastify.post(
     "/libraries",
     {
-      preHandler: requireRole(["OWNER", "ADMIN"]),
+      preHandler: requireSessionRolesOrApiKeyScopes(["OWNER", "ADMIN"], ["libraries:write"]),
     },
-    async (request, reply) => {
-      const parsed = librarySchema.safeParse(request.body)
-
-      if (!parsed.success) {
-        reply.status(400).send({
-          error: {
-            code: "VALIDATION_ERROR",
-            message: "Invalid library payload.",
-            details: parsed.error.flatten(),
-          },
-        })
-        return
-      }
-
-      const storageLocation = await fastify.prisma.storageLocation.findFirst({
-        where: {
-          isDefault: true,
+    async (_request, reply) => {
+      reply.status(403).send({
+        error: {
+          code: "LIBRARY_CREATION_DISABLED",
+          message:
+            "Libraries are fixed for this instance. You cannot create new top-level libraries. Create folders inside a library (POST /libraries/:libraryId/folders) or upload with librarySlug (see POST /uploads).",
+          details: {},
         },
       })
-
-      if (!storageLocation) {
-        reply.status(409).send({
-          error: {
-            code: "STORAGE_NOT_CONFIGURED",
-            message: "A default storage location is required before creating libraries.",
-          },
-        })
-        return
-      }
-
-      const library = await fastify.prisma.library.create({
-        data: {
-          name: parsed.data.name,
-          slug: slugify(parsed.data.name),
-          description: parsed.data.description,
-          kind: parsed.data.kind,
-          storageLocationId: storageLocation.id,
-        },
-        include: {
-          _count: {
-            select: {
-              assets: { where: { deletedAt: null } },
-              folders: true,
-            },
-          },
-        },
-      })
-
-      if (request.auth) {
-        await fastify.publishRealtimeEvent(
-          buildRealtimeEvent("library.created", {
-            userId: request.auth.user.id,
-            libraryId: library.id,
-            message: `Library "${library.name}" created.`,
-          })
-        )
-      }
-
-      reply.status(201).send({
-        data: serializeLibrary(library),
-      })
-    }
+    },
   )
 
   fastify.get(
     "/libraries/:libraryId",
     {
-      preHandler: authenticate,
+      preHandler: requireSessionRolesOrApiKeyScopes(
+        ["OWNER", "ADMIN", "MEMBER", "VIEWER"],
+        ["libraries:read"],
+      ),
     },
     async (request, reply) => {
       const params = z.object({ libraryId: z.string() }).parse(request.params)
@@ -149,7 +103,7 @@ export async function registerLibraryRoutes(fastify: FastifyInstance) {
   fastify.patch(
     "/libraries/:libraryId",
     {
-      preHandler: requireRole(["OWNER", "ADMIN"]),
+      preHandler: requireSessionRolesOrApiKeyScopes(["OWNER", "ADMIN"], ["libraries:write"]),
     },
     async (request, reply) => {
       const params = z.object({ libraryId: z.string() }).parse(request.params)
@@ -193,7 +147,7 @@ export async function registerLibraryRoutes(fastify: FastifyInstance) {
   fastify.delete(
     "/libraries/:libraryId",
     {
-      preHandler: requireRole(["OWNER", "ADMIN"]),
+      preHandler: requireSessionRolesOrApiKeyScopes(["OWNER", "ADMIN"], ["libraries:write"]),
     },
     async (request, reply) => {
       const params = z.object({ libraryId: z.string() }).parse(request.params)

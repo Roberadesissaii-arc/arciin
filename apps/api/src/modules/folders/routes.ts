@@ -2,13 +2,17 @@ import type { FastifyInstance } from "fastify"
 import { z } from "zod"
 
 import { recordActivity } from "@/services/activity/record-activity"
-import { requireRole } from "@/services/security/auth"
+import { requireSessionRolesOrApiKeyScopes } from "@/services/security/auth"
 import { serializeFolder } from "@/services/serializers"
 import { slugify } from "@/services/slug"
 
 const createFolderSchema = z.object({
   name: z.string().min(1).max(100),
-  parentFolderId: z.string().optional(),
+  /** Omit field, or send null / "" for a root-level folder in the library. */
+  parentFolderId: z.preprocess(
+    (v) => (v === null || v === undefined || v === "" ? undefined : v),
+    z.string().optional(),
+  ),
 })
 
 const updateFolderSchema = z.object({
@@ -48,7 +52,10 @@ export async function registerFolderRoutes(fastify: FastifyInstance) {
   fastify.get(
     "/libraries/:libraryId/folders",
     {
-      preHandler: requireRole(["OWNER", "ADMIN", "MEMBER", "VIEWER"]),
+      preHandler: requireSessionRolesOrApiKeyScopes(
+        ["OWNER", "ADMIN", "MEMBER", "VIEWER"],
+        ["libraries:read"],
+      ),
     },
     async (request, reply) => {
       const params = z.object({ libraryId: z.string() }).parse(request.params)
@@ -77,7 +84,10 @@ export async function registerFolderRoutes(fastify: FastifyInstance) {
   fastify.post(
     "/libraries/:libraryId/folders",
     {
-      preHandler: requireRole(["OWNER", "ADMIN", "MEMBER"]),
+      preHandler: requireSessionRolesOrApiKeyScopes(
+        ["OWNER", "ADMIN", "MEMBER"],
+        ["libraries:write"],
+      ),
     },
     async (request, reply) => {
       const params = z.object({ libraryId: z.string() }).parse(request.params)
@@ -135,7 +145,10 @@ export async function registerFolderRoutes(fastify: FastifyInstance) {
   fastify.patch(
     "/folders/:folderId",
     {
-      preHandler: requireRole(["OWNER", "ADMIN", "MEMBER"]),
+      preHandler: requireSessionRolesOrApiKeyScopes(
+        ["OWNER", "ADMIN", "MEMBER"],
+        ["libraries:write"],
+      ),
     },
     async (request, reply) => {
       const params = z.object({ folderId: z.string() }).parse(request.params)
@@ -200,7 +213,10 @@ export async function registerFolderRoutes(fastify: FastifyInstance) {
   fastify.delete(
     "/folders/:folderId",
     {
-      preHandler: requireRole(["OWNER", "ADMIN", "MEMBER"]),
+      preHandler: requireSessionRolesOrApiKeyScopes(
+        ["OWNER", "ADMIN", "MEMBER"],
+        ["libraries:write"],
+      ),
     },
     async (request, reply) => {
       const params = z.object({ folderId: z.string() }).parse(request.params)
