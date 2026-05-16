@@ -5,7 +5,8 @@ import path from "node:path"
 import type { PrismaClient } from "@prisma/client"
 
 import { ollamaVisionChat, parseVisionJsonObject } from "@/services/chat/vision-ollama"
-import { getStoragePaths, sanitizeFilename } from "@/services/storage/local-storage"
+import { resolvedThumbnailPath } from "@/services/media/thumbnail-cache"
+import { sanitizeFilename } from "@/services/storage/local-storage"
 
 const MAX_FULL_BYTES = 4 * 1024 * 1024
 const MAX_THUMB_BYTES = 2 * 1024 * 1024
@@ -37,9 +38,12 @@ export type VisionRenameSuggestion = {
 
 async function loadVisionBase64(
   asset: { id: string; storageObject: { physicalPath: string } | null },
-  thumbnailsDir: string,
+  configuredStorageRoot: string | null | undefined,
 ): Promise<string | null> {
-  const thumbPath = path.join(thumbnailsDir, `${asset.id}.webp`)
+  const p = asset.storageObject?.physicalPath
+  if (!p) return null
+
+  const thumbPath = resolvedThumbnailPath(configuredStorageRoot, asset.id, p)
   try {
     await access(thumbPath)
     const buf = await fs.readFile(thumbPath)
@@ -50,8 +54,6 @@ async function loadVisionBase64(
     /* use full file */
   }
 
-  const p = asset.storageObject?.physicalPath
-  if (!p) return null
   try {
     const stat = await fs.stat(p)
     if (stat.size > MAX_FULL_BYTES) return null
@@ -67,13 +69,12 @@ export async function loadSingleImageForVision(
   storageRoot: string | null | undefined,
   assetId: string,
 ): Promise<VisionImageCandidate | null> {
-  const { thumbnailsDir } = getStoragePaths(storageRoot ?? undefined)
   const asset = await prisma.asset.findFirst({
     where: { id: assetId, deletedAt: null, mediaType: "IMAGE", status: "READY" },
     include: { storageObject: true },
   })
   if (!asset) return null
-  const base64 = await loadVisionBase64(asset, thumbnailsDir)
+  const base64 = await loadVisionBase64(asset, storageRoot)
   if (!base64) return null
   return { assetId: asset.id, originalFilename: asset.originalFilename, base64 }
 }
@@ -84,7 +85,6 @@ export async function loadImageCandidatesForVision(
   maxCandidates: number,
   opts?: { queryHint?: string; skip?: number },
 ): Promise<VisionImageCandidate[]> {
-  const { thumbnailsDir } = getStoragePaths(storageRoot ?? undefined)
   const seen = new Set<string>()
   const out: VisionImageCandidate[] = []
 
@@ -98,7 +98,7 @@ export async function loadImageCandidatesForVision(
     for (const asset of rows) {
       if (out.length >= maxCandidates) return
       if (seen.has(asset.id)) continue
-      const base64 = await loadVisionBase64(asset, thumbnailsDir)
+      const base64 = await loadVisionBase64(asset, storageRoot)
       if (!base64) continue
       seen.add(asset.id)
       out.push({

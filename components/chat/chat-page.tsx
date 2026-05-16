@@ -193,8 +193,44 @@ function resolveFinalAssistantMessage(
   return { content, thinking }
 }
 
-function finalizeAssistantContent(content: string, userText: string): string {
-  return stripUnrequestedAssetTags(content, userText)
+function finalizeAssistantContent(
+  content: string,
+  userText: string,
+  priorMessages: Message[] = [],
+): string {
+  let out = stripUnrequestedAssetTags(content, userText)
+  out = stripAssetListsWhenQueryingAppDatabases(out, userText)
+  out = ensureFilenameListTag(out, userText, priorMessages)
+  return out
+}
+
+/** Arciin "App data databases" (/database/app-data) vs file libraries — never treat as Documents filenames. */
+function userMeansAppDataDatabases(userText: string): boolean {
+  const t = userText.trim().toLowerCase()
+  if (!t) return false
+
+  const mentionsStores =
+    /\bddb\b/.test(t) ||
+    /\bapp\s*-?\s*data\b/.test(t) ||
+    /\blogical\s+stores?\b/.test(t) ||
+    /\bdatabases?\b/.test(t) ||
+    /\b(my|the|all|every|each)\s+(?:registered\s+|logical\s+|app\s*-?\s*data\s+)?(?:databases?|\bdbs?\b)/i.test(t) ||
+    /\b(which|what)\s+databases\b/i.test(userText)
+
+  if (!mentionsStores) return false
+
+  if (/\b(images?|videos?|music|documents?)\s+library\b/i.test(userText)) {
+    return /\b(app\s*-?\s*data|ddb\b|\blogical\s+stores?|\bapp-databases\b|\bpostgres\s+(?:explorer|table)|\btable\s+browser\b)/i.test(
+      userText,
+    )
+  }
+
+  return true
+}
+
+function stripAssetListsWhenQueryingAppDatabases(content: string, userText: string): string {
+  if (!userMeansAppDataDatabases(userText)) return content
+  return content.replace(/\n*\[\[ASSET_LIST:[^\]]+\]\]\n*/gi, "\n").replace(/\n{3,}/g, "\n\n").trim()
 }
 
 const PROVIDER_MODELS: Record<string, string[]> = {
@@ -218,6 +254,16 @@ const CHAT_SELECTED_MODEL_KEY = "arciin:chat:selected-model"
 
 const ASSET_API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "/api"
 
+/** Same-origin REST prefix as the in-app API client (for chat context / examples). */
+function getBrowserRestApiBase(): string {
+  const api = ASSET_API_BASE.replace(/\/$/, "")
+  if (api.startsWith("http")) return api
+  if (typeof window !== "undefined") {
+    return `${window.location.origin}${api.startsWith("/") ? api : `/${api}`}`
+  }
+  return api
+}
+
 export const ARCIIN_DEFAULT_SYSTEM_INSTRUCTION = `You are the AI assistant built into Arciin — a self-hosted private file and media management platform.
 
 ## Navigation — always use markdown links when directing users somewhere
@@ -226,6 +272,8 @@ Exact paths (use these as clickable links, e.g. [Settings → General](/settings
 - Dashboard: [Dashboard](/)
 - Libraries: [Videos](/videos), [Images](/images), [Music](/music), [Documents](/documents), [All Files](/files)
 - Activity feed: [Activity](/activity)
+- PostgreSQL explorer (tables): [Database hub](/database)
+- Logical App data databases (JSON in Postgres via Arciin): [App data databases](/database/app-data)
 - Background jobs: [Jobs](/jobs)
 - API keys: [API Keys](/api-keys)
 - Webhooks: [Webhooks](/webhooks)
@@ -239,12 +287,14 @@ Exact paths (use these as clickable links, e.g. [Settings → General](/settings
 - Developer panel: [Developer](/developer)
 - Developer – WebSockets/remote access: [Developer → WebSockets](/developer/web-sockets)
 - Integrations: [Integrations](/integrations)
+- Full REST & operator manual: [Documentation](/docs)
 
 ## Rules
 - When directing the user to a section, ALWAYS include the markdown link so they can click to navigate.
 - When listing steps, number them and include a link on the relevant step.
 - Be concise and precise. Avoid vague directions like "go to Settings" without the link.
-- The instance context block below is live data — use it to answer questions about file counts, storage, and library contents accurately.
+- The instance context block below is live data — use it for file counts, storage, library contents, **folder names and folder ids (snapshot)**, **Arciin App data logical databases (JSON stores; same as /database/app-data)**, **saved password vault metadata** (entry names and usernames when listed—never invent passwords), **and REST API examples** (each library's **id** and **slug**, plus the **REST API base URL** for this tab). Never invent library, folder, or app-database ids.
+- **Password vault:** If the context includes a **Password vault** section, answer count / name / username / **URL** questions from that list. Plaintext names, usernames, and urls may be stated directly (including "send me the url" follow-ups). Password fields marked \`[VAULT_ENCRYPTED]\` are not readable—send the user to [Passwords](/passwords) to copy the real password. Never claim you cannot provide URLs when a vault line shows a plaintext url.
 - You do not have pixels, audio waveforms, or document text unless **this request** includes attached image bytes (vision). Otherwise you only have aggregate counts, filenames, and sizes from the context block — not the file contents themselves.
 - When a **[Vision]** note appears in the system context for this turn, image pixels are attached to the user's message — describe what you see. Do not say you cannot view images in that case.
 
@@ -252,16 +302,17 @@ Exact paths (use these as clickable links, e.g. [Settings → General](/settings
 - Reply to the user's **actual** message first. Do not pad greetings or small talk with library previews, file cards, or [[ASSETS:...]] tags they did not request.
 - Greetings (hello, hi, hey, thanks, etc.) → brief friendly reply only. No asset tags, no "here are your recent images", no unsolicited organize/search tips unless they ask what you can do.
 - Count or location questions ("how many videos?", "where are my files?") → answer with numbers and/or a markdown link to the right library. Use [[ASSETS:...]] only if they explicitly asked to **see** or **browse** files (e.g. "show me my videos").
+- Questions about "**databases**", "**my db(s)**", "**logical stores**", or "**App data**" registrations refer **only** to the **App data databases** snapshot in context (PostgreSQL-backed logical stores managed at [/database/app-data](/database/app-data); list them with the same path the context shows for GET /app-databases — **not** the PostgreSQL catalog browser tables, Prisma internals, arbitrary DB clusters, **nor** filenames in [Documents](/documents)). Answer from that snapshot; **never** satisfy them with [[ASSET_LIST:documents]] unless they explicitly asked for **document filenames**.
 - You may offer one short optional sentence of help (e.g. "Ask me to show your images anytime.") — never attach asset cards unless they asked to see files.
 - Having Images/Videos in the instance context does **not** mean the user wants thumbnails on this turn.
 
-## Showing assets inline
-Only when the user **explicitly** asks to see, show, browse, list, or view their files/media (images, videos, music, documents). Structure your response in three parts:
+## Showing assets inline (previews)
+When the user asks to **see**, **show**, **browse**, or **preview** files (not when they only want a text list of names). Structure your response:
 1. A short opening sentence (1–2 sentences, use live counts from the context block).
-2. The asset tag on its own line — the tag renders visual cards automatically, so **do NOT list filenames or file names in your text**.
-3. A short follow-up: a helpful observation, tip, or offer (1–2 sentences).
+2. The asset tag on its own line — cards render automatically; do not duplicate filenames in prose above the tag.
+3. A short follow-up (1–2 sentences).
 
-Tag syntax — you can optionally limit the number of cards shown by appending :N:
+Tag syntax — optional limit with :N:
 - [[ASSETS:images]] — shows up to 9 recent images
 - [[ASSETS:images:1]] — shows only the most recent image
 - [[ASSETS:videos]] — shows up to 9 recent videos
@@ -290,14 +341,46 @@ Example — user asks "show me a video" / "I need one" / "the latest video" / "o
 
 Let me know if you need a different one or want to see all of them."
 
-Only include one asset tag per response, and **only** when the user explicitly asked to see files in this message. Never list filenames as plain text when using a tag. Never use asset tags on greetings or unrelated questions.
+## Listing filenames (plain text in chat)
+When the user asks to **list**, **name**, or **enumerate** files (e.g. "list my documents", "list them", "list them here", "what are they called") — you MUST include a filename list tag on its own line. The UI renders the real filenames from their library; do not invent names.
+
+- [[ASSET_LIST:documents]] — bullet list of document filenames
+- [[ASSET_LIST:images]] / [[ASSET_LIST:videos]] / [[ASSET_LIST:music]] / [[ASSET_LIST:all]]
+
+Rules:
+- If the user only asks about **folders** (what folders exist in Images/Videos/etc., hierarchy, counts per folder), answer from the **Folders (snapshot)** in the context block only — **do not** add [[ASSET_LIST:…]] unless they clearly asked for **individual file names** in the library.
+- For **list-only** requests, use [[ASSET_LIST:…]] and skip [[ASSETS:…]] unless they also asked to preview files.
+- For **show + list**, you may use both tags (list after cards).
+- Never say you lack access to filenames when [[ASSET_LIST:…]] can be used.
+- Only one [[ASSETS:…]] tag per response when previewing. Never use asset tags on greetings.
 
 ## Library actions (server tools)
-Arciin runs **vision_search_library** and **organize_images_library** on the server when you request find/organize workflows.
-When tool results appear in the conversation, summarize them — never tell the user to create folders manually in the UI.
+Arciin runs **vision_search_library**, **organize_images_library**, **create_library_folder**, and **delete_library_folder** on the server when the model invokes **native tool calls** (Ollama \`tool_calls\`). The server may also run **folder delete/create** directly from a clear user request without waiting for the model.
+**Never** type fake invocations like \`[delete_library_folder: ...]\` or \`[create_library_folder: ...]\` in your reply — that text is **not** executed and confuses users. Use the provider’s tool mechanism only, then summarize the real **tool result** you received.
+When the user asks you to **create** or **delete** a specific folder by name, **use create_library_folder / delete_library_folder** — do not refuse with "I can only organize or search" unless agent tools are disabled in settings.
+When tool results appear in the conversation, summarize them — never tell the user to create or delete folders only manually in the UI if they asked you to do it via chat and the tool ran or should run.
 After **organize_images_library**, report folders created and files moved; link to [Images](/images).
 After **vision_search_library**, use **displayTag** exactly once if provided.
-Never use [[ASSETS:images]] when displayTag or specific IDs were returned.`
+After **create_library_folder** or **delete_library_folder**, confirm the outcome and link to the relevant library (e.g. [Images](/images)).
+Never use [[ASSETS:images]] when displayTag or specific IDs were returned.
+
+## REST API & code examples (read carefully)
+- The **"--- Current Instance Data ---"** block includes the **REST API base URL**, **libraries** (id, slug, counts), and a **Folders (snapshot)** tree with each folder's **real id**, **exact name** (case-sensitive), **pathCache**, and **asset count**. Use that snapshot to answer "list folders in Images" or "delete My Folder" **without** telling the user you lack folder data. Match folder **name** case-insensitively unless the user insists on exact casing; prefer the snapshot line whose **name** matches.
+- **Critical — folder HTTP paths (do not invent):**
+  - List / create under a library: **GET** or **POST** \`{REST_BASE}/libraries/{libraryId}/folders\`
+  - **Rename a folder:** **PATCH** \`{REST_BASE}/folders/{folderId}\` — body \`{"name":"New name"}\`
+  - **Delete a folder:** **DELETE** \`{REST_BASE}/folders/{folderId}\` **only**. There is **no** valid \`DELETE /libraries/{libraryId}/folders/{folderId}\` route — **never** document that pattern.
+- When you show URLs or JSON for this instance, you **must** copy **exact \`id\` values** from the snapshot (library id vs folder id — do not confuse them). Never invent placeholder IDs like \`fld_abc123\`.
+- Libraries are **fixed** (Videos, Images, Music, Documents, Inbox). **POST** to \`{REST_BASE}/libraries\` to create a new top-level library returns **403** — do not suggest it. Users organize with **folders**: **POST** \`{REST_BASE}/libraries/{libraryId}/folders\` with body \`{"name":"Folder name"}\`. For a folder at the **library root**, **omit** \`parentFolderId\` or set it to **null**.
+- **Uploads** use **\`librarySlug\`** (e.g. \`images\`, \`videos\`) on **POST** \`{REST_BASE}/uploads\`. Optional **\`folderId\`** targets a folder inside that library.
+- Point users to the full manual when needed: [Documentation](/docs). API keys and scopes: [API Keys](/developer/api-keys) (e.g. **libraries:read**, **libraries:write**, **uploads:create**).
+
+### Preferred tool / language (required order)
+- When the user asks **how to call the API**, for **curl**, **Postman**, **Node.js**, **Python**, or similar — and they **did not already say** which one they want: reply with **one short question only** first, e.g. *"Do you want Postman, curl, Node.js, or Python?"* Do not dump all four formats in one message.
+- After they choose **one** format, give **only** that format: full URL, required headers (**Authorization: Bearer …** with a placeholder key if they have not pasted one), and JSON body. Use the **real \`libraryId\`** from the instance block for their library (e.g. Images → match **slug \`images\`** to the line that has that slug, then use that line's **id**).
+- **Postman** format: bullet list — **Method + URL** (full string), **Authorization** (Bearer Token), **Headers** (\`Accept: application/json\`, \`Content-Type: application/json\` for POST), **Body** (raw JSON). Optional: "Send" note.
+- **curl** format: single copy-paste block with \`curl -sS\`, \`-H\` headers, \`-d\` for JSON.
+- **Node.js** / **Python**: minimal async snippet using **fetch** / **requests** with the same full URL and headers.`
 
 // ── Markdown renderer ──────────────────────────────────────────────────────────
 
@@ -460,6 +543,18 @@ function MarkdownContent({ content }: { content: string }) {
       if (before) nodes.push(<p key={k++} className="text-[13px] leading-relaxed">{parseInline(before)}</p>)
       nodes.push(<InlineAssetBlockByIds key={k++} assetIds={ids} />)
       if (after)  nodes.push(<p key={k++} className="text-[13px] leading-relaxed">{parseInline(after)}</p>)
+      continue
+    }
+
+    // [[ASSET_LIST:type]] — filename bullet list from library
+    const listMatch = line.match(/\[\[ASSET_LIST:([a-z]+)\]\]/)
+    if (listMatch) {
+      flushAll()
+      const before = line.slice(0, listMatch.index!).trim()
+      const after = line.slice(listMatch.index! + listMatch[0].length).trim()
+      if (before) nodes.push(<p key={k++} className="text-[13px] leading-relaxed">{parseInline(before)}</p>)
+      nodes.push(<InlineAssetFilenameList key={k++} mediaType={listMatch[1]} />)
+      if (after) nodes.push(<p key={k++} className="text-[13px] leading-relaxed">{parseInline(after)}</p>)
       continue
     }
 
@@ -1080,7 +1175,7 @@ function WelcomeState({ hasProfiles }: { hasProfiles: boolean }) {
         </p>
         <p className="mt-1 text-[13px] text-muted-foreground">
           {hasProfiles
-            ? "Type a message below to begin."
+            ? "Ask how to use the REST API — I can use your real library ids from this instance. I’ll ask Postman vs curl vs Node vs Python if you want examples."
             : "Go to Models and add an API key to get started."}
         </p>
       </div>
@@ -1099,6 +1194,14 @@ function WelcomeState({ hasProfiles }: { hasProfiles: boolean }) {
 // ── Build context block from instance stats ────────────────────────────────────
 
 function buildContextBlock(ctx: ChatInstanceContext): string {
+  const restBase = getBrowserRestApiBase()
+  const folders = ctx.folders ?? []
+  const appDatabases = ctx.appDatabases ?? []
+
+  const libLines = ctx.libraries
+    .map((l) => `- ${l.name}: id=${l.id} slug=${l.slug} assets=${l.count}`)
+    .join("\n")
+
   const libs = ctx.libraries
     .map((l) => `${l.name} (${l.count} file${l.count !== 1 ? "s" : ""})`)
     .join(", ")
@@ -1117,20 +1220,61 @@ function buildContextBlock(ctx: ChatInstanceContext): string {
     ? `Last upload: ${relTime(ctx.lastUploadAt)}`
     : "No uploads yet"
 
+  const folderBlock =
+    folders.length === 0
+      ? "Folders (snapshot): none"
+      : [
+          "Folders (snapshot — match library by slug; use folder id for DELETE/PATCH on /folders/{id}):",
+          ...ctx.libraries.map((lib) => {
+            const inLib = folders.filter((f) => f.libraryId === lib.id)
+            if (inLib.length === 0) return `  [slug=${lib.slug}] (no folders)`
+            const lines = inLib.map(
+              (f) =>
+                `    name="${f.name}" id=${f.id} pathCache=${f.pathCache} assets=${f.assetCount}`,
+            )
+            return `  [slug=${lib.slug} libraryId=${lib.id}]\n${lines.join("\n")}`
+          }),
+        ].join("\n")
+
+  const appDbLines =
+    appDatabases.length === 0
+      ? "- (none — create one under [App data databases](/database/app-data))"
+      : appDatabases
+          .map((d) => {
+            const desc = d.description ? ` description="${d.description.replace(/"/g, "'").slice(0, 140)}"` : ""
+            return `- ${d.name} (slug=${d.slug}) id=${d.id} tables(active)=${d.tableCount} created=${d.createdAt.slice(0, 10)}${desc}`
+          })
+          .join("\n")
+
+  const appDbBlock = [
+    `App data databases (logical JSON stores in Postgres; NOT media libraries; UI: /database/app-data; LIST: GET ${restBase}/app-databases; same registrations as Arciin's app-databases feature only — do NOT infer unrelated servers, connection strings, or raw Prisma metadata):`,
+    appDbLines,
+    "Listing these MUST NOT use [[ASSET_LIST:documents]] or Documents library filenames.",
+  ].join("\n")
   return [
     "--- Current Instance Data ---",
-    `Libraries: ${libs || "none"}`,
+    `REST API base (use this exact prefix in examples): ${restBase}`,
+    "Libraries — use each line's id in /libraries/{id}/folders etc.; use slug as librarySlug on POST /uploads:",
+    libLines || "- (none)",
+    `Libraries (summary): ${libs || "none"}`,
+    folderBlock,
+    appDbBlock,
     `Total assets: ${total} (${byType || "none"})`,
     `Storage used: ${storageStr}`,
     lastUpload,
+    ctx.passwordVaultLine ? ctx.passwordVaultLine : null,
     "---",
-  ].join("\n")
+  ]
+    .filter((line): line is string => line != null)
+    .join("\n")
 }
 
 /** User explicitly asked to see/browse files this turn (not just counts or greetings). */
 function userWantsAssetGallery(userText: string): boolean {
   const t = userText.trim()
   if (!t) return false
+
+  if (userWantsFilenameList(userText, [])) return false
 
   if (
     /^(?:hi|hello|hey|howdy|yo|sup|good\s+(?:morning|afternoon|evening)|thanks|thank\s+you|thx|ok(?:ay)?|cool|nice|bye|goodbye)[\s!.,?]*$/i.test(
@@ -1144,7 +1288,7 @@ function userWantsAssetGallery(userText: string): boolean {
     /\b(show\s+me|let\s+me\s+see|can\s+i\s+see|display|browse|view\s+my|see\s+my|open\s+my|pull\s+up|look\s+at\s+my|preview)\b/i.test(
       t,
     ) ||
-    /\b(list|show|see|view|open)\s+(?:all\s+)?(?:my\s+)?(?:the\s+)?(?:recent\s+)?/i.test(t)
+    /\b(show|see|view|open)\s+(?:all\s+)?(?:my\s+)?(?:the\s+)?(?:recent\s+)?/i.test(t)
   const mentionsMedia =
     /\b(images?|pictures?|photos?|videos?|files?|music|documents?|library|libraries|media|assets?|uploads?)\b/i.test(
       t,
@@ -1157,6 +1301,62 @@ function userWantsAssetGallery(userText: string): boolean {
   }
 
   return false
+}
+
+function assistantRecentlyShowedAssets(priorMessages: Message[]): boolean {
+  const lastAssistant = [...priorMessages].reverse().find((m) => m.role === "assistant")
+  if (!lastAssistant?.content) return false
+  return /\[\[ASSETS:/i.test(lastAssistant.content)
+}
+
+function userWantsFilenameList(userText: string, priorMessages: Message[]): boolean {
+  const t = userText.trim().toLowerCase()
+  if (!t) return false
+
+  if (userMeansAppDataDatabases(userText)) return false
+  const listIntent =
+    /\b(list|enumerate|filenames?|file\s+names?|name\s+them)\b/.test(t) ||
+    /^list\s+(?:them|those|these|it|my)\b/.test(t) ||
+    /\blist\s+(?:them\s+)?(?:here|again|in\s+chat)\b/.test(t) ||
+    /\bno,?\s*list\b/.test(t)
+
+  if (!listIntent) return false
+
+  if (
+    /\b(documents?|files?|images?|pictures?|photos?|videos?|music|assets?|them|those|these)\b/.test(t)
+  ) {
+    return true
+  }
+
+  if (/\b(list|name)\s+(?:them|those|it)\b/.test(t) && assistantRecentlyShowedAssets(priorMessages)) {
+    return true
+  }
+
+  return false
+}
+
+function resolveAssetListMediaType(userText: string, priorMessages: Message[]): string {
+  const t = userText.toLowerCase()
+  if (/\bdocuments?\b/.test(t)) return "documents"
+  if (/\bimages?|pictures?|photos?\b/.test(t)) return "images"
+  if (/\bvideos?\b/.test(t)) return "videos"
+  if (/\bmusic|audio\b/.test(t)) return "music"
+  if (/\ball\s+files?\b/.test(t)) return "all"
+
+  const lastAssistant = [...priorMessages].reverse().find((m) => m.role === "assistant")
+  const tag = lastAssistant?.content.match(/\[\[ASSETS:([a-z]+)/i)?.[1]
+  if (tag) return tag
+
+  return "documents"
+}
+
+function ensureFilenameListTag(content: string, userText: string, priorMessages: Message[]): string {
+  if (userMeansAppDataDatabases(userText)) return content
+  if (!userWantsFilenameList(userText, priorMessages)) return content
+  if (/\[\[ASSET_LIST:/i.test(content)) return content
+  const media = resolveAssetListMediaType(userText, priorMessages)
+  const trimmed = content.trim()
+  return trimmed ? `${trimmed}\n\n[[ASSET_LIST:${media}]]` : `[[ASSET_LIST:${media}]]`
 }
 
 /** Remove [[ASSETS:...]] blocks when the user did not ask to see files. */
@@ -1250,7 +1450,13 @@ const MEDIA_TYPE_MAP: Record<string, string> = {
   documents: "DOCUMENT",
 }
 
+/** How many file rows / cards to show before "Show more" in chat previews. */
+const CHAT_FILENAME_LIST_PREVIEW = 10
+const CHAT_ASSET_GRID_PREVIEW_IDS = 6
+const CHAT_ASSET_GRID_PAGE = 12
+
 function InlineAssetBlockByIds({ assetIds }: { assetIds: string[] }) {
+  const [expanded, setExpanded] = useState(false)
   const query = useQuery({
     queryKey: queryKeys.assets({ _chatIds: assetIds.join(",") }),
     queryFn: ({ signal }) => getAssetsByIds(assetIds, signal),
@@ -1276,9 +1482,18 @@ function InlineAssetBlockByIds({ assetIds }: { assetIds: string[] }) {
     )
   }
 
+  const shown = expanded ? assets : assets.slice(0, CHAT_ASSET_GRID_PREVIEW_IDS)
+  const hidden = Math.max(0, assets.length - CHAT_ASSET_GRID_PREVIEW_IDS)
+
   return (
-    <div className={cn("my-2 grid gap-1.5", assets.length === 1 ? "grid-cols-1 max-w-[200px]" : "grid-cols-2 sm:grid-cols-3")}>
-      {assets.map((asset) => {
+    <div className="my-2 space-y-2">
+      <div
+        className={cn(
+          "grid gap-1.5",
+          shown.length === 1 ? "grid-cols-1 max-w-[200px]" : "grid-cols-2 sm:grid-cols-3",
+        )}
+      >
+        {shown.map((asset) => {
         const hasThumbnail = asset.mediaType === "IMAGE" || asset.mediaType === "VIDEO"
         const thumbUrl = `${ASSET_API_BASE}/assets/${asset.id}/thumbnail`
         return (
@@ -1308,11 +1523,82 @@ function InlineAssetBlockByIds({ assetIds }: { assetIds: string[] }) {
           </div>
         )
       })}
+      </div>
+      {hidden > 0 ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-8 w-full border-border text-[11px] font-normal text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+          onClick={() => setExpanded((v) => !v)}
+        >
+          {expanded ? "Show fewer" : `Show ${hidden} more (${assets.length} total)`}
+        </Button>
+      ) : null}
+    </div>
+  )
+}
+
+function InlineAssetFilenameList({ mediaType }: { mediaType: string }) {
+  const [expanded, setExpanded] = useState(false)
+  const filter = MEDIA_TYPE_MAP[mediaType] ? { mediaType: MEDIA_TYPE_MAP[mediaType] } : {}
+  const query = useQuery({
+    queryKey: queryKeys.assets({ ...filter, _chatList: mediaType }),
+    queryFn: ({ signal }) => getAssets(filter, signal),
+    staleTime: 30_000,
+  })
+
+  if (query.isLoading) {
+    return (
+      <div className="my-2 flex items-center gap-2 rounded-xl border border-border bg-muted/30 px-4 py-3 text-[12px] text-muted-foreground">
+        <Loader2 className="size-3.5 animate-spin" />
+        Loading file list…
+      </div>
+    )
+  }
+
+  const assets = query.data ?? []
+  if (!assets.length) {
+    return (
+      <p className="my-2 text-[13px] text-muted-foreground">No {mediaType} in this library.</p>
+    )
+  }
+
+  const shown = expanded ? assets : assets.slice(0, CHAT_FILENAME_LIST_PREVIEW)
+  const remainder = expanded ? 0 : Math.max(0, assets.length - CHAT_FILENAME_LIST_PREVIEW)
+
+  return (
+    <div className="my-2 rounded-xl border border-border bg-muted/20 px-4 py-3">
+      <ul className="list-none space-y-1">
+        {shown.map((asset) => (
+          <li key={asset.id} className="flex items-baseline gap-2 text-[13px] leading-snug text-foreground">
+            <span className="mt-[7px] size-1.5 shrink-0 rounded-full bg-zinc-400" />
+            <span className="min-w-0 flex-1 break-words">{asset.originalFilename}</span>
+            <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
+              {fmtBytes(asset.sizeBytes)}
+            </span>
+          </li>
+        ))}
+      </ul>
+      {remainder > 0 || expanded ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="mt-3 h-8 w-full border-border text-[11px] font-normal text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+          onClick={() => setExpanded((v) => !v)}
+        >
+          {expanded
+            ? "Show fewer"
+            : `Show ${remainder} more (${assets.length.toLocaleString()} total)`}
+        </Button>
+      ) : null}
     </div>
   )
 }
 
 function InlineAssetBlock({ mediaType, limit = 9 }: { mediaType: string; limit?: number }) {
+  const [extraPages, setExtraPages] = useState(0)
   const filter = MEDIA_TYPE_MAP[mediaType] ? { mediaType: MEDIA_TYPE_MAP[mediaType] } : {}
   const query = useQuery({
     queryKey: queryKeys.assets({ ...filter, _chatBlock: mediaType }),
@@ -1339,11 +1625,19 @@ function InlineAssetBlock({ mediaType, limit = 9 }: { mediaType: string; limit?:
     )
   }
 
-  const shown = assets.slice(0, limit)
+  const cap = Math.min(limit + extraPages * CHAT_ASSET_GRID_PAGE, assets.length)
+  const shown = assets.slice(0, cap)
+  const remaining = assets.length - cap
 
   return (
-    <div className={cn("my-2 grid gap-1.5", limit === 1 ? "grid-cols-1 max-w-[200px]" : "grid-cols-2 sm:grid-cols-3")}>
-      {shown.map((asset) => {
+    <div className="my-2 space-y-2">
+      <div
+        className={cn(
+          "grid gap-1.5",
+          shown.length === 1 ? "grid-cols-1 max-w-[200px]" : "grid-cols-2 sm:grid-cols-3",
+        )}
+      >
+        {shown.map((asset) => {
         const hasThumbnail = asset.mediaType === "IMAGE" || asset.mediaType === "VIDEO"
         const thumbUrl = `${ASSET_API_BASE}/assets/${asset.id}/thumbnail`
         return (
@@ -1387,6 +1681,28 @@ function InlineAssetBlock({ mediaType, limit = 9 }: { mediaType: string; limit?:
           </div>
         )
       })}
+      </div>
+      {remaining > 0 ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-8 w-full border-border text-[11px] font-normal text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+          onClick={() => setExtraPages((p) => p + 1)}
+        >
+          Show {Math.min(remaining, CHAT_ASSET_GRID_PAGE)} more ({remaining.toLocaleString()} left)
+        </Button>
+      ) : extraPages > 0 ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-8 w-full border-border text-[11px] font-normal text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+          onClick={() => setExtraPages(0)}
+        >
+          Show fewer
+        </Button>
+      ) : null}
     </div>
   )
 }
@@ -1507,6 +1823,7 @@ export function ChatPage() {
     : ARCIIN_DEFAULT_SYSTEM_INSTRUCTION
 
   const messagesScrollRef = useRef<HTMLDivElement>(null)
+  const messagesInnerRef = useRef<HTMLDivElement>(null)
   const stickToBottomRef = useRef(true)
   const textareaRef    = useRef<HTMLTextAreaElement>(null)
   const abortRef       = useRef<AbortController | null>(null)
@@ -1592,6 +1909,21 @@ export function ChatPage() {
     scrollToBottom(streaming)
   }, [messages, streaming, scrollToBottom])
 
+  useEffect(() => {
+    const outer = messagesScrollRef.current
+    const inner = messagesInnerRef.current
+    if (!outer || !inner) return
+
+    const bump = () => {
+      if (!stickToBottomRef.current) return
+      outer.scrollTo({ top: outer.scrollHeight, behavior: "auto" })
+    }
+
+    const ro = new ResizeObserver(bump)
+    ro.observe(inner)
+    return () => ro.disconnect()
+  }, [messages.length])
+
   function handleMessagesScroll() {
     const el = messagesScrollRef.current
     if (!el) return
@@ -1615,6 +1947,7 @@ export function ChatPage() {
         queryFn:  ({ signal }) => getChatConversation(id, signal),
         staleTime: 30_000,
       })
+      stickToBottomRef.current = true
       setConversationId(id)
       setMessages(
         detail.messages
@@ -1820,6 +2153,8 @@ export function ChatPage() {
             if (json.libraryAction) {
               void queryClient.invalidateQueries({ queryKey: queryKeys.assets() })
               void queryClient.invalidateQueries({ queryKey: queryKeys.libraries })
+              void queryClient.invalidateQueries({ queryKey: ["folders"] })
+              void queryClient.invalidateQueries({ queryKey: queryKeys.chatContext })
             }
             if (json.thinking) thinkingAccum += json.thinking
             if (json.text) accumulated += json.text
@@ -1831,7 +2166,7 @@ export function ChatPage() {
         const derived = deriveStreamingThinkingAndAnswer(accumulated, thinkingAccum, showThinking)
         const displayThinking =
           reasoningUiEnabled && (derived.thinking.length > 0 || derived.inReasoningBlock) ? derived.thinking : undefined
-        const displayContent = finalizeAssistantContent(derived.answer, userText)
+        const displayContent = finalizeAssistantContent(derived.answer, userText, priorMessages)
         setMessages((prev) =>
           prev.map((m) =>
             m.id === pendingMsg.id
@@ -1843,7 +2178,7 @@ export function ChatPage() {
       }
 
       const resolved = resolveFinalAssistantMessage(accumulated, thinkingAccum, showThinking, reasoningUiEnabled)
-      finalContent = finalizeAssistantContent(resolved.content, userText)
+      finalContent = finalizeAssistantContent(resolved.content, userText, priorMessages)
       const finalThinking = resolved.thinking
       setMessages((prev) =>
         prev.map((m) =>
@@ -2049,6 +2384,8 @@ export function ChatPage() {
             if (json.libraryAction) {
               void queryClient.invalidateQueries({ queryKey: queryKeys.assets() })
               void queryClient.invalidateQueries({ queryKey: queryKeys.libraries })
+              void queryClient.invalidateQueries({ queryKey: ["folders"] })
+              void queryClient.invalidateQueries({ queryKey: queryKeys.chatContext })
             }
 
             if (json.thinking) thinkingAccum += json.thinking
@@ -2066,7 +2403,7 @@ export function ChatPage() {
           reasoningUiEnabled && (derived.thinking.length > 0 || derived.inReasoningBlock)
             ? derived.thinking
             : undefined
-        const displayContent = finalizeAssistantContent(derived.answer, text)
+        const displayContent = finalizeAssistantContent(derived.answer, text, messages)
 
         setMessages((prev) =>
           prev.map((m) =>
@@ -2092,7 +2429,7 @@ export function ChatPage() {
         showThinking,
         reasoningUiEnabled,
       )
-      finalContent = finalizeAssistantContent(resolved.content, text)
+      finalContent = finalizeAssistantContent(resolved.content, text, messages)
       const finalThinking = resolved.thinking
       setMessages((prev) =>
         prev.map((m) =>
@@ -2172,12 +2509,14 @@ export function ChatPage() {
   const canSend = input.trim().length > 0 && !streaming && profiles.length > 0
 
   return (
-    <div className="-mx-3 -my-4 flex min-h-0 flex-1 overflow-hidden sm:-mx-4 lg:-mx-5">
+    <div className="flex min-h-0 flex-1 overflow-hidden">
       {/* ── History sidebar ──────────────────────────────────────────────── */}
       <div
         className={cn(
-          "hidden border-r border-border bg-card/60 transition-all duration-200 sm:flex sm:flex-col",
-          historyOpen ? "sm:w-60 lg:w-64" : "sm:w-0 sm:overflow-hidden sm:border-r-0",
+          "hidden shrink-0 border-r border-border bg-card/60 transition-[width] duration-200 sm:flex sm:flex-col",
+          historyOpen
+            ? "sm:w-60 sm:overflow-visible lg:w-64"
+            : "sm:w-0 sm:overflow-hidden sm:border-r-0",
         )}
       >
         {historyOpen && (
@@ -2194,8 +2533,7 @@ export function ChatPage() {
       </div>
 
       {/* ── Chat area ────────────────────────────────────────────────────── */}
-      <div className="flex min-h-0 flex-1 flex-col">
-        {/* Messages — scrollable; clicking here dismisses the history sidebar */}
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <div
           ref={messagesScrollRef}
           onScroll={handleMessagesScroll}
@@ -2239,7 +2577,7 @@ export function ChatPage() {
           {messages.length === 0 ? (
             <WelcomeState hasProfiles={profiles.length > 0} />
           ) : (
-            <div className="flex flex-col gap-4 px-4 py-6 pb-8 sm:px-8 lg:px-16 xl:px-24">
+            <div ref={messagesInnerRef} className="flex flex-col gap-4 px-4 py-6 pb-8 sm:px-8 lg:px-16 xl:px-24">
               {(() => {
                 const lastAssistantId = [...messages].reverse().find((m) => m.role === "assistant")?.id
                 return messages.map((msg) => (

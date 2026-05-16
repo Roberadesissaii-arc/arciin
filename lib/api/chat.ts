@@ -14,10 +14,29 @@ export function getChatStreamPostUrl(): string {
 }
 
 export interface ChatInstanceContext {
-  libraries: { name: string; kind: string; count: number }[]
+  libraries: { id: string; slug: string; name: string; kind: string; count: number }[]
+  folders: {
+    id: string
+    libraryId: string
+    librarySlug: string
+    name: string
+    pathCache: string
+    assetCount: number
+  }[]
+  /** Arciin App data databases (logical JSON stores in Postgres — same payload as GET /app-databases metadata). Not library Documents. */
+  appDatabases: {
+    id: string
+    name: string
+    slug: string
+    description: string | null
+    tableCount: number
+    createdAt: string
+  }[]
   byMediaType: { type: string; count: number }[]
   storageGb: number
   lastUploadAt: string | null
+  /** Count-only vault hint for AI — never contains secrets. */
+  passwordVaultLine?: string | null
 }
 
 export interface ChatConversationSummary {

@@ -1,5 +1,7 @@
 import {
+  libraryAllowsFolderMutations,
   type AiChatToolBehavior,
+  type AiLibraryToolAccess,
   type AiSecuritySettingsResolved,
   normalizeVisionSearchQuery,
 } from "@arciin/shared"
@@ -9,14 +11,23 @@ import {
   type ArciinChatToolContext,
   executeArciinChatTool,
 } from "@/services/chat/arciin-chat-tools"
+import {
+  buildSyntheticCreateLibraryFolderArgsFromUser,
+  buildSyntheticDeleteLibraryFolderArgsFromUser,
+  extractBracketPseudoToolCalls,
+  extractProseLibraryFolderMutations,
+} from "@/services/chat/folder-tool-synthetic"
 
 export function detectLibraryToolIntent(
   userText: string,
 ): "vision_search_library" | "organize_images_library" | null {
   const t = userText.toLowerCase()
+  if (/\b(delete|remove|trash)\b/.test(t) && /\bfolders?\b/.test(t)) return null
+  if (/\b(create|add|make|start)\b/.test(t) && /\bfolders?\b/.test(t)) return null
+  if (/\bnew\s+folders?\b/.test(t)) return null
+
   const wantsOrganize =
-    /\b(organiz|sort|arrang|categor|group|folder)\w*/.test(t) &&
-    /\b(folder|library|image|photo|file)\b/.test(t)
+    /\b(organiz|sort|arrang|categor|group)\w*/.test(t) && /\b(folder|library|image|photo|file)\b/.test(t)
   if (wantsOrganize) return "organize_images_library"
 
   const wantsSearch =
@@ -81,12 +92,15 @@ function writeSseDelta(
   return full
 }
 
-type ToolMode = false | "all" | "read-only"
+type ToolMode = false | "all" | "read-only" | "sandbox"
 
 function resolveOllamaTools(mode: ToolMode) {
   if (mode === false) return undefined
   if (mode === "read-only") {
     return ARCIIN_CHAT_TOOLS.filter((t) => t.function.name === "vision_search_library")
+  }
+  if (mode === "sandbox") {
+    return ARCIIN_CHAT_TOOLS.filter((t) => t.function.name !== "organize_images_library")
   }
   return ARCIIN_CHAT_TOOLS
 }
@@ -212,22 +226,59 @@ export async function streamOllamaWithArciinTools(opts: {
   messages: ChatMsg[]
   toolCtx: ArciinChatToolContext
   ai?: AiChatToolBehavior
-  security?: Pick<AiSecuritySettingsResolved, "readOnlyTools" | "requireToolApproval">
+  security?: Pick<AiSecuritySettingsResolved, "libraryToolAccess" | "readOnlyTools" | "requireToolApproval">
 }): Promise<void> {
   const { raw, baseUrl, model, toolCtx } = opts
   const agentEnabled = opts.ai?.agent ?? true
   const autonomyEnabled = opts.ai?.autonomy ?? false
   const requireApproval = opts.security?.requireToolApproval ?? false
-  const readOnlyTools = opts.security?.readOnlyTools ?? false
-  const toolMode: ToolMode = !agentEnabled ? false : readOnlyTools ? "read-only" : "all"
+  const libraryToolAccess: AiLibraryToolAccess =
+    opts.security?.libraryToolAccess ??
+    (opts.security?.readOnlyTools ? "vision_only" : "full")
+  const folderMutationsOk = libraryAllowsFolderMutations(libraryToolAccess)
+  const toolMode: ToolMode = !agentEnabled
+    ? false
+    : libraryToolAccess === "vision_only"
+      ? "read-only"
+      : libraryToolAccess === "sandbox"
+        ? "sandbox"
+        : "all"
 
   const messages = [...opts.messages]
   let totalIn = 0
   let totalOut = 0
 
   const lastUser = [...messages].reverse().find((m) => m.role === "user")
+
+  if (lastUser && agentEnabled && folderMutationsOk && !requireApproval) {
+    const delArgs = buildSyntheticDeleteLibraryFolderArgsFromUser(lastUser.content)
+    if (delArgs) {
+      raw.write(`data: ${JSON.stringify({ libraryAction: "delete_library_folder" })}\n\n`)
+      const syntheticCall = {
+        function: { name: "delete_library_folder" as const, arguments: delArgs },
+      }
+      const result = await executeArciinChatTool(syntheticCall, toolCtx)
+      messages.push({ role: "assistant", content: "", tool_calls: [syntheticCall] })
+      messages.push({ role: "tool", content: JSON.stringify(result) })
+      await streamFinalAnswer(raw, baseUrl, model, messages, totalIn, totalOut)
+      return
+    }
+    const createArgs = buildSyntheticCreateLibraryFolderArgsFromUser(lastUser.content)
+    if (createArgs) {
+      raw.write(`data: ${JSON.stringify({ libraryAction: "create_library_folder" })}\n\n`)
+      const syntheticCall = {
+        function: { name: "create_library_folder" as const, arguments: createArgs },
+      }
+      const result = await executeArciinChatTool(syntheticCall, toolCtx)
+      messages.push({ role: "assistant", content: "", tool_calls: [syntheticCall] })
+      messages.push({ role: "tool", content: JSON.stringify(result) })
+      await streamFinalAnswer(raw, baseUrl, model, messages, totalIn, totalOut)
+      return
+    }
+  }
+
   let libraryIntent = lastUser ? detectLibraryToolIntent(lastUser.content) : null
-  if (libraryIntent === "organize_images_library" && readOnlyTools) {
+  if (libraryIntent === "organize_images_library" && libraryToolAccess !== "full") {
     libraryIntent = null
   }
 
@@ -278,6 +329,27 @@ export async function streamOllamaWithArciinTools(opts: {
       const thinking =
         (typeof collected.thinking === "string" ? collected.thinking : "").trim() ||
         (typeof collected.thought === "string" ? collected.thought : "").trim()
+
+      const combined = `${answer}\n${thinking}`
+      if (agentEnabled && folderMutationsOk && !requireApproval) {
+        const pseudo = extractBracketPseudoToolCalls(combined)
+        const prose = extractProseLibraryFolderMutations(combined)
+        for (const p of [...pseudo, ...prose]) {
+          if (p.name !== "delete_library_folder" && p.name !== "create_library_folder") continue
+          const syntheticCall = { function: { name: p.name, arguments: p.arguments } }
+          raw.write(`data: ${JSON.stringify({ libraryAction: p.name })}\n\n`)
+          const toolResult = await executeArciinChatTool(syntheticCall, toolCtx)
+          messages.push({
+            role: "assistant",
+            content: answer || thinking,
+            tool_calls: [syntheticCall],
+          })
+          messages.push({ role: "tool", content: JSON.stringify(toolResult) })
+          await streamFinalAnswer(raw, baseUrl, model, messages, totalIn, totalOut)
+          return
+        }
+      }
+
       // Some thinking models leave `content` empty and put the user-visible reply in `thinking`.
       if (!answer && thinking) {
         raw.write(`data: ${JSON.stringify({ text: thinking })}\n\n`)

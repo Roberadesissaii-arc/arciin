@@ -4,10 +4,19 @@ import {
   applyPrivacyToChatContext,
   buildAiSecuritySystemAppend,
   buildAiSystemAppend,
+  isPasswordRelatedChatQuery,
+  isPasswordRelatedConversation,
+  isVaultListingQuery,
+  recentUserVaultContextText,
   parseAiConfig,
   parseAiSecurityConfig,
   sanitizeOutboundChatText,
 } from "@arciin/shared"
+import {
+  isCloudChatProvider,
+  resolveLocalOllamaProfile,
+} from "@/services/chat/resolve-local-ollama-profile"
+import { getPasswordVaultAiSnapshot } from "@/services/password-vault/vault-for-ai"
 import type { FastifyInstance, FastifyRequest } from "fastify"
 import { z } from "zod"
 
@@ -143,10 +152,12 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
     "/chat/context",
     { preHandler: requireRole(["OWNER", "ADMIN", "MEMBER"]) },
     async (_request, reply) => {
-      const [libraries, assetCounts, storageAgg, recentUpload] = await Promise.all([
+      const [libraries, assetCounts, storageAgg, recentUpload, appDbRows] = await Promise.all([
         fastify.prisma.library.findMany({
           orderBy: { name: "asc" },
           select: {
+            id: true,
+            slug: true,
             name: true,
             kind: true,
             _count: { select: { assets: { where: { deletedAt: null } } } },
@@ -163,7 +174,60 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
           orderBy: { createdAt: "desc" },
           select: { createdAt: true },
         }),
+        fastify.prisma.appDatabase.findMany({
+          orderBy: { createdAt: "desc" },
+          take: 100,
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+            description: true,
+            createdAt: true,
+            _count: {
+              select: {
+                folders: { where: { deletedAt: null } },
+              },
+            },
+          },
+        }),
       ])
+
+      const libraryIds = libraries.map((l) => l.id)
+      const slugByLibraryId = new Map(libraries.map((l) => [l.id, l.slug]))
+      const folderRows =
+        libraryIds.length === 0
+          ? []
+          : await fastify.prisma.folder.findMany({
+              where: { deletedAt: null, libraryId: { in: libraryIds } },
+              orderBy: [{ libraryId: "asc" }, { pathCache: "asc" }],
+              take: 500,
+              select: {
+                id: true,
+                name: true,
+                pathCache: true,
+                libraryId: true,
+                _count: { select: { assets: { where: { deletedAt: null } } } },
+              },
+            })
+
+
+      const folders = folderRows.map((f) => ({
+        id: f.id,
+        libraryId: f.libraryId,
+        librarySlug: slugByLibraryId.get(f.libraryId) ?? "",
+        name: f.name,
+        pathCache: f.pathCache,
+        assetCount: f._count.assets,
+      }))
+
+      const appDatabases = appDbRows.map((d) => ({
+        id: d.id,
+        name: d.name,
+        slug: d.slug,
+        description: d.description ?? null,
+        tableCount: d._count.folders,
+        createdAt: d.createdAt.toISOString(),
+      }))
 
       const totalBytes = BigInt(storageAgg._sum.sizeBytes ?? 0)
       const gb = Number(totalBytes) / 1_073_741_824
@@ -173,18 +237,30 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
       const security = parseAiSecurityConfig(cfg.security)
 
       const rawContext = {
-        libraries: libraries.map((l) => ({ name: l.name, kind: l.kind, count: l._count.assets })),
+        libraries: libraries.map((l) => ({
+          id: l.id,
+          slug: l.slug,
+          name: l.name,
+          kind: l.kind,
+          count: l._count.assets,
+        })),
+        folders,
+        appDatabases,
         byMediaType: assetCounts.map((r) => ({ type: r.mediaType, count: r._count._all })),
         storageGb: Math.round(gb * 10) / 10,
         lastUploadAt: recentUpload?.createdAt ?? null,
       }
 
       const data = applyPrivacyToChatContext(rawContext, security)
+      const vaultSnapshot = await getPasswordVaultAiSnapshot(fastify.prisma, {
+        listAll: true,
+      })
 
       reply.send({
         data: {
           ...data,
           lastUploadAt: data.lastUploadAt instanceof Date ? data.lastUploadAt.toISOString() : data.lastUploadAt,
+          passwordVaultLine: vaultSnapshot.contextLine,
         },
       })
     },
@@ -682,7 +758,7 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
 
       const { profileId, model: modelOverride, messages } = parsed.data
 
-      const profile = profileId
+      let profile = profileId
         ? await fastify.prisma.modelProfile.findUnique({ where: { id: profileId } })
         : await fastify.prisma.modelProfile.findFirst({ where: { isDefault: true, isEnabled: true } })
           ?? await fastify.prisma.modelProfile.findFirst({ where: { isEnabled: true } })
@@ -690,6 +766,32 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
       if (!profile) {
         reply.status(400).send({ error: { code: "NO_MODEL", message: "No model profile configured. Add one under Models." } })
         return
+      }
+
+      const instanceForSecurity = await fastify.prisma.instanceConfig.findFirst()
+      const securityEarly = parseAiSecurityConfig(
+        (instanceForSecurity?.aiConfig as Record<string, unknown> | null)?.security,
+      )
+      const lastUserText = [...messages].reverse().find((m) => m.role === "user")?.content ?? ""
+      const vaultConversationText = recentUserVaultContextText(messages)
+      const passwordRelatedTurn = isPasswordRelatedConversation(messages)
+      if (
+        securityEarly.passwordQueriesLocalAiOnly &&
+        passwordRelatedTurn &&
+        isCloudChatProvider(profile.provider)
+      ) {
+        const localProfile = await resolveLocalOllamaProfile(fastify.prisma)
+        if (!localProfile) {
+          reply.status(400).send({
+            error: {
+              code: "LOCAL_MODEL_REQUIRED",
+              message:
+                "Password-related questions are restricted to local AI. Enable an Ollama profile under Models.",
+            },
+          })
+          return
+        }
+        profile = localProfile
       }
 
       // Use requested model override, then profile default, then empty string
@@ -715,8 +817,18 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
         const aiCfg = (instance?.aiConfig as Record<string, unknown> | null) ?? {}
         const aiSettings = parseAiConfig(aiCfg)
         const security = parseAiSecurityConfig(aiCfg.security)
-        const systemAppend =
+        const vaultSnapshot = await getPasswordVaultAiSnapshot(fastify.prisma, {
+          queryHint: passwordRelatedTurn ? vaultConversationText : undefined,
+          listAll:
+            passwordRelatedTurn &&
+            (isVaultListingQuery(vaultConversationText) ||
+              isVaultListingQuery(lastUserText)),
+        })
+        let systemAppend =
           buildAiSystemAppend(aiSettings) + buildAiSecuritySystemAppend(security)
+        if (vaultSnapshot.contextLine) {
+          systemAppend += `\n\n--- Password vault (redacted for assistant) ---\n${vaultSnapshot.contextLine}\n---`
+        }
 
         const safeText = sanitizeMessagesForProvider(messagesTextOnly(messages), security)
 
@@ -740,10 +852,11 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
               baseUrl: nativeBase,
               model,
               userId: request.auth!.user.id,
-              readOnlyTools: security.readOnlyTools,
+              libraryToolAccess: security.libraryToolAccess,
             },
             ai: { agent: aiSettings.agent, autonomy: aiSettings.autonomy },
             security: {
+              libraryToolAccess: security.libraryToolAccess,
               readOnlyTools: security.readOnlyTools,
               requireToolApproval: security.requireToolApproval,
             },
