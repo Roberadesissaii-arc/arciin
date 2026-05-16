@@ -1,6 +1,11 @@
-import { redirect } from "next/navigation"
+import { NotificationsPageIntro } from "@/components/notifications/notifications-page-intro"
+import { NotificationsSettingsPanel } from "@/components/settings/notifications-settings-panel"
 
-/** Notification preferences live under Settings → Personalization. */
 export default function NotificationsPage() {
-  redirect("/settings?tab=notifications")
+  return (
+    <div className="space-y-6 pb-8">
+      <NotificationsPageIntro />
+      <NotificationsSettingsPanel />
+    </div>
+  )
 }

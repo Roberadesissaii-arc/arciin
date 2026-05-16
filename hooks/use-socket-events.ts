@@ -64,8 +64,15 @@ export function useSocketEvents(socket: Socket | null) {
 
       if (type === "activity.created") {
         const eventType = String(payload.data?.type || "")
-        const title = String(payload.data?.title || "New activity")
-        const message = payload.data?.message ? String(payload.data.message) : undefined
+        const title = String(
+          payload.data?.title || payload.message || "New activity",
+        )
+        const message =
+          payload.data?.message != null
+            ? String(payload.data.message)
+            : payload.message && payload.data?.title
+              ? String(payload.message)
+              : undefined
         const isSecurity = eventType.startsWith("auth.")
 
         if (isSecurity && shouldShowSecurityEventsToast()) {
