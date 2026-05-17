@@ -8,6 +8,7 @@ import { DEFAULT_LIBRARY_DEFINITIONS } from "@arciin/shared"
 import { apiConfig } from "@/config"
 import { serializeAuth } from "@/services/serializers"
 import { createSession, hashPassword, setSessionCookie } from "@/services/security/auth"
+import { checkEndpointRateLimit } from "@/services/security/endpoint-rate-limit"
 import { ensureStorageDirectories } from "@/services/storage/local-storage"
 
 const claimSchema = z
@@ -50,6 +51,8 @@ export async function registerInstanceRoutes(fastify: FastifyInstance) {
   })
 
   fastify.post("/instance/claim", async (request, reply) => {
+    if (await checkEndpointRateLimit(request, reply, { key: "claim", limit: 5, windowSec: 300 })) return
+
     const parsed = claimSchema.safeParse(request.body)
 
     if (!parsed.success) {

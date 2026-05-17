@@ -24,6 +24,7 @@ import {
   setSessionCookie,
   verifyPassword,
 } from "@/services/security/auth"
+import { checkEndpointRateLimit } from "@/services/security/endpoint-rate-limit"
 import {
   clearFailedLoginAttempts,
   isLoginLocked,
@@ -110,6 +111,8 @@ export async function registerAuthRoutes(fastify: FastifyInstance) {
   )
 
   fastify.post("/auth/register", async (request, reply) => {
+    if (await checkEndpointRateLimit(request, reply, { key: "register", limit: 10, windowSec: 60 })) return
+
     const parsed = registerSchema.safeParse(request.body)
     if (!parsed.success) {
       reply.status(400).send({
@@ -179,6 +182,8 @@ export async function registerAuthRoutes(fastify: FastifyInstance) {
   })
 
   fastify.post("/auth/login", async (request, reply) => {
+    if (await checkEndpointRateLimit(request, reply, { key: "login", limit: 20, windowSec: 60 })) return
+
     const parsed = loginSchema.safeParse(request.body)
 
     if (!parsed.success) {

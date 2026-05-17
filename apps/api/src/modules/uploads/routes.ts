@@ -11,6 +11,7 @@ import { mediaQueue } from "@/services/jobs/queues"
 import { requireSessionRolesOrApiKeyScopes } from "@/services/security/auth"
 import { serializeUpload } from "@/services/serializers"
 import { analyzeStoredFile } from "@/services/classification/media-classification"
+import { checkEndpointRateLimit } from "@/services/security/endpoint-rate-limit"
 import { resolveUploadFolderId, syncAssetToPlexMirror } from "@/services/integrations/plex"
 import {
   createObjectStoragePath,
@@ -44,6 +45,8 @@ export async function registerUploadRoutes(fastify: FastifyInstance) {
       ),
     },
     async (request, reply) => {
+      if (await checkEndpointRateLimit(request, reply, { key: "upload", limit: 60, windowSec: 60 })) return
+
       const file = await request.file()
 
       if (!file || !request.auth) {

@@ -26,6 +26,8 @@ import { registerWebhookRoutes } from "@/modules/webhooks/routes"
 import { registerApiProtection } from "@/plugins/api-protection"
 import { registerCookies } from "@/plugins/cookies"
 import { registerCors } from "@/plugins/cors"
+import { registerErrorHandler } from "@/plugins/error-handler"
+import { registerHelmet } from "@/plugins/helmet"
 import { registerMultipart } from "@/plugins/multipart"
 import { registerPrisma } from "@/plugins/prisma"
 import { registerRedis } from "@/plugins/redis"
@@ -50,6 +52,8 @@ export async function createServer() {
     },
   })
 
+  await registerHelmet(fastify)
+  await registerErrorHandler(fastify)
   await registerCors(fastify)
   await registerCookies(fastify)
   await registerMultipart(fastify)
