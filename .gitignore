@@ -20,6 +20,9 @@
 # production
 /build
 
+# pm2 / install logs
+/logs/
+
 # misc
 .DS_Store
 *.pem

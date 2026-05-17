@@ -1,0 +1,47 @@
+Arciin — Proprietary Software License
+
+Copyright (c) 2026 Roberadesissaii-arc and Arciin contributors.
+All rights reserved.
+
+Your server, your control.
+
+NOTICE: This repository and the Arciin software are proprietary. Unauthorized
+copying, redistribution, sublicensing, or commercial resale of the software
+or derivative works is not permitted without prior written permission from
+the copyright holder.
+
+PERMITTED USE
+
+You may install, configure, and run Arciin on servers and devices that you own
+or control, for personal, organizational, or internal business use, subject to
+this license and applicable law.
+
+You may modify the software for your own deployments, provided you do not
+distribute those modifications to third parties except as part of operating
+your own private instance.
+
+RESTRICTIONS
+
+- Do not publish, sell, or host Arciin as a multi-tenant SaaS for unrelated
+  third parties without a separate agreement.
+- Do not remove or alter copyright or license notices in distributed copies.
+- Do not use the Arciin name or branding to imply endorsement without permission.
+
+SECURITY & RESPONSIBILITY
+
+Self-hosted software runs with privileges you grant on your machine. You are
+responsible for:
+
+- Protecting `.env`, setup tokens, session secrets, and API keys
+- Keeping the host OS, PostgreSQL, Redis, and dependencies patched
+- Configuring firewalls, TLS, and network access appropriately
+- Backing up your data and storage directories
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO WARRANTIES OF MERCHANTABILITY, FITNESS
+FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS
+OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY,
+WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+For licensing inquiries: https://github.com/Roberadesissaii-arc/arciin

@@ -27,7 +27,9 @@ DIM="\033[2m"
 WHITE="\033[97m"
 RESET="\033[0m"
 
-TOTAL_STEPS=10
+TOTAL_STEPS=11
+ARCIIN_WEB_PORT="${DEFAULT_WEB_PORT}"
+ARCIIN_API_PORT="${DEFAULT_API_PORT}"
 STEP=0
 
 step() {
@@ -272,9 +274,78 @@ configure_app_ports() {
   _set_env_kv "$env_file" "NEXT_PUBLIC_SOCKET_URL" ""
   _set_env_kv "$env_file" "NEXT_PUBLIC_ARCIIN_PUBLIC_URL" "http://${lan_ip}:${web_port}"
 
+  ARCIIN_WEB_PORT="$web_port"
+  ARCIIN_API_PORT="$api_port"
+  export ARCIIN_WEB_PORT ARCIIN_API_PORT
+
   ok "Web UI (LAN)   → http://${lan_ip}:${web_port}"
   ok "Web UI (local) → http://localhost:${web_port}"
   ok "API (internal) → http://127.0.0.1:${api_port}"
+}
+
+ensure_production_secrets() {
+  local env_file="${ROOT_DIR}/.env"
+  [[ -f "$env_file" ]] || return 0
+
+  _set_env_kv "$env_file" "NODE_ENV" "production"
+
+  local secret_len
+  secret_len="$(grep '^SESSION_SECRET=' "$env_file" 2>/dev/null | cut -d= -f2- | wc -c | tr -d ' ')"
+  if grep -q '^SESSION_SECRET=change-this-in-production' "$env_file" 2>/dev/null \
+    || [[ "${secret_len:-0}" -lt 32 ]]; then
+    _set_env_kv "$env_file" "SESSION_SECRET" "$(_gen_secret)"
+    ok "SESSION_SECRET secured (random)"
+  fi
+
+  if grep -qE '^ARCIIN_SETUP_TOKEN=(dev-token)?$' "$env_file" 2>/dev/null \
+    || grep -q '^ARCIIN_SETUP_TOKEN=$' "$env_file" 2>/dev/null; then
+    _set_env_kv "$env_file" "ARCIIN_SETUP_TOKEN" "$(openssl rand -hex 24 2>/dev/null || _gen_secret)"
+    ok "ARCIIN_SETUP_TOKEN secured (random)"
+  fi
+
+  chmod 600 "$env_file" 2>/dev/null && ok ".env readable only by you (chmod 600)" || true
+}
+
+configure_firewall() {
+  local env_file="${ROOT_DIR}/.env"
+  local web_port="${ARCIIN_WEB_PORT:-$(_env_public_url_port "$env_file")}"
+  web_port="${web_port:-${DEFAULT_WEB_PORT}}"
+
+  if ! command -v ufw >/dev/null 2>&1; then
+    if sudo apt-get install -y -qq ufw &>/dev/null; then
+      ok "ufw installed"
+    else
+      warn "ufw not available — open TCP port ${web_port} manually on your firewall"
+      return 0
+    fi
+  fi
+
+  # Pick next free port if the chosen web port is still taken (race with other installers).
+  while _port_in_use "$web_port"; do
+    warn "Port ${web_port} is in use — trying next port"
+    web_port=$((web_port + 1))
+  done
+
+  if [[ "$web_port" != "${ARCIIN_WEB_PORT}" ]]; then
+    local lan_ip
+    lan_ip="$(_detect_lan_ip)"
+    ARCIIN_WEB_PORT="$web_port"
+    export ARCIIN_WEB_PORT
+    _set_env_kv "$env_file" "PORT" "${web_port}"
+    _set_env_kv "$env_file" "ARCIIN_PUBLIC_URL" "http://${lan_ip}:${web_port}"
+    _set_env_kv "$env_file" "NEXT_PUBLIC_ARCIIN_PUBLIC_URL" "http://${lan_ip}:${web_port}"
+    warn "Updated web port to ${web_port} in .env"
+  fi
+
+  spin_ok "Allowing Arciin web port ${web_port}/tcp in UFW..." \
+    "Firewall allows port ${web_port}/tcp" \
+    sudo ufw allow "${web_port}/tcp" comment "Arciin web UI"
+
+  ok "API (port ${ARCIIN_API_PORT}) binds to 127.0.0.1 — not opened in UFW"
+
+  echo ""
+  echo -e "    ${DIM}── sudo ufw status ──${RESET}"
+  sudo ufw status 2>/dev/null | sed 's/^/    /' || warn "Could not read ufw status"
 }
 
 launch_pm2() {
@@ -286,6 +357,9 @@ launch_pm2() {
 
   pm2 stop arciin-web arciin-api arciin-worker &>/dev/null || true
   pm2 delete arciin-web arciin-api arciin-worker &>/dev/null || true
+
+  mkdir -p "${ROOT_DIR}/logs"
+  chmod 700 "${ROOT_DIR}/logs" 2>/dev/null || true
 
   spin_ok "Building production web bundle..." "Web bundle ready" pnpm build:web
 
@@ -467,6 +541,7 @@ step "Environment"
 ensure_env_file
 ensure_session_secret
 ensure_setup_token
+ensure_production_secrets
 configure_app_ports
 
 # ── 5. Services ───────────────────────────────────────────────────────────────
@@ -517,7 +592,19 @@ else
   warn "ffmpeg missing — thumbnails and media probes will not work"
 fi
 
-# ── 9. Production launch (PM2) ──────────────────────────────────────────────
+# ── 9. Firewall ──────────────────────────────────────────────────────────────
+step "Firewall"
+
+if [[ "${ARCIIN_SKIP_FIREWALL:-0}" == "1" ]]; then
+  warn "Skipping UFW (ARCIIN_SKIP_FIREWALL=1)"
+else
+  configure_firewall
+fi
+
+chmod +x "${ROOT_DIR}/start.sh" "${ROOT_DIR}/stop.sh" \
+  "${ROOT_DIR}/scripts/start.sh" "${ROOT_DIR}/scripts/stop.sh" 2>/dev/null || true
+
+# ── 10. Production launch (PM2) ─────────────────────────────────────────────
 step "Production launch"
 
 if [[ "${ARCIIN_SKIP_PM2:-0}" == "1" ]]; then
@@ -526,22 +613,7 @@ else
   launch_pm2
 fi
 
-cat > "${ROOT_DIR}/scripts/start.sh" << 'STARTSCRIPT'
-#!/usr/bin/env bash
-cd "$(dirname "$0")/.."
-pm2 start ecosystem.config.cjs 2>/dev/null || pm2 restart arciin-web arciin-api arciin-worker
-pm2 save
-echo "Arciin started. Logs: pm2 logs"
-STARTSCRIPT
-chmod +x "${ROOT_DIR}/scripts/start.sh"
-
-cat > "${ROOT_DIR}/scripts/stop.sh" << 'STOPSCRIPT'
-#!/usr/bin/env bash
-pm2 stop arciin-web arciin-api arciin-worker 2>/dev/null && echo "Arciin stopped." || echo "Arciin is not running."
-STOPSCRIPT
-chmod +x "${ROOT_DIR}/scripts/stop.sh"
-
-# ── 10. Summary ───────────────────────────────────────────────────────────────
+# ── 11. Summary ───────────────────────────────────────────────────────────────
 step "Ready"
 
 ENV_FILE="${ROOT_DIR}/.env"
@@ -582,15 +654,19 @@ echo -e "  ${BOLD}${WHITE}PM2 commands${RESET}"
 echo -e "    ${DIM}pm2 status${RESET}              Process list"
 echo -e "    ${DIM}pm2 logs arciin-web${RESET}      Web logs"
 echo -e "    ${DIM}pm2 restart all${RESET}           Restart after .env changes"
-echo -e "    ${DIM}bash scripts/stop.sh${RESET}      Stop Arciin"
-echo -e "    ${DIM}bash scripts/start.sh${RESET}     Start Arciin"
+echo -e "    ${DIM}bash stop.sh${RESET}                Stop Arciin"
+echo -e "    ${DIM}bash start.sh${RESET}               Start Arciin"
 echo ""
 echo -e "  ${BOLD}${WHITE}LAN access${RESET}"
 echo -e "    Use ${BOLD}http://${LAN_IP}:${WEB_PORT}${RESET} from other devices on your network."
-echo -e "    If it times out, allow port ${WEB_PORT} in the server firewall (e.g. ${DIM}sudo ufw allow ${WEB_PORT}/tcp${RESET})."
+echo -e "    UFW was configured to allow TCP ${WEB_PORT} during install (see step 10)."
+echo ""
+echo -e "  ${BOLD}${WHITE}Security${RESET}"
+echo -e "    ${DIM}.env${RESET} is mode 600; API is loopback-only; review ${DIM}LICENSE${RESET} for terms."
 echo ""
 echo -e "  ${BOLD}${WHITE}Options${RESET}"
-echo -e "    ${DIM}bash install.sh --reset-db${RESET}           Drop DB and re-run migrations"
-echo -e "    ${DIM}ARCIIN_SKIP_PM2=1 ./install.sh${RESET}       Install only (no PM2 start)"
-echo -e "    ${DIM}ARCIIN_UPGRADE_SYSTEM=0 ./install.sh${RESET}  Skip apt upgrade"
+echo -e "    ${DIM}bash install.sh --reset-db${RESET}            Drop DB and re-run migrations"
+echo -e "    ${DIM}ARCIIN_SKIP_PM2=1 ./install.sh${RESET}        Install without PM2"
+echo -e "    ${DIM}ARCIIN_SKIP_FIREWALL=1 ./install.sh${RESET}   Skip UFW configuration"
+echo -e "    ${DIM}ARCIIN_UPGRADE_SYSTEM=0 ./install.sh${RESET}   Skip apt upgrade"
 echo ""

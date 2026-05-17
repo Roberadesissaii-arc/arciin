@@ -1,7 +1,21 @@
+/**
+ * PM2 Ecosystem Config — Arciin (production)
+ *
+ * Usage:
+ *   pm2 start ecosystem.config.cjs     — start web + api + worker
+ *   pm2 restart arciin-web             — restart web only
+ *   pm2 stop arciin-web arciin-api arciin-worker
+ *   pm2 logs arciin-web                — live logs
+ *   pm2 monit                          — CPU / memory
+ *
+ * Ports and secrets are read from .env (set by install.sh).
+ */
+
 const fs = require("node:fs")
 const path = require("node:path")
 
 const ROOT = __dirname
+const LOG_DIR = path.join(ROOT, "logs")
 
 function parseEnvFile(filePath) {
   const env = { NODE_ENV: "production" }
@@ -24,20 +38,43 @@ function parseEnvFile(filePath) {
   return env
 }
 
+// Read PORT from .env so PM2 matches install.sh
+let port = 3000
+try {
+  const envPath = path.join(ROOT, ".env")
+  const raw = fs.readFileSync(envPath, "utf8")
+  const portMatch = raw.match(/^PORT=(\d+)/m)
+  if (portMatch) port = parseInt(portMatch[1], 10)
+  else {
+    const urlMatch = raw.match(/^ARCIIN_PUBLIC_URL=.+:(\d+)/m)
+    if (urlMatch) port = parseInt(urlMatch[1], 10)
+  }
+} catch {
+  // default 3000
+}
+
+if (!fs.existsSync(LOG_DIR)) {
+  fs.mkdirSync(LOG_DIR, { recursive: true })
+}
+
 const dotenv = parseEnvFile(path.join(ROOT, ".env"))
 const bindHost = dotenv.ARCIIN_BIND_HOST || "0.0.0.0"
-const webPort =
-  dotenv.PORT ||
-  (() => {
-    const m = String(dotenv.ARCIIN_PUBLIC_URL || "").match(/:(\d+)\/?$/)
-    return m ? m[1] : "3000"
-  })()
 
 const sharedEnv = {
   ...dotenv,
   NODE_ENV: "production",
-  PORT: webPort,
+  PORT: String(port),
   HOSTNAME: bindHost,
+}
+
+const logDateFormat = "YYYY-MM-DD HH:mm:ss"
+
+function appLogFiles(name) {
+  return {
+    error_file: path.join(LOG_DIR, `${name}-err.log`),
+    out_file: path.join(LOG_DIR, `${name}-out.log`),
+    log_date_format: logDateFormat,
+  }
 }
 
 module.exports = {
@@ -46,34 +83,43 @@ module.exports = {
       name: "arciin-web",
       cwd: ROOT,
       script: path.join(ROOT, "node_modules/next/dist/bin/next"),
-      args: `start -H ${bindHost} -p ${webPort}`,
-      env: sharedEnv,
-      instances: 1,
+      args: `start -H ${bindHost} -p ${port}`,
+      exec_mode: "fork",
+      watch: false,
       autorestart: true,
-      max_restarts: 15,
+      max_memory_restart: "1G",
+      max_restarts: 20,
       min_uptime: "5s",
+      env: sharedEnv,
+      ...appLogFiles("arciin-web"),
     },
     {
       name: "arciin-api",
       cwd: ROOT,
       script: path.join(ROOT, "node_modules/.bin/tsx"),
       args: "apps/api/src/index.ts",
-      env: sharedEnv,
-      instances: 1,
+      exec_mode: "fork",
+      watch: false,
       autorestart: true,
-      max_restarts: 15,
+      max_memory_restart: "768M",
+      max_restarts: 20,
       min_uptime: "5s",
+      env: sharedEnv,
+      ...appLogFiles("arciin-api"),
     },
     {
       name: "arciin-worker",
       cwd: ROOT,
       script: path.join(ROOT, "node_modules/.bin/tsx"),
       args: "apps/worker/src/index.ts",
-      env: sharedEnv,
-      instances: 1,
+      exec_mode: "fork",
+      watch: false,
       autorestart: true,
-      max_restarts: 15,
+      max_memory_restart: "768M",
+      max_restarts: 20,
       min_uptime: "5s",
+      env: sharedEnv,
+      ...appLogFiles("arciin-worker"),
     },
   ],
 }
