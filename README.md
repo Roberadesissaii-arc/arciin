@@ -2,16 +2,16 @@
 
 **Your server, your control.**
 
-Arciin is a self-hosted private file, library, and media management platform. Run it on your own machine or VPS: organize videos, images, music, and documents in libraries, upload from the browser or scripts, and watch activity in real time. No cloud account required.
+Arciin is a self-hosted private file, library, and media management platform. Run it on your own machine — organize videos, images, music, and documents into libraries, upload from the browser or scripts, and watch activity update in real time. No cloud account required.
 
 <p align="center">
-  <img src="./public/assets/images/dashboard.png" alt="Arciin dashboard — libraries, storage overview, and activity" width="900" />
+  <img src="./public/assets/images/dashboard.png" alt="Arciin dashboard" width="900" />
   <br />
-  <em>Dashboard after setup — libraries, storage, uploads, and live activity.</em>
+  <em>Dashboard — libraries, storage overview, uploads, and live activity.</em>
 </p>
 
 <p align="center">
-  <img src="./public/assets/images/Sign_up..png" alt="Arciin first-run setup — claim your instance" width="900" />
+  <img src="./public/assets/images/Sign_up..png" alt="Arciin first-run setup" width="900" />
   <br />
   <em>First visit — claim the instance with your setup token and create the owner account.</em>
 </p>
@@ -21,9 +21,9 @@ Arciin is a self-hosted private file, library, and media management platform. Ru
 ## Table of contents
 
 - [What you get](#what-you-get)
-- [How it works](#how-it-works)
 - [Prerequisites](#prerequisites)
 - [Quick start](#quick-start)
+- [Managing Arciin](#managing-arciin)
 - [Development](#development)
 - [Environment variables](#environment-variables)
 - [Python & API examples](#python--api-examples)
@@ -38,65 +38,31 @@ Arciin is a self-hosted private file, library, and media management platform. Ru
 | Area | Description |
 |------|-------------|
 | **First-run setup** | One-time instance claim with `ARCIIN_SETUP_TOKEN`, then local admin login |
-| **Libraries** | Videos, Images, Music, Documents, and Inbox — with folders inside each library |
+| **Libraries** | Videos, Images, Music, Documents, and Inbox — with folders inside each |
 | **Uploads** | Drag-and-drop anywhere in the app, upload queue, and multipart API for scripts |
-| **Realtime** | Socket.IO events for uploads, assets, jobs, and activity (`/events` monitor) |
+| **Realtime** | Socket.IO events for uploads, assets, jobs, and activity |
 | **Notifications** | In-app inbox, sounds, and badges when uploads complete |
-| **Developer** | API keys, webhooks placeholder, Python examples under `scripts/examples/` |
-| **Ops** | Logs page, jobs, storage settings, optional Plex/Jellyfin integration guides |
-
-The public marketing site is intentionally **not** the focus yet — this repo is the real application.
-
----
-
-## How it works
-
-Arciin is a **monorepo** with three runtime processes plus infrastructure:
-
-```text
-Browser  →  Next.js (web)     :3000   UI, auth cookies, /api proxy, /socket.io proxy
-              ↓
-           Fastify (API)       :4000   REST, uploads, sessions, Socket.IO server
-              ↓
-PostgreSQL              metadata (users, libraries, assets, jobs, …)
-Redis                   pub/sub for realtime events + BullMQ
-Local disk              file bytes under ARCIIN_DATA_DIR (default ./data/arciin)
-BullMQ worker           thumbnails, metadata, background jobs
-```
-
-**Typical first visit**
-
-1. Open `http://localhost:3000` → redirected to **Setup** if the instance is new.
-2. Enter the setup token, instance name, admin email/password, and storage path.
-3. Log in → **Dashboard** with sidebar navigation.
-4. Drag files into the app (or use `scripts/examples/upload_image_example.py`) → files land in the right library; events appear on **Events** and **Notifications**.
-
-**Root route behavior**
-
-| State | Redirect |
-|-------|----------|
-| Instance not initialized | `/setup` |
-| Not logged in | `/login` |
-| Authenticated | `/dashboard` |
+| **Developer tools** | API keys, webhooks, Python examples in `scripts/examples/` |
+| **Ops** | Logs page, jobs monitor, storage settings, optional Plex/Jellyfin guides |
 
 ---
 
 ## Prerequisites
 
-- **Linux** or **WSL2** (recommended for development)
+- **Linux** or **WSL2**
 - **Node.js** 20+ (installer targets Node 24)
-- **pnpm** 10+ (`corepack enable` works)
+- **pnpm** 10+ (`corepack enable`)
 - **PostgreSQL** 14+
 - **Redis** 6+
-- **FFmpeg** / **ffprobe** (media processing in the worker)
+- **FFmpeg** / **ffprobe** (media processing)
 
-Optional: **Docker** and **Docker Compose** for containerized deployment.
+Optional: **Docker** + **Docker Compose** for containerized deployment.
 
 ---
 
 ## Quick start
 
-### 1. Clone the repository
+### 1. Clone
 
 ```bash
 git clone https://github.com/Roberadesissaii-arc/arciin.git
@@ -105,7 +71,7 @@ cd arciin
 
 ### 2. Run the installer
 
-The installer checks dependencies, installs pnpm packages, creates `.env` if missing, runs migrations, seeds defaults, and prepares storage directories.
+Checks dependencies, installs packages, creates `.env`, runs migrations, seeds defaults, and sets up storage directories.
 
 ```bash
 chmod +x install.sh
@@ -115,57 +81,100 @@ chmod +x install.sh
 Optional flags:
 
 ```bash
-ARCIIN_UPGRADE_SYSTEM=1 ./install.sh   # also apt-install missing system packages (Debian/Ubuntu)
-ARCIIN_SKIP_DB_INIT=1 ./install.sh      # skip database migrate/seed
+ARCIIN_UPGRADE_SYSTEM=1 ./install.sh   # also apt-install missing system packages
+ARCIIN_SKIP_DB_INIT=1  ./install.sh    # skip migrate + seed
 ```
 
-### 3. Configure environment
+### 3. Configure `.env`
 
-If `.env` was created for you, review it. Otherwise:
+Review the generated `.env`. Key values:
+
+| Variable | What to set |
+|----------|-------------|
+| `ARCIIN_SETUP_TOKEN` | Required on the setup screen |
+| `SESSION_SECRET` | Change in production — `openssl rand -hex 32` |
+| `DATABASE_URL` | Your PostgreSQL connection string |
+| `REDIS_URL` | Your Redis URL |
+| `ARCIIN_PUBLIC_URL` | Browser-facing URL, e.g. `http://192.168.1.10:3004` |
+
+### 4. Start
 
 ```bash
-cp .env.example .env
+bash scripts/start.sh
 ```
 
-Important values:
-
-- `ARCIIN_SETUP_TOKEN` — required on the setup screen (installer may generate one)
-- `SESSION_SECRET` — change in production (`openssl rand -hex 32`)
-- `DATABASE_URL` / `REDIS_URL` — match your local Postgres and Redis
-
-### 4. Start the stack
+Or using PM2 directly:
 
 ```bash
-pnpm dev
+pm2 start ecosystem.config.cjs
 ```
 
-This runs **web**, **api**, and **worker** together:
-
-| Service | URL |
-|---------|-----|
-| Web UI | http://localhost:3000 |
-| API | http://localhost:4000/api |
-| Health | http://localhost:4000/api/health |
+| Service | Default URL |
+|---------|-------------|
+| Web UI | http://localhost:3004 |
+| API | http://localhost:4001/api |
+| Health | http://localhost:4001/api/health |
 
 ### 5. Claim your instance
 
-1. Open http://localhost:3000
-2. Use the setup token from `.env` (`ARCIIN_SETUP_TOKEN`)
-3. Create the first administrator (becomes **OWNER**)
-4. Sign in and explore the dashboard
+1. Open `http://<your-server-ip>:3004`
+2. Enter the setup token from `.env` (`ARCIIN_SETUP_TOKEN`)
+3. Fill in instance name, admin email, password, and storage path
+4. Check **I have read and agree** — the Claim button activates
+5. Sign in and explore the dashboard
+
+---
+
+## Managing Arciin
+
+### Start and stop
+
+```bash
+bash scripts/start.sh     # Start all processes
+bash scripts/stop.sh      # Stop all processes
+```
+
+### PM2 commands
+
+```bash
+pm2 status                # Process list — web, api, worker
+pm2 logs arciin-web       # Live web logs
+pm2 logs arciin-api       # Live API logs
+pm2 logs arciin-worker    # Live worker logs
+pm2 restart all           # Restart everything (required after .env changes)
+pm2 restart arciin-api    # Restart API only
+pm2 monit                 # CPU / memory dashboard
+```
+
+### Database
+
+```bash
+pnpm db:migrate    # Apply migrations (dev)
+pnpm db:deploy     # Apply migrations (production)
+pnpm db:seed       # Seed default libraries
+pnpm db:studio     # Open Prisma Studio
+```
+
+### After updating
+
+```bash
+git pull
+pnpm install
+pnpm db:deploy
+pm2 restart all
+```
 
 ---
 
 ## Development
 
-### Install dependencies only
-
 ```bash
 pnpm install
 pnpm db:generate
+pnpm dev              # web + api + worker together
 ```
 
-### Run processes separately
+Run processes separately:
 
 ```bash
 pnpm dev:web      # Next.js on :3000
@@ -173,21 +182,12 @@ pnpm dev:api      # Fastify on :4000
 pnpm dev:worker   # BullMQ consumer
 ```
 
-### Database commands
-
-```bash
-pnpm db:migrate    # apply migrations (dev)
-pnpm db:deploy     # apply migrations (production)
-pnpm db:seed       # seed defaults
-pnpm db:studio     # Prisma Studio
-```
-
-### Quality checks (CI uses these)
+Quality checks (same as CI):
 
 ```bash
 pnpm lint
 pnpm typecheck
-pnpm check         # lint + typecheck + build (web, api, worker)
+pnpm check        # lint + typecheck + build
 ```
 
 ### WSL: Python on Windows, Arciin in WSL
@@ -196,7 +196,7 @@ pnpm check         # lint + typecheck + build (web, api, worker)
 bash scripts/examples/arciin_wsl_hosts.sh
 ```
 
-Set `API_BASE` in `scripts/examples/arciin_example_client.py` to the printed WSL IP (e.g. `http://172.22.212.155:4000/api`). The browser UI stays on http://localhost:3000.
+Set `API_BASE` in `scripts/examples/arciin_example_client.py` to the printed WSL IP.
 
 ---
 
@@ -205,15 +205,17 @@ Set `API_BASE` in `scripts/examples/arciin_example_client.py` to the printed WSL
 | Variable | Purpose |
 |----------|---------|
 | `DATABASE_URL` | PostgreSQL connection string |
-| `REDIS_URL` | Redis for queues and realtime pub/sub |
+| `REDIS_URL` | Redis for queues and realtime |
 | `ARCIIN_DATA_DIR` | On-disk storage root (default `./data/arciin`) |
 | `ARCIIN_SETUP_TOKEN` | Secret for first-run setup only |
-| `ARCIIN_PUBLIC_URL` | Browser-facing URL (e.g. `http://localhost:3000`) |
+| `ARCIIN_PUBLIC_URL` | Browser-facing URL |
 | `ARCIIN_API_URL` | API origin for server-side use |
-| `SESSION_SECRET` | Session cookie signing (32+ chars in production) |
+| `SESSION_SECRET` | Session signing key (32+ chars in production) |
 | `NEXT_PUBLIC_API_BASE_URL` | Usually `/api` (proxied to Fastify) |
-| `NEXT_PUBLIC_ARCIIN_API_ORIGIN` | Direct API URL for large uploads in dev (`http://localhost:4000`) |
-| `NEXT_PUBLIC_SOCKET_URL` | Leave **empty** in local dev so cookies work via `:3000` proxy |
+| `NEXT_PUBLIC_ARCIIN_API_ORIGIN` | Direct API URL for large uploads in dev |
+| `NEXT_PUBLIC_SOCKET_URL` | Leave empty in local dev so cookies work |
+| `PORT` | Web port (default 3004) |
+| `API_PORT` | API port (default 4001) |
 
 See `.env.example` for the full list.
 
@@ -221,7 +223,7 @@ See `.env.example` for the full list.
 
 ## Python & API examples
 
-Runnable scripts live in **`scripts/examples/`**. Edit shared config once in `arciin_example_client.py`, then run any example:
+Runnable scripts live in **`scripts/examples/`**. Set shared config once in `arciin_example_client.py`.
 
 ```bash
 pip install requests
@@ -229,17 +231,15 @@ pip install requests
 ```
 
 | Script | What it does |
-|--------|----------------|
+|--------|-------------|
 | `health_check_example.py` | Ping API health |
-| `list_libraries_example.py` | List libraries and ids |
+| `list_libraries_example.py` | List libraries and IDs |
 | `create_folder_example.py` | Create a folder |
-| `upload_image_example.py` | Upload to Images |
-| `upload_video_example.py` | Upload to Videos |
+| `upload_image_example.py` | Upload to Images library |
+| `upload_video_example.py` | Upload to Videos library |
 | `socket_events_example.py` | Listen for live events |
 
-Details: [`scripts/examples/README.md`](./scripts/examples/README.md)
-
-Create API keys in the app: **Developer → API keys** (scopes such as `uploads:create`, `libraries:read`, `events:subscribe`).
+Create API keys in the app: **Developer → API Keys**.
 
 ---
 
@@ -247,14 +247,12 @@ Create API keys in the app: **Developer → API keys** (scopes such as `uploads:
 
 ```bash
 cp .env.example .env
-# Edit ARCIIN_SETUP_TOKEN, SESSION_SECRET, and URLs for your host
+# Set ARCIIN_SETUP_TOKEN, SESSION_SECRET, and your host URLs
 
 docker compose up --build -d
 ```
 
-Open the URL configured for the web service (see `docker-compose.yml` and `docker/caddy/Caddyfile`).
-
-Images:
+Caddy handles the reverse proxy (see `docker/caddy/Caddyfile`). Dockerfiles:
 
 - `Dockerfile.web` — Next.js
 - `Dockerfile.api` — Fastify API
@@ -269,15 +267,17 @@ arciin/
 ├── app/                    # Next.js App Router (UI)
 ├── apps/
 │   ├── api/                # Fastify REST + Socket.IO
-│   └── worker/             # BullMQ jobs (thumbnails, metadata, …)
-├── components/             # React UI
+│   └── worker/             # BullMQ jobs (thumbnails, metadata)
+├── components/             # React UI components
 ├── packages/
 │   ├── database/           # Prisma client wrapper
 │   └── shared/             # shared types and constants
 ├── prisma/                 # schema and migrations
-├── scripts/examples/       # Python integration examples
-├── public/assets/images/   # README screenshots and static assets
-├── docker/                 # Caddy and deployment helpers
+├── scripts/
+│   ├── examples/           # Python integration examples
+│   ├── start.sh            # start all PM2 processes
+│   └── stop.sh             # stop all PM2 processes
+├── docker/                 # Caddy config and helpers
 ├── docker-compose.yml
 └── install.sh              # first-time setup script
 ```
@@ -296,7 +296,7 @@ arciin/
 
 | Doc | Contents |
 |-----|----------|
-| [`docs/DEVELOPMENT.md`](./docs/DEVELOPMENT.md) | Day-to-day dev notes |
+| [`docs/DEVELOPMENT.md`](./docs/DEVELOPMENT.md) | Day-to-day dev workflow |
 | [`docs/DEPLOYMENT.md`](./docs/DEPLOYMENT.md) | Production and self-hosting |
 | [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) | System design |
 | [`docs/API.md`](./docs/API.md) | API overview |
@@ -313,5 +313,5 @@ Private / project-specific — see repository settings for license terms if publ
 ---
 
 <p align="center">
-  <strong>Arciin</strong> — built for the system you own.
+  <strong>Arciin</strong> — built for the server you own.
 </p>

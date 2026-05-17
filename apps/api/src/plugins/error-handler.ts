@@ -1,4 +1,4 @@
-import type { FastifyInstance } from "fastify"
+import type { FastifyError, FastifyInstance } from "fastify"
 
 import { apiConfig } from "@/config"
 
@@ -20,12 +20,21 @@ function sanitizePaths(value: unknown): unknown {
   return value
 }
 
+function asFastifyError(err: unknown): FastifyError {
+  if (err !== null && typeof err === "object") {
+    return err as FastifyError
+  }
+  const wrapper = new Error(String(err)) as FastifyError
+  return wrapper
+}
+
 export async function registerErrorHandler(fastify: FastifyInstance) {
-  fastify.setErrorHandler((error, _request, reply) => {
+  fastify.setErrorHandler((rawError, _request, reply) => {
+    const error = asFastifyError(rawError)
     const status = error.statusCode ?? 500
 
     if (status >= 500) {
-      fastify.log.error({ err: error }, "Unhandled server error")
+      fastify.log.error({ err: rawError }, "Unhandled server error")
     }
 
     const message =

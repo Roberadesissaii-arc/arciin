@@ -477,7 +477,7 @@ export function SetupForm() {
             <Button
               type="submit"
               size="lg"
-              disabled={claimMutation.isPending}
+              disabled={claimMutation.isPending || !acceptedTermsAndPrivacy}
               className="w-full bg-primary text-white shadow-[0_0_36px_rgba(255,75,51,0.16)] hover:bg-primary/90 sm:w-auto"
             >
               <Sparkles className="size-4" />
