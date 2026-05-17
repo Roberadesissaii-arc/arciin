@@ -429,6 +429,16 @@ stop_dev_servers() {
   ok "Dev servers stopped"
 }
 
+stop_existing_arciin() {
+  stop_dev_servers
+  if command -v pm2 &>/dev/null; then
+    pm2 stop arciin-web arciin-api arciin-worker &>/dev/null || true
+    pm2 delete arciin-web arciin-api arciin-worker &>/dev/null || true
+    sleep 1
+  fi
+  rm -f "${ROOT_DIR}/.next/dev/lock" 2>/dev/null || true
+}
+
 wait_for_api_health() {
   local port="${ARCIIN_API_PORT:-4000}"
   local tries=45
@@ -462,10 +472,7 @@ launch_pm2() {
     ok "PM2 $(pm2 --version 2>/dev/null | head -1) already installed"
   fi
 
-  stop_dev_servers
-
-  pm2 stop arciin-web arciin-api arciin-worker &>/dev/null || true
-  pm2 delete arciin-web arciin-api arciin-worker &>/dev/null || true
+  stop_existing_arciin
 
   finalize_ports_before_launch
 
@@ -665,6 +672,7 @@ ensure_env_file
 ensure_session_secret
 ensure_setup_token
 ensure_production_secrets
+stop_existing_arciin
 configure_app_ports
 
 # ── 5. Services ───────────────────────────────────────────────────────────────
@@ -726,7 +734,9 @@ fi
 
 chmod +x "${ROOT_DIR}/start.sh" "${ROOT_DIR}/stop.sh" \
   "${ROOT_DIR}/scripts/start.sh" "${ROOT_DIR}/scripts/stop.sh" \
-  "${ROOT_DIR}/scripts/port-status.sh" 2>/dev/null || true
+  "${ROOT_DIR}/scripts/port-status.sh" \
+  "${ROOT_DIR}/scripts/run-api-prod.sh" \
+  "${ROOT_DIR}/scripts/run-worker-prod.sh" 2>/dev/null || true
 
 # ── 10. Production launch (PM2) ─────────────────────────────────────────────
 step "Production launch"
