@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react"
 import Link from "next/link"
-import { BookOpen, Check, Copy, FolderTree, Terminal } from "lucide-react"
+import { BookOpen, Check, ChevronDown, ChevronUp, Copy, FolderTree, Terminal } from "lucide-react"
 import { toast } from "sonner"
 
 import { ConnectorSetupCommands } from "@/components/settings/connector-setup-commands"
@@ -28,6 +28,52 @@ async function copyText(text: string, label: string) {
   } catch {
     toast.error("Could not copy to clipboard")
   }
+}
+
+function CollapsibleCompose({
+  compose,
+  copied,
+  onCopy,
+}: {
+  compose: string
+  copied: boolean
+  onCopy: () => void
+}) {
+  const lineCount = compose.split("\n").length
+  const [expanded, setExpanded] = useState(true)
+  const visible = expanded ? compose : compose.split("\n").slice(0, 10).join("\n") + "\n…"
+
+  return (
+    <div className="rounded-xl border border-zinc-800 bg-zinc-950">
+      <div className="flex items-center justify-between border-b border-zinc-800 px-3 py-2">
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-400">docker-compose.yml</p>
+        <Button
+          type="button"
+          size="sm"
+          variant="secondary"
+          className="h-8 gap-1.5 bg-zinc-800 text-zinc-100 hover:bg-zinc-700"
+          onClick={onCopy}
+        >
+          {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+          {copied ? "Copied" : "Copy compose"}
+        </Button>
+      </div>
+      <pre className="p-4 text-[11px] leading-relaxed text-zinc-100">
+        <code>{visible}</code>
+      </pre>
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="flex w-full items-center justify-center gap-1.5 border-t border-zinc-800 py-2 text-[11px] font-medium text-zinc-400 transition-colors hover:bg-zinc-900 hover:text-zinc-200"
+      >
+        {expanded ? (
+          <><ChevronUp className="size-3.5" /> Collapse</>
+        ) : (
+          <><ChevronDown className="size-3.5" /> Show all {lineCount} lines</>
+        )}
+      </button>
+    </div>
+  )
 }
 
 export function JellyfinInstallPlaybook({
@@ -155,25 +201,15 @@ export function JellyfinInstallPlaybook({
               </p>
             )}
 
-            <div className="relative rounded-xl border border-zinc-800 bg-zinc-950">
-              <Button
-                type="button"
-                size="sm"
-                variant="secondary"
-                className="absolute top-2 right-2 z-10 h-8 gap-1.5 bg-zinc-800 text-zinc-100 hover:bg-zinc-700"
-                onClick={async () => {
-                  await copyText(compose, "docker-compose.yml")
-                  setCopied(true)
-                  window.setTimeout(() => setCopied(false), 2000)
-                }}
-              >
-                {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
-                {copied ? "Copied" : "Copy compose"}
-              </Button>
-              <pre className="max-h-[420px] overflow-auto p-4 pt-12 text-[11px] leading-relaxed text-zinc-100">
-                <code>{compose}</code>
-              </pre>
-            </div>
+            <CollapsibleCompose
+              compose={compose}
+              copied={copied}
+              onCopy={async () => {
+                await copyText(compose, "docker-compose.yml")
+                setCopied(true)
+                window.setTimeout(() => setCopied(false), 2000)
+              }}
+            />
           </>
         ) : (
           <>

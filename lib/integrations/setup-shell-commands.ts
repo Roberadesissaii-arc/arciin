@@ -149,7 +149,9 @@ export const CONNECTOR_HOW_IT_WORKS = {
     "Paths in docker-compose.yml must match this instance’s storage root (e.g. dev: /home/you/arciin/data/arciin, production: /data/arciin or /srv/arciin — not a generic example path).",
   ],
   jellyfin: [
-    "Arciin and Jellyfin share disk folders the same way as Plex — there is no Jellyfin API connection inside Arciin.",
-    "Enable Use Jellyfin folders, upload in Arciin, then point Jellyfin libraries at the Jellyfin paths shown for this server.",
+    "Arciin and Jellyfin share disk folders the same way as Plex — there is no network API connection between them.",
+    "Turn on Use Jellyfin folders in Integrations — Arciin creates Videos/Images/Music → Jellyfin directories on disk under your configured storage root (Settings → Storage).",
+    "When you upload in Arciin, files land under libraries/…/jellyfin/ on disk. Jellyfin only needs read access via Docker volume mounts pointing at those host paths.",
+    "Paths in docker-compose.yml must match this instance's storage root — use the actual paths shown below, not a generic /srv/arciin example.",
   ],
 } as const

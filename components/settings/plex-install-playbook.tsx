@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react"
 import Link from "next/link"
-import { BookOpen, Check, Copy, FolderTree, Terminal } from "lucide-react"
+import { BookOpen, Check, ChevronDown, ChevronUp, Copy, ExternalLink, FolderTree, KeyRound, Terminal } from "lucide-react"
 import { toast } from "sonner"
 
 import { ConnectorSetupCommands } from "@/components/settings/connector-setup-commands"
@@ -31,6 +31,52 @@ async function copyText(text: string, label: string) {
   }
 }
 
+function CollapsibleCompose({
+  compose,
+  copied,
+  onCopy,
+}: {
+  compose: string
+  copied: boolean
+  onCopy: () => void
+}) {
+  const lineCount = compose.split("\n").length
+  const [expanded, setExpanded] = useState(true)
+  const visible = expanded ? compose : compose.split("\n").slice(0, 10).join("\n") + "\n…"
+
+  return (
+    <div className="rounded-xl border border-zinc-800 bg-zinc-950">
+      <div className="flex items-center justify-between border-b border-zinc-800 px-3 py-2">
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-400">docker-compose.yml</p>
+        <Button
+          type="button"
+          size="sm"
+          variant="secondary"
+          className="h-8 gap-1.5 bg-zinc-800 text-zinc-100 hover:bg-zinc-700"
+          onClick={onCopy}
+        >
+          {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+          {copied ? "Copied" : "Copy compose"}
+        </Button>
+      </div>
+      <pre className="p-4 text-[11px] leading-relaxed text-zinc-100">
+        <code>{visible}</code>
+      </pre>
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="flex w-full items-center justify-center gap-1.5 border-t border-zinc-800 py-2 text-[11px] font-medium text-zinc-400 transition-colors hover:bg-zinc-900 hover:text-zinc-200"
+      >
+        {expanded ? (
+          <><ChevronUp className="size-3.5" /> Collapse</>
+        ) : (
+          <><ChevronDown className="size-3.5" /> Show all {lineCount} lines</>
+        )}
+      </button>
+    </div>
+  )
+}
+
 export function PlexInstallPlaybook({
   status,
   pathsLoading,
@@ -40,6 +86,7 @@ export function PlexInstallPlaybook({
 }) {
   const [track, setTrack] = useState<InstallTrack>("docker")
   const [copied, setCopied] = useState(false)
+  const [claimToken, setClaimToken] = useState("")
 
   const hostPaths = useMemo(() => resolvePlexHostPaths(status), [status])
   const compose = useMemo(
@@ -47,8 +94,9 @@ export function PlexInstallPlaybook({
       buildPlexDockerCompose({
         installDir: DEFAULT_PLEX_INSTALL_DIR,
         paths: hostPaths,
+        claimToken: claimToken.trim() || undefined,
       }),
-    [hostPaths],
+    [hostPaths, claimToken],
   )
 
   const hasLivePaths = Boolean(hostPaths.videos || hostPaths.images || hostPaths.music)
@@ -122,8 +170,7 @@ export function PlexInstallPlaybook({
                 storage root on this server).
               </li>
               <li>
-                Run the <strong>setup commands</strong> above on the host (uses this instance&apos;s paths, not a
-                generic <code className="rounded bg-muted px-1 font-mono text-[11px]">/srv/arciin</code> example).
+                Run the <strong>setup commands</strong> above on the host.
               </li>
               <li>
                 Get a claim token from{" "}
@@ -131,15 +178,15 @@ export function PlexInstallPlaybook({
                   href={PLEX_CLAIM_URL}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="font-medium text-primary underline-offset-2 hover:underline"
+                  className="inline-flex items-center gap-0.5 font-medium text-primary underline-offset-2 hover:underline"
                 >
                   plex.tv/claim
+                  <ExternalLink className="size-3 opacity-70" />
                 </a>{" "}
-                (valid ~4 minutes) and replace{" "}
-                <code className="rounded bg-muted px-1 font-mono text-[11px]">PLEX_CLAIM</code> below.
+                (valid ~4 minutes) and paste it below.
               </li>
               <li>
-                Save as{" "}
+                Copy the compose file, save to{" "}
                 <code className="rounded bg-muted px-1 font-mono text-[11px]">
                   {DEFAULT_PLEX_INSTALL_DIR}/docker-compose.yml
                 </code>
@@ -149,6 +196,35 @@ export function PlexInstallPlaybook({
               </li>
               <li>Upload in Arciin, then scan libraries in Plex if needed.</li>
             </ol>
+
+            {/* Plex claim token input */}
+            <div className="rounded-xl border border-border bg-muted/20 p-3.5 space-y-2">
+              <div className="flex items-center gap-2">
+                <KeyRound className="size-3.5 shrink-0 text-primary" />
+                <p className="text-[12px] font-semibold text-foreground">Plex claim token</p>
+                <a
+                  href={PLEX_CLAIM_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="ml-auto inline-flex items-center gap-1 text-[11px] font-medium text-primary hover:underline"
+                >
+                  Get token at plex.tv/claim
+                  <ExternalLink className="size-3 opacity-70" />
+                </a>
+              </div>
+              <input
+                type="text"
+                value={claimToken}
+                onChange={(e) => setClaimToken(e.target.value)}
+                placeholder="claim-xxxxxxxxxxxxxxxxxxxxxxxx"
+                className="w-full rounded-lg border border-border bg-background px-3 py-2 font-mono text-[12px] text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/30"
+                spellCheck={false}
+                autoComplete="off"
+              />
+              <p className="text-[11px] text-muted-foreground">
+                Token is valid for ~4 minutes after generation. The compose file below updates as you type.
+              </p>
+            </div>
 
             {pathsLoading ? (
               <p className="text-xs text-muted-foreground">Loading paths for this instance…</p>
@@ -163,25 +239,15 @@ export function PlexInstallPlaybook({
               </p>
             )}
 
-            <div className="relative rounded-xl border border-zinc-800 bg-zinc-950">
-              <Button
-                type="button"
-                size="sm"
-                variant="secondary"
-                className="absolute top-2 right-2 z-10 h-8 gap-1.5 bg-zinc-800 text-zinc-100 hover:bg-zinc-700"
-                onClick={async () => {
-                  await copyText(compose, "docker-compose.yml")
-                  setCopied(true)
-                  window.setTimeout(() => setCopied(false), 2000)
-                }}
-              >
-                {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
-                {copied ? "Copied" : "Copy compose"}
-              </Button>
-              <pre className="max-h-[420px] overflow-auto p-4 pt-12 text-[11px] leading-relaxed text-zinc-100">
-                <code>{compose}</code>
-              </pre>
-            </div>
+            <CollapsibleCompose
+              compose={compose}
+              copied={copied}
+              onCopy={async () => {
+                await copyText(compose, "docker-compose.yml")
+                setCopied(true)
+                window.setTimeout(() => setCopied(false), 2000)
+              }}
+            />
           </>
         ) : (
           <>
