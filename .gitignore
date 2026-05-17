@@ -49,3 +49,5 @@ next-env.d.ts
 /.cursor/
 .mcp.json
 data/
+__pycache__/
+*.pyc
