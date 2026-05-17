@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState, useSyncExternalStore } from "react"
 import { io, type Socket } from "socket.io-client"
 import { ChevronDown, ChevronRight, Pause, Play, Trash2, Wifi, WifiOff } from "lucide-react"
 
@@ -164,6 +164,10 @@ function EmptyState({
 
 const CATEGORIES = ["all", "upload", "asset", "media", "library", "job", "activity", "plex"] as const
 
+function subscribeSocketMeta() {
+  return () => {}
+}
+
 export function EventsMonitor() {
   const [connected, setConnected] = useState(false)
   const [events, setEvents] = useState<LiveEvent[]>([])
@@ -172,16 +176,23 @@ export function EventsMonitor() {
   const [total, setTotal] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const [bufferedCount, setBufferedCount] = useState(0)
-  const [socketUrl, setSocketUrl] = useState(getSocketUrlSsrDefault)
-  const [socketCrossOrigin, setSocketCrossOrigin] = useState(false)
+
+  const socketUrl = useSyncExternalStore(
+    subscribeSocketMeta,
+    () => getClientSocketUrl(),
+    () => getSocketUrlSsrDefault(),
+  )
+  const socketCrossOrigin = useSyncExternalStore(
+    subscribeSocketMeta,
+    () => new URL(getClientSocketUrl()).origin !== window.location.origin,
+    () => false,
+  )
 
   const pausedRef = useRef(false)
   const bufferRef = useRef<LiveEvent[]>([])
 
   useEffect(() => {
     const resolvedUrl = getClientSocketUrl()
-    setSocketUrl(resolvedUrl)
-    setSocketCrossOrigin(new URL(resolvedUrl).origin !== window.location.origin)
     const socket: Socket = io(resolvedUrl, { withCredentials: true, transports: ["websocket", "polling"] })
 
     socket.on("connect", () => { setConnected(true); setError(null) })

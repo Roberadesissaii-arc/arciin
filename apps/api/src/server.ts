@@ -33,25 +33,22 @@ import { registerSocket } from "@/plugins/socket"
 import { registerHealthRoutes } from "@/routes/health.routes"
 import { ensureStorageDirectories } from "@/services/storage/local-storage"
 
-async function createApiLogger() {
+export async function createServer() {
   await mkdir(apiConfig.storage.logsDir, { recursive: true })
   const logPath = path.join(apiConfig.storage.logsDir, "api.log")
 
-  return pino(
-    { level: process.env.LOG_LEVEL ?? "info" },
-    pino.multistream([
-      { level: "info", stream: process.stdout },
-      {
-        level: "info",
-        stream: pino.destination({ dest: logPath, mkdir: true, sync: false }),
-      },
-    ]),
-  )
-}
-
-export async function createServer() {
-  const loggerInstance = await createApiLogger()
-  const fastify = Fastify({ loggerInstance })
+  const fastify = Fastify({
+    logger: {
+      level: process.env.LOG_LEVEL ?? "info",
+      stream: pino.multistream([
+        { level: "info", stream: process.stdout },
+        {
+          level: "info",
+          stream: pino.destination({ dest: logPath, mkdir: true, sync: false }),
+        },
+      ]),
+    },
+  })
 
   await registerCors(fastify)
   await registerCookies(fastify)

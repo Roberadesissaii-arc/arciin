@@ -16,7 +16,7 @@ export function SocketProvider({
   children: React.ReactNode
 }) {
   const setConnected = useSocketStore((state) => state.setConnected)
-  const socketUrl = useMemo(getClientSocketUrl, [])
+  const socketUrl = useMemo(() => getClientSocketUrl(), [])
   const socket = useMemo<Socket | null>(() => {
     if (!userId) {
       return null

@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { FileText, RefreshCw, Terminal } from "lucide-react"
 
@@ -22,7 +22,7 @@ function formatBytes(bytes: number) {
 }
 
 export function LogsFileViewer() {
-  const [selected, setSelected] = useState<string | null>(null)
+  const [selectedOverride, setSelectedOverride] = useState<string | null>(null)
   const [autoRefresh, setAutoRefresh] = useState(true)
 
   const filesQuery = useQuery({
@@ -31,13 +31,8 @@ export function LogsFileViewer() {
     refetchInterval: autoRefresh ? 20_000 : false,
   })
 
-  const files = filesQuery.data ?? []
-
-  useEffect(() => {
-    if (!selected && files.length > 0) {
-      setSelected(files[0].name)
-    }
-  }, [files, selected])
+  const files = useMemo(() => filesQuery.data ?? [], [filesQuery.data])
+  const selected = selectedOverride ?? files[0]?.name ?? null
 
   const tailQuery = useQuery({
     queryKey: queryKeys.logTail(selected ?? "", TAIL_LINES),
@@ -115,7 +110,7 @@ export function LogsFileViewer() {
                   value: f.name,
                   label: `${f.name} (${formatBytes(f.sizeBytes)})`,
                 }))}
-                onValueChange={setSelected}
+                onValueChange={setSelectedOverride}
               />
               {activeFile ? (
                 <span className="text-xs text-zinc-500">

@@ -136,12 +136,8 @@ export function NotificationInbox() {
 
   const unread = unreadNotificationCount(items)
   const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE))
-  const safePage = Math.min(page, totalPages)
+  const safePage = Math.min(Math.max(1, page), totalPages)
   const pageItems = sorted.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE)
-
-  useEffect(() => {
-    setPage((p) => Math.min(p, Math.max(1, Math.ceil(sorted.length / PAGE_SIZE) || 1)))
-  }, [sorted.length])
 
   function handleClearAll() {
     clearAll()
