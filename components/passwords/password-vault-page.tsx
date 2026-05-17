@@ -45,6 +45,7 @@ import {
   type VaultUnlockInput,
 } from "@/lib/api/password-vault"
 import { queryKeys } from "@/lib/api/query-keys"
+import { copyToClipboard } from "@/lib/utils/clipboard"
 import type { PasswordVaultDisplaySettings, PasswordVaultEntry } from "@/lib/types/models"
 import { cn } from "@/lib/utils"
 
@@ -57,15 +58,6 @@ const DEFAULT_DISPLAY: PasswordVaultDisplaySettings = {
   maskStyle: "dots",
   revealByDefault: false,
   lockSidebarVault: true,
-}
-
-async function copyText(value: string, label: string) {
-  try {
-    await navigator.clipboard.writeText(value)
-    toast.success(`${label} copied`)
-  } catch {
-    toast.error("Could not copy to clipboard")
-  }
 }
 
 function openUrl(url: string) {
@@ -207,7 +199,7 @@ export function PasswordVaultPage() {
       (display.revealByDefault || revealed[entry.id])
 
     if (canCopyPlain) {
-      void copyText(entry.password!, "Password")
+      void copyToClipboard(entry.password!, "Password")
       return
     }
     requestUnlockForCopy(entry.id, "Password")
@@ -237,7 +229,7 @@ export function PasswordVaultPage() {
       if (pendingCopy) {
         const entry = fresh?.entries.find((e) => e.id === pendingCopy.entryId)
         if (entry?.password) {
-          await copyText(entry.password, pendingCopy.label)
+          await copyToClipboard(entry.password, pendingCopy.label)
         }
       } else if (wasLocked) {
         toast.success(pinConfigured ? "Vault unlocked with PIN" : "Vault unlocked")
@@ -377,7 +369,7 @@ export function PasswordVaultPage() {
                                 size="icon"
                                 className="size-7 shrink-0"
                                 aria-label="Copy username"
-                                onClick={() => void copyText(entry.username!, "Username")}
+                                onClick={() => void copyToClipboard(entry.username!, "Username")}
                               >
                                 <Copy className="size-3.5" />
                               </Button>

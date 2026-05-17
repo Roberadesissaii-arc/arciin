@@ -2,21 +2,11 @@
 
 import { useState } from "react"
 import { Check, ChevronDown, ChevronUp, Copy } from "lucide-react"
-import { toast } from "sonner"
-
 import { Button } from "@/components/ui/button"
+import { copyToClipboard } from "@/lib/utils/clipboard"
 import { cn } from "@/lib/utils"
 
 const COLLAPSE_LINE_THRESHOLD = 12
-
-async function copyText(text: string, label: string) {
-  try {
-    await navigator.clipboard.writeText(text)
-    toast.success(`${label} copied`)
-  } catch {
-    toast.error("Could not copy to clipboard")
-  }
-}
 
 export function CopyableShellBlock({
   title,
@@ -56,7 +46,7 @@ export function CopyableShellBlock({
           variant="secondary"
           className="h-8 shrink-0 gap-1.5 bg-zinc-800 text-zinc-100 hover:bg-zinc-700"
           onClick={async () => {
-            await copyText(script, copyLabel.replace(/^Copy\s+/i, ""))
+            await copyToClipboard(script, copyLabel.replace(/^Copy\s+/i, ""))
             setCopied(true)
             window.setTimeout(() => setCopied(false), 2000)
           }}

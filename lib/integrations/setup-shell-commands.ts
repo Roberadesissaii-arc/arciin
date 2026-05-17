@@ -45,10 +45,12 @@ export function buildMediaServerSetupCommands(
     music: paths.music,
   }
 
+  const needsSudo = /^\/(srv|opt|usr|var|etc|mnt)\//.test(installDir)
+  const mkdirPrefix = needsSudo ? "sudo mkdir -p" : "mkdir -p"
   const stackMkdir =
     kind === "plex"
-      ? `mkdir -p ${installDir}/config`
-      : `mkdir -p ${installDir}/config ${installDir}/cache`
+      ? `${mkdirPrefix} ${installDir}/config`
+      : `${mkdirPrefix} ${installDir}/config ${installDir}/cache`
 
   const mediaMkdirs: string[] = []
   for (const p of [mediaPaths.videos, mediaPaths.images, mediaPaths.music]) {

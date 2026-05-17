@@ -12,6 +12,7 @@ import {
   buildPythonSocketSnippet,
 } from "@arciin/shared"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
+import { copyToClipboard } from "@/lib/utils/clipboard"
 import { cn } from "@/lib/utils"
 import { PlexMediaServerDocs } from "@/components/docs/plex-media-server-docs"
 
@@ -56,11 +57,10 @@ const LANG_LABELS: Record<Lang, string> = {
 
 function CodeBlock({ title, lang = "js", children }: { title?: string; lang?: string; children: string }) {
   const [copied, setCopied] = useState(false)
-  function copy() {
-    navigator.clipboard.writeText(children).then(() => {
-      setCopied(true)
-      setTimeout(() => setCopied(false), 1800)
-    })
+  async function copy() {
+    await copyToClipboard(children)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1800)
   }
   return (
     <div className="relative overflow-hidden rounded-xl border border-white/[0.08] bg-[#09090b] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] ring-1 ring-black/[0.06]">
@@ -202,11 +202,10 @@ function RequestUrlsCheatsheet({
   requests: { method: string; fullPath: string; hint?: string }[]
 }) {
   const [copied, setCopied] = useState<string | null>(null)
-  function copy(text: string, key: string) {
-    void navigator.clipboard.writeText(text).then(() => {
-      setCopied(key)
-      setTimeout(() => setCopied(null), 2000)
-    })
+  async function copy(text: string, key: string) {
+    await copyToClipboard(text)
+    setCopied(key)
+    setTimeout(() => setCopied(null), 2000)
   }
   return (
     <Collapsible defaultOpen className="rounded-xl border border-zinc-200/90 bg-zinc-50/80 shadow-sm">

@@ -3,7 +3,6 @@
 import { useMemo, useState } from "react"
 import Link from "next/link"
 import { BookOpen, Check, ChevronDown, ChevronUp, Copy, ExternalLink, FolderTree, KeyRound, Terminal } from "lucide-react"
-import { toast } from "sonner"
 
 import { ConnectorSetupCommands } from "@/components/settings/connector-setup-commands"
 import { Button } from "@/components/ui/button"
@@ -15,21 +14,13 @@ import {
   PLEX_LIBRARY_MAPPING,
   resolvePlexHostPaths,
 } from "@/lib/integrations/plex-install-compose"
+import { copyToClipboard } from "@/lib/utils/clipboard"
 import { cn } from "@/lib/utils"
 
 const PLEX_CLAIM_URL = "https://www.plex.tv/claim/"
 const PLEX_DOWNLOAD_URL = "https://www.plex.tv/media-server-downloads/"
 
 type InstallTrack = "docker" | "manual"
-
-async function copyText(text: string, label: string) {
-  try {
-    await navigator.clipboard.writeText(text)
-    toast.success(`${label} copied`)
-  } catch {
-    toast.error("Could not copy to clipboard")
-  }
-}
 
 function CollapsibleCompose({
   compose,
@@ -243,7 +234,7 @@ export function PlexInstallPlaybook({
               compose={compose}
               copied={copied}
               onCopy={async () => {
-                await copyText(compose, "docker-compose.yml")
+                await copyToClipboard(compose, "docker-compose.yml")
                 setCopied(true)
                 window.setTimeout(() => setCopied(false), 2000)
               }}

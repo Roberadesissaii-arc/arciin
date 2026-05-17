@@ -3,7 +3,6 @@
 import { useMemo, useState } from "react"
 import Link from "next/link"
 import { BookOpen, Check, ChevronDown, ChevronUp, Copy, FolderTree, Terminal } from "lucide-react"
-import { toast } from "sonner"
 
 import { ConnectorSetupCommands } from "@/components/settings/connector-setup-commands"
 import { Button } from "@/components/ui/button"
@@ -15,20 +14,12 @@ import {
   JELLYFIN_LIBRARY_MAPPING,
   resolveJellyfinHostPaths,
 } from "@/lib/integrations/jellyfin-install-compose"
+import { copyToClipboard } from "@/lib/utils/clipboard"
 import { cn } from "@/lib/utils"
 
 const JELLYFIN_DOWNLOAD_URL = "https://jellyfin.org/downloads/"
 
 type InstallTrack = "docker" | "manual"
-
-async function copyText(text: string, label: string) {
-  try {
-    await navigator.clipboard.writeText(text)
-    toast.success(`${label} copied`)
-  } catch {
-    toast.error("Could not copy to clipboard")
-  }
-}
 
 function CollapsibleCompose({
   compose,
@@ -205,7 +196,7 @@ export function JellyfinInstallPlaybook({
               compose={compose}
               copied={copied}
               onCopy={async () => {
-                await copyText(compose, "docker-compose.yml")
+                await copyToClipboard(compose, "docker-compose.yml")
                 setCopied(true)
                 window.setTimeout(() => setCopied(false), 2000)
               }}

@@ -23,6 +23,7 @@ import {
   updateWebhookEndpoint,
 } from "@/lib/api/webhooks"
 import { queryKeys } from "@/lib/api/query-keys"
+import { copyToClipboard } from "@/lib/utils/clipboard"
 import type { SocketEventType } from "@arciin/shared"
 import type { WebhookEndpointSummary } from "@/lib/types/models"
 
@@ -32,14 +33,7 @@ function CopyButton({ value, label }: { value: string; label: string }) {
       type="button"
       variant="outline"
       className="border-border bg-card text-foreground hover:bg-muted/50"
-      onClick={async () => {
-        try {
-          await navigator.clipboard.writeText(value)
-          toast.success(`${label} copied.`)
-        } catch {
-          toast.error("Could not copy to clipboard.")
-        }
-      }}
+      onClick={() => void copyToClipboard(value, label)}
     >
       <Copy className="size-4" />
       Copy

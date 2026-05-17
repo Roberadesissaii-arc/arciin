@@ -5,12 +5,14 @@ import { useQuery } from "@tanstack/react-query"
 import {
   ArrowRight,
   BookOpen,
-  Boxes,
   Cable,
-  Globe,
+  CheckCircle2,
+  ChevronRight,
   Plug,
+  Server,
   Sparkles,
   Webhook,
+  XCircle,
 } from "lucide-react"
 
 import { IntegrationCard } from "@/components/settings/integration-card"
@@ -20,94 +22,61 @@ import {
   JELLYFIN_INTEGRATION_ID,
   PLEX_INTEGRATION_ID,
 } from "@/lib/api/integrations"
-import {
-  JellyfinInstallSection,
-  JellyfinMediaServerGuideCard,
-} from "@/components/settings/jellyfin-connection-guide-card"
-import {
-  PlexInstallSection,
-  PlexMediaServerGuideCard,
-} from "@/components/settings/plex-connection-guide-card"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { getIntegrations } from "@/lib/api/settings"
 import { queryKeys } from "@/lib/api/query-keys"
 
-function SectionTitle({ children, id }: { children: React.ReactNode; id?: string }) {
-  return (
-    <h2
-      id={id}
-      className="mb-1 text-sm font-semibold tracking-tight text-foreground"
-    >
-      {children}
-    </h2>
-  )
-}
-
-function SectionLead({ children }: { children: React.ReactNode }) {
-  return <p className="mb-5 max-w-3xl text-sm leading-relaxed text-muted-foreground">{children}</p>
-}
-
 const FLOW_STEPS = [
   {
     title: "Libraries",
-    body: "Files live on disk under your storage root. Libraries and folders are the source of truth for media layout.",
+    body: "Files on disk under your storage root. Libraries and folders are the source of truth.",
     icon: Sparkles,
   },
   {
     title: "Connectors",
-    body: "Optional bridges (Plex today, more later) read the same tree. Nothing moves until you wire a real connector.",
+    body: "Plex and Jellyfin read the same folder tree. Enable a connector to wire it up.",
     icon: Plug,
   },
   {
-    title: "HTTP & API",
-    body: "Webhooks and API keys let other apps push events or metadata without duplicating connector rows here.",
+    title: "API & Webhooks",
+    body: "API keys and webhooks let external apps push events or read data without connector rows.",
     icon: Cable,
-  },
-  {
-    title: "Realtime",
-    body: "Socket.IO streams upload and job progress to the dashboard—same channels your automations can subscribe to from Docs.",
-    icon: Boxes,
   },
 ] as const
 
 function IntegrationFlow() {
   return (
     <div className="rounded-2xl border border-border bg-gradient-to-b from-muted/30 to-card p-5 shadow-sm ring-1 ring-black/[0.03] sm:p-6">
-        <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+      <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
         <div>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-primary">Flow</p>
-          <p className="mt-1 text-base font-semibold text-foreground">How integrations sit in Arciin</p>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-primary">How it works</p>
+          <p className="mt-1 text-base font-semibold text-foreground">Arciin stays local-first</p>
         </div>
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-medium">
-          <Link href="/settings/domain" className="text-primary hover:underline">
-            Domain
+        <Button asChild variant="outline" size="sm" className="border-border text-xs">
+          <Link href="/docs">
+            <BookOpen className="mr-1.5 size-3.5" />
+            Full docs
           </Link>
-          <span className="text-muted-foreground/50" aria-hidden>
-            ·
-          </span>
-          <Link href="/developer/web-sockets" className="text-primary hover:underline">
-            WebSockets
-          </Link>
-        </div>
+        </Button>
       </div>
-      <ol className="grid gap-3 lg:grid-cols-4">
+      <ol className="grid gap-3 lg:grid-cols-3">
         {FLOW_STEPS.map((step, i) => {
           const Icon = step.icon
           return (
             <li
               key={step.title}
-              className="relative flex min-h-[140px] flex-col rounded-xl border border-border bg-card/90 p-4 shadow-sm"
+              className="relative flex flex-col rounded-xl border border-border bg-card/90 p-4 shadow-sm"
             >
               <div className="mb-2 flex items-center gap-2">
-                <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/12 text-xs font-bold text-primary">
+                <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-primary/12 text-xs font-bold text-primary">
                   {i + 1}
                 </span>
                 <Icon className="size-4 text-primary" aria-hidden />
               </div>
               <p className="text-[13px] font-semibold text-foreground">{step.title}</p>
-              <p className="mt-1.5 flex-1 text-[12px] leading-snug text-muted-foreground">{step.body}</p>
+              <p className="mt-1 flex-1 text-[12px] leading-snug text-muted-foreground">{step.body}</p>
               {i < FLOW_STEPS.length - 1 ? (
                 <span
                   className="pointer-events-none absolute -right-2 top-1/2 hidden -translate-y-1/2 text-muted-foreground/40 lg:block"
@@ -124,32 +93,33 @@ function IntegrationFlow() {
   )
 }
 
-function PlannedConnectorCard({
+function QuickLinkCard({
   title,
   description,
-  className,
+  href,
+  icon: Icon,
+  variant = "default",
 }: {
   title: string
   description: string
-  className?: string
+  href: string
+  icon: React.ElementType
+  variant?: "default" | "primary"
 }) {
   return (
-    <Card
-      className={`flex h-full min-h-0 flex-col border border-dashed border-primary/25 bg-gradient-to-br from-primary/[0.06] to-card ${className ?? ""}`}
+    <Link
+      href={href}
+      className="group flex items-center gap-4 rounded-xl border border-border bg-card px-4 py-3.5 shadow-sm transition-colors hover:border-primary/30 hover:bg-muted/40"
     >
-      <CardHeader className="pb-2">
-        <div className="flex items-center gap-2">
-          <Plug className="size-5 shrink-0 text-primary" aria-hidden />
-          <CardTitle className="text-base text-foreground">{title}</CardTitle>
-        </div>
-        <CardDescription className="text-muted-foreground">{description}</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <span className="inline-flex rounded-full border border-primary/25 bg-primary/10 px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-primary">
-          Planned
-        </span>
-      </CardContent>
-    </Card>
+      <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+        <Icon className="size-4" />
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="text-[13px] font-semibold text-foreground">{title}</p>
+        <p className="text-[12px] leading-snug text-muted-foreground">{description}</p>
+      </div>
+      <ChevronRight className="size-4 shrink-0 text-muted-foreground/50 transition-transform group-hover:translate-x-0.5" />
+    </Link>
   )
 }
 
@@ -161,24 +131,11 @@ export function IntegrationsGrid() {
 
   if (integrationsQuery.isLoading) {
     return (
-      <div className="space-y-10">
-        <Skeleton className="h-48 rounded-2xl" />
-        <div>
-          <Skeleton className="mb-4 h-5 w-40" />
-          <div className="space-y-4">
-            <div className="grid gap-4 lg:grid-cols-2">
-              <Skeleton className="h-56 rounded-2xl" />
-              <Skeleton className="h-56 rounded-2xl" />
-            </div>
-            <div className="grid gap-4 lg:grid-cols-2">
-              <Skeleton className="h-64 rounded-2xl" />
-              <Skeleton className="h-64 rounded-2xl" />
-            </div>
-            <div className="grid gap-4 lg:grid-cols-2">
-              <Skeleton className="h-72 rounded-2xl" />
-              <Skeleton className="h-72 rounded-2xl" />
-            </div>
-          </div>
+      <div className="space-y-6">
+        <Skeleton className="h-40 rounded-2xl" />
+        <div className="grid gap-4 lg:grid-cols-2">
+          <Skeleton className="h-48 rounded-2xl" />
+          <Skeleton className="h-48 rounded-2xl" />
         </div>
       </div>
     )
@@ -201,182 +158,81 @@ export function IntegrationsGrid() {
     return a.name.localeCompare(b.name)
   })
 
+  const plex = sorted.find((i) => i.type === "PLEX" || i.id === PLEX_INTEGRATION_ID) ?? DEFAULT_PLEX_INTEGRATION
+  const jellyfin = sorted.find((i) => i.id === JELLYFIN_INTEGRATION_ID) ?? DEFAULT_JELLYFIN_INTEGRATION
+  const others = sorted.filter(
+    (i) => i.type !== "PLEX" && i.id !== PLEX_INTEGRATION_ID && i.id !== JELLYFIN_INTEGRATION_ID,
+  )
+
+  const connectedCount = [plex, jellyfin, ...others].filter((i) => i.enabled).length
+  const totalCount = [plex, jellyfin, ...others].length
+
   return (
-    <div className="space-y-12">
+    <div className="space-y-8">
       <IntegrationFlow />
 
+      {/* Status bar */}
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="flex items-center gap-1.5 rounded-full border border-border bg-muted/30 px-3 py-1.5 text-[12px] font-medium">
+          {connectedCount > 0 ? (
+            <CheckCircle2 className="size-3.5 text-emerald-600" />
+          ) : (
+            <XCircle className="size-3.5 text-zinc-400" />
+          )}
+          <span className="text-foreground">{connectedCount} of {totalCount} active</span>
+        </div>
+        <p className="text-[12px] text-muted-foreground">
+          Toggle <span className="font-medium text-foreground">Use … folders</span> on a card to enable a connector.
+          Setup guides are in{" "}
+          <Link href="/docs#plex-media-server" className="text-primary hover:underline">Docs</Link>.
+        </p>
+      </div>
+
+      {/* Connector cards */}
       <section aria-labelledby="integrations-connectors">
-        <SectionTitle id="integrations-connectors">Connectors</SectionTitle>
-        <SectionLead>
-          Plex and Jellyfin are live connectors—same folder + disk mirror model. Turn on{" "}
-          <span className="font-medium text-foreground">Use … folders</span> on each card, then use the install guide
-          (Docker under <code className="rounded bg-muted px-1 font-mono text-[11px]">/srv/plex</code> or{" "}
-          <code className="rounded bg-muted px-1 font-mono text-[11px]">/srv/jellyfin</code>) to
-          point your media server at Arciin&apos;s on-disk paths. S3 replication and other platform work stays in the Roadmap.
-        </SectionLead>
-        {(() => {
-          const plex =
-            sorted.find((i) => i.type === "PLEX" || i.id === PLEX_INTEGRATION_ID) ?? DEFAULT_PLEX_INTEGRATION
-          const jellyfin =
-            sorted.find((i) => i.id === JELLYFIN_INTEGRATION_ID) ?? DEFAULT_JELLYFIN_INTEGRATION
-          const others = sorted.filter(
-            (i) => i.type !== "PLEX" && i.id !== PLEX_INTEGRATION_ID && i.id !== JELLYFIN_INTEGRATION_ID,
-          )
-
-          return (
-            <div className="space-y-4">
-              <div className="grid items-stretch gap-4 lg:grid-cols-2 [&>*]:h-full [&>*]:min-h-0">
-                <IntegrationCard integration={plex} />
-                <IntegrationCard integration={jellyfin} />
-              </div>
-              <div className="grid items-stretch gap-4 lg:grid-cols-2 [&>*]:min-h-0">
-                <PlexMediaServerGuideCard />
-                <JellyfinMediaServerGuideCard />
-              </div>
-              <div className="grid items-stretch gap-4 lg:grid-cols-2 [&>*]:min-h-0">
-                <PlexInstallSection />
-                <JellyfinInstallSection />
-              </div>
-              {others.length > 0 ? (
-                <div className="grid gap-4 lg:grid-cols-2">
-                  {others.map((integration) => (
-                    <IntegrationCard key={integration.id} integration={integration} />
-                  ))}
-                </div>
-              ) : null}
+        <h2 id="integrations-connectors" className="mb-3 text-sm font-semibold tracking-tight text-foreground">
+          Media server connectors
+        </h2>
+        <div className="space-y-4">
+          <div className="grid items-stretch gap-4 lg:grid-cols-2 [&>*]:h-full [&>*]:min-h-0">
+            <IntegrationCard integration={plex} />
+            <IntegrationCard integration={jellyfin} />
+          </div>
+          {others.length > 0 && (
+            <div className="grid gap-4 lg:grid-cols-2">
+              {others.map((integration) => (
+                <IntegrationCard key={integration.id} integration={integration} />
+              ))}
             </div>
-          )
-        })()}
-      </section>
-
-      <section aria-labelledby="integrations-developer">
-        <SectionTitle id="integrations-developer">Developer &amp; automation</SectionTitle>
-        <SectionLead>
-          First-class pages—same Socket event names you will see in the dashboard. Use these when an external worker or
-          AI agent should react without a database-backed connector row.
-        </SectionLead>
-        <div className="grid gap-4 lg:grid-cols-2">
-          <Card className="border-border bg-card">
-            <CardHeader>
-              <div className="flex items-center gap-2">
-                <Webhook className="size-5 text-primary" aria-hidden />
-                <CardTitle className="text-foreground">Webhooks</CardTitle>
-              </div>
-              <CardDescription className="text-muted-foreground">
-                Signed HTTPS POST deliveries for the same event families the UI subscribes to. Create endpoints, pick
-                event types, and inspect delivery logs.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Button asChild className="bg-primary text-primary-foreground hover:bg-primary/90">
-                <Link href="/developer/webhooks">Open Webhooks</Link>
-              </Button>
-            </CardContent>
-          </Card>
-          <Card className="border-border bg-card">
-            <CardHeader>
-              <div className="flex items-center gap-2">
-                <BookOpen className="size-5 text-primary" aria-hidden />
-                <CardTitle className="text-foreground">Documentation</CardTitle>
-              </div>
-              <CardDescription className="text-muted-foreground">
-                Base URLs, session cookies, bearer API keys, and Socket.IO event names for this instance.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Button asChild variant="outline" className="border-border">
-                <Link href="/docs">Open Docs</Link>
-              </Button>
-            </CardContent>
-          </Card>
+          )}
         </div>
       </section>
 
-      <section aria-labelledby="integrations-roadmap">
-        <SectionTitle id="integrations-roadmap">Roadmap</SectionTitle>
-        <SectionLead>
-          Upcoming work (dashed cards). Object storage replication and extra sync targets are planned separately from
-          the live Plex and Jellyfin connectors above.
-        </SectionLead>
-        <div className="grid gap-4 lg:grid-cols-3">
-          <PlannedConnectorCard
-            title="S3-compatible storage"
-            description="Optional replication of object storage to S3, MinIO, or R2. Path-safe keys and soft deletes will match Arciin’s local model."
+      {/* Quick links — no heavy documentation panels */}
+      <section aria-labelledby="integrations-tools">
+        <h2 id="integrations-tools" className="mb-3 text-sm font-semibold tracking-tight text-foreground">
+          Developer tools
+        </h2>
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          <QuickLinkCard
+            href="/developer/webhooks"
+            icon={Webhook}
+            title="Webhooks"
+            description="Signed POST deliveries for upload and asset events"
           />
-          <PlannedConnectorCard
-            title="Additional media targets"
-            description="Backup sinks and sync targets without requiring a cloud account—same library layout rules as Plex."
+          <QuickLinkCard
+            href="/api-keys"
+            icon={Server}
+            title="API Keys"
+            description="Bearer tokens for external scripts and agents"
           />
-          <Card className="flex flex-col border border-dashed border-primary/25 bg-gradient-to-br from-primary/[0.06] to-card">
-            <CardHeader className="pb-2">
-              <div className="flex items-center gap-2">
-                <Boxes className="size-5 shrink-0 text-primary" aria-hidden />
-                <CardTitle className="text-base text-foreground">Worker &amp; jobs</CardTitle>
-              </div>
-              <CardDescription className="text-muted-foreground">
-                Thumbnails, metadata extraction, and future connector sync run out-of-band. Monitor queue depth and
-                failures here as integrations grow.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="mt-auto">
-              <Button asChild variant="outline" className="border-primary/30 text-primary hover:bg-primary/10">
-                <Link href="/jobs">Open Jobs</Link>
-              </Button>
-            </CardContent>
-          </Card>
+          <QuickLinkCard
+            href="/docs"
+            icon={BookOpen}
+            title="Documentation"
+            description="REST API, Socket.IO events, and install guides"
+          />
         </div>
-      </section>
-
-      <section aria-labelledby="integrations-remote">
-        <SectionTitle id="integrations-remote">Reach this instance from the internet</SectionTitle>
-        <SectionLead>
-          Default posture is LAN-only. When you need HTTPS on a real hostname—or a Cloudflare Tunnel without opening
-          ports—configure it under Settings. Quick tunnels can give a random URL per run; named tunnels stay stable.
-        </SectionLead>
-        <Card className="overflow-hidden border-border bg-card">
-          <CardHeader className="border-b border-border bg-muted/20">
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div className="flex items-start gap-3">
-                <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/12">
-                  <Globe className="size-5 text-primary" aria-hidden />
-                </div>
-                <div>
-                  <CardTitle className="text-foreground">Domain and WebSockets</CardTitle>
-                  <CardDescription className="mt-1 text-muted-foreground">
-                    Set the public URL under Domain; choose tunnel or reverse proxy under Developer → WebSockets. Use
-                    both when you have a stable hostname and a path for traffic to reach the host.
-                  </CardDescription>
-                </div>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <Button asChild variant="outline" className="border-border">
-                  <Link href="/settings/domain">Domain</Link>
-                </Button>
-                <Button asChild className="bg-primary text-primary-foreground hover:bg-primary/90">
-                  <Link href="/developer/web-sockets">WebSockets</Link>
-                </Button>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent className="pt-5">
-            <ul className="grid gap-3 text-sm text-muted-foreground sm:grid-cols-2">
-              <li className="flex gap-2 rounded-lg border border-border/80 bg-muted/15 px-3 py-2.5">
-                <span className="font-semibold text-primary">①</span>
-                <span>
-                  <span className="font-medium text-foreground">Tunnel:</span> encrypted path to localhost—good for
-                  laptops or hosts without a static IP.
-                </span>
-              </li>
-              <li className="flex gap-2 rounded-lg border border-border/80 bg-muted/15 px-3 py-2.5">
-                <span className="font-semibold text-primary">②</span>
-                <span>
-                  <span className="font-medium text-foreground">Proxy:</span> terminate TLS in front of Arciin and set
-                  <span className="font-mono text-foreground"> X-Forwarded-*</span> headers your app trusts.
-                </span>
-              </li>
-            </ul>
-          </CardContent>
-        </Card>
       </section>
     </div>
   )
