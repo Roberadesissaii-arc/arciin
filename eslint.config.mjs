@@ -14,6 +14,8 @@ const eslintConfig = defineConfig([
     "next-env.d.ts",
     // Reference-only snapshot; not part of the Arciin app package graph.
     "Arceclaw/**",
+    // PM2 production config (CommonJS require).
+    "ecosystem.config.cjs",
   ]),
 ]);
 
