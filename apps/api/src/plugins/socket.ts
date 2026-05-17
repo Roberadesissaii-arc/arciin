@@ -5,7 +5,7 @@ import { Server } from "socket.io"
 import { SOCKET_EVENT_CHANNEL, type RealtimeEvent } from "@arciin/shared"
 
 import { apiConfig } from "@/config"
-import { hashToken } from "@/services/security/auth"
+import { hashApiKey, hashToken, scopeAllows } from "@/services/security/auth"
 
 function emitRealtimeEvent(io: Server, event: RealtimeEvent) {
   let emitted = false
@@ -36,9 +36,16 @@ function emitRealtimeEvent(io: Server, event: RealtimeEvent) {
 }
 
 export async function registerSocket(fastify: FastifyInstance) {
+  const corsOrigins = [
+    apiConfig.ARCIIN_PUBLIC_URL,
+    apiConfig.ARCIIN_API_URL,
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+  ].filter((v, i, a) => Boolean(v) && a.indexOf(v) === i)
+
   const io = new Server(fastify.server, {
     cors: {
-      origin: apiConfig.ARCIIN_PUBLIC_URL,
+      origin: corsOrigins,
       credentials: true,
     },
   })
@@ -58,30 +65,57 @@ export async function registerSocket(fastify: FastifyInstance) {
   io.use(async (socket, next) => {
     try {
       const cookies = parse(socket.handshake.headers.cookie || "")
-      const token = cookies[apiConfig.SESSION_COOKIE_NAME]
+      const sessionToken = cookies[apiConfig.SESSION_COOKIE_NAME]
 
-      if (!token) {
-        next(new Error("Unauthenticated"))
-        return
+      if (sessionToken) {
+        const session = await fastify.prisma.session.findUnique({
+          where: {
+            tokenHash: hashToken(sessionToken),
+          },
+          include: {
+            user: true,
+          },
+        })
+
+        if (session && session.expiresAt >= new Date()) {
+          socket.data.user = session.user
+          socket.data.session = session
+          next()
+          return
+        }
       }
 
-      const session = await fastify.prisma.session.findUnique({
-        where: {
-          tokenHash: hashToken(token),
-        },
-        include: {
-          user: true,
-        },
-      })
+      const authHeader = socket.handshake.headers.authorization
+      const bearer =
+        typeof authHeader === "string" && authHeader.toLowerCase().startsWith("bearer ")
+          ? authHeader.slice(7).trim()
+          : null
 
-      if (!session || session.expiresAt < new Date()) {
-        next(new Error("Unauthenticated"))
-        return
+      if (bearer?.startsWith("arc_")) {
+        const apiKey = await fastify.prisma.apiKey.findFirst({
+          where: {
+            keyHash: hashApiKey(bearer),
+            revokedAt: null,
+          },
+          include: {
+            user: true,
+          },
+        })
+
+        if (
+          apiKey &&
+          apiKey.user.status === "ACTIVE" &&
+          (!apiKey.expiresAt || apiKey.expiresAt >= new Date()) &&
+          scopeAllows(apiKey.scopes, "events:subscribe")
+        ) {
+          socket.data.user = apiKey.user
+          socket.data.session = null
+          next()
+          return
+        }
       }
 
-      socket.data.user = session.user
-      socket.data.session = session
-      next()
+      next(new Error("Unauthenticated"))
     } catch (error) {
       next(error instanceof Error ? error : new Error("Socket auth failed"))
     }

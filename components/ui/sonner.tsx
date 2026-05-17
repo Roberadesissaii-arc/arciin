@@ -2,19 +2,16 @@
 
 import { Toaster as Sonner, type ToasterProps } from "sonner"
 import { CircleCheckIcon, InfoIcon, TriangleAlertIcon, OctagonXIcon, Loader2Icon } from "lucide-react"
-import type { ToastStyle } from "@arciin/shared"
+import { TOAST_STYLES, type ToastStyle } from "@arciin/shared"
 
 type ArciinToasterProps = ToasterProps & {
   toastStyle?: ToastStyle
   showIcons?: boolean
 }
 
-const GAP_BY_STYLE: Record<ToastStyle, number> = {
-  sonner: 12,
-  minimal: 8,
-  bordered: 14,
-  "accent-bar": 18,
-}
+const GAP_BY_STYLE = Object.fromEntries(
+  TOAST_STYLES.map((style) => [style, style === "compact" ? 8 : 12]),
+) as Record<ToastStyle, number>
 
 const Toaster = ({
   position = "bottom-right",
@@ -26,7 +23,7 @@ const Toaster = ({
   showIcons = true,
   ...props
 }: ArciinToasterProps) => {
-  const resolvedGap = gap ?? GAP_BY_STYLE[toastStyle]
+  const resolvedGap = gap ?? GAP_BY_STYLE[toastStyle] ?? 12
 
   return (
     <Sonner
@@ -38,7 +35,7 @@ const Toaster = ({
       mobileOffset={mobileOffset}
       gap={resolvedGap}
       visibleToasts={4}
-      expand={toastStyle === "accent-bar"}
+      expand={false}
       icons={
         showIcons
           ? {

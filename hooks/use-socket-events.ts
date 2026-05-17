@@ -8,6 +8,12 @@ import type { Socket } from "socket.io-client"
 import { queryKeys } from "@/lib/api/query-keys"
 import { useSocketStore } from "@/lib/stores/socket-store"
 import { useUploadStore } from "@/lib/stores/upload-store"
+import { recordInboxNotification } from "@/lib/notifications/record-inbox-notification"
+import {
+  notifyUploadCompleted,
+  notifyUploadFailed,
+  uploadNotifyDedupeKey,
+} from "@/lib/notifications/notify-upload-realtime"
 import {
   shouldShowActivityFeedToast,
   shouldShowSecurityEventsToast,
@@ -62,6 +68,33 @@ export function useSocketEvents(socket: Socket | null) {
         }
       }
 
+      if (type === "upload.completed") {
+        const fileName = payload.data?.fileName
+        notifyUploadCompleted({
+          dedupeKey: uploadNotifyDedupeKey(payload),
+          title:
+            typeof fileName === "string" && fileName
+              ? `${fileName} uploaded`
+              : String(payload.message || "Upload complete"),
+          message:
+            payload.message && typeof fileName === "string"
+              ? String(payload.message)
+              : undefined,
+        })
+      }
+
+      if (type === "upload.failed") {
+        const fileName = payload.data?.fileName
+        notifyUploadFailed({
+          dedupeKey: uploadNotifyDedupeKey(payload),
+          title:
+            typeof fileName === "string" && fileName
+              ? `${fileName} could not be uploaded`
+              : "Upload failed",
+          message: payload.message ? String(payload.message) : undefined,
+        })
+      }
+
       if (type === "activity.created") {
         const eventType = String(payload.data?.type || "")
         const title = String(
@@ -75,9 +108,33 @@ export function useSocketEvents(socket: Socket | null) {
               : undefined
         const isSecurity = eventType.startsWith("auth.")
 
-        if (isSecurity && shouldShowSecurityEventsToast()) {
+        if (eventType === "upload.completed") {
+          notifyUploadCompleted({
+            dedupeKey: uploadNotifyDedupeKey(payload),
+            title,
+            message,
+          })
+        } else if (eventType === "upload.failed") {
+          notifyUploadFailed({
+            dedupeKey: uploadNotifyDedupeKey(payload),
+            title,
+            message,
+          })
+        } else if (isSecurity && shouldShowSecurityEventsToast()) {
+          recordInboxNotification({
+            title,
+            message,
+            variant: "warning",
+            source: "security",
+          })
           toast.warning(title, message ? { description: message } : undefined)
         } else if (shouldShowActivityFeedToast()) {
+          recordInboxNotification({
+            title,
+            message,
+            variant: "default",
+            source: "activity",
+          })
           toast.message(title, message ? { description: message } : undefined)
         }
       }

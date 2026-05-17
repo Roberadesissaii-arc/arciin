@@ -13,6 +13,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.web
+      args:
+        NEXT_PUBLIC_API_BASE_URL: /api
+        ARCIIN_PUBLIC_URL: http://localhost
     env_file:
       - .env
     environment:
@@ -20,7 +23,8 @@ services:
       ARCIIN_PUBLIC_URL: http://localhost
       ARCIIN_API_URL: http://api:4000
       NEXT_PUBLIC_API_BASE_URL: /api
-      NEXT_PUBLIC_SOCKET_URL: http://localhost
+      # Leave empty: browser uses window.location.origin (Caddy :80 → /socket.io → api)
+      NEXT_PUBLIC_SOCKET_URL: ""
     depends_on:
       - api
 

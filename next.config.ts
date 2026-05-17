@@ -4,6 +4,8 @@ const apiUrl = process.env.ARCIIN_API_URL || "http://localhost:4000"
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  /** Socket.IO polling uses `/socket.io/?EIO=…` — do not 308-strip the slash before the query. */
+  skipTrailingSlashRedirect: true,
   transpilePackages: ["@arciin/shared"],
   // Rewritten /api requests buffer the body in Next; default cap is small. Large bodies should use
   // NEXT_PUBLIC_ARCIIN_API_ORIGIN (see lib/api/uploads.ts) so uploads hit Fastify directly.
@@ -16,7 +18,11 @@ const nextConfig: NextConfig = {
         source: "/api/:path*",
         destination: `${apiUrl}/api/:path*`,
       },
-      // Socket.IO on the API — browser hits same origin /socket.io… and Next proxies (avoids 404 on :3000).
+      // Socket.IO — must include bare /socket.io (polling hits ?EIO=… with no extra path segment).
+      {
+        source: "/socket.io",
+        destination: `${apiUrl.replace(/\/$/, "")}/socket.io/`,
+      },
       {
         source: "/socket.io/:path*",
         destination: `${apiUrl.replace(/\/$/, "")}/socket.io/:path*`,

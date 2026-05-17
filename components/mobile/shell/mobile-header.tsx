@@ -4,6 +4,7 @@ import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import { ArrowLeft, Bell, Search } from "lucide-react"
 
+import { NotificationUnreadBadge } from "@/components/notifications/notification-unread-badge"
 import { cn } from "@/lib/utils"
 import { getPageTitle } from "@/components/app-shell/navigation"
 
@@ -76,6 +77,10 @@ export function MobileHeader({
               aria-label="Notifications"
             >
               <Bell className="size-[18px]" />
+              <NotificationUnreadBadge
+                collapsed
+                className="right-1.5 top-1.5 ring-zinc-950"
+              />
             </Link>
           </>
         )}

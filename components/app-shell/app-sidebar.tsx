@@ -12,6 +12,7 @@ import {
 import { toast } from "sonner"
 
 import { UserIdentityAvatar } from "@/components/app-shell/user-identity-avatar"
+import { NotificationUnreadBadge } from "@/components/notifications/notification-unread-badge"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -83,8 +84,8 @@ function isActive(pathname: string, href: string) {
 
 // ── flat link ──────────────────────────────────────────────────────────────
 function FlatLink({
-  label, icon: Icon, href, collapsed, pathname,
-}: NavItem & { collapsed: boolean; pathname: string }) {
+  label, icon: Icon, href, collapsed, pathname, showUnreadBadge,
+}: NavItem & { collapsed: boolean; pathname: string; showUnreadBadge?: boolean }) {
   const active = isActive(pathname, href)
   return (
     <Link
@@ -92,6 +93,7 @@ function FlatLink({
       className={cn(
         "group relative flex items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] font-medium transition-colors select-none",
         collapsed && "justify-center px-0",
+        showUnreadBadge && collapsed && "relative",
       )}
       style={{ background: active ? ACTIVE : "transparent", color: active ? TEXT_ON : TEXT_OFF }}
       onMouseEnter={(e) => { if (!active) { e.currentTarget.style.background = HOVER; e.currentTarget.style.color = TEXT_ON } }}
@@ -99,6 +101,7 @@ function FlatLink({
     >
       <Icon className="h-[15px] w-[15px] shrink-0" />
       {!collapsed && <span className="flex-1 leading-none">{label}</span>}
+      {showUnreadBadge ? <NotificationUnreadBadge collapsed={collapsed} /> : null}
       {collapsed && (
         <span
           className="pointer-events-none absolute left-full z-50 ml-2 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-xs opacity-0 transition-opacity group-hover:opacity-100"
@@ -150,10 +153,10 @@ function AppSidebarInner({ auth }: { auth: AuthSession }) {
         style={{ borderBottom: `1px solid ${DIVIDER}` }}
       >
         {collapsed ? (
-          <span className="font-heading text-base font-bold leading-none text-[#FF4F12]">A</span>
+          <span className="font-heading text-base font-bold leading-none text-[var(--arciin-accent)]">A</span>
         ) : (
           <p className="font-heading text-[17px] font-bold leading-none tracking-tight" style={{ color: TEXT_ON }}>
-            Arciin<span className="text-[#FF4F12]">.</span>
+            Arciin<span className="text-[var(--arciin-accent)]">.</span>
           </p>
         )}
       </div>
@@ -227,7 +230,13 @@ function AppSidebarInner({ auth }: { auth: AuthSession }) {
       <div className="shrink-0 px-2 pb-1 pt-2" style={{ borderTop: `1px solid ${DIVIDER}` }}>
         <div className="space-y-[1px]">
           {BOTTOM.map((item) => (
-            <FlatLink key={item.id} {...item} collapsed={collapsed} pathname={pathname} />
+            <FlatLink
+              key={item.id}
+              {...item}
+              collapsed={collapsed}
+              pathname={pathname}
+              showUnreadBadge={item.id === "notifications"}
+            />
           ))}
         </div>
 

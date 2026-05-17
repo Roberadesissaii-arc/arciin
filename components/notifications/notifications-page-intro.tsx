@@ -1,53 +1,40 @@
 "use client"
 
+import Link from "next/link"
 import { DashboardPageIntro } from "@/components/app-shell/dashboard-page-intro"
-import { useUserPreferencesSettings } from "@/components/settings/use-user-preferences-mutation"
-import { useSocketStore } from "@/lib/stores/socket-store"
+import {
+  unreadNotificationCount,
+  useNotificationInboxStore,
+} from "@/lib/stores/notification-inbox-store"
+import { useEffect } from "react"
 
 export function NotificationsPageIntro() {
-  const { query } = useUserPreferencesSettings()
-  const prefs = query.data?.notifications
-  const connected = useSocketStore((s) => s.connected)
-  const anyOn = prefs
-    ? prefs.uploadSound ||
-      prefs.uploadCompleteToast ||
-      prefs.uploadFailedToast ||
-      prefs.activityFeedToast ||
-      prefs.securityEventsToast
-    : false
+  const hydrate = useNotificationInboxStore((s) => s.hydrate)
+  const items = useNotificationInboxStore((s) => s.items)
 
-  const enabledCount = prefs
-    ? [
-        prefs.uploadSound,
-        prefs.uploadCompleteToast,
-        prefs.uploadFailedToast,
-        prefs.activityFeedToast,
-        prefs.securityEventsToast,
-      ].filter(Boolean).length
-    : 0
+  useEffect(() => {
+    hydrate()
+  }, [hydrate])
+
+  const unread = unreadNotificationCount(items)
 
   return (
     <DashboardPageIntro
       title="Notifications"
-      subtitle="In-browser toasts · upload sounds · live activity"
-      description="Control how Arciin alerts you in this browser. Preferences are saved to your account. Toast position and style live under Settings → Appearance."
+      subtitle="Alert history · this browser"
+      description="Alerts that appeared as toasts and live events are collected here. To change sounds and which channels fire, use notification preferences in Settings."
       stats={[
+        { label: "In inbox", value: items.length.toLocaleString() },
+        { label: "Unread", value: unread.toLocaleString() },
         {
-          label: "Realtime",
-          value: query.isLoading ? "…" : connected ? "Connected" : "Offline",
+          label: "Preferences",
+          value: (
+            <Link href="/settings?tab=notifications" className="text-primary hover:underline">
+              Settings
+            </Link>
+          ),
         },
-        {
-          label: "Channels on",
-          value: query.isLoading ? "…" : `${enabledCount} / 5`,
-        },
-        {
-          label: "Any enabled",
-          value: query.isLoading ? "…" : anyOn ? "Yes" : "No",
-        },
-        {
-          label: "Delivery",
-          value: "Sonner toasts",
-        },
+        { label: "Delivery", value: "Sonner toasts" },
       ]}
     />
   )

@@ -12,6 +12,7 @@ export function DashboardPageIntro({
   subtitle,
   description,
   stats,
+  footer,
   badge,
   actions,
   statsGridClassName,
@@ -20,6 +21,8 @@ export function DashboardPageIntro({
   subtitle?: string
   description: ReactNode
   stats?: DashboardIntroStat[]
+  /** Rich content below description (e.g. detailed stat cards). Renders instead of `stats` when set. */
+  footer?: ReactNode
   badge?: ReactNode
   actions?: ReactNode
   /** Optional override for stat grid columns (default: 2 cols sm, 4 on lg when ≥4 stats). */
@@ -63,7 +66,9 @@ export function DashboardPageIntro({
 
         <div className="max-w-2xl text-sm leading-relaxed text-zinc-700">{description}</div>
 
-        {stats && stats.length > 0 ? (
+        {footer ? (
+          <div className="border-t border-zinc-200/80 pt-4">{footer}</div>
+        ) : stats && stats.length > 0 ? (
           <div
             className={cn(
               "grid gap-3 border-t border-zinc-200/80 pt-4",

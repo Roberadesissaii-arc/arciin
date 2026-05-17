@@ -43,4 +43,7 @@ export const queryKeys = {
   passwordVault: ["settings", "password-vault"] as const,
   apiProtectionStatus: ["settings", "api-protection", "status"] as const,
   accessControlStatus: ["settings", "access-control", "status"] as const,
+  logsOverview: ["logs", "overview"] as const,
+  logFiles: ["logs", "files"] as const,
+  logTail: (filename: string, lines: number) => ["logs", "tail", filename, lines] as const,
 } as const

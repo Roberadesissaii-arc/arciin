@@ -20,8 +20,14 @@ import {
   JELLYFIN_INTEGRATION_ID,
   PLEX_INTEGRATION_ID,
 } from "@/lib/api/integrations"
-import { JellyfinConnectionGuideCard } from "@/components/settings/jellyfin-connection-guide-card"
-import { PlexConnectionGuideCard } from "@/components/settings/plex-connection-guide-card"
+import {
+  JellyfinInstallSection,
+  JellyfinMediaServerGuideCard,
+} from "@/components/settings/jellyfin-connection-guide-card"
+import {
+  PlexInstallSection,
+  PlexMediaServerGuideCard,
+} from "@/components/settings/plex-connection-guide-card"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -168,6 +174,10 @@ export function IntegrationsGrid() {
               <Skeleton className="h-64 rounded-2xl" />
               <Skeleton className="h-64 rounded-2xl" />
             </div>
+            <div className="grid gap-4 lg:grid-cols-2">
+              <Skeleton className="h-72 rounded-2xl" />
+              <Skeleton className="h-72 rounded-2xl" />
+            </div>
           </div>
         </div>
       </div>
@@ -199,8 +209,10 @@ export function IntegrationsGrid() {
         <SectionTitle id="integrations-connectors">Connectors</SectionTitle>
         <SectionLead>
           Plex and Jellyfin are live connectors—same folder + disk mirror model. Turn on{" "}
-          <span className="font-medium text-foreground">Use … folders</span> on each card, then follow the install guides
-          below. S3 replication and other platform work stays in the Roadmap.
+          <span className="font-medium text-foreground">Use … folders</span> on each card, then use the install guide
+          (Docker under <code className="rounded bg-muted px-1 font-mono text-[11px]">/srv/plex</code> or{" "}
+          <code className="rounded bg-muted px-1 font-mono text-[11px]">/srv/jellyfin</code>) to
+          point your media server at Arciin&apos;s on-disk paths. S3 replication and other platform work stays in the Roadmap.
         </SectionLead>
         {(() => {
           const plex =
@@ -217,9 +229,13 @@ export function IntegrationsGrid() {
                 <IntegrationCard integration={plex} />
                 <IntegrationCard integration={jellyfin} />
               </div>
-              <div className="grid items-stretch gap-4 lg:grid-cols-2 [&>*]:h-full [&>*]:min-h-0">
-                <PlexConnectionGuideCard />
-                <JellyfinConnectionGuideCard />
+              <div className="grid items-stretch gap-4 lg:grid-cols-2 [&>*]:min-h-0">
+                <PlexMediaServerGuideCard />
+                <JellyfinMediaServerGuideCard />
+              </div>
+              <div className="grid items-stretch gap-4 lg:grid-cols-2 [&>*]:min-h-0">
+                <PlexInstallSection />
+                <JellyfinInstallSection />
               </div>
               {others.length > 0 ? (
                 <div className="grid gap-4 lg:grid-cols-2">

@@ -14,7 +14,7 @@ export function UserIdentityAvatar({
   return (
     <div
       className={cn(
-        "flex shrink-0 items-center justify-center rounded-xl bg-primary font-bold text-primary-foreground shadow-sm",
+        "flex shrink-0 items-center justify-center rounded-xl bg-[var(--arciin-accent)] font-bold text-white shadow-sm",
         size === "sm" ? "size-8 text-[13px]" : "size-10 text-[15px]",
         className,
       )}

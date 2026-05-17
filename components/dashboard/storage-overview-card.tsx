@@ -8,6 +8,7 @@ import { ChevronRight, HardDrive } from "lucide-react"
 import { getStorageSettings } from "@/lib/api/settings"
 import { queryKeys } from "@/lib/api/query-keys"
 import { formatBytes } from "@/lib/utils/format-bytes"
+import { storageProgressBarValue, storageUsageLabel } from "@/lib/utils/storage-progress"
 import { resolveStorageUsagePercent } from "@/lib/utils/storage-usage"
 import type { StorageSettings } from "@/lib/types/models"
 import { Badge } from "@/components/ui/badge"
@@ -29,6 +30,8 @@ export function StorageOverviewCard({ className }: { className?: string }) {
     if (!storage) return null
     return resolveStorageUsagePercent(storage)
   }, [storage])
+
+  const barValue = useMemo(() => storageProgressBarValue(usagePercent), [usagePercent])
 
   if (storageQuery.isLoading) {
     return <Skeleton className={cn("h-52 rounded-3xl", className)} />
@@ -103,13 +106,9 @@ export function StorageOverviewCard({ className }: { className?: string }) {
         <div className="space-y-2">
           <div className="flex items-center justify-between text-xs font-medium text-zinc-600">
             <span>Usage</span>
-            {usagePercent != null ? (
-              <span className="font-semibold text-primary">{usagePercent}%</span>
-            ) : (
-              <span>Capacity not reported</span>
-            )}
+            <span className="font-semibold text-primary">{storageUsageLabel(usagePercent)}</span>
           </div>
-          <Progress value={usagePercent} className="h-2.5" />
+          <Progress value={barValue} className="h-2.5" />
           <p className="text-xs text-zinc-600">{capacityLabel}</p>
         </div>
 

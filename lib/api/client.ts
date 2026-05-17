@@ -58,12 +58,20 @@ export async function fetchApi<T>(path: string, options: FetchApiOptions = {}) {
     body = JSON.stringify(options.body)
   }
 
-  const response = await fetch(`${clientApiBase}${path}`, {
-    ...options,
-    headers,
-    body,
-    credentials: "include",
-  })
+  let response: Response
+  try {
+    response = await fetch(`${clientApiBase}${path}`, {
+      ...options,
+      headers,
+      body,
+      credentials: "include",
+    })
+  } catch (cause) {
+    throw new ApiError(
+      "Could not reach the Arciin API. Check that the API is running and that this page can reach /api (or set NEXT_PUBLIC_ARCIIN_API_ORIGIN for direct access).",
+      { status: 0, code: "NETWORK_ERROR", details: cause },
+    )
+  }
 
   return parseResponse<T>(response)
 }

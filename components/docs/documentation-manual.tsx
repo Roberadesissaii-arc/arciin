@@ -4,9 +4,16 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState } f
 import type { MouseEvent, ReactNode } from "react"
 import Link from "next/link"
 import { ChevronDown } from "lucide-react"
-import { API_KEY_SCOPES } from "@arciin/shared"
+import {
+  API_KEY_SCOPES,
+  buildCurlMultipartUploadSnippet,
+  buildNodeMultipartUploadSnippet,
+  buildPythonMultipartUploadSnippet,
+  buildPythonSocketSnippet,
+} from "@arciin/shared"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { cn } from "@/lib/utils"
+import { PlexMediaServerDocs } from "@/components/docs/plex-media-server-docs"
 
 const apiBase  = process.env.NEXT_PUBLIC_API_BASE_URL  || "/api"
 const socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL   || "http://localhost:4000"
@@ -22,6 +29,7 @@ const toc = [
   { href: "#rest",       label: "Authentication" },
   { href: "#api-keys",  label: "API keys" },
   { href: "#libraries", label: "Libraries & folders" },
+  { href: "#plex-media-server", label: "Plex (Docker)" },
   { href: "#assets",    label: "Assets" },
   { href: "#uploads",   label: "File uploads" },
   { href: "#databases", label: "App databases" },
@@ -1005,7 +1013,7 @@ curl -sS -X POST "$API/api-keys" \\
 
             <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white text-[13px] shadow-sm">
               <div className="border-b border-zinc-100 bg-zinc-50 px-4 py-2 text-[11px] font-bold uppercase tracking-wide text-zinc-500">
-                Default libraries (stable <IC>slug</IC> · use <IC>slug</IC> as <IC>librarySlug</IC> on <IC>POST /uploads</IC>)
+                Default libraries (stable <IC>slug</IC> · resolve <IC>id</IC> via <IC>GET /libraries</IC>, then <IC>targetLibraryId</IC> on <IC>POST /uploads</IC>)
               </div>
               <table className="w-full border-collapse text-left">
                 <thead>
@@ -1270,6 +1278,14 @@ requests.delete(
 
           <Sep />
 
+          {/* ── Plex ──────────────────────────────────────────────────────── */}
+          <section className="space-y-5">
+            <DocH2 id="plex-media-server">Plex media server (Docker)</DocH2>
+            <PlexMediaServerDocs />
+          </section>
+
+          <Sep />
+
           {/* ── Assets ────────────────────────────────────────────────────── */}
           <section className="space-y-5">
             <DocH2 id="assets">Assets</DocH2>
@@ -1490,127 +1506,47 @@ curl -sS -X POST "$API/assets/$ASSET_ID/move" \\
           {/* ── Uploads ───────────────────────────────────────────────────── */}
           <section className="space-y-5">
             <DocH2 id="uploads">File uploads</DocH2>
-            <DocP>Three-step flow: <strong className="text-zinc-900">initiate</strong> a session → <strong className="text-zinc-900">send bytes</strong> → <strong className="text-zinc-900">complete</strong> to trigger classification and workers.</DocP>
-            <DocP className="text-zinc-600">
-              Upload JSON endpoints are <IC>{BASE}/uploads</IC>, <IC>{BASE}/uploads/&lt;id&gt;</IC>, and <IC>{BASE}/uploads/&lt;id&gt;/complete</IC>. Bytes go to <IC>uploadUrl</IC> from the initiate response (may be the same host or a signed URL).
+            <DocP>
+              Send the file in <strong className="text-zinc-900">one multipart POST</strong> to{" "}
+              <IC>{BASE}/uploads</IC>. Arciin classifies by MIME, runs workers when needed, and emits Socket.IO events.
             </DocP>
+            <Callout variant="tip" title="Scopes &amp; ids">
+              API keys need <IC>uploads:create</IC>. Resolve slug→id with <IC>GET {BASE}/libraries</IC> (
+              <IC>libraries:read</IC>), then query <IC>targetLibraryId</IC> (cuid). Omit it for auto-routing.
+            </Callout>
+            <Callout variant="tip" title="Example scripts">
+              See <IC>scripts/examples/README.md</IC> — ten <IC>*_example.py</IC> scripts and{" "}
+              <IC>arciin_example_client.py</IC>. WSL: <IC>arciin_wsl_hosts.sh</IC>.
+            </Callout>
             <div className="space-y-2">
-              <EndpointRow method="POST" path="/uploads"                    desc="Initiate — returns uploadId + uploadUrl" />
+              <EndpointRow method="POST" path="/uploads"                    desc="Multipart upload — query targetLibraryId, targetFolderId" />
+              <EndpointRow method="GET"  path="/uploads"                    desc="List recent upload sessions" />
               <EndpointRow method="GET"  path="/uploads/:id"                desc="Get session status" />
-              <EndpointRow method="POST" path="/uploads/:id/complete"       desc="Finalise — triggers workers" />
               <EndpointRow method="POST" path="/uploads/:id/cancel"         desc="Abandon and remove temp file" />
             </div>
 
             <RequestUrlsCheatsheet
-              label="Copy full URLs — upload flow"
+              label="Copy full URLs — upload"
               requests={[
-                { method: "POST", fullPath: "/uploads", hint: "Initiate — body: filename, size, librarySlug" },
-                { method: "POST", fullPath: "/uploads/{uploadId}/complete", hint: "Finalise after bytes sent" },
+                { method: "POST", fullPath: "/uploads?targetLibraryId={libraryCuid}", hint: "multipart field file" },
+                { method: "GET", fullPath: "/libraries", hint: "Resolve slug → id" },
               ]}
             />
 
             <MultiCode
-              title="Full upload flow"
-              postman={`1. POST ${BASE}/uploads — JSON body filename, size, librarySlug
-2. PUT to data.uploadUrl (see response) with file body
-3. POST ${BASE}/uploads/{{upload_id}}/complete`}
-              node={`import fs from "node:fs";
-import path from "node:path";
-import FormData from "form-data"; // npm i form-data
+              title="Upload one file (multipart)"
+              postman={`POST ${BASE}/uploads?targetLibraryId={{library_cuid}}
 
-const API_KEY = process.env.ARCIIN_KEY ?? "arc_live_your_key_here";
-const BASE = "${BASE}";
-const auth = {
-  Authorization: \`Bearer \${API_KEY}\`,
-  Accept: "application/json",
-  "Content-Type": "application/json",
-} as const;
+Authorization: Bearer Token → arc_… (uploads:create)
 
-const FILE = "./video.mp4";
-const filename = path.basename(FILE);
-const size = fs.statSync(FILE).size;
+Body: form-data → file = (select file)
 
-// 1 · Initiate — full URL: \`\${BASE}/uploads\`
-let res = await fetch(\`\${BASE}/uploads\`, {
-  method: "POST",
-  headers: auth,
-  body: JSON.stringify({
-    filename,
-    size,
-    librarySlug: "videos",
-    folderId: null,
-  }),
-});
-let json = await res.json();
-if (!res.ok) throw new Error(JSON.stringify(json));
-const session = json.data;
-console.log("Session:", session.id, session.status);
+Optional: targetFolderId={{folder_cuid}}
 
-// 2 · Send bytes to uploadUrl from the server
-const form = new FormData();
-form.append("file", fs.createReadStream(FILE), filename);
-await fetch(session.uploadUrl, {
-  method: "PUT",
-  body: form,
-  headers: { ...form.getHeaders(), Authorization: \`Bearer \${API_KEY}\` },
-});
-
-// 3 · Complete — full URL: \`\${BASE}/uploads/\${session.id}/complete\`
-res = await fetch(\`\${BASE}/uploads/\${session.id}/complete\`, {
-  method: "POST",
-  headers: { ...auth },
-});
-json = await res.json();
-if (!res.ok) throw new Error(JSON.stringify(json));
-const asset = json.data;
-console.log("Asset created:", asset.id, asset.title);`}
-              python={`import os, requests, shutil
-from pathlib import Path
-
-FILE = Path("video.mp4")
-api_key = os.getenv("ARCIIN_KEY", "arc_live_your_key_here")
-API = "${BASE}"
-hdrs = {"Authorization": f"Bearer {api_key}"}
-
-# 1 · Initiate
-session = requests.post(f"{API}/uploads", headers=hdrs, json={
-    "filename":    FILE.name,
-    "size":        FILE.stat().st_size,
-    "librarySlug": "videos",
-}).json()["data"]
-print("Session:", session["id"])
-
-# 2 · Send bytes
-with FILE.open("rb") as fh:
-    requests.put(session["uploadUrl"],
-        headers=hdrs, files={"file": (FILE.name, fh)})
-
-# 3 · Complete
-asset = requests.post(
-    f"{API}/uploads/{session['id']}/complete", headers=hdrs
-).json()["data"]
-print("Asset:", asset["id"], asset["title"])`}
-              curl={`export ARCIIN_KEY="arc_live_your_key_here"
-export API="${BASE}"
-FILE="video.mp4"
-
-# 1 · POST full URL: $API/uploads
-SESSION=$(curl -sS -X POST "$API/uploads" \\
-  -H "Authorization: Bearer $ARCIIN_KEY" \\
-  -H "Content-Type: application/json" -H "Accept: application/json" \\
-  -d "{\\"filename\\":\\"$FILE\\",\\"size\\":$(stat -c%s "$FILE"),\\"librarySlug\\":\\"videos\\",\\"folderId\\":null}")
-UPLOAD_ID=$(echo "$SESSION" | jq -r '.data.id')
-UPLOAD_URL=$(echo "$SESSION" | jq -r '.data.uploadUrl')
-
-# 2 · PUT file bytes to uploadUrl from step 1
-curl -sS -X PUT "$UPLOAD_URL" \\
-  -H "Authorization: Bearer $ARCIIN_KEY" \\
-  -F "file=@$FILE"
-
-# 3 · POST full URL: $API/uploads/$UPLOAD_ID/complete
-curl -sS -X POST "$API/uploads/$UPLOAD_ID/complete" \\
-  -H "Authorization: Bearer $ARCIIN_KEY" \\
-  -H "Accept: application/json" | jq .data.id`}
+GET ${BASE}/libraries → match slug "images" → use id as targetLibraryId`}
+              node={buildNodeMultipartUploadSnippet({ apiBase: BASE, librarySlug: "images" })}
+              python={buildPythonMultipartUploadSnippet({ apiBase: BASE, librarySlug: "images" })}
+              curl={buildCurlMultipartUploadSnippet({ apiBase: BASE, librarySlug: "images" })}
             />
           </section>
 
@@ -1935,28 +1871,11 @@ socket.on("asset.created",    ({ assetId, libraryId, title }) =>
 
 // Catch all events at once (v4+)
 socket.onAny((event, payload) => console.log(\`[\${event}]\`, payload));`}
-              python={`import asyncio, socketio
+              python={buildPythonSocketSnippet({ apiBase: BASE, socketUrl })}
+              curl={`# curl does not support Socket.IO — use Node.js or Python.
 
-sio = socketio.AsyncClient()
-
-@sio.event
-async def connect():
-    print("connected:", sio.sid)
-
-@sio.on("upload.completed")
-async def on_upload(data):
-    print("Done — asset:", data.get("assetId"))
-
-@sio.on("asset.created")
-async def on_asset(data):
-    print("New asset:", data.get("title"))
-
-async def main():
-    await sio.connect("${socketUrl}",
-        headers={"Authorization": "Bearer arc_live_your_key_here"})
-    await sio.wait()
-
-asyncio.run(main())`}
+# Full script: scripts/examples/socket_events_example.py
+# Shared config: scripts/examples/arciin_example_client.py`}
             />
           </section>
 

@@ -2,15 +2,11 @@
 
 import { useCallback } from "react"
 import { useQueryClient } from "@tanstack/react-query"
-import { toast } from "sonner"
-
 import { uploadFile } from "@/lib/api/uploads"
 import {
-  shouldPlayUploadSound,
-  shouldShowUploadCompleteToast,
-  shouldShowUploadFailedToast,
-} from "@/lib/preferences/notification-policy"
-import { playUploadCompleteSound } from "@/lib/preferences/upload-sound"
+  notifyUploadCompleted,
+  notifyUploadFailed,
+} from "@/lib/notifications/notify-upload-realtime"
 import { queryKeys } from "@/lib/api/query-keys"
 import { useUploadStore } from "@/lib/stores/upload-store"
 import { inferDestinationLabel } from "@/lib/utils/media-type"
@@ -70,10 +66,10 @@ export function useUploadOrchestrator() {
             ])
 
             if (result.status === "READY" || result.status === "PROCESSING") {
-              if (shouldPlayUploadSound()) playUploadCompleteSound()
-              if (shouldShowUploadCompleteToast()) {
-                toast.success(`${file.name} uploaded.`)
-              }
+              notifyUploadCompleted({
+                dedupeKey: result.id || result.assetId || id,
+                title: `${file.name} uploaded`,
+              })
             }
           } catch (error) {
             updateStatus(
@@ -81,9 +77,12 @@ export function useUploadOrchestrator() {
               "FAILED",
               error instanceof Error ? error.message : "Upload failed."
             )
-            if (shouldShowUploadFailedToast()) {
-              toast.error(`${file.name} could not be uploaded.`)
-            }
+            const errMsg = error instanceof Error ? error.message : "Upload failed."
+            notifyUploadFailed({
+              dedupeKey: id,
+              title: `${file.name} could not be uploaded`,
+              message: errMsg,
+            })
           }
         })
       )

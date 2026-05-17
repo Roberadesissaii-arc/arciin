@@ -164,7 +164,7 @@ export async function registerAuthRoutes(fastify: FastifyInstance) {
     const { session, rawToken } = await createSession(request, user.id, {
       expiresInMinutes: access.sessionTimeoutMinutes,
     })
-    setSessionCookie(reply, rawToken, session.expiresAt)
+    setSessionCookie(reply, rawToken, session.expiresAt, request)
 
     await fastify.prisma.activityEvent.create({
       data: {
@@ -219,7 +219,7 @@ export async function registerAuthRoutes(fastify: FastifyInstance) {
     const { session, rawToken } = await createSession(request, user.id, {
       expiresInMinutes: access.sessionTimeoutMinutes,
     })
-    setSessionCookie(reply, rawToken, session.expiresAt)
+    setSessionCookie(reply, rawToken, session.expiresAt, request)
 
     await fastify.prisma.activityEvent.create({
       data: {
@@ -446,7 +446,7 @@ export async function registerAuthRoutes(fastify: FastifyInstance) {
       })
     }
 
-    clearSessionCookie(reply)
+    clearSessionCookie(reply, request)
 
     reply.send({
       data: {

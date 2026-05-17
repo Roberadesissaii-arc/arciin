@@ -31,6 +31,7 @@ import {
 } from "@/lib/api/chat"
 import { getAiSettings } from "@/lib/api/settings"
 import { queryKeys } from "@/lib/api/query-keys"
+import { ARCIIN_INTEGRATION_CODE_AI_APPEND } from "@arciin/shared"
 import { cn } from "@/lib/utils"
 import { isOllamaProvider, ollamaCapabilitiesIncludeVision } from "@/lib/ollama-providers"
 import type { OllamaModelShowData } from "@/lib/types/models"
@@ -372,15 +373,19 @@ Never use [[ASSETS:images]] when displayTag or specific IDs were returned.
   - **Delete a folder:** **DELETE** \`{REST_BASE}/folders/{folderId}\` **only**. There is **no** valid \`DELETE /libraries/{libraryId}/folders/{folderId}\` route — **never** document that pattern.
 - When you show URLs or JSON for this instance, you **must** copy **exact \`id\` values** from the snapshot (library id vs folder id — do not confuse them). Never invent placeholder IDs like \`fld_abc123\`.
 - Libraries are **fixed** (Videos, Images, Music, Documents, Inbox). **POST** to \`{REST_BASE}/libraries\` to create a new top-level library returns **403** — do not suggest it. Users organize with **folders**: **POST** \`{REST_BASE}/libraries/{libraryId}/folders\` with body \`{"name":"Folder name"}\`. For a folder at the **library root**, **omit** \`parentFolderId\` or set it to **null**.
-- **Uploads** use **\`librarySlug\`** (e.g. \`images\`, \`videos\`) on **POST** \`{REST_BASE}/uploads\`. Optional **\`folderId\`** targets a folder inside that library.
-- Point users to the full manual when needed: [Documentation](/docs). API keys and scopes: [API Keys](/developer/api-keys) (e.g. **libraries:read**, **libraries:write**, **uploads:create**).
+- **Uploads (multipart):** **POST** \`{REST_BASE}/uploads\` with form field \`file\`. Optional query **\`targetLibraryId={cuid}\`** (from libraries snapshot — **not** \`librarySlug\`) and **\`targetFolderId={cuid}\`**. Omit \`targetLibraryId\` for MIME auto-routing. Scope **uploads:create**; use **libraries:read** to list libraries and map slug→id.
+- Repo examples: \`scripts/examples/README.md\` — ten \`*_example.py\` scripts + \`arciin_example_client.py\` + \`arciin_wsl_hosts.sh\`.
+- Full manual: [Documentation](/docs). Keys: [API Keys](/developer/api-keys) (**uploads:create**, **libraries:read**, **events:subscribe** for Socket.IO).
 
 ### Preferred tool / language (required order)
-- When the user asks **how to call the API**, for **curl**, **Postman**, **Node.js**, **Python**, or similar — and they **did not already say** which one they want: reply with **one short question only** first, e.g. *"Do you want Postman, curl, Node.js, or Python?"* Do not dump all four formats in one message.
-- After they choose **one** format, give **only** that format: full URL, required headers (**Authorization: Bearer …** with a placeholder key if they have not pasted one), and JSON body. Use the **real \`libraryId\`** from the instance block for their library (e.g. Images → match **slug \`images\`** to the line that has that slug, then use that line's **id**).
-- **Postman** format: bullet list — **Method + URL** (full string), **Authorization** (Bearer Token), **Headers** (\`Accept: application/json\`, \`Content-Type: application/json\` for POST), **Body** (raw JSON). Optional: "Send" note.
-- **curl** format: single copy-paste block with \`curl -sS\`, \`-H\` headers, \`-d\` for JSON.
-- **Node.js** / **Python**: minimal async snippet using **fetch** / **requests** with the same full URL and headers.`
+- When the user asks **how to call the API**, **write a script**, **upload from Python/Node**, or similar — and they **did not** name a language: ask once (*"Python, Node.js, curl, or Postman?"*), then output **only** that format.
+- **Upload scripts:** always use **multipart POST** to \`{REST_BASE}/uploads\` (see integration rules below). Never document JSON \`librarySlug\` initiate/complete flows — those are outdated.
+- Use the **real library \`id\`** (cuid) from the instance block as \`targetLibraryId\`.
+- **Postman:** Method + full URL including query, Bearer auth, Body → form-data → \`file\`.
+- **curl:** \`curl -F "file=@path" -H "Authorization: Bearer …"\`.
+- **Python:** \`requests.post(..., files={"file": ...}, params={"targetLibraryId": ...})\`.
+- **Node.js:** \`fetch\` + \`FormData\` + same query params.
+${ARCIIN_INTEGRATION_CODE_AI_APPEND}`
 
 // ── Markdown renderer ──────────────────────────────────────────────────────────
 
@@ -1254,7 +1259,8 @@ function buildContextBlock(ctx: ChatInstanceContext): string {
   return [
     "--- Current Instance Data ---",
     `REST API base (use this exact prefix in examples): ${restBase}`,
-    "Libraries — use each line's id in /libraries/{id}/folders etc.; use slug as librarySlug on POST /uploads:",
+    "Libraries — use each line's id as targetLibraryId (query) on POST /uploads and in /libraries/{id}/folders:",
+    "Example scripts: scripts/examples/README.md (upload_image_example.py, create_folder_example.py, app_databases_example.py, socket_events_example.py, …)",
     libLines || "- (none)",
     `Libraries (summary): ${libs || "none"}`,
     folderBlock,

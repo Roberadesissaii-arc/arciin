@@ -1,44 +1,98 @@
 "use client"
 
-import { CircleCheckIcon } from "lucide-react"
-import { TOAST_STYLES, TOAST_STYLE_META, type ToastStyle } from "@arciin/shared"
+import {
+  Activity,
+  Archive,
+  Box,
+  Cloud,
+  Feather,
+  Flower2,
+  Gem,
+  Layers,
+  MessageSquare,
+  Minus,
+  Moon,
+  PanelBottom,
+  Radio,
+  Sparkles,
+  Wind,
+  Waves,
+  CircleCheckIcon,
+  type LucideIcon,
+} from "lucide-react"
+import { TOAST_STYLES, TOAST_STYLE_META, type ToastStyle, type ToastStyleIcon } from "@arciin/shared"
 
 import { cn } from "@/lib/utils"
 
-function PreviewToast({
+const STYLE_ICONS: Record<ToastStyleIcon, LucideIcon> = {
+  Sparkles,
+  Layers,
+  Cloud,
+  Gem,
+  Wind,
+  Archive,
+  Radio,
+  Waves,
+  PanelBottom,
+  Activity,
+  Flower2,
+  Box,
+  Moon,
+  Feather,
+  Minus,
+}
+
+function PreviewToastCard({
   style,
   selected,
   showIcons,
+  disabled,
   onSelect,
 }: {
   style: ToastStyle
   selected: boolean
   showIcons: boolean
+  disabled?: boolean
   onSelect: () => void
 }) {
   const meta = TOAST_STYLE_META[style]
+  const Icon = STYLE_ICONS[meta.icon] ?? MessageSquare
 
   return (
     <button
       type="button"
+      disabled={disabled}
       onClick={onSelect}
       className={cn(
-        "w-full rounded-xl border p-3 text-left transition-colors",
+        "group flex h-full flex-col rounded-2xl border bg-white p-4 text-left transition-all",
         selected
-          ? "border-primary/40 bg-primary/5 ring-2 ring-primary/25"
-          : "border-border bg-white hover:border-zinc-300 hover:bg-zinc-50/80",
+          ? "border-primary/50 bg-primary/[0.04] ring-2 ring-primary/25 shadow-[0_0_24px_color-mix(in_srgb,var(--arciin-accent,#ff4f12)_18%,transparent)]"
+          : "border-border hover:border-zinc-300 hover:shadow-md",
+        disabled && "pointer-events-none opacity-60",
       )}
     >
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <span className="text-[13px] font-semibold text-foreground">{meta.label}</span>
-        {selected && (
-          <span className="rounded-md bg-primary/15 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+      <div className="mb-3 flex items-start justify-between gap-2">
+        <span
+          className={cn(
+            "flex size-9 shrink-0 items-center justify-center rounded-xl transition-colors",
+            selected ? "bg-primary/15 text-primary" : "bg-zinc-100 text-zinc-600 group-hover:bg-zinc-200/80",
+          )}
+        >
+          <Icon className="size-4" aria-hidden />
+        </span>
+        {selected ? (
+          <span className="rounded-md bg-primary px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-primary-foreground">
             Active
           </span>
-        )}
+        ) : null}
       </div>
+
+      <h4 className="text-[14px] font-semibold text-foreground">{meta.label}</h4>
+      <p className="mt-1 text-[12px] font-medium leading-snug text-zinc-600">{meta.tagline}</p>
+      <p className="mt-1.5 flex-1 text-[11px] leading-relaxed text-zinc-500">{meta.description}</p>
+
       <div
-        className={cn("arciin-toast-preview", `arciin-toast-preview--${style}`)}
+        className={cn("arciin-toast-preview mt-4 w-full", `arciin-toast-preview--${style}`)}
         data-toast-preview-style={style}
         data-show-icons={showIcons ? "1" : "0"}
         aria-hidden
@@ -53,17 +107,6 @@ function PreviewToast({
           <span className="arciin-toast-preview-desc">3 files added to Videos</span>
         </span>
       </div>
-      <ul className="mt-2.5 space-y-0.5 text-[10px] leading-snug text-zinc-500">
-        <li>
-          <span className="font-medium text-zinc-600">Height:</span> {meta.height}
-        </li>
-        <li>
-          <span className="font-medium text-zinc-600">Layout:</span> {meta.layout}
-        </li>
-        <li>
-          <span className="font-medium text-zinc-600">Icon:</span> {meta.icon}
-        </li>
-      </ul>
     </button>
   )
 }
@@ -80,14 +123,15 @@ export function ToastStylePreview({
   onChange: (style: ToastStyle) => void
 }) {
   return (
-    <div className="grid gap-3 sm:grid-cols-2">
+    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
       {TOAST_STYLES.map((style) => (
-        <PreviewToast
+        <PreviewToastCard
           key={style}
           style={style}
           selected={value === style}
           showIcons={showIcons}
-          onSelect={() => !disabled && onChange(style)}
+          disabled={disabled}
+          onSelect={() => onChange(style)}
         />
       ))}
     </div>

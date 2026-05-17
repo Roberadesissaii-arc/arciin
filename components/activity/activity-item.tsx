@@ -1,7 +1,9 @@
 import React from "react"
 import { Clock3, FileText, Folder, Key, Library, Upload, Zap } from "lucide-react"
 
+import { accentIconShellSm } from "@/lib/accent-styles"
 import { formatRelativeDate } from "@/lib/utils/format-date"
+import { cn } from "@/lib/utils"
 import type { ActivitySummary } from "@/lib/types/models"
 
 // ── Icon + colour per entity type ─────────────────────────────────────────────
@@ -38,7 +40,7 @@ export function ActivityItem({ event }: { event: ActivitySummary }) {
   return (
     <div className="flex items-start gap-3.5 px-5 py-3.5">
       {/* icon */}
-      <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-xl border border-[rgba(255,79,18,0.18)] bg-[rgba(255,79,18,0.08)] text-primary">
+      <div className={cn(accentIconShellSm)}>
         {getIconElement(event)}
       </div>
 

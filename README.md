@@ -83,13 +83,13 @@ pnpm dev:api
 pnpm dev:worker
 ```
 
-Verification:
+Verification (run before production deploy):
 
 ```bash
-pnpm typecheck
-pnpm lint
-pnpm build
+pnpm check
 ```
+
+That runs `lint`, `typecheck`, and `build` for web, API, and worker.
 
 ## Environment
 

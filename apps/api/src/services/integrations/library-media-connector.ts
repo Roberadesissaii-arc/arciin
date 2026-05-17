@@ -118,6 +118,10 @@ export async function ensureConnectorFolders(
   const folders: ConnectorFolderStatus[] = []
   const folderSlug = slugify(def.folderName)
 
+  const instance = await prisma.instanceConfig.findFirst()
+  const storageRoot = path.resolve(instance?.storageRoot ?? "./data/arciin")
+  await ensureStorageDirectories(storageRoot)
+
   for (const library of libraries) {
     let folder = await findConnectorFolder(prisma, library.id, def.folderName)
     if (!folder) {
@@ -131,6 +135,9 @@ export async function ensureConnectorFolders(
       })
       created += 1
     }
+
+    const diskDir = path.join(storageRoot, "libraries", library.slug, folder.pathCache)
+    await mkdir(diskDir, { recursive: true })
 
     folders.push({
       libraryId: library.id,
@@ -216,7 +223,7 @@ export async function getConnectorStatus(
   if (!integration) return null
 
   const instance = await prisma.instanceConfig.findFirst()
-  const storageRoot = instance?.storageRoot ?? "./data/arciin"
+  const storageRoot = path.resolve(instance?.storageRoot ?? "./data/arciin")
   const paths = getStoragePaths(storageRoot)
   const folderSlug = slugify(def.folderName)
 

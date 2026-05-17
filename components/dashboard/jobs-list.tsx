@@ -59,7 +59,7 @@ const STATUS_CONFIG = {
   COMPLETED: {
     label: "Completed",
     icon: CheckCircle2,
-    style: "bg-[rgba(255,79,18,0.10)] text-primary border border-[rgba(255,79,18,0.22)]",
+    style: "bg-[var(--arciin-accent-badge-bg)] text-[var(--arciin-accent)] border border-[var(--arciin-accent-badge-border)]",
   },
   FAILED: {
     label: "Failed",

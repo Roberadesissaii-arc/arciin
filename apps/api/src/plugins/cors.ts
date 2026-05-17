@@ -9,6 +9,15 @@ const developmentOrigins = new Set([
   "http://localhost",
 ])
 
+function isCloudflareQuickTunnelOrigin(origin: string) {
+  try {
+    const { hostname, protocol } = new URL(origin)
+    return protocol === "https:" && hostname.endsWith(".trycloudflare.com")
+  } catch {
+    return false
+  }
+}
+
 export async function registerCors(fastify: FastifyInstance) {
   await fastify.register(cors, {
     origin(origin, callback) {
@@ -17,7 +26,12 @@ export async function registerCors(fastify: FastifyInstance) {
         return
       }
 
-      if (!apiConfig.isProduction || origin === apiConfig.ARCIIN_PUBLIC_URL || developmentOrigins.has(origin)) {
+      if (
+        !apiConfig.isProduction ||
+        origin === apiConfig.ARCIIN_PUBLIC_URL ||
+        developmentOrigins.has(origin) ||
+        isCloudflareQuickTunnelOrigin(origin)
+      ) {
         callback(null, true)
         return
       }

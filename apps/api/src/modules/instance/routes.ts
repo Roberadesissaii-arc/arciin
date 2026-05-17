@@ -189,7 +189,7 @@ export async function registerInstanceRoutes(fastify: FastifyInstance) {
     })
 
     const { session, rawToken } = await createSession(request, result.user.id)
-    setSessionCookie(reply, rawToken, session.expiresAt)
+    setSessionCookie(reply, rawToken, session.expiresAt, request)
 
     reply.status(201).send({
       data: serializeAuth(result.user, session),

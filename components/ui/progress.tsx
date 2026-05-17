@@ -3,6 +3,7 @@
 import * as React from "react"
 import { Progress as ProgressPrimitive } from "radix-ui"
 
+import { accentProgressFill } from "@/lib/accent-styles"
 import { cn } from "@/lib/utils"
 
 function Progress({
@@ -28,7 +29,7 @@ function Progress({
       <ProgressPrimitive.Indicator
         data-slot="progress-indicator"
         className={cn(
-          "h-full rounded-full bg-gradient-to-r from-[#FF4F12] to-[#FF6A33] transition-[width] duration-500 ease-out",
+          cn(accentProgressFill, "h-full rounded-full transition-[width] duration-500 ease-out"),
           "group-data-[state=indeterminate]:w-[42%] group-data-[state=indeterminate]:max-w-[45%] group-data-[state=indeterminate]:animate-pulse"
         )}
         style={isIndeterminate ? undefined : { width: `${pct}%` }}

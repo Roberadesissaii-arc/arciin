@@ -11,6 +11,29 @@ export function applyAccentTokens(accent: string) {
   root.style.setProperty("--arciin-accent-ring", `color-mix(in srgb, ${accent} 32%, transparent)`)
   root.style.setProperty("--arciin-accent-glow", `color-mix(in srgb, ${accent} 40%, transparent)`)
   root.style.setProperty("--arciin-accent-wash", `color-mix(in srgb, ${accent} 16%, transparent)`)
+  root.style.setProperty(
+    "--arciin-accent-icon-bg",
+    `color-mix(in srgb, ${accent} 8%, transparent)`,
+  )
+  root.style.setProperty(
+    "--arciin-accent-icon-border",
+    `color-mix(in srgb, ${accent} 18%, transparent)`,
+  )
+  root.style.setProperty(
+    "--arciin-accent-icon-ring",
+    `color-mix(in srgb, ${accent} 15%, transparent)`,
+  )
+  root.style.setProperty(
+    "--arciin-accent-badge-bg",
+    `color-mix(in srgb, ${accent} 10%, transparent)`,
+  )
+  root.style.setProperty(
+    "--arciin-accent-badge-border",
+    `color-mix(in srgb, ${accent} 22%, transparent)`,
+  )
+
+  root.style.setProperty("--primary", accent)
+  root.style.setProperty("--chart-1", accent)
 
   const main = document.querySelector(".dashboard-main")
   if (main instanceof HTMLElement) {

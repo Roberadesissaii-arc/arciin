@@ -42,17 +42,26 @@ export function resolvePlexHostPaths(status: ConnectorStatus | undefined): PlexH
   }
 }
 
-function placeholderPath(kind: "videos" | "images" | "music", librariesDir?: string) {
-  const base = librariesDir?.replace(/\/$/, "") || "/srv/arciin/data/arciin/libraries"
+function placeholderPath(
+  kind: "videos" | "images" | "music",
+  paths: PlexHostPaths,
+) {
+  const resolved = paths[kind]
+  if (resolved) return resolved
+  const base =
+    paths.librariesDir?.replace(/\/$/, "") ??
+    (paths.storageRoot
+      ? `${paths.storageRoot.replace(/\/$/, "")}/libraries`
+      : "./data/arciin/libraries")
   return `${base}/${kind}/plex`
 }
 
 export function buildPlexDockerCompose(options: PlexDockerComposeOptions): string {
   const installDir = options.installDir ?? DEFAULT_PLEX_INSTALL_DIR
   const configDir = `${installDir}/config`
-  const videos = options.paths.videos ?? placeholderPath("videos", options.paths.librariesDir)
-  const images = options.paths.images ?? placeholderPath("images", options.paths.librariesDir)
-  const music = options.paths.music ?? placeholderPath("music", options.paths.librariesDir)
+  const videos = options.paths.videos ?? placeholderPath("videos", options.paths)
+  const images = options.paths.images ?? placeholderPath("images", options.paths)
+  const music = options.paths.music ?? placeholderPath("music", options.paths)
   const puid = options.puid ?? "1000"
   const pgid = options.pgid ?? "1000"
   const tz = options.tz ?? "America/New_York"

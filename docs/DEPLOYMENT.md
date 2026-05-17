@@ -80,6 +80,33 @@ That root contains:
 - Set `ARCIIN_PUBLIC_URL` to the externally reachable URL.
 - Keep `SESSION_SECRET` and `ARCIIN_SETUP_TOKEN` out of version control.
 - FFmpeg is optional but recommended for richer video processing.
+- Run `pnpm check` on the release branch before deploying images.
+
+## Preflight checklist
+
+```bash
+pnpm check
+bash -n install.sh scripts/arciin-init.sh scripts/entrypoint-api.sh
+```
+
+Bare-metal install (Debian/Ubuntu/WSL):
+
+```bash
+./install.sh
+pnpm dev
+# open the setup URL printed at the end
+```
+
+Docker:
+
+```bash
+cp .env.example .env
+# set ARCIIN_SETUP_TOKEN and SESSION_SECRET (install.sh randomizes these on bare metal)
+docker compose up --build -d
+# open http://localhost/setup?token=<ARCIIN_SETUP_TOKEN>
+```
+
+Socket.IO and uploads behind Caddy use the **browser origin** when `NEXT_PUBLIC_SOCKET_URL` is empty — do not point the UI at `:4000` unless that port is published.
 
 ## Prisma in containers
 

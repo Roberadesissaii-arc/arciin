@@ -8,6 +8,7 @@ import {
   shouldShowUploadCompleteToast,
   shouldShowUploadFailedToast,
 } from "@/lib/preferences/notification-policy"
+import { recordInboxNotification } from "@/lib/notifications/record-inbox-notification"
 import { playUploadCompleteSound } from "@/lib/preferences/upload-sound"
 
 export type NotificationTestKind =
@@ -28,6 +29,12 @@ export function sendTestNotification(kind: NotificationTestKind) {
         })
         return false
       }
+      recordInboxNotification({
+        title: "Test: upload complete",
+        message: "You would see this after a file finishes uploading.",
+        variant: "success",
+        source: "upload",
+      })
       toast.success("Test: upload complete", {
         description: "You would see this after a file finishes uploading.",
       })
@@ -39,6 +46,12 @@ export function sendTestNotification(kind: NotificationTestKind) {
         })
         return false
       }
+      recordInboxNotification({
+        title: "Test: upload failed",
+        message: "You would see this when an upload errors.",
+        variant: "error",
+        source: "upload",
+      })
       toast.error("Test: upload failed", {
         description: "You would see this when an upload errors.",
       })
@@ -62,6 +75,12 @@ export function sendTestNotification(kind: NotificationTestKind) {
         })
         return false
       }
+      recordInboxNotification({
+        title: "Test: activity event",
+        message: "Live activity from uploads and the API will look like this.",
+        variant: "default",
+        source: "activity",
+      })
       toast.message("Test: activity event", {
         description: "Live activity from uploads and the API will look like this.",
       })
@@ -73,6 +92,12 @@ export function sendTestNotification(kind: NotificationTestKind) {
         })
         return false
       }
+      recordInboxNotification({
+        title: "Test: security alert",
+        message: "Failed sign-ins and similar events use this style when alerts are on.",
+        variant: "warning",
+        source: "security",
+      })
       toast.warning("Test: security alert", {
         description: "Failed sign-ins and similar events use this style when alerts are on.",
       })

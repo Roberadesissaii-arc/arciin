@@ -46,8 +46,17 @@ export function generateOpaqueToken(bytes = 32) {
   return randomBytes(bytes).toString("hex")
 }
 
-export function isSecureCookie() {
-  return apiConfig.isProduction || apiConfig.ARCIIN_PUBLIC_URL.startsWith("https://")
+export function isSecureCookie(request?: FastifyRequest) {
+  if (apiConfig.isProduction || apiConfig.ARCIIN_PUBLIC_URL.startsWith("https://")) {
+    return true
+  }
+
+  const forwarded = request?.headers["x-forwarded-proto"]
+  if (typeof forwarded === "string" && forwarded.split(",")[0]?.trim() === "https") {
+    return true
+  }
+
+  return false
 }
 
 export async function createSession(
@@ -83,21 +92,26 @@ export async function createSession(
   }
 }
 
-export function setSessionCookie(reply: FastifyReply, token: string, expiresAt: Date) {
+export function setSessionCookie(
+  reply: FastifyReply,
+  token: string,
+  expiresAt: Date,
+  request?: FastifyRequest,
+) {
   reply.setCookie(apiConfig.SESSION_COOKIE_NAME, token, {
     httpOnly: true,
     sameSite: "lax",
     path: "/",
-    secure: isSecureCookie(),
+    secure: isSecureCookie(request),
     expires: expiresAt,
   })
 }
 
-export function clearSessionCookie(reply: FastifyReply) {
+export function clearSessionCookie(reply: FastifyReply, request?: FastifyRequest) {
   reply.clearCookie(apiConfig.SESSION_COOKIE_NAME, {
     path: "/",
     sameSite: "lax",
-    secure: isSecureCookie(),
+    secure: isSecureCookie(request),
   })
 }
 

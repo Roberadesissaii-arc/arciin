@@ -1,3 +1,13 @@
+import {
+  TOAST_STYLES,
+  TOAST_STYLE_META,
+  getToastStyleLabel,
+  normalizeToastStyle,
+  type ToastStyle,
+} from "./toast-styles"
+
+export { TOAST_STYLES, TOAST_STYLE_META, getToastStyleLabel, type ToastStyle }
+
 export const FONT_SIZE_OPTIONS = ["Small", "Normal", "Large", "Extra Large"] as const
 export type FontSizeOption = (typeof FONT_SIZE_OPTIONS)[number]
 
@@ -27,9 +37,6 @@ export const TOAST_POSITIONS = [
   "top-left",
 ] as const
 export type ToastPosition = (typeof TOAST_POSITIONS)[number]
-
-export const TOAST_STYLES = ["sonner", "minimal", "bordered", "accent-bar"] as const
-export type ToastStyle = (typeof TOAST_STYLES)[number]
 
 export const UI_RADIUS_OPTIONS = ["comfortable", "compact", "sharp"] as const
 export type UiRadius = (typeof UI_RADIUS_OPTIONS)[number]
@@ -93,7 +100,6 @@ export const DEFAULT_USER_PREFERENCES: UserPreferences = {
 const FONT_SIZE_SET = new Set<string>(FONT_SIZE_OPTIONS)
 const ACCENT_SET = new Set<string>(ACCENT_COLORS.map((c) => c.hex))
 const TOAST_POSITION_SET = new Set<string>(TOAST_POSITIONS)
-const TOAST_STYLE_SET = new Set<string>(TOAST_STYLES)
 const UI_RADIUS_SET = new Set<string>(UI_RADIUS_OPTIONS)
 
 function asBool(value: unknown, fallback: boolean) {
@@ -115,7 +121,7 @@ function asToastPosition(value: unknown, fallback: ToastPosition): ToastPosition
 }
 
 function asToastStyle(value: unknown, fallback: ToastStyle): ToastStyle {
-  return typeof value === "string" && TOAST_STYLE_SET.has(value) ? (value as ToastStyle) : fallback
+  return normalizeToastStyle(value, fallback)
 }
 
 function asUiRadius(value: unknown, fallback: UiRadius): UiRadius {
@@ -199,40 +205,3 @@ export function getAccentLabel(hex: string) {
   return ACCENT_COLORS.find((c) => c.hex === hex)?.label ?? "Custom"
 }
 
-export const TOAST_STYLE_META: Record<
-  ToastStyle,
-  { label: string; hint: string; height: string; layout: string; icon: string }
-> = {
-  sonner: {
-    label: "Card",
-    hint: "Balanced default — soft shadow and colored badge icons",
-    height: "Medium (~52px)",
-    layout: "Icon left · title + subtitle row",
-    icon: "Rounded 26px badge",
-  },
-  minimal: {
-    label: "Compact",
-    hint: "Low profile — tight padding, small inline icon",
-    height: "Short (~38px)",
-    layout: "Single-line stack · minimal chrome",
-    icon: "Small 18px glyph",
-  },
-  bordered: {
-    label: "Outline",
-    hint: "Bold framed card — no shadow, ring icons",
-    height: "Tall (~60px)",
-    layout: "Spacious horizontal · strong border",
-    icon: "32px outlined circle",
-  },
-  "accent-bar": {
-    label: "Accent",
-    hint: "Editorial stripe — tinted background, large icon",
-    height: "Tallest (~76px)",
-    layout: "Wide padding · accent left rail",
-    icon: "36px accent tile",
-  },
-}
-
-export function getToastStyleLabel(style: ToastStyle) {
-  return TOAST_STYLE_META[style].label
-}

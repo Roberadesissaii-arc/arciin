@@ -435,6 +435,32 @@ export type HealthStatus = {
   timestamp: string
 }
 
+export type LogFileSummary = {
+  name: string
+  sizeBytes: number
+  modifiedAt: string
+  source: "api" | "worker" | "other"
+}
+
+export type LogsOverview = {
+  health: HealthStatus & { workerLastSeenAt: string | null }
+  logs: {
+    displayPath: string
+    readable: boolean
+    writable: boolean
+    fileCount: number
+    totalBytes: number
+  }
+  jobs: {
+    queued: number
+    active: number
+    completed: number
+    failed: number
+    recentFailed: JobSummary[]
+  }
+  environment: string
+}
+
 export type ClaimInstanceInput = {
   setupToken: string
   instanceName: string

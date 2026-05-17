@@ -5,9 +5,8 @@ import { io, type Socket } from "socket.io-client"
 import { ChevronDown, ChevronRight, Pause, Play, Trash2, Wifi, WifiOff } from "lucide-react"
 
 import { cn } from "@/lib/utils"
+import { getClientSocketUrl, getSocketUrlSsrDefault } from "@/lib/realtime/client-socket-url"
 import { socketEventTypes, type SocketEventPayload } from "@/lib/types/events"
-
-const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:4000"
 const MAX_EVENTS = 300
 
 type LiveEvent = SocketEventPayload & { _rxAt: string; _uid: string }
@@ -110,7 +109,15 @@ function EventCard({ event }: { event: LiveEvent }) {
 
 // ── empty / waiting state ──────────────────────────────────────────────────
 
-function EmptyState({ connected, filter }: { connected: boolean; filter: string }) {
+function EmptyState({
+  connected,
+  filter,
+  error,
+}: {
+  connected: boolean
+  filter: string
+  error: string | null
+}) {
   return (
     <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-zinc-300 bg-zinc-50/60 py-16 text-center">
       {connected ? (
@@ -121,7 +128,7 @@ function EmptyState({ connected, filter }: { connected: boolean; filter: string 
           <p className="text-[14px] font-medium text-zinc-800">Listening for events…</p>
           <p className="text-[13px] text-zinc-500">
             {filter === "all"
-              ? "Any activity on this instance will appear here in real time."
+              ? "Any activity on this instance will appear here in real time. Upload a file, run a job, or use the Python test script with --trigger."
               : `Waiting for events matching "${filter}.*".`}
           </p>
         </>
@@ -131,7 +138,22 @@ function EmptyState({ connected, filter }: { connected: boolean; filter: string 
             <WifiOff className="size-5 text-zinc-400" />
           </span>
           <p className="text-[14px] font-medium text-zinc-800">Not connected</p>
-          <p className="text-[13px] text-zinc-500">Connecting to {SOCKET_URL}…</p>
+          <p className="text-[13px] text-zinc-500">
+            {error
+              ? error
+              : "Connecting to socket server…"}
+          </p>
+          {error ? (
+            <ul className="mt-2 max-w-md text-left text-[12px] text-zinc-500">
+              <li>API must be running (pnpm dev:api or pnpm dev)</li>
+              <li>Redis must be running for events to flow</li>
+              <li>Stay signed in — this page uses your session cookie</li>
+              <li>
+                Test from Python:{" "}
+                <span className="font-mono text-zinc-700">scripts/examples/socket_events_example.py</span>
+              </li>
+            </ul>
+          ) : null}
         </>
       )}
     </div>
@@ -150,18 +172,27 @@ export function EventsMonitor() {
   const [total, setTotal] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const [bufferedCount, setBufferedCount] = useState(0)
+  const [socketUrl, setSocketUrl] = useState(getSocketUrlSsrDefault)
+  const [socketCrossOrigin, setSocketCrossOrigin] = useState(false)
 
   const pausedRef = useRef(false)
   const bufferRef = useRef<LiveEvent[]>([])
 
   useEffect(() => {
-    const socket: Socket = io(SOCKET_URL, { withCredentials: true, transports: ["websocket", "polling"] })
+    const resolvedUrl = getClientSocketUrl()
+    setSocketUrl(resolvedUrl)
+    setSocketCrossOrigin(new URL(resolvedUrl).origin !== window.location.origin)
+    const socket: Socket = io(resolvedUrl, { withCredentials: true, transports: ["websocket", "polling"] })
 
     socket.on("connect", () => { setConnected(true); setError(null) })
     socket.on("disconnect", () => setConnected(false))
     socket.on("connect_error", (err) => {
       setConnected(false)
-      setError(err.message)
+      const hint =
+        err.message.includes("xhr poll") || err.message.includes("websocket")
+          ? `${err.message} — restart pnpm dev after proxy changes; API + Redis must be running.`
+          : err.message
+      setError(hint)
     })
 
     socket.onAny((type: string, incoming: SocketEventPayload) => {
@@ -229,11 +260,17 @@ export function EventsMonitor() {
           {connected ? "Connected" : error ? "Error" : "Connecting…"}
         </div>
 
-        <span className="font-mono text-[12px] text-zinc-400">{SOCKET_URL}</span>
+        <span className="font-mono text-[12px] text-zinc-400">{socketUrl}</span>
 
         {error && (
           <span className="rounded-lg border border-red-200 bg-red-50 px-2.5 py-1 text-[11px] text-red-700">
             {error}
+          </span>
+        )}
+
+        {socketCrossOrigin && (
+          <span className="rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] text-amber-900">
+            NEXT_PUBLIC_SOCKET_URL points off-origin — session cookies will not auth. Clear it for local dev.
           </span>
         )}
 
@@ -314,7 +351,7 @@ export function EventsMonitor() {
         )}
 
         {filtered.length === 0 ? (
-          <EmptyState connected={connected} filter={filter} />
+          <EmptyState connected={connected} filter={filter} error={error} />
         ) : (
           filtered.map(event => <EventCard key={event._uid} event={event} />)
         )}

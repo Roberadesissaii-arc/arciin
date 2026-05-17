@@ -5,6 +5,7 @@ import Link from "next/link"
 import { BookOpen, Check, Copy, FolderTree, Terminal } from "lucide-react"
 import { toast } from "sonner"
 
+import { ConnectorSetupCommands } from "@/components/settings/connector-setup-commands"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import type { ConnectorStatus } from "@/lib/api/integrations"
@@ -60,7 +61,7 @@ export function PlexInstallPlaybook({
   ]
 
   return (
-    <Card className="border-border bg-card shadow-sm">
+    <Card className="flex h-full min-h-0 flex-col border-border bg-card shadow-sm">
       <CardHeader className="pb-3">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0 space-y-1">
@@ -105,29 +106,24 @@ export function PlexInstallPlaybook({
       </CardHeader>
 
       <CardContent className="space-y-4">
-        <div className="rounded-xl border border-border bg-muted/25 px-3.5 py-3 text-[12px] leading-relaxed text-muted-foreground">
-          <p className="font-medium text-foreground">Suggested layout on Linux</p>
-          <pre className="mt-2 overflow-x-auto font-mono text-[11px] text-zinc-700">
-{`/srv/
-  arciin/                 ← Arciin data (ARCIIN_DATA_DIR)
-    libraries/
-      videos/plex/        ← Movies in Plex
-      images/plex/        ← Photos in Plex
-      music/plex/         ← Music in Plex
-  plex/
-    docker-compose.yml    ← Plex stack (this guide)
-    config/               ← Plex database & settings`}
-          </pre>
-        </div>
+        <ConnectorSetupCommands
+          kind="plex"
+          status={status}
+          pathsLoading={pathsLoading}
+          installDir={DEFAULT_PLEX_INSTALL_DIR}
+        />
 
         {track === "docker" ? (
           <>
             <ol className="list-decimal space-y-2 pl-5 text-[13px] leading-relaxed text-zinc-700">
               <li>
-                On the server:{" "}
-                <code className="rounded bg-muted px-1 font-mono text-[11px]">
-                  sudo mkdir -p {DEFAULT_PLEX_INSTALL_DIR}/config
-                </code>
+                In Arciin → Integrations, turn on <strong>Use Plex folders</strong> (creates{" "}
+                <code className="rounded bg-muted px-1 font-mono text-[11px]">libraries/…/plex</code> under your
+                storage root on this server).
+              </li>
+              <li>
+                Run the <strong>setup commands</strong> above on the host (uses this instance&apos;s paths, not a
+                generic <code className="rounded bg-muted px-1 font-mono text-[11px]">/srv/arciin</code> example).
               </li>
               <li>
                 Get a claim token from{" "}
@@ -151,7 +147,7 @@ export function PlexInstallPlaybook({
                 <code className="rounded bg-muted px-1 font-mono text-[11px]">PGID</code> to your Linux user, then{" "}
                 <code className="rounded bg-muted px-1 font-mono text-[11px]">docker compose up -d</code>.
               </li>
-              <li>Enable Use Plex folders in the Plex card above before uploading.</li>
+              <li>Upload in Arciin, then scan libraries in Plex if needed.</li>
             </ol>
 
             {pathsLoading ? (

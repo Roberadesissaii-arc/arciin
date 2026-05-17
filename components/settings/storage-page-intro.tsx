@@ -3,9 +3,9 @@
 import { useQuery } from "@tanstack/react-query"
 
 import { DashboardPageIntro } from "@/components/app-shell/dashboard-page-intro"
+import { StorageOverviewStats } from "@/components/settings/storage-overview-stats"
 import { getStorageSettings } from "@/lib/api/settings"
 import { queryKeys } from "@/lib/api/query-keys"
-import { formatBytes } from "@/lib/utils/format-bytes"
 import { cn } from "@/lib/utils"
 
 export function StoragePageIntro() {
@@ -43,34 +43,9 @@ export function StoragePageIntro() {
       subtitle="Managed root · usage · object inventory"
       description="Arciin keeps originals and derived files under a single configurable root on this machine. Review usage here, then adjust the path only when you know the filesystem layout."
       badge={badge}
-      stats={[
-        {
-          label: "Usage",
-          value: storageQuery.isLoading ? "…" : d ? formatBytes(d.usageBytes) : "—",
-        },
-        {
-          label: "Objects",
-          value: storageQuery.isLoading ? "…" : d ? d.objectCount.toLocaleString() : "—",
-        },
-        {
-          label: "Available",
-          value:
-            storageQuery.isLoading
-              ? "…"
-              : d?.availableBytes != null
-                ? formatBytes(d.availableBytes)
-                : "—",
-        },
-        {
-          label: "Capacity",
-          value:
-            storageQuery.isLoading
-              ? "…"
-              : d?.totalBytes
-                ? formatBytes(d.totalBytes)
-                : "—",
-        },
-      ]}
+      footer={
+        <StorageOverviewStats data={d} isLoading={storageQuery.isLoading} />
+      }
     />
   )
 }

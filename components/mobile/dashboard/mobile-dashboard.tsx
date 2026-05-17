@@ -19,6 +19,7 @@ import { getStorageSettings } from "@/lib/api/settings"
 import { getLibraries } from "@/lib/api/libraries"
 import { getActivity } from "@/lib/api/activity"
 import { formatBytes } from "@/lib/utils/format-bytes"
+import { storageProgressBarValue } from "@/lib/utils/storage-progress"
 import { cn } from "@/lib/utils"
 import { fetchApi } from "@/lib/api/client"
 import type { HealthStatus } from "@/lib/types/models"
@@ -52,7 +53,7 @@ function MobileStorageStrip() {
     >
       <div className="mb-3 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <HardDrive className="size-4 text-[#ff4f12]" />
+          <HardDrive className="size-4 text-[var(--arciin-accent)]" />
           <span className="text-[13px] font-semibold text-white">Storage</span>
         </div>
         <Link
@@ -79,11 +80,11 @@ function MobileStorageStrip() {
               <div
                 className="h-full rounded-full transition-all"
                 style={{
-                  width: `${usagePercent}%`,
+                  width: `${storageProgressBarValue(usagePercent)}%`,
                   background:
                     usagePercent > 85
                       ? "linear-gradient(90deg, #ef4444, #f97316)"
-                      : "linear-gradient(90deg, #ff4f12, #ff6a33)",
+                      : "linear-gradient(90deg, var(--arciin-accent), var(--arciin-accent-hover))",
                 }}
               />
             )}
@@ -96,10 +97,10 @@ function MobileStorageStrip() {
               <span
                 className={cn(
                   "text-[12px] font-semibold",
-                  usagePercent > 85 ? "text-red-400" : "text-[#ff4f12]",
+                  usagePercent > 85 ? "text-red-400" : "text-[var(--arciin-accent)]",
                 )}
               >
-                {usagePercent}%
+                {usagePercent === 0 ? "0%" : `${usagePercent}%`}
               </span>
             )}
           </div>
@@ -235,9 +236,12 @@ function MobileLibrariesRow() {
         >
           <div
             className="flex size-10 items-center justify-center rounded-xl"
-            style={{ background: "rgba(255,79,18,0.12)", border: "1px solid rgba(255,79,18,0.2)" }}
+            style={{
+              background: "var(--arciin-accent-icon-bg)",
+              border: "1px solid var(--arciin-accent-icon-border)",
+            }}
           >
-            <Files className="size-5 text-[#ff4f12]" />
+            <Files className="size-5 text-[var(--arciin-accent)]" />
           </div>
           <span className="max-w-[72px] truncate text-center text-[11px] font-medium text-white">
             {lib.name}
@@ -330,7 +334,7 @@ function MobileRecentActivity() {
             >
               <span
                 className="size-1.5 shrink-0 rounded-full"
-                style={{ background: "rgba(255,79,18,0.7)" }}
+                style={{ background: "color-mix(in srgb, var(--arciin-accent) 70%, transparent)" }}
               />
               <span
                 className="min-w-0 flex-1 truncate text-[12px]"

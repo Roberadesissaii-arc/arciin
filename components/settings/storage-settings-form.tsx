@@ -2,16 +2,7 @@
 
 import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import {
-  AlertTriangle,
-  Database,
-  FolderTree,
-  Gauge,
-  HardDrive,
-  Lock,
-  Save,
-  Server,
-} from "lucide-react"
+import { AlertTriangle, FolderTree, Save, Server } from "lucide-react"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
@@ -19,7 +10,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Field, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Progress } from "@/components/ui/progress"
-import { Skeleton } from "@/components/ui/skeleton"
 import { getStorageSettings, updateStorageSettings } from "@/lib/api/settings"
 import { queryKeys } from "@/lib/api/query-keys"
 import { formatBytes } from "@/lib/utils/format-bytes"
@@ -60,51 +50,6 @@ export function StorageSettingsForm() {
 
   return (
     <div className="space-y-6">
-      {/* Overview strip */}
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        {storageQuery.isLoading ? (
-          Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-24 rounded-2xl" />)
-        ) : (
-          <>
-            <div className="rounded-2xl border border-border bg-gradient-to-br from-card to-muted/30 p-4 shadow-sm">
-              <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
-                <HardDrive className="size-3.5 text-primary" />
-                Disk used
-              </div>
-              <p className="mt-2 text-2xl font-semibold tabular-nums text-foreground">{formatBytes(d?.usageBytes ?? 0)}</p>
-              <p className="mt-1 text-xs text-muted-foreground">Tracked under the storage root</p>
-            </div>
-            <div className="rounded-2xl border border-border bg-card p-4 shadow-sm">
-              <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
-                <Database className="size-3.5 text-primary" />
-                Objects
-              </div>
-              <p className="mt-2 text-2xl font-semibold tabular-nums text-foreground">
-                {(d?.objectCount ?? 0).toLocaleString()}
-              </p>
-              <p className="mt-1 text-xs text-muted-foreground">Rows in storage_objects</p>
-            </div>
-            <div className="rounded-2xl border border-border bg-card p-4 shadow-sm">
-              <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
-                <Gauge className="size-3.5 text-primary" />
-                Free space
-              </div>
-              <p className="mt-2 text-2xl font-semibold tabular-nums text-foreground">
-                {d?.availableBytes != null ? formatBytes(d.availableBytes) : "—"}
-              </p>
-              <p className="mt-1 text-xs text-muted-foreground">From host filesystem (statfs)</p>
-            </div>
-            <div className="rounded-2xl border border-border bg-card p-4 shadow-sm">
-              <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
-                <Lock className="size-3.5 text-primary" />
-                Writable
-              </div>
-              <p className="mt-2 text-2xl font-semibold text-foreground">{d?.writable ? "Yes" : "No"}</p>
-              <p className="mt-1 text-xs text-muted-foreground">Arciin can create files under root</p>
-            </div>
-          </>
-        )}
-      </div>
 
       {d && d.totalBytes != null && d.totalBytes > 0 && (
         <Card className="border-border bg-card">

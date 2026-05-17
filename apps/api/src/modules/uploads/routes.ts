@@ -58,8 +58,9 @@ export async function registerUploadRoutes(fastify: FastifyInstance) {
 
       const queryParsed = z
         .object({
-          targetLibraryId: z.string().uuid().optional(),
-          targetFolderId: z.string().uuid().optional(),
+          // Prisma uses cuid() for Library/Folder ids — not UUIDs.
+          targetLibraryId: z.string().cuid().optional(),
+          targetFolderId: z.string().cuid().optional(),
         })
         .safeParse(request.query ?? {})
 

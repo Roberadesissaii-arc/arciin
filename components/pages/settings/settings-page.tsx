@@ -49,9 +49,14 @@ export function SettingsPage() {
 
   const setTab = useCallback(
     (next: SettingsTab) => {
-      router.replace(`/settings?tab=${next}`, { scroll: false })
+      const params = new URLSearchParams(searchParams.toString())
+      params.set("tab", next)
+      if (next !== "appearance") {
+        params.delete("section")
+      }
+      router.replace(`/settings?${params.toString()}`, { scroll: false })
     },
-    [router],
+    [router, searchParams],
   )
 
   const panels: Record<SettingsTab, ReactNode> = {

@@ -1,11 +1,13 @@
+import { NotificationInbox } from "@/components/notifications/notification-inbox"
 import { NotificationsPageIntro } from "@/components/notifications/notifications-page-intro"
-import { NotificationsSettingsPanel } from "@/components/settings/notifications-settings-panel"
+import { NotificationsPageMarkRead } from "@/components/notifications/notifications-page-mark-read"
 
 export default function NotificationsPage() {
   return (
     <div className="space-y-6 pb-8">
+      <NotificationsPageMarkRead />
       <NotificationsPageIntro />
-      <NotificationsSettingsPanel />
+      <NotificationInbox />
     </div>
   )
 }

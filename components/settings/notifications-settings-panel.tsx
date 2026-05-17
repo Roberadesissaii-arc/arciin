@@ -1,5 +1,6 @@
 "use client"
 
+import Link from "next/link"
 import { Bell, Radio, Sparkles } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -259,14 +260,17 @@ export function NotificationsSettingsPanel() {
       </Card>
 
       <p className="px-1 text-[12px] text-zinc-500">
-        Preferences are saved to your account. Toast position and style are under{" "}
-        <a href="/settings?tab=appearance" className="font-medium text-primary underline-offset-2 hover:underline">
-          Settings → Appearance
-        </a>
+        Preferences are saved to your account. Toast designs and behavior are under{" "}
+        <Link
+          href="/settings?tab=appearance&section=toasters"
+          className="font-medium text-primary underline-offset-2 hover:underline"
+        >
+          Settings → Toasters
+        </Link>
         . Live socket events are on{" "}
-        <a href="/events" className="font-medium text-primary underline-offset-2 hover:underline">
+        <Link href="/events" className="font-medium text-primary underline-offset-2 hover:underline">
           Events
-        </a>
+        </Link>
         . Email digests are not available yet.
       </p>
     </div>
