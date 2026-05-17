@@ -57,8 +57,8 @@ export function useGlobalDropzone(onFiles: (files: File[]) => void) {
       }
     }
 
-    window.addEventListener("dragover", showIfFiles)
-    window.addEventListener("drop", onDrop)
+    window.addEventListener("dragover", showIfFiles, { passive: false })
+    window.addEventListener("drop", onDrop, { passive: false })
     window.addEventListener("dragend", hideOverlay)
     window.addEventListener("keydown", onKeyDown)
 

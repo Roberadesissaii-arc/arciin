@@ -36,6 +36,13 @@ export function GlobalDropzoneProvider({
       if (files.length === 0) return
       const ctx = contextRef.current
 
+      toast.info(
+        files.length === 1
+          ? `Uploading ${files[0].name}…`
+          : `Uploading ${files.length} files…`,
+        { duration: 2000 }
+      )
+
       try {
         const result = await checkDuplicates(
           files.map((f) => f.name),
