@@ -418,11 +418,41 @@ configure_firewall() {
   sudo ufw status 2>/dev/null | sed 's/^/    /' || warn "Could not read ufw status"
 }
 
-warn_if_dev_servers_running() {
-  if pgrep -f "next dev" &>/dev/null || pgrep -f "tsx watch.*apps/api" &>/dev/null; then
-    warn "pnpm dev appears to be running — stop it before production (Ctrl+C or pkill -f 'next dev')"
-    warn "Dev and PM2 cannot share the same API/web ports."
+stop_dev_servers() {
+  if ! pgrep -f "next dev" &>/dev/null && ! pgrep -f "tsx watch" &>/dev/null; then
+    return 0
   fi
+  warn "Stopping pnpm dev (it blocks production ports)..."
+  pkill -f "next dev" 2>/dev/null || true
+  pkill -f "tsx watch" 2>/dev/null || true
+  sleep 2
+  ok "Dev servers stopped"
+}
+
+wait_for_api_health() {
+  local port="${ARCIIN_API_PORT:-4000}"
+  local tries=45
+  local log_file="${ROOT_DIR}/logs/arciin-api-err.log"
+
+  while (( tries > 0 )); do
+    if curl -sf "http://127.0.0.1:${port}/api/health" >/dev/null 2>&1; then
+      ok "API health OK on 127.0.0.1:${port}"
+      return 0
+    fi
+    if pm2 describe arciin-api 2>/dev/null | grep -q "errored"; then
+      break
+    fi
+    tries=$((tries - 1))
+    sleep 1
+  done
+
+  warn "API did not respond on 127.0.0.1:${port}/api/health"
+  if [[ -f "$log_file" ]]; then
+    echo -e "    ${DIM}── arciin-api errors (last 15 lines) ──${RESET}"
+    tail -15 "$log_file" 2>/dev/null | sed 's/^/    /' || true
+  fi
+  echo -e "    ${DIM}Fix:${RESET} pm2 logs arciin-api --lines 30"
+  return 1
 }
 
 launch_pm2() {
@@ -432,7 +462,7 @@ launch_pm2() {
     ok "PM2 $(pm2 --version 2>/dev/null | head -1) already installed"
   fi
 
-  warn_if_dev_servers_running
+  stop_dev_servers
 
   pm2 stop arciin-web arciin-api arciin-worker &>/dev/null || true
   pm2 delete arciin-web arciin-api arciin-worker &>/dev/null || true
@@ -442,10 +472,13 @@ launch_pm2() {
   mkdir -p "${ROOT_DIR}/logs"
   chmod 700 "${ROOT_DIR}/logs" 2>/dev/null || true
 
-  spin_ok "Building production web bundle..." "Web bundle ready" pnpm build:web
+  spin_ok "Building production web bundle (API → 127.0.0.1:${ARCIIN_API_PORT})..." "Web bundle ready" \
+    bash -c "cd \"${ROOT_DIR}\" && pnpm build:web"
 
-  spin_ok "Starting Arciin (PM2)..." "Arciin started" \
+  spin_ok "Starting Arciin (PM2)..." "PM2 processes started" \
     bash -c "cd \"${ROOT_DIR}\" && pm2 start ecosystem.config.cjs && pm2 save"
+
+  wait_for_api_health || warn "Web UI may show 'waiting for API' until arciin-api is fixed"
 
   if command -v systemctl >/dev/null 2>&1; then
     spin_ok "Configuring auto-start on boot..." "Auto-start configured" \

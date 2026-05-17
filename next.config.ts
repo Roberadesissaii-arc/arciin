@@ -1,6 +1,12 @@
+import { config as loadEnv } from "dotenv"
 import type { NextConfig } from "next"
 
-const apiUrl = process.env.ARCIIN_API_URL || "http://localhost:4000"
+// Ensure install.sh / PM2 .env is visible when building and at `next start`.
+loadEnv({ path: ".env" })
+
+const apiUrl =
+  process.env.ARCIIN_API_URL ||
+  `http://127.0.0.1:${process.env.API_PORT || "4000"}`
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,

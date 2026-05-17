@@ -3,11 +3,14 @@ import { AlertTriangle, ServerCrash } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { getServerApiOrigin, getServerApiPort } from "@/lib/server/api-origin"
 import { getRootRouteState } from "@/lib/utils/route-guards"
 
 export const dynamic = "force-dynamic"
 
 export default async function Home() {
+  const apiPort = getServerApiPort()
+  const apiHealthUrl = `${getServerApiOrigin()}/api/health`
   const state = await getRootRouteState()
 
   if (state.kind === "setup-required") {
@@ -32,9 +35,9 @@ export default async function Home() {
           <CardTitle className="text-2xl text-white">Arciin is waiting on its instance service.</CardTitle>
           <CardDescription className="text-sm text-zinc-400">
             The web shell loaded, but the instance service is not ready yet. Check the API on
-            port <span className="mx-1 font-mono text-zinc-300">4000</span>, Redis, and your
-            database credentials, or update
-            <span className="ml-1 font-mono text-zinc-300">ARCIIN_API_URL</span>.
+            port <span className="mx-1 font-mono text-zinc-300">{apiPort}</span>, Redis, and your
+            database credentials, or update{" "}
+            <span className="font-mono text-zinc-300">ARCIIN_API_URL</span>.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -47,7 +50,7 @@ export default async function Home() {
             </p>
           </div>
           <Button asChild size="lg" className="w-full bg-primary text-white hover:bg-primary/90">
-            <a href="http://localhost:4000/api/health" target="_blank" rel="noreferrer">
+            <a href={apiHealthUrl} target="_blank" rel="noreferrer">
               Probe API health
             </a>
           </Button>

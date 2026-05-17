@@ -59,12 +59,15 @@ if (!fs.existsSync(LOG_DIR)) {
 
 const dotenv = parseEnvFile(path.join(ROOT, ".env"))
 const bindHost = dotenv.ARCIIN_BIND_HOST || "0.0.0.0"
+const apiPort = String(dotenv.API_PORT || "4000")
+const tsxCli = path.join(ROOT, "node_modules/tsx/dist/cli.mjs")
 
 const sharedEnv = {
   ...dotenv,
   NODE_ENV: "production",
   PORT: String(port),
   HOSTNAME: bindHost,
+  API_PORT: apiPort,
 }
 
 const logDateFormat = "YYYY-MM-DD HH:mm:ss"
@@ -96,8 +99,8 @@ module.exports = {
     {
       name: "arciin-api",
       cwd: ROOT,
-      script: path.join(ROOT, "node_modules/.bin/tsx"),
-      args: "apps/api/src/index.ts",
+      script: "apps/api/src/index.ts",
+      interpreter: tsxCli,
       exec_mode: "fork",
       watch: false,
       autorestart: true,
@@ -110,8 +113,8 @@ module.exports = {
     {
       name: "arciin-worker",
       cwd: ROOT,
-      script: path.join(ROOT, "node_modules/.bin/tsx"),
-      args: "apps/worker/src/index.ts",
+      script: "apps/worker/src/index.ts",
+      interpreter: tsxCli,
       exec_mode: "fork",
       watch: false,
       autorestart: true,

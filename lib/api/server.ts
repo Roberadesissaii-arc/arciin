@@ -5,7 +5,9 @@ import { headers } from "next/headers"
 import { ApiError, toApiError } from "@/lib/api/errors"
 import { isApiFailure, type ApiResponse } from "@/lib/types/api"
 
-const apiUrl = (process.env.ARCIIN_API_URL || "http://localhost:4000").replace(/\/+$/, "")
+import { getServerApiOrigin } from "@/lib/server/api-origin"
+
+const apiUrl = getServerApiOrigin()
 const serverApiBase = `${apiUrl}/api`
 
 async function parseServerResponse<T>(response: Response) {

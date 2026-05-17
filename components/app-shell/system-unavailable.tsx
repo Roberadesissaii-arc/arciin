@@ -7,8 +7,10 @@ import {
 } from "@/components/auth/instance-auth-chrome"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { getServerApiOrigin, getServerApiPort } from "@/lib/server/api-origin"
 
-const apiHealthUrl = `${(process.env.NEXT_PUBLIC_ARCIIN_API_ORIGIN || "http://localhost:4000").replace(/\/$/, "")}/api/health`
+const apiHealthUrl = `${getServerApiOrigin()}/api/health`
+const apiPort = getServerApiPort()
 
 export function SystemUnavailable({
   title = "Arciin could not initialize its instance service.",
@@ -84,9 +86,12 @@ export function SystemUnavailable({
             <div className="flex items-start gap-3 rounded-2xl border border-white/[0.08] bg-white/[0.03] p-4 text-sm leading-relaxed text-zinc-300">
               <AlertTriangle className="mt-0.5 size-4 shrink-0 text-[#F59E0B]" aria-hidden />
               <p>
-                Make sure the Fastify API is running and that{" "}
-                <span className="font-mono text-zinc-200">ARCIIN_API_URL</span> points at it. If
-                the API is up but this page remains, verify Redis and the database credentials too.
+                Make sure the Fastify API is running on port{" "}
+                <span className="font-mono text-zinc-200">{apiPort}</span> and that{" "}
+                <span className="font-mono text-zinc-200">ARCIIN_API_URL</span> in{" "}
+                <span className="font-mono text-zinc-200">.env</span> matches it. If the API is up
+                but this page remains, verify Redis and database credentials, and run{" "}
+                <span className="font-mono text-zinc-200">pm2 restart arciin-api</span>.
               </p>
             </div>
 
