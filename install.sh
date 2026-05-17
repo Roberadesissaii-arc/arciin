@@ -142,12 +142,51 @@ fi
 echo ""
 
 # ── Port helpers ──────────────────────────────────────────────────────────────
+# lsof alone can miss listeners (permissions / timing). Prefer ss + a bind probe.
+_port_in_use() {
+  local port="$1"
+  if command -v ss >/dev/null 2>&1; then
+    if ss -tlnH "sport = :${port}" 2>/dev/null | grep -q .; then
+      return 0
+    fi
+  fi
+  if lsof -iTCP:"${port}" -sTCP:LISTEN &>/dev/null 2>&1; then
+    return 0
+  fi
+  return 1
+}
+
+_port_bind_test_free() {
+  local port="$1"
+  command -v node >/dev/null 2>&1 || return 0
+  node -e "
+    const net = require('net');
+    const s = net.createServer();
+    s.once('error', () => process.exit(1));
+    s.once('listening', () => { s.close(() => process.exit(0)); });
+    s.listen(${port}, '0.0.0.0');
+  " &>/dev/null
+}
+
+_port_available() {
+  local port="$1"
+  ! _port_in_use "$port" && _port_bind_test_free "$port"
+}
+
+_port_listener_hint() {
+  local port="$1"
+  if command -v ss >/dev/null 2>&1; then
+    ss -tlnpH "sport = :${port}" 2>/dev/null | head -3 | sed 's/^/      /' || true
+  fi
+  lsof -iTCP:"${port}" -sTCP:LISTEN 2>/dev/null | head -3 | sed 's/^/      /' || true
+}
+
 _find_free_port() {
   local start_port="${1:-3000}"
   local end_port="${2:-3099}"
   local port="$start_port"
   while (( port <= end_port )); do
-    if ! lsof -iTCP:"$port" -sTCP:LISTEN &>/dev/null 2>&1; then
+    if _port_available "$port"; then
       echo "$port"
       return 0
     fi
@@ -156,8 +195,57 @@ _find_free_port() {
   echo "$start_port"
 }
 
-_port_in_use() {
-  lsof -iTCP:"$1" -sTCP:LISTEN &>/dev/null 2>&1
+_apply_app_ports_to_env() {
+  local env_file="$1" lan_ip="$2" web_port="$3" api_port="$4"
+  _set_env_kv "$env_file" "NODE_ENV" "production"
+  _set_env_kv "$env_file" "PORT" "${web_port}"
+  _set_env_kv "$env_file" "ARCIIN_BIND_HOST" "0.0.0.0"
+  _set_env_kv "$env_file" "ARCIIN_PUBLIC_URL" "http://${lan_ip}:${web_port}"
+  _set_env_kv "$env_file" "ARCIIN_API_URL" "http://127.0.0.1:${api_port}"
+  _set_env_kv "$env_file" "API_PORT" "${api_port}"
+  _set_env_kv "$env_file" "NEXT_PUBLIC_ARCIIN_API_ORIGIN" ""
+  _set_env_kv "$env_file" "NEXT_PUBLIC_SOCKET_URL" ""
+  _set_env_kv "$env_file" "NEXT_PUBLIC_ARCIIN_PUBLIC_URL" "http://${lan_ip}:${web_port}"
+  ARCIIN_WEB_PORT="$web_port"
+  ARCIIN_API_PORT="$api_port"
+  export ARCIIN_WEB_PORT ARCIIN_API_PORT
+}
+
+# Re-check immediately before PM2 — other apps (Arceclaw, pnpm dev) may have taken the port.
+finalize_ports_before_launch() {
+  local env_file="${ROOT_DIR}/.env"
+  [[ -f "$env_file" ]] || return 0
+
+  local lan_ip web_port api_port saved_web saved_api changed=false
+  lan_ip="$(_detect_lan_ip)"
+  web_port="${ARCIIN_WEB_PORT:-$(_env_public_url_port "$env_file")}"
+  web_port="${web_port:-${DEFAULT_WEB_PORT}}"
+  api_port="${ARCIIN_API_PORT:-$(grep -oP '(?<=^API_PORT=)\d+' "$env_file" 2>/dev/null || echo "${DEFAULT_API_PORT}")}"
+
+  saved_web="$web_port"
+  saved_api="$api_port"
+
+  while ! _port_available "$web_port"; do
+    warn "Web port ${web_port} is taken — trying $((web_port + 1))"
+    _port_listener_hint "$web_port"
+    web_port=$((web_port + 1))
+    changed=true
+  done
+
+  while ! _port_available "$api_port"; do
+    warn "API port ${api_port} is taken — trying $((api_port + 1))"
+    _port_listener_hint "$api_port"
+    api_port=$((api_port + 1))
+    changed=true
+  done
+
+  if $changed || [[ "$web_port" != "${ARCIIN_WEB_PORT:-}" ]] || [[ "$api_port" != "${ARCIIN_API_PORT:-}" ]]; then
+    _apply_app_ports_to_env "$env_file" "$lan_ip" "$web_port" "$api_port"
+    if command -v ufw >/dev/null 2>&1; then
+      sudo ufw allow "${web_port}/tcp" comment "Arciin web UI" &>/dev/null || true
+    fi
+    ok "Ports finalized for launch — web ${web_port}, API ${api_port}"
+  fi
 }
 
 _port_has_postgres() {
@@ -252,31 +340,19 @@ configure_app_ports() {
   saved_web_port="$(_env_public_url_port "$env_file")"
   saved_api="$(grep -oP '(?<=^API_PORT=)\d+' "$env_file" 2>/dev/null || true)"
 
-  if [[ -n "$saved_web_port" ]] && ! _port_in_use "$saved_web_port"; then
+  if [[ -n "$saved_web_port" ]] && _port_available "$saved_web_port"; then
     web_port="$saved_web_port"
-  elif [[ -n "$saved_web_port" ]] && _port_in_use "$saved_web_port"; then
+  elif [[ -n "$saved_web_port" ]]; then
     warn "Web port $saved_web_port is in use — switching to $web_port"
   fi
 
-  if [[ -n "$saved_api" ]] && ! _port_in_use "$saved_api"; then
+  if [[ -n "$saved_api" ]] && _port_available "$saved_api"; then
     api_port="$saved_api"
-  elif [[ -n "$saved_api" ]] && _port_in_use "$saved_api"; then
+  elif [[ -n "$saved_api" ]]; then
     warn "API port $saved_api is in use — switching to $api_port"
   fi
 
-  _set_env_kv "$env_file" "NODE_ENV" "production"
-  _set_env_kv "$env_file" "PORT" "${web_port}"
-  _set_env_kv "$env_file" "ARCIIN_BIND_HOST" "0.0.0.0"
-  _set_env_kv "$env_file" "ARCIIN_PUBLIC_URL" "http://${lan_ip}:${web_port}"
-  _set_env_kv "$env_file" "ARCIIN_API_URL" "http://127.0.0.1:${api_port}"
-  _set_env_kv "$env_file" "API_PORT" "${api_port}"
-  _set_env_kv "$env_file" "NEXT_PUBLIC_ARCIIN_API_ORIGIN" ""
-  _set_env_kv "$env_file" "NEXT_PUBLIC_SOCKET_URL" ""
-  _set_env_kv "$env_file" "NEXT_PUBLIC_ARCIIN_PUBLIC_URL" "http://${lan_ip}:${web_port}"
-
-  ARCIIN_WEB_PORT="$web_port"
-  ARCIIN_API_PORT="$api_port"
-  export ARCIIN_WEB_PORT ARCIIN_API_PORT
+  _apply_app_ports_to_env "$env_file" "$lan_ip" "$web_port" "$api_port"
 
   ok "Web UI (LAN)   → http://${lan_ip}:${web_port}"
   ok "Web UI (local) → http://localhost:${web_port}"
@@ -320,20 +396,14 @@ configure_firewall() {
     fi
   fi
 
-  # Pick next free port if the chosen web port is still taken (race with other installers).
-  while _port_in_use "$web_port"; do
+  while ! _port_available "$web_port"; do
     warn "Port ${web_port} is in use — trying next port"
+    _port_listener_hint "$web_port"
     web_port=$((web_port + 1))
   done
 
   if [[ "$web_port" != "${ARCIIN_WEB_PORT}" ]]; then
-    local lan_ip
-    lan_ip="$(_detect_lan_ip)"
-    ARCIIN_WEB_PORT="$web_port"
-    export ARCIIN_WEB_PORT
-    _set_env_kv "$env_file" "PORT" "${web_port}"
-    _set_env_kv "$env_file" "ARCIIN_PUBLIC_URL" "http://${lan_ip}:${web_port}"
-    _set_env_kv "$env_file" "NEXT_PUBLIC_ARCIIN_PUBLIC_URL" "http://${lan_ip}:${web_port}"
+    _apply_app_ports_to_env "$env_file" "$(_detect_lan_ip)" "$web_port" "${ARCIIN_API_PORT:-${DEFAULT_API_PORT}}"
     warn "Updated web port to ${web_port} in .env"
   fi
 
@@ -348,6 +418,13 @@ configure_firewall() {
   sudo ufw status 2>/dev/null | sed 's/^/    /' || warn "Could not read ufw status"
 }
 
+warn_if_dev_servers_running() {
+  if pgrep -f "next dev" &>/dev/null || pgrep -f "tsx watch.*apps/api" &>/dev/null; then
+    warn "pnpm dev appears to be running — stop it before production (Ctrl+C or pkill -f 'next dev')"
+    warn "Dev and PM2 cannot share the same API/web ports."
+  fi
+}
+
 launch_pm2() {
   if ! command -v pm2 &>/dev/null; then
     spin_ok "Installing PM2 process manager..." "PM2 installed" npm install -g pm2
@@ -355,8 +432,12 @@ launch_pm2() {
     ok "PM2 $(pm2 --version 2>/dev/null | head -1) already installed"
   fi
 
+  warn_if_dev_servers_running
+
   pm2 stop arciin-web arciin-api arciin-worker &>/dev/null || true
   pm2 delete arciin-web arciin-api arciin-worker &>/dev/null || true
+
+  finalize_ports_before_launch
 
   mkdir -p "${ROOT_DIR}/logs"
   chmod 700 "${ROOT_DIR}/logs" 2>/dev/null || true
@@ -371,11 +452,20 @@ launch_pm2() {
       bash -c 'PM2_STARTUP="$(pm2 startup 2>&1 | grep sudo | tail -1 || true)"; [[ -n "$PM2_STARTUP" ]] && eval "$PM2_STARTUP" || true'
   fi
 
-  sleep 2
+  sleep 3
   if pm2 describe arciin-web 2>/dev/null | grep -q "online"; then
-    ok "Arciin web is online (listening on 0.0.0.0)"
+    ok "Arciin web is online on port ${ARCIIN_WEB_PORT} (0.0.0.0)"
   else
-    warn "Arciin web may still be starting — check: pm2 logs arciin-web"
+    echo ""
+    warn "Arciin web did not stay online — common cause: port ${ARCIIN_WEB_PORT} already in use"
+    _port_listener_hint "${ARCIIN_WEB_PORT}"
+    echo -e "    ${DIM}Fix:${RESET} stop other apps on that port, then: ${DIM}bash install.sh${RESET} or ${DIM}pm2 restart all${RESET}"
+    echo -e "    ${DIM}Logs:${RESET} pm2 logs arciin-web --lines 20"
+    echo -e "    ${DIM}Ports:${RESET} bash scripts/port-status.sh"
+  fi
+
+  if ! pm2 describe arciin-api 2>/dev/null | grep -q "online"; then
+    warn "arciin-api is not online — check: pm2 logs arciin-api (port ${ARCIIN_API_PORT} may be in use)"
   fi
 }
 
@@ -602,7 +692,8 @@ else
 fi
 
 chmod +x "${ROOT_DIR}/start.sh" "${ROOT_DIR}/stop.sh" \
-  "${ROOT_DIR}/scripts/start.sh" "${ROOT_DIR}/scripts/stop.sh" 2>/dev/null || true
+  "${ROOT_DIR}/scripts/start.sh" "${ROOT_DIR}/scripts/stop.sh" \
+  "${ROOT_DIR}/scripts/port-status.sh" 2>/dev/null || true
 
 # ── 10. Production launch (PM2) ─────────────────────────────────────────────
 step "Production launch"
@@ -663,6 +754,10 @@ echo -e "    UFW was configured to allow TCP ${WEB_PORT} during install (see ste
 echo ""
 echo -e "  ${BOLD}${WHITE}Security${RESET}"
 echo -e "    ${DIM}.env${RESET} is mode 600; API is loopback-only; review ${DIM}LICENSE${RESET} for terms."
+echo ""
+echo -e "  ${BOLD}${WHITE}Important${RESET}"
+echo -e "    Do ${BOLD}not${RESET} run ${DIM}pnpm dev${RESET} on this server — use PM2 only (${DIM}bash start.sh${RESET})."
+echo -e "    Port conflicts: ${DIM}bash scripts/port-status.sh${RESET}"
 echo ""
 echo -e "  ${BOLD}${WHITE}Options${RESET}"
 echo -e "    ${DIM}bash install.sh --reset-db${RESET}            Drop DB and re-run migrations"
