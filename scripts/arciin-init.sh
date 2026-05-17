@@ -71,9 +71,35 @@ ensure_storage_dirs() {
     "${root}/logs"
 }
 
+recover_chat_migration_failure() {
+  # Fresh installs before 20260515110000_chat_tables could fail on feedback ALTER.
+  local migrate_log
+  migrate_log="$(mktemp)"
+  if pnpm exec prisma migrate deploy >"${migrate_log}" 2>&1; then
+    cat "${migrate_log}"
+    rm -f "${migrate_log}"
+    return 0
+  fi
+
+  if grep -q '20260515120000_chat_message_feedback' "${migrate_log}" \
+    || grep -q 'relation "ChatMessage" does not exist' "${migrate_log}"; then
+    warn "Chat migration out of order — marking failed step rolled back and retrying"
+    pnpm exec prisma migrate resolve --rolled-back 20260515120000_chat_message_feedback \
+      >>"${migrate_log}" 2>&1 || true
+    rm -f "${migrate_log}"
+    log "Re-applying database migrations (prisma migrate deploy)"
+    pnpm exec prisma migrate deploy
+    return $?
+  fi
+
+  cat "${migrate_log}" >&2
+  rm -f "${migrate_log}"
+  return 1
+}
+
 run_migrations() {
   log "Applying database migrations (prisma migrate deploy)"
-  pnpm exec prisma migrate deploy
+  recover_chat_migration_failure
 }
 
 run_seed() {

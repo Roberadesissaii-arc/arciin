@@ -1,266 +1,506 @@
 #!/usr/bin/env bash
-
-set -euo pipefail
+# ================================================================
+#  Arciin — Local / WSL Installer
+#  Supports: Debian/Ubuntu/WSL (apt)
+#  Usage:  bash install.sh              — install or update
+#          bash install.sh --reset-db   — drop arciin DB and reinstall schema
+# ================================================================
+set -Eeuo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEFAULT_NODE_MAJOR=24
 DEFAULT_PNPM_VERSION=10.32.1
+DEFAULT_WEB_PORT=3000
+DEFAULT_API_PORT=4000
+DEFAULT_PG_PORT=5432
+ARCIIN_PG_PORT="${DEFAULT_PG_PORT}"
 
-log() {
-  printf '\n[arciin-install] %s\n' "$1"
+# ── Colors & styling ─────────────────────────────────────────────────────────
+BOLD="\033[1m"
+GREEN="\033[32m"
+BGREEN="\033[1;32m"
+YELLOW="\033[33m"
+CYAN="\033[36m"
+BCYAN="\033[1;36m"
+RED="\033[31m"
+DIM="\033[2m"
+WHITE="\033[97m"
+RESET="\033[0m"
+
+TOTAL_STEPS=9
+STEP=0
+
+step() {
+  STEP=$((STEP + 1))
+  echo ""
+  echo -e "  ${BCYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+  echo -e "  ${WHITE}${BOLD}  Step ${STEP}/${TOTAL_STEPS}  ${RESET}${BOLD}$1${RESET}"
+  echo -e "  ${BCYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
 }
 
-warn() {
-  printf '\n[arciin-install] warning: %s\n' "$1" >&2
-}
+ok()      { echo -e "    ${GREEN}✔${RESET}  $1"; }
+doing()   { echo -ne "    ${CYAN}⟳${RESET}  ${DIM}$1${RESET}"; }
+done_()   { echo -ne "\r\033[2K"; echo -e "    ${GREEN}✔${RESET}  $1"; }
+warn()    { echo -e "    ${YELLOW}⚠${RESET}  $1"; }
+fail()    { echo -e "    ${RED}✖${RESET}  $1"; exit 1; }
 
-require_command() {
-  if ! command -v "$1" >/dev/null 2>&1; then
-    warn "Missing required command: $1"
-    exit 1
+LAST_SPIN_LOG=""
+
+on_err() {
+  local line="$1" cmd="$2" code="$3"
+  echo ""
+  echo -e "    ${RED}Installer error at line ${line}${RESET}"
+  echo -e "    ${DIM}Command:${RESET} ${cmd}"
+  if [[ -n "${LAST_SPIN_LOG:-}" && -f "${LAST_SPIN_LOG:-}" ]]; then
+    echo ""
+    echo -e "    ${YELLOW}Last step output:${RESET}"
+    sed 's/^/    /' "$LAST_SPIN_LOG"
+    rm -f "$LAST_SPIN_LOG"
+    LAST_SPIN_LOG=""
   fi
+  exit "$code"
 }
 
-start_service() {
-  local service_name="$1"
+trap 'on_err "$LINENO" "$BASH_COMMAND" "$?"' ERR
 
-  if command -v systemctl >/dev/null 2>&1 && systemctl list-unit-files >/dev/null 2>&1; then
-    sudo systemctl enable --now "$service_name" || warn "Could not enable/start ${service_name}"
+spin() {
+  local msg="$1"; shift
+  local chars="⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+  local start i=0 pid elapsed mins secs c log_file exit_code
+
+  log_file="$(mktemp)"
+  LAST_SPIN_LOG="$log_file"
+  "$@" >"$log_file" 2>&1 &
+  pid=$!
+  start=$(date +%s)
+
+  while kill -0 "$pid" 2>/dev/null; do
+    elapsed=$(( $(date +%s) - start ))
+    mins=$(( elapsed / 60 )); secs=$(( elapsed % 60 ))
+    c="${chars:$((i % ${#chars})):1}"
+    if (( elapsed >= 2 )); then
+      printf "\r    ${CYAN}%s${RESET}  ${DIM}%s — %d:%02d${RESET}   " "$c" "$msg" "$mins" "$secs"
+    else
+      printf "\r    ${CYAN}%s${RESET}  ${DIM}%s${RESET}   " "$c" "$msg"
+    fi
+    i=$(( i + 1 ))
+    sleep 0.15
+  done
+
+  wait "$pid"
+  exit_code=$?
+  printf "\r\033[2K"
+  if [[ $exit_code -eq 0 ]]; then
+    rm -f "$log_file"
+    LAST_SPIN_LOG=""
+  fi
+  return $exit_code
+}
+
+spin_ok() {
+  local label="$1" done_msg="$2"; shift 2
+  if spin "$label" "$@"; then
+    done_ "$done_msg"
   else
-    sudo service "$service_name" start || warn "Could not start ${service_name}"
+    echo ""
+    echo -e "    ${RED}Step failed:${RESET} $label"
+    if [[ -n "${LAST_SPIN_LOG:-}" && -f "${LAST_SPIN_LOG:-}" ]]; then
+      echo ""
+      echo -e "    ${YELLOW}Command output:${RESET}"
+      sed 's/^/    /' "$LAST_SPIN_LOG"
+      rm -f "$LAST_SPIN_LOG"
+      LAST_SPIN_LOG=""
+    fi
+    fail "$label failed"
   fi
 }
 
-ensure_postgres_role_and_db() {
-  if ! command -v psql >/dev/null 2>&1; then
-    warn "psql not found; skipping local PostgreSQL role/database setup"
+# ── Flags ─────────────────────────────────────────────────────────────────────
+RESET_DB=false
+for arg in "$@"; do
+  [[ "$arg" == "--reset-db" ]] && RESET_DB=true
+done
+
+# ── Banner ────────────────────────────────────────────────────────────────────
+clear
+echo ""
+echo -e "${BGREEN}     █████╗ ██████╗  ██████╗██╗██╗███╗   ██╗${RESET}"
+echo -e "${BGREEN}    ██╔══██╗██╔══██╗██╔════╝██║██║████╗  ██║${RESET}"
+echo -e "${BGREEN}    ███████║██████╔╝██║     ██║██║██╔██╗ ██║${RESET}"
+echo -e "${BGREEN}    ██╔══██║██╔══██╗██║     ██║██║██║╚██╗██║${RESET}"
+echo -e "${BGREEN}    ██║  ██║██║  ██║╚██████╗██║██║██║ ╚████║${RESET}"
+echo -e "${BGREEN}    ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝╚═╝╚═╝╚═╝  ╚═══╝${RESET}"
+echo ""
+echo -e "  ${DIM}Your server, your control.${RESET}                          ${DIM}self-hosted${RESET}"
+echo -e "  ${DIM}──────────────────────────────────────────────────────────${RESET}"
+if $RESET_DB; then
+  echo ""
+  echo -e "  ${YELLOW}${BOLD}⚠  Reset mode — PostgreSQL database \"arciin\" will be dropped.${RESET}"
+fi
+echo ""
+
+# ── Port helpers ──────────────────────────────────────────────────────────────
+_find_free_port() {
+  local start_port="${1:-3000}"
+  local end_port="${2:-3099}"
+  local port="$start_port"
+  while (( port <= end_port )); do
+    if ! lsof -iTCP:"$port" -sTCP:LISTEN &>/dev/null 2>&1; then
+      echo "$port"
+      return 0
+    fi
+    port=$(( port + 1 ))
+  done
+  echo "$start_port"
+}
+
+_port_in_use() {
+  lsof -iTCP:"$1" -sTCP:LISTEN &>/dev/null 2>&1
+}
+
+_port_has_postgres() {
+  command -v pg_isready >/dev/null 2>&1 && pg_isready -h localhost -p "$1" -q 2>/dev/null
+}
+
+# Prefer 5432; if busy and not PostgreSQL, try 5433, 5434, …
+_resolve_postgres_port() {
+  local port="${DEFAULT_PG_PORT}"
+  local end_port=5499
+  while (( port <= end_port )); do
+    if _port_has_postgres "$port"; then
+      echo "$port"
+      return 0
+    fi
+    if ! _port_in_use "$port"; then
+      echo "$port"
+      return 0
+    fi
+    port=$(( port + 1 ))
+  done
+  echo "${DEFAULT_PG_PORT}"
+}
+
+maybe_reconfigure_postgresql_port() {
+  local target_port="$1"
+  if _port_has_postgres "$target_port"; then
     return 0
   fi
 
-  log "Ensuring default local PostgreSQL role and database exist"
-  if sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='arciin'" | grep -q 1; then
-    sudo -u postgres psql -c "ALTER ROLE arciin WITH LOGIN PASSWORD 'arciin' CREATEDB;"
-  else
-    sudo -u postgres psql -c "CREATE ROLE arciin WITH LOGIN PASSWORD 'arciin' CREATEDB;"
+  local pg_conf=""
+  if [[ -d /etc/postgresql ]]; then
+    pg_conf="$(find /etc/postgresql -name postgresql.conf 2>/dev/null | head -1 || true)"
+  fi
+  if [[ -z "$pg_conf" ]]; then
+    warn "postgresql.conf not found — ensure PostgreSQL listens on port ${target_port}"
+    return 0
   fi
 
-  if sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='arciin'" | grep -q 1; then
-    sudo -u postgres psql -c "ALTER DATABASE arciin OWNER TO arciin;"
-  else
-    sudo -u postgres psql -c "CREATE DATABASE arciin OWNER arciin;"
+  if _port_in_use "$target_port"; then
+    warn "Port ${target_port} is in use — cannot reconfigure PostgreSQL"
+    return 1
   fi
 
-  sudo -u postgres psql -d arciin -c "GRANT ALL ON SCHEMA public TO arciin;" >/dev/null 2>&1 || true
-  sudo -u postgres psql -d arciin -c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO arciin;" >/dev/null 2>&1 || true
+  warn "Port ${DEFAULT_PG_PORT} is in use — configuring PostgreSQL to listen on ${target_port}"
+  if grep -qE '^[#\s]*port\s*=' "$pg_conf"; then
+    sudo sed -i "s/^[#[:space:]]*port[[:space:]]*=.*/port = ${target_port}/" "$pg_conf"
+  else
+    echo "port = ${target_port}" | sudo tee -a "$pg_conf" >/dev/null
+  fi
+  sudo systemctl restart postgresql 2>/dev/null || sudo service postgresql restart 2>/dev/null || true
+  sleep 2
+  _port_has_postgres "$target_port" || warn "PostgreSQL is not responding on port ${target_port} yet"
+}
+
+_set_env_kv() {
+  local env_file="$1" key="$2" value="$3"
+  if grep -q "^${key}=" "$env_file" 2>/dev/null; then
+    sed -i "s|^${key}=.*|${key}=${value}|" "$env_file"
+  else
+    echo "${key}=${value}" >>"$env_file"
+  fi
+}
+
+configure_app_ports() {
+  local env_file="${ROOT_DIR}/.env"
+  [[ -f "$env_file" ]] || return 0
+
+  local web_port api_port
+  web_port="$(_find_free_port "$DEFAULT_WEB_PORT" 3099)"
+  api_port="$(_find_free_port "$DEFAULT_API_PORT" 4099)"
+
+  local saved_web saved_api
+  saved_web="$(grep -oP '(?<=^ARCIIN_PUBLIC_URL=http://localhost:)\d+' "$env_file" 2>/dev/null || true)"
+  saved_api="$(grep -oP '(?<=^API_PORT=)\d+' "$env_file" 2>/dev/null || true)"
+
+  if [[ -n "$saved_web" ]] && ! _port_in_use "$saved_web"; then
+    web_port="$saved_web"
+  elif [[ -n "$saved_web" ]] && _port_in_use "$saved_web"; then
+    warn "Web port $saved_web is in use — switching to $web_port"
+  fi
+
+  if [[ -n "$saved_api" ]] && ! _port_in_use "$saved_api"; then
+    api_port="$saved_api"
+  elif [[ -n "$saved_api" ]] && _port_in_use "$saved_api"; then
+    warn "API port $saved_api is in use — switching to $api_port"
+  fi
+
+  _set_env_kv "$env_file" "ARCIIN_PUBLIC_URL" "http://localhost:${web_port}"
+  _set_env_kv "$env_file" "ARCIIN_API_URL" "http://localhost:${api_port}"
+  _set_env_kv "$env_file" "API_PORT" "${api_port}"
+  _set_env_kv "$env_file" "NEXT_PUBLIC_ARCIIN_API_ORIGIN" "http://localhost:${api_port}"
+
+  ok "Web UI → http://localhost:${web_port}"
+  ok "API    → http://localhost:${api_port}"
+}
+
+configure_postgres_port() {
+  local env_file="${ROOT_DIR}/.env"
+  [[ -f "$env_file" ]] || return 0
+
+  local pg_port saved_pg
+  pg_port="$(_resolve_postgres_port)"
+  saved_pg="$(grep -oP '(?<=@localhost:)\d+(?=/arciin)' "$env_file" 2>/dev/null || true)"
+
+  if [[ -n "$saved_pg" ]] && { _port_has_postgres "$saved_pg" || ! _port_in_use "$saved_pg"; }; then
+    pg_port="$saved_pg"
+  elif [[ -n "$saved_pg" ]] && _port_in_use "$saved_pg" && ! _port_has_postgres "$saved_pg"; then
+    warn "PostgreSQL port $saved_pg is in use — switching to $pg_port"
+  fi
+
+  maybe_reconfigure_postgresql_port "$pg_port"
+  ARCIIN_PG_PORT="$pg_port"
+
+  _set_env_kv "$env_file" "DATABASE_URL" "postgresql://arciin:arciin@localhost:${pg_port}/arciin"
+  _set_env_kv "$env_file" "ARCIIN_PG_PORT" "${pg_port}"
+
+  if pg_isready -h localhost -p "$pg_port" &>/dev/null 2>&1; then
+    ok "PostgreSQL → localhost:${pg_port}"
+  else
+    warn "PostgreSQL is not responding on localhost:${pg_port}"
+  fi
+}
+
+_gen_secret() {
+  openssl rand -base64 32 2>/dev/null | tr -d '\n=' || \
+    head -c 32 /dev/urandom | base64 2>/dev/null | tr -d '\n=' || \
+    echo "changeme-$(date +%s)-$(( RANDOM * RANDOM ))"
 }
 
 ensure_env_file() {
   if [[ ! -f "${ROOT_DIR}/.env" ]]; then
     if [[ ! -f "${ROOT_DIR}/.env.example" ]]; then
-      warn ".env.example not found. Cannot create .env automatically."
-      exit 1
+      fail ".env.example not found — cannot create .env"
     fi
-    log "Creating .env from .env.example"
     cp "${ROOT_DIR}/.env.example" "${ROOT_DIR}/.env"
+    ok "Created .env from .env.example"
   else
-    log ".env already exists, leaving it untouched"
+    ok ".env already exists"
   fi
 }
 
 ensure_session_secret() {
   local env_file="${ROOT_DIR}/.env"
   [[ -f "${env_file}" ]] || return 0
-
   if grep -q '^SESSION_SECRET=change-this-in-production' "${env_file}" 2>/dev/null; then
-    if command -v openssl >/dev/null 2>&1; then
-      local secret
-      secret="$(openssl rand -base64 32 | tr -d '\n')"
-      log "Generating a random SESSION_SECRET in .env"
-      sed -i "s|^SESSION_SECRET=.*|SESSION_SECRET=${secret}|" "${env_file}"
-    else
-      warn "openssl not found; update SESSION_SECRET in .env before production use"
-    fi
+    _set_env_kv "$env_file" "SESSION_SECRET" "$(_gen_secret)"
+    ok "Generated SESSION_SECRET"
   fi
 }
 
 ensure_setup_token() {
   local env_file="${ROOT_DIR}/.env"
   [[ -f "${env_file}" ]] || return 0
-
   if grep -q '^ARCIIN_SETUP_TOKEN=dev-token' "${env_file}" 2>/dev/null; then
-    if command -v openssl >/dev/null 2>&1; then
-      local token
-      token="$(openssl rand -hex 24)"
-      log "Generating a random ARCIIN_SETUP_TOKEN in .env"
-      sed -i "s|^ARCIIN_SETUP_TOKEN=.*|ARCIIN_SETUP_TOKEN=${token}|" "${env_file}"
-    else
-      warn "openssl not found; ARCIIN_SETUP_TOKEN is still 'dev-token' — change it before production use"
-    fi
+    _set_env_kv "$env_file" "ARCIIN_SETUP_TOKEN" "$(openssl rand -hex 24 2>/dev/null || _gen_secret)"
+    ok "Generated ARCIIN_SETUP_TOKEN"
   fi
 }
 
-check_ffmpeg() {
-  if ! command -v ffmpeg >/dev/null 2>&1; then
-    warn "ffmpeg is not available after installation — thumbnail and media probe features will not work"
+start_service() {
+  local service_name="$1"
+  if command -v systemctl >/dev/null 2>&1 && systemctl list-unit-files >/dev/null 2>&1; then
+    sudo systemctl enable --now "$service_name" &>/dev/null || warn "Could not enable/start ${service_name}"
   else
-    log "ffmpeg is available: $(ffmpeg -version 2>&1 | head -1)"
+    sudo service "$service_name" start &>/dev/null || warn "Could not start ${service_name}"
   fi
 }
 
+ensure_postgres_role_and_db() {
+  if ! command -v psql >/dev/null 2>&1; then
+    warn "psql not found — skipping PostgreSQL role/database setup"
+    return 0
+  fi
+
+  local pg_port="${ARCIIN_PG_PORT:-${DEFAULT_PG_PORT}}"
+  export PGPORT="$pg_port"
+
+  if $RESET_DB; then
+    spin_ok "Dropping existing arciin database..." "Database dropped" \
+      bash -c "sudo -u postgres env PGPORT='${pg_port}' psql -c \"DROP DATABASE IF EXISTS arciin;\" && \
+        sudo -u postgres env PGPORT='${pg_port}' psql -c \"DROP ROLE IF EXISTS arciin;\"" || true
+  fi
+
+  if sudo -u postgres env PGPORT="$pg_port" psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='arciin'" | grep -q 1; then
+    sudo -u postgres env PGPORT="$pg_port" psql -c "ALTER ROLE arciin WITH LOGIN PASSWORD 'arciin' CREATEDB;" &>/dev/null
+  else
+    sudo -u postgres env PGPORT="$pg_port" psql -c "CREATE ROLE arciin WITH LOGIN PASSWORD 'arciin' CREATEDB;" &>/dev/null
+  fi
+
+  if sudo -u postgres env PGPORT="$pg_port" psql -tAc "SELECT 1 FROM pg_database WHERE datname='arciin'" | grep -q 1; then
+    sudo -u postgres env PGPORT="$pg_port" psql -c "ALTER DATABASE arciin OWNER TO arciin;" &>/dev/null
+  else
+    sudo -u postgres env PGPORT="$pg_port" psql -c "CREATE DATABASE arciin OWNER arciin;" &>/dev/null
+  fi
+
+  sudo -u postgres env PGPORT="$pg_port" psql -d arciin -c "GRANT ALL ON SCHEMA public TO arciin;" &>/dev/null || true
+  ok "PostgreSQL role/database: arciin / arciin (port ${pg_port})"
+}
+
+# ── Preconditions ─────────────────────────────────────────────────────────────
 if [[ "${EUID}" -eq 0 ]]; then
-  warn "Run this script as your normal user, not as root."
-  exit 1
+  fail "Run this script as your normal user, not as root."
 fi
 
 if ! command -v apt-get >/dev/null 2>&1; then
-  warn "This installer currently supports Debian/Ubuntu/WSL environments with apt."
-  exit 1
+  fail "This installer supports Debian/Ubuntu/WSL with apt. Use Docker or manual setup on other OSes."
 fi
 
-require_command sudo
-require_command curl
+command -v sudo >/dev/null 2>&1 || fail "sudo is required"
+command -v curl >/dev/null 2>&1 || fail "curl is required"
 
-log "Updating apt package lists"
-sudo apt-get update
+# ── 1. System packages ────────────────────────────────────────────────────────
+step "System packages"
 
-if [[ "${ARCIIN_UPGRADE_SYSTEM:-0}" == "1" ]]; then
-  log "Upgrading installed packages"
-  sudo apt-get upgrade -y
+spin_ok "Updating package lists..." "Package lists updated" sudo apt-get update -qq
+
+if [[ "${ARCIIN_UPGRADE_SYSTEM:-1}" == "1" ]]; then
+  spin_ok "Upgrading installed packages..." "System packages upgraded" sudo apt-get upgrade -y -qq
 else
-  log "Skipping full system upgrade. Set ARCIIN_UPGRADE_SYSTEM=1 to enable it."
+  ok "Skipping apt upgrade (set ARCIIN_UPGRADE_SYSTEM=1 to enable)"
 fi
 
-log "Installing core system dependencies"
-sudo apt-get install -y \
-  ca-certificates \
-  curl \
-  ffmpeg \
-  git \
-  gnupg \
-  build-essential \
-  unzip \
-  python3 \
-  openssl \
-  libssl-dev \
-  pkg-config \
-  libatomic1 \
-  redis-server \
-  postgresql \
-  postgresql-contrib
+spin_ok "Installing dependencies..." "curl, git, ffmpeg, lsof, PostgreSQL, Redis ready" \
+  sudo apt-get install -y -qq \
+    ca-certificates curl git gnupg build-essential unzip python3 openssl \
+    libssl-dev pkg-config libatomic1 lsof \
+    ffmpeg redis-server postgresql postgresql-contrib
 
-if ! command -v node >/dev/null 2>&1; then
-  log "Installing Node.js ${DEFAULT_NODE_MAJOR}"
-  curl -fsSL "https://deb.nodesource.com/setup_${DEFAULT_NODE_MAJOR}.x" | sudo -E bash -
-  sudo apt-get install -y nodejs
-else
+# ── 2. Node.js ────────────────────────────────────────────────────────────────
+step "Node.js"
+
+if command -v node >/dev/null 2>&1; then
   NODE_MAJOR="$(node -p 'process.versions.node.split(".")[0]')"
-  if [[ "${NODE_MAJOR}" -lt "${DEFAULT_NODE_MAJOR}" ]]; then
-    log "Upgrading Node.js to ${DEFAULT_NODE_MAJOR}"
-    curl -fsSL "https://deb.nodesource.com/setup_${DEFAULT_NODE_MAJOR}.x" | sudo -E bash -
-    sudo apt-get install -y nodejs
+  if [[ "${NODE_MAJOR}" -ge "${DEFAULT_NODE_MAJOR}" ]]; then
+    ok "Node.js $(node -v) already installed"
   else
-    log "Node.js is already installed: $(node -v)"
+    spin_ok "Upgrading Node.js to ${DEFAULT_NODE_MAJOR}..." "Node.js $(node -v) ready" \
+      bash -c "curl -fsSL https://deb.nodesource.com/setup_${DEFAULT_NODE_MAJOR}.x | sudo -E bash - && sudo apt-get install -y -qq nodejs"
   fi
+else
+  spin_ok "Installing Node.js ${DEFAULT_NODE_MAJOR}..." "Node.js $(node -v) installed" \
+    bash -c "curl -fsSL https://deb.nodesource.com/setup_${DEFAULT_NODE_MAJOR}.x | sudo -E bash - && sudo apt-get install -y -qq nodejs"
 fi
 
-log "Installing/updating Corepack"
-sudo npm install --global corepack@latest
+# ── 3. pnpm ───────────────────────────────────────────────────────────────────
+step "pnpm"
 
-log "Enabling pnpm through Corepack"
+spin_ok "Updating Corepack..." "Corepack ready" sudo npm install --global corepack@latest --silent
 corepack enable pnpm
-corepack prepare "pnpm@${DEFAULT_PNPM_VERSION}" --activate
+spin_ok "Activating pnpm ${DEFAULT_PNPM_VERSION}..." "pnpm $(pnpm --version) ready" \
+  corepack prepare "pnpm@${DEFAULT_PNPM_VERSION}" --activate
+
+# ── 4. Environment ────────────────────────────────────────────────────────────
+step "Environment"
 
 ensure_env_file
 ensure_session_secret
 ensure_setup_token
+configure_app_ports
 
-log "Starting Redis and PostgreSQL"
+# ── 5. Services ───────────────────────────────────────────────────────────────
+step "Redis & PostgreSQL"
+
 start_service redis-server
 start_service postgresql
 
-if command -v redis-cli >/dev/null 2>&1; then
-  if redis-cli ping >/dev/null 2>&1; then
-    log "Redis is responding on localhost:6379"
-  else
-    warn "Redis is installed but not responding on localhost:6379"
-  fi
+if redis-cli ping &>/dev/null 2>&1; then
+  ok "Redis on localhost:6379"
+else
+  warn "Redis is not responding on localhost:6379"
 fi
 
-if command -v pg_isready >/dev/null 2>&1; then
-  if pg_isready -h localhost -p 5432 >/dev/null 2>&1; then
-    log "PostgreSQL is responding on localhost:5432"
-  else
-    warn "PostgreSQL is installed but not responding on localhost:5432"
-  fi
-fi
-
+configure_postgres_port
 ensure_postgres_role_and_db
 
+# ── 6. Dependencies ───────────────────────────────────────────────────────────
+step "JavaScript dependencies"
+
 cd "${ROOT_DIR}"
+spin_ok "Installing workspace packages..." "Packages installed" \
+  bash -c 'pnpm install --silent 2>/dev/null || pnpm install'
 
-log "Installing JavaScript dependencies"
-pnpm install
+spin_ok "Approving dependency build scripts..." "Build scripts approved" \
+  bash -c 'pnpm approve-builds --all 2>/dev/null || true'
 
-log "Generating Prisma client"
-pnpm db:generate
+# ── 7. Database ───────────────────────────────────────────────────────────────
+step "Database"
+
+spin_ok "Generating Prisma client..." "Prisma client ready" pnpm db:generate
 
 if [[ "${ARCIIN_SKIP_DB_INIT:-0}" == "1" ]]; then
-  warn "Skipping database migrations, seed, and storage dirs (ARCIIN_SKIP_DB_INIT=1)"
+  warn "Skipping migrations/seed (ARCIIN_SKIP_DB_INIT=1)"
 else
-  bash "${ROOT_DIR}/scripts/arciin-init.sh"
+  spin_ok "Applying migrations and seed..." "Database ready" \
+    bash "${ROOT_DIR}/scripts/arciin-init.sh"
 fi
 
 chmod +x "${ROOT_DIR}/scripts/arciin-init.sh" "${ROOT_DIR}/scripts/entrypoint-api.sh" 2>/dev/null || true
 
-check_ffmpeg
+# ── 8. Health checks ──────────────────────────────────────────────────────────
+step "Health checks"
 
-SETUP_TOKEN="$(grep '^ARCIIN_SETUP_TOKEN=' "${ROOT_DIR}/.env" 2>/dev/null | cut -d= -f2- || echo 'dev-token')"
-PUBLIC_URL="$(grep '^ARCIIN_PUBLIC_URL=' "${ROOT_DIR}/.env" 2>/dev/null | cut -d= -f2- || echo 'http://localhost:3000')"
+if command -v ffmpeg >/dev/null 2>&1; then
+  ok "ffmpeg available"
+else
+  warn "ffmpeg missing — thumbnails and media probes will not work"
+fi
+
+# ── 9. Summary ────────────────────────────────────────────────────────────────
+step "Ready"
+
+ENV_FILE="${ROOT_DIR}/.env"
+SETUP_TOKEN="$(grep '^ARCIIN_SETUP_TOKEN=' "$ENV_FILE" 2>/dev/null | cut -d= -f2- || echo 'dev-token')"
+PUBLIC_URL="$(grep '^ARCIIN_PUBLIC_URL=' "$ENV_FILE" 2>/dev/null | cut -d= -f2- || echo "http://localhost:${DEFAULT_WEB_PORT}")"
+API_URL="$(grep '^ARCIIN_API_URL=' "$ENV_FILE" 2>/dev/null | cut -d= -f2- || echo "http://localhost:${DEFAULT_API_PORT}")"
+WEB_PORT="${PUBLIC_URL##*:}"
+API_PORT="$(grep '^API_PORT=' "$ENV_FILE" 2>/dev/null | cut -d= -f2- || echo "${DEFAULT_API_PORT}")"
+PG_PORT="$(grep '^ARCIIN_PG_PORT=' "$ENV_FILE" 2>/dev/null | cut -d= -f2- || echo "${ARCIIN_PG_PORT:-${DEFAULT_PG_PORT}}")"
 SETUP_URL="${PUBLIC_URL}/setup?token=${SETUP_TOKEN}"
 
-cat <<EOF
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  Arciin is ready.
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-  1. Start the app:
-       pnpm dev
-
-  2. Open your setup link (one-time):
-       ${SETUP_URL}
-
-     This link contains your setup token. Paste it into the setup form
-     to claim the instance and create your admin account.
-
-  Setup token (also in .env):
-    ${SETUP_TOKEN}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  What was initialized automatically:
-    - PostgreSQL role/database: arciin / arciin
-    - All Prisma migrations applied
-    - Seed data (default integrations placeholder)
-    - Storage directories: objects, libraries, thumbnails, temp, logs
-    - Prisma client generated
-    - SESSION_SECRET randomized
-    - ARCIIN_SETUP_TOKEN randomized
-
-  Health checks:
-    redis-cli ping
-    pg_isready -h localhost -p 5432
-
-  Optional flags:
-    ARCIIN_UPGRADE_SYSTEM=1 ./install.sh   # run apt upgrade first
-    ARCIIN_SKIP_DB_INIT=1 ./install.sh     # skip migrate/seed (advanced)
-
-  Docker (alternative):
-    cp .env.example .env
-    # edit .env: set ARCIIN_SETUP_TOKEN to a random value
-    docker compose up --build -d
-    # then open: http://localhost/setup?token=<your-token>
-
-  Notes:
-    - Intended for Debian/Ubuntu/WSL. Review .env before production use.
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-EOF
+echo ""
+echo ""
+echo -e "  ${BGREEN}╔════════════════════════════════════════════════════════╗${RESET}"
+echo -e "  ${BGREEN}║   ✔  Installation complete!                            ║${RESET}"
+echo -e "  ${BGREEN}╚════════════════════════════════════════════════════════╝${RESET}"
+echo ""
+echo -e "  ${BOLD}${WHITE}Services & ports${RESET}"
+echo ""
+echo -e "    ${DIM}Web UI${RESET}       ${BOLD}${WHITE}${PUBLIC_URL}${RESET}  ${DIM}(port ${WEB_PORT})${RESET}"
+echo -e "    ${DIM}API${RESET}          ${BOLD}${WHITE}${API_URL}${RESET}  ${DIM}(port ${API_PORT})${RESET}"
+echo -e "    ${DIM}PostgreSQL${RESET}   localhost:${PG_PORT}"
+echo -e "    ${DIM}Redis${RESET}        localhost:6379"
+echo ""
+echo -e "  ${BOLD}${WHITE}Get started${RESET}"
+echo ""
+echo -e "    ${BGREEN}1.${RESET}  Start:  ${BOLD}pnpm dev${RESET}"
+echo -e "    ${BGREEN}2.${RESET}  Open:   ${BOLD}${SETUP_URL}${RESET}"
+echo -e "    ${BGREEN}3.${RESET}  Claim your instance and create the admin account"
+echo ""
+echo -e "  ${BOLD}${WHITE}Setup token${RESET} ${DIM}(also in .env)${RESET}"
+echo -e "    ${SETUP_TOKEN}"
+echo ""
+echo -e "  ${BOLD}${WHITE}Options${RESET}"
+echo -e "    ${DIM}bash install.sh --reset-db${RESET}           Drop DB and re-run migrations"
+echo -e "    ${DIM}ARCIIN_UPGRADE_SYSTEM=0 ./install.sh${RESET}  Skip apt upgrade"
+echo -e "    ${DIM}ARCIIN_SKIP_DB_INIT=1 ./install.sh${RESET}    Skip migrate/seed"
+echo ""
