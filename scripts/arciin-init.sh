@@ -104,12 +104,19 @@ run_migrations() {
 
 run_seed() {
   log "Seeding database defaults"
-  pnpm db:seed
+  if pnpm db:seed; then
+    return 0
+  fi
+  warn "Seed failed — if you just pulled new migrations, run: pnpm exec prisma migrate deploy && pnpm db:seed"
+  return 1
 }
 
 wait_for_postgres
 run_migrations
-run_seed
+if ! run_seed; then
+  ensure_storage_dirs
+  exit 1
+fi
 ensure_storage_dirs
 
 log "Database and storage initialization complete"
