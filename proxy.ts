@@ -11,7 +11,7 @@ function socketIoRewriteTarget(pathname: string, search: string) {
 }
 
 /** Proxy Socket.IO through the web origin so session cookies authenticate (WSL/dev). */
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl
 
   if (!pathname.startsWith("/socket.io")) {
