@@ -2,7 +2,7 @@ import { parse } from "cookie"
 import type { FastifyInstance } from "fastify"
 import { Server } from "socket.io"
 
-import { SOCKET_EVENT_CHANNEL, type RealtimeEvent } from "@arciin/shared"
+import { isSelfHostedLanOrigin, SOCKET_EVENT_CHANNEL, type RealtimeEvent } from "@arciin/shared"
 
 import { apiConfig } from "@/config"
 import { hashApiKey, hashToken, scopeAllows } from "@/services/security/auth"
@@ -45,7 +45,17 @@ export async function registerSocket(fastify: FastifyInstance) {
 
   const io = new Server(fastify.server, {
     cors: {
-      origin: corsOrigins,
+      origin(origin, callback) {
+        if (!origin) {
+          callback(null, true)
+          return
+        }
+        if (corsOrigins.includes(origin) || isSelfHostedLanOrigin(origin)) {
+          callback(null, true)
+          return
+        }
+        callback(new Error("Origin not allowed"), false)
+      },
       credentials: true,
     },
   })

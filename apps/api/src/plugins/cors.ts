@@ -1,6 +1,8 @@
 import cors from "@fastify/cors"
 import type { FastifyInstance } from "fastify"
 
+import { isSelfHostedLanOrigin } from "@arciin/shared"
+
 import { apiConfig } from "@/config"
 
 const developmentOrigins = new Set([
@@ -30,7 +32,8 @@ export async function registerCors(fastify: FastifyInstance) {
         !apiConfig.isProduction ||
         origin === apiConfig.ARCIIN_PUBLIC_URL ||
         developmentOrigins.has(origin) ||
-        isCloudflareQuickTunnelOrigin(origin)
+        isCloudflareQuickTunnelOrigin(origin) ||
+        isSelfHostedLanOrigin(origin)
       ) {
         callback(null, true)
         return

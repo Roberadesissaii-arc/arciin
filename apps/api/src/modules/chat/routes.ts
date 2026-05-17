@@ -10,6 +10,7 @@ import {
   parseAiConfig,
   parseAiSecurityConfig,
   sanitizeOutboundChatText,
+  isSelfHostedLanOrigin,
 } from "@arciin/shared"
 import {
   isCloudChatProvider,
@@ -45,7 +46,8 @@ function corsHeadersForSse(request: FastifyRequest): Record<string, string> {
   const allowed =
     !apiConfig.isProduction ||
     origin === apiConfig.ARCIIN_PUBLIC_URL ||
-    SSE_DEV_ORIGINS.has(origin)
+    SSE_DEV_ORIGINS.has(origin) ||
+    isSelfHostedLanOrigin(origin)
   if (!allowed) return {}
   return {
     "Access-Control-Allow-Origin": origin,

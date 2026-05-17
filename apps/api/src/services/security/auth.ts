@@ -47,7 +47,8 @@ export function generateOpaqueToken(bytes = 32) {
 }
 
 export function isSecureCookie(request?: FastifyRequest) {
-  if (apiConfig.isProduction || apiConfig.ARCIIN_PUBLIC_URL.startsWith("https://")) {
+  // Self-hosted HTTP on LAN must not use Secure cookies (browsers drop them).
+  if (apiConfig.ARCIIN_PUBLIC_URL.startsWith("https://")) {
     return true
   }
 

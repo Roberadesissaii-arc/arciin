@@ -27,7 +27,7 @@ DIM="\033[2m"
 WHITE="\033[97m"
 RESET="\033[0m"
 
-TOTAL_STEPS=9
+TOTAL_STEPS=10
 STEP=0
 
 step() {
@@ -220,22 +220,40 @@ _set_env_kv() {
   fi
 }
 
+_detect_lan_ip() {
+  local ip
+  ip="$(hostname -I 2>/dev/null | awk '{
+    for (i = 1; i <= NF; i++)
+      if ($i !~ /^127\./) { print $i; exit }
+  }')"
+  if [[ -n "$ip" ]]; then
+    echo "$ip"
+    return
+  fi
+  ip="$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for (i=1;i<=NF;i++) if ($i=="src") { print $(i+1); exit }}')"
+  [[ -n "$ip" ]] && echo "$ip" || echo "127.0.0.1"
+}
+
+_env_public_url_port() {
+  grep '^ARCIIN_PUBLIC_URL=' "$1" 2>/dev/null | sed -n 's|.*:\([0-9][0-9]*\)$|\1|p' | head -1
+}
+
 configure_app_ports() {
   local env_file="${ROOT_DIR}/.env"
   [[ -f "$env_file" ]] || return 0
 
-  local web_port api_port
+  local web_port api_port lan_ip saved_web_port saved_api
+  lan_ip="$(_detect_lan_ip)"
   web_port="$(_find_free_port "$DEFAULT_WEB_PORT" 3099)"
   api_port="$(_find_free_port "$DEFAULT_API_PORT" 4099)"
 
-  local saved_web saved_api
-  saved_web="$(grep -oP '(?<=^ARCIIN_PUBLIC_URL=http://localhost:)\d+' "$env_file" 2>/dev/null || true)"
+  saved_web_port="$(_env_public_url_port "$env_file")"
   saved_api="$(grep -oP '(?<=^API_PORT=)\d+' "$env_file" 2>/dev/null || true)"
 
-  if [[ -n "$saved_web" ]] && ! _port_in_use "$saved_web"; then
-    web_port="$saved_web"
-  elif [[ -n "$saved_web" ]] && _port_in_use "$saved_web"; then
-    warn "Web port $saved_web is in use — switching to $web_port"
+  if [[ -n "$saved_web_port" ]] && ! _port_in_use "$saved_web_port"; then
+    web_port="$saved_web_port"
+  elif [[ -n "$saved_web_port" ]] && _port_in_use "$saved_web_port"; then
+    warn "Web port $saved_web_port is in use — switching to $web_port"
   fi
 
   if [[ -n "$saved_api" ]] && ! _port_in_use "$saved_api"; then
@@ -244,13 +262,47 @@ configure_app_ports() {
     warn "API port $saved_api is in use — switching to $api_port"
   fi
 
-  _set_env_kv "$env_file" "ARCIIN_PUBLIC_URL" "http://localhost:${web_port}"
-  _set_env_kv "$env_file" "ARCIIN_API_URL" "http://localhost:${api_port}"
+  _set_env_kv "$env_file" "NODE_ENV" "production"
+  _set_env_kv "$env_file" "PORT" "${web_port}"
+  _set_env_kv "$env_file" "ARCIIN_BIND_HOST" "0.0.0.0"
+  _set_env_kv "$env_file" "ARCIIN_PUBLIC_URL" "http://${lan_ip}:${web_port}"
+  _set_env_kv "$env_file" "ARCIIN_API_URL" "http://127.0.0.1:${api_port}"
   _set_env_kv "$env_file" "API_PORT" "${api_port}"
-  _set_env_kv "$env_file" "NEXT_PUBLIC_ARCIIN_API_ORIGIN" "http://localhost:${api_port}"
+  _set_env_kv "$env_file" "NEXT_PUBLIC_ARCIIN_API_ORIGIN" ""
+  _set_env_kv "$env_file" "NEXT_PUBLIC_SOCKET_URL" ""
+  _set_env_kv "$env_file" "NEXT_PUBLIC_ARCIIN_PUBLIC_URL" "http://${lan_ip}:${web_port}"
 
-  ok "Web UI → http://localhost:${web_port}"
-  ok "API    → http://localhost:${api_port}"
+  ok "Web UI (LAN)   → http://${lan_ip}:${web_port}"
+  ok "Web UI (local) → http://localhost:${web_port}"
+  ok "API (internal) → http://127.0.0.1:${api_port}"
+}
+
+launch_pm2() {
+  if ! command -v pm2 &>/dev/null; then
+    spin_ok "Installing PM2 process manager..." "PM2 installed" npm install -g pm2
+  else
+    ok "PM2 $(pm2 --version 2>/dev/null | head -1) already installed"
+  fi
+
+  pm2 stop arciin-web arciin-api arciin-worker &>/dev/null || true
+  pm2 delete arciin-web arciin-api arciin-worker &>/dev/null || true
+
+  spin_ok "Building production web bundle..." "Web bundle ready" pnpm build:web
+
+  spin_ok "Starting Arciin (PM2)..." "Arciin started" \
+    bash -c "cd \"${ROOT_DIR}\" && pm2 start ecosystem.config.cjs && pm2 save"
+
+  if command -v systemctl >/dev/null 2>&1; then
+    spin_ok "Configuring auto-start on boot..." "Auto-start configured" \
+      bash -c 'PM2_STARTUP="$(pm2 startup 2>&1 | grep sudo | tail -1 || true)"; [[ -n "$PM2_STARTUP" ]] && eval "$PM2_STARTUP" || true'
+  fi
+
+  sleep 2
+  if pm2 describe arciin-web 2>/dev/null | grep -q "online"; then
+    ok "Arciin web is online (listening on 0.0.0.0)"
+  else
+    warn "Arciin web may still be starting — check: pm2 logs arciin-web"
+  fi
 }
 
 configure_postgres_port() {
@@ -465,17 +517,43 @@ else
   warn "ffmpeg missing — thumbnails and media probes will not work"
 fi
 
-# ── 9. Summary ────────────────────────────────────────────────────────────────
+# ── 9. Production launch (PM2) ──────────────────────────────────────────────
+step "Production launch"
+
+if [[ "${ARCIIN_SKIP_PM2:-0}" == "1" ]]; then
+  warn "Skipping PM2 launch (ARCIIN_SKIP_PM2=1) — run: pnpm build:web && pm2 start ecosystem.config.cjs"
+else
+  launch_pm2
+fi
+
+cat > "${ROOT_DIR}/scripts/start.sh" << 'STARTSCRIPT'
+#!/usr/bin/env bash
+cd "$(dirname "$0")/.."
+pm2 start ecosystem.config.cjs 2>/dev/null || pm2 restart arciin-web arciin-api arciin-worker
+pm2 save
+echo "Arciin started. Logs: pm2 logs"
+STARTSCRIPT
+chmod +x "${ROOT_DIR}/scripts/start.sh"
+
+cat > "${ROOT_DIR}/scripts/stop.sh" << 'STOPSCRIPT'
+#!/usr/bin/env bash
+pm2 stop arciin-web arciin-api arciin-worker 2>/dev/null && echo "Arciin stopped." || echo "Arciin is not running."
+STOPSCRIPT
+chmod +x "${ROOT_DIR}/scripts/stop.sh"
+
+# ── 10. Summary ───────────────────────────────────────────────────────────────
 step "Ready"
 
 ENV_FILE="${ROOT_DIR}/.env"
 SETUP_TOKEN="$(grep '^ARCIIN_SETUP_TOKEN=' "$ENV_FILE" 2>/dev/null | cut -d= -f2- || echo 'dev-token')"
 PUBLIC_URL="$(grep '^ARCIIN_PUBLIC_URL=' "$ENV_FILE" 2>/dev/null | cut -d= -f2- || echo "http://localhost:${DEFAULT_WEB_PORT}")"
-API_URL="$(grep '^ARCIIN_API_URL=' "$ENV_FILE" 2>/dev/null | cut -d= -f2- || echo "http://localhost:${DEFAULT_API_PORT}")"
-WEB_PORT="${PUBLIC_URL##*:}"
+LOCAL_URL="http://localhost:$(_env_public_url_port "$ENV_FILE" 2>/dev/null || echo "${DEFAULT_WEB_PORT}")"
+API_URL="$(grep '^ARCIIN_API_URL=' "$ENV_FILE" 2>/dev/null | cut -d= -f2- || echo "http://127.0.0.1:${DEFAULT_API_PORT}")"
+WEB_PORT="$(_env_public_url_port "$ENV_FILE" 2>/dev/null || echo "${DEFAULT_WEB_PORT}")"
 API_PORT="$(grep '^API_PORT=' "$ENV_FILE" 2>/dev/null | cut -d= -f2- || echo "${DEFAULT_API_PORT}")"
 PG_PORT="$(grep '^ARCIIN_PG_PORT=' "$ENV_FILE" 2>/dev/null | cut -d= -f2- || echo "${ARCIIN_PG_PORT:-${DEFAULT_PG_PORT}}")"
 SETUP_URL="${PUBLIC_URL}/setup?token=${SETUP_TOKEN}"
+LAN_IP="$(_detect_lan_ip)"
 
 echo ""
 echo ""
@@ -485,22 +563,34 @@ echo -e "  ${BGREEN}╚═══════════════════
 echo ""
 echo -e "  ${BOLD}${WHITE}Services & ports${RESET}"
 echo ""
-echo -e "    ${DIM}Web UI${RESET}       ${BOLD}${WHITE}${PUBLIC_URL}${RESET}  ${DIM}(port ${WEB_PORT})${RESET}"
-echo -e "    ${DIM}API${RESET}          ${BOLD}${WHITE}${API_URL}${RESET}  ${DIM}(port ${API_PORT})${RESET}"
+echo -e "    ${DIM}Web UI (LAN)${RESET}   ${BOLD}${WHITE}${PUBLIC_URL}${RESET}  ${DIM}(port ${WEB_PORT}, 0.0.0.0)${RESET}"
+echo -e "    ${DIM}Web UI (local)${RESET} ${BOLD}${WHITE}${LOCAL_URL}${RESET}"
+echo -e "    ${DIM}API (internal)${RESET} ${BOLD}${WHITE}${API_URL}${RESET}  ${DIM}(port ${API_PORT})${RESET}"
 echo -e "    ${DIM}PostgreSQL${RESET}   localhost:${PG_PORT}"
 echo -e "    ${DIM}Redis${RESET}        localhost:6379"
 echo ""
 echo -e "  ${BOLD}${WHITE}Get started${RESET}"
 echo ""
-echo -e "    ${BGREEN}1.${RESET}  Start:  ${BOLD}pnpm dev${RESET}"
-echo -e "    ${BGREEN}2.${RESET}  Open:   ${BOLD}${SETUP_URL}${RESET}"
+echo -e "    ${BGREEN}1.${RESET}  Arciin is running under ${BOLD}PM2${RESET} (production, auto-restart on boot)"
+echo -e "    ${BGREEN}2.${RESET}  Open from this machine or LAN:  ${BOLD}${SETUP_URL}${RESET}"
 echo -e "    ${BGREEN}3.${RESET}  Claim your instance and create the admin account"
 echo ""
 echo -e "  ${BOLD}${WHITE}Setup token${RESET} ${DIM}(also in .env)${RESET}"
 echo -e "    ${SETUP_TOKEN}"
 echo ""
+echo -e "  ${BOLD}${WHITE}PM2 commands${RESET}"
+echo -e "    ${DIM}pm2 status${RESET}              Process list"
+echo -e "    ${DIM}pm2 logs arciin-web${RESET}      Web logs"
+echo -e "    ${DIM}pm2 restart all${RESET}           Restart after .env changes"
+echo -e "    ${DIM}bash scripts/stop.sh${RESET}      Stop Arciin"
+echo -e "    ${DIM}bash scripts/start.sh${RESET}     Start Arciin"
+echo ""
+echo -e "  ${BOLD}${WHITE}LAN access${RESET}"
+echo -e "    Use ${BOLD}http://${LAN_IP}:${WEB_PORT}${RESET} from other devices on your network."
+echo -e "    If it times out, allow port ${WEB_PORT} in the server firewall (e.g. ${DIM}sudo ufw allow ${WEB_PORT}/tcp${RESET})."
+echo ""
 echo -e "  ${BOLD}${WHITE}Options${RESET}"
 echo -e "    ${DIM}bash install.sh --reset-db${RESET}           Drop DB and re-run migrations"
+echo -e "    ${DIM}ARCIIN_SKIP_PM2=1 ./install.sh${RESET}       Install only (no PM2 start)"
 echo -e "    ${DIM}ARCIIN_UPGRADE_SYSTEM=0 ./install.sh${RESET}  Skip apt upgrade"
-echo -e "    ${DIM}ARCIIN_SKIP_DB_INIT=1 ./install.sh${RESET}    Skip migrate/seed"
 echo ""
