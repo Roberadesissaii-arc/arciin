@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { ArrowRight, Cloud, ExternalLink, Link2, Loader2 } from "lucide-react"
@@ -55,7 +55,8 @@ export function DomainPanel() {
       ])
       if (data.url) {
         setDraft(data.url)
-        toast.success("Public URL updated. Open it from the field above.")
+        setInitializingUrl(data.url)
+        toast.success("Tunnel started — URL appears above. Initializing, please wait…")
       }
     },
     onError: (e: Error) => toast.error(e.message || "Could not start Cloudflare tunnel."),
@@ -71,11 +72,42 @@ export function DomainPanel() {
   })
 
   const [draft, setDraft] = useState("")
+  const [initializingUrl, setInitializingUrl] = useState<string | null>(null)
+  const initPollRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
   const data = settingsQuery.data
   const tunnel = tunnelQuery.data
   const effective = (draft || data?.publicUrl || "").trim()
   const publicHref = /^https?:\/\//i.test(effective) ? effective : null
   const tunnelBusy = startTunnelMutation.isPending || stopTunnelMutation.isPending
+  const isInitializing = Boolean(initializingUrl && initializingUrl === publicHref)
+
+  useEffect(() => {
+    if (!initializingUrl) return
+    const deadline = Date.now() + 120_000
+    let cancelled = false
+
+    async function poll() {
+      if (cancelled) return
+      if (Date.now() > deadline) {
+        if (!cancelled) setInitializingUrl(null)
+        return
+      }
+      try {
+        await fetch(initializingUrl!, { method: "HEAD", mode: "no-cors", signal: AbortSignal.timeout(5000) })
+        if (!cancelled) setInitializingUrl(null)
+      } catch {
+        if (!cancelled) initPollRef.current = setTimeout(poll, 5000)
+      }
+    }
+
+    initPollRef.current = setTimeout(poll, 4000)
+
+    return () => {
+      cancelled = true
+      if (initPollRef.current) clearTimeout(initPollRef.current)
+    }
+  }, [initializingUrl])
 
   return (
     <div className="space-y-6">
@@ -128,14 +160,26 @@ export function DomainPanel() {
                 className="min-w-0 flex-1 font-mono"
               />
               {publicHref ? (
-                <Button asChild variant="outline" className="shrink-0 border-border">
-                  <a href={publicHref} target="_blank" rel="noopener noreferrer">
-                    Open
-                    <ExternalLink className="ml-2 size-3.5 opacity-80" aria-hidden />
-                  </a>
-                </Button>
+                isInitializing ? (
+                  <Button variant="outline" disabled className="shrink-0 border-border">
+                    <Loader2 className="mr-2 size-3.5 animate-spin" aria-hidden />
+                    Initializing…
+                  </Button>
+                ) : (
+                  <Button asChild variant="outline" className="shrink-0 border-border">
+                    <a href={publicHref} target="_blank" rel="noopener noreferrer">
+                      Open
+                      <ExternalLink className="ml-2 size-3.5 opacity-80" aria-hidden />
+                    </a>
+                  </Button>
+                )
               ) : null}
             </div>
+            {isInitializing && (
+              <p className="text-[12px] text-amber-600">
+                Tunnel is starting — this takes about 30–60 seconds. The Open button will activate once the URL is reachable.
+              </p>
+            )}
           </Field>
 
           <div className="flex flex-wrap gap-2">
