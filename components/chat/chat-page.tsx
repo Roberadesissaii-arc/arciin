@@ -1032,7 +1032,7 @@ function ThinkingBlock({ content, live }: { content: string; live: boolean }) {
             {content ? (
               <p className="whitespace-pre-wrap">{content}</p>
             ) : live ? (
-              <p className="italic text-muted-foreground/60">Waiting for reasoning trace…</p>
+              <p className="italic text-muted-foreground/60">Reasoning in progress…</p>
             ) : null}
           </div>
         </div>
@@ -1151,21 +1151,22 @@ function MessageBubble({
 }) {
   const isUser = msg.role === "user"
   const hasThinkingText = Boolean((msg.thinking ?? "").length > 0)
-  const showThinkingRow =
-    !isUser && reasoningUiEnabled && (hasThinkingText || isStreaming)
-  const liveThinking = Boolean(!isUser && reasoningUiEnabled && isStreaming)
+  /** Only show the reasoning panel when the model is actually emitting reasoning (not for every stream). */
+  const inReasoningPanel =
+    !isUser &&
+    reasoningUiEnabled &&
+    (hasThinkingText || (isStreaming && msg.thinking !== undefined))
+  const showThinkingRow = inReasoningPanel
+  const liveThinking = Boolean(inReasoningPanel && isStreaming)
 
   const hasVisibleAnswer = hasVisibleAssistantAnswer(msg.content ?? "")
 
   /**
-   * With reasoning enabled: only show the answer card once there is real reply text (or asset tags).
-   * Avoids an empty bordered box under the thinking panel while tools/stream are in progress.
+   * Hide the answer bubble only while reasoning is visible and the reply has not started yet.
+   * Otherwise the main reply streams token-by-token in the answer bubble.
    */
   const hideMainAnswerBubble =
-    !isUser &&
-    !hasVisibleAnswer &&
-    reasoningUiEnabled &&
-    (hasThinkingText || isStreaming || Boolean(msg.pending))
+    !isUser && !hasVisibleAnswer && showThinkingRow && (isStreaming || Boolean(msg.pending))
 
   const showNeutralGenerating =
     !isUser &&
@@ -1215,7 +1216,15 @@ function MessageBubble({
           ) : isUser ? (
             <span className="whitespace-pre-wrap">{msg.content}</span>
           ) : isLive ? (
-            <span className="whitespace-pre-wrap">{msg.content}</span>
+            <span className="whitespace-pre-wrap">
+              {msg.content}
+              {isStreaming ? (
+                <span
+                  className="ml-0.5 inline-block h-[1em] w-0.5 translate-y-px animate-pulse bg-primary/80 align-middle"
+                  aria-hidden
+                />
+              ) : null}
+            </span>
           ) : (
             <MarkdownContent content={msg.content} />
           )}
