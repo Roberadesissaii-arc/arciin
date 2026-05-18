@@ -1,8 +1,8 @@
 import type { PrismaClient } from "@prisma/client"
 
 import {
-  PLEX_CONNECTOR_DEF,
   JELLYFIN_CONNECTOR_DEF,
+  PLEX_CONNECTOR_DEF,
   clearAssetConnectorMirror,
   clearAssetMirrorIfLeavingConnectorFolders,
   ensureConnectorFolders,
@@ -38,14 +38,7 @@ export async function resolveUploadFolderId(
   librarySlug: string,
   explicitFolderId: string | undefined,
 ) {
-  return resolveMediaConnectorUploadFolderId(
-    prisma,
-    libraryId,
-    librarySlug,
-    explicitFolderId,
-    PLEX_CONNECTOR_DEF,
-    JELLYFIN_CONNECTOR_DEF,
-  )
+  return resolveMediaConnectorUploadFolderId(prisma, libraryId, librarySlug, explicitFolderId)
 }
 
 export const ensurePlexFolders = (prisma: PrismaClient) =>

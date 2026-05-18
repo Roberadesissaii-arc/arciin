@@ -353,12 +353,10 @@ export async function resolveConnectorFolderId(
 
 /** Use explicit folder when provided; otherwise library root (not connector folders). */
 export async function resolveMediaConnectorUploadFolderId(
-  prisma: PrismaClient,
+  _prisma: PrismaClient,
   _libraryId: string,
   _librarySlug: string,
   explicitFolderId: string | undefined,
-  _plexDef: MediaConnectorDef,
-  _jellyfinDef: MediaConnectorDef,
 ): Promise<string | null | undefined> {
   if (explicitFolderId) return explicitFolderId
   return null

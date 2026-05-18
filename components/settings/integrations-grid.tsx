@@ -23,7 +23,6 @@ import {
   PLEX_INTEGRATION_ID,
 } from "@/lib/api/integrations"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { getIntegrations } from "@/lib/api/settings"
 import { queryKeys } from "@/lib/api/query-keys"
@@ -98,13 +97,11 @@ function QuickLinkCard({
   description,
   href,
   icon: Icon,
-  variant = "default",
 }: {
   title: string
   description: string
   href: string
   icon: React.ElementType
-  variant?: "default" | "primary"
 }) {
   return (
     <Link

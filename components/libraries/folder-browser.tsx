@@ -66,7 +66,7 @@ export function FolderBrowser({
       })
     }
     return () => setUploadContext(null)
-  }, [library?.id, folder?.id, setUploadContext])
+  }, [library?.id, library?.kind, folder?.id, setUploadContext])
 
   const subFolders = useMemo(
     () => allFolders.filter((f) => f.parentFolderId === folder?.id),

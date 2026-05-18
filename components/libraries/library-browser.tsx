@@ -52,7 +52,7 @@ export function LibraryBrowser({
       setUploadContext({ libraryId: library.id, libraryKind: library.kind })
     }
     return () => setUploadContext(null)
-  }, [library?.id, setUploadContext])
+  }, [library?.id, library?.kind, setUploadContext])
 
   const foldersQuery = useFolders(library?.id || "")
   const assetsQuery = useAssets({

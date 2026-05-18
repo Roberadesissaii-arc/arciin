@@ -208,6 +208,12 @@ _apply_app_ports_to_env() {
   _set_env_kv "$env_file" "NEXT_PUBLIC_SOCKET_URL" ""
   _set_env_kv "$env_file" "NEXT_PUBLIC_API_BASE_URL" "/api"
   _set_env_kv "$env_file" "NEXT_PUBLIC_ARCIIN_PUBLIC_URL" "http://${lan_ip}:${web_port}"
+  if ! grep -q '^ARCIIN_DATA_DIR=' "$env_file" 2>/dev/null; then
+    _set_env_kv "$env_file" "ARCIIN_DATA_DIR" "./data/arciin"
+  fi
+  if ! grep -q '^MAX_UPLOAD_SIZE_MB=' "$env_file" 2>/dev/null; then
+    _set_env_kv "$env_file" "MAX_UPLOAD_SIZE_MB" "10240"
+  fi
   ARCIIN_WEB_PORT="$web_port"
   ARCIIN_API_PORT="$api_port"
   export ARCIIN_WEB_PORT ARCIIN_API_PORT
@@ -481,8 +487,8 @@ launch_pm2() {
   mkdir -p "${ROOT_DIR}/logs"
   chmod 700 "${ROOT_DIR}/logs" 2>/dev/null || true
 
-  spin_ok "Building production web bundle (API → 127.0.0.1:${ARCIIN_API_PORT})..." "Web bundle ready" \
-    bash -c "cd \"${ROOT_DIR}\" && pnpm build:web"
+  spin_ok "Building production bundles (web, API, worker)..." "Production build ready" \
+    bash -c "cd \"${ROOT_DIR}\" && pnpm build"
 
   spin_ok "Starting Arciin (PM2)..." "PM2 processes started" \
     bash -c "cd \"${ROOT_DIR}\" && pm2 start ecosystem.config.cjs && pm2 save"
@@ -803,8 +809,9 @@ echo ""
 echo -e "  ${BOLD}${WHITE}Important${RESET}"
 echo -e "    Do ${BOLD}not${RESET} run ${DIM}pnpm dev${RESET} on this server — use PM2 only (${DIM}bash start.sh${RESET})."
 echo -e "    Port conflicts: ${DIM}bash scripts/port-status.sh${RESET}"
-echo -e "    After upgrades: ${DIM}bash install.sh${RESET} or ${DIM}pnpm exec prisma migrate deploy${RESET} applies new DB columns (e.g. profile avatars)."
-echo -e "    Profile photos are stored under ${DIM}\${ARCIIN_DATA_DIR}/avatars${RESET} — created during init."
+echo -e "    After upgrades: ${DIM}bash install.sh${RESET} or ${DIM}pnpm exec prisma migrate deploy${RESET} applies DB changes."
+echo -e "    Large uploads need ${DIM}MAX_UPLOAD_SIZE_MB${RESET} in .env (default 10240) and ${DIM}pm2 restart arciin-web${RESET} after changes."
+echo -e "    Profile photos: ${DIM}\${ARCIIN_DATA_DIR}/avatars${RESET} — created during init."
 echo ""
 echo -e "  ${BOLD}${WHITE}Options${RESET}"
 echo -e "    ${DIM}bash install.sh --reset-db${RESET}            Drop DB and re-run migrations"
