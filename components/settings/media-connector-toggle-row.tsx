@@ -2,10 +2,13 @@
 
 /** Shared toggle copy and layout so Plex/Jellyfin cards stay the same height. */
 export const MEDIA_CONNECTOR_HEADER_BLURB =
-  "One switch: create folders in Videos, Images, and Music, route uploads there, and mirror files on disk for your media server."
+  "One switch: create folders in Videos, Images, and Music, route uploads there, and mirror files on disk for Plex or Jellyfin."
 
 export const MEDIA_CONNECTOR_TOGGLE_DESCRIPTION =
   "On: folders are created if needed, uploads go there, and files mirror on disk. Off: disconnect only—folders and files on disk stay; new uploads use normal library folders."
+
+export const MEDIA_CONNECTOR_PLEX_SCAN_BLURB =
+  "Arciin copies files into your server’s library folders (for example videos/plex). Plex does not refresh automatically—after uploads, open Plex → your library → ⋯ → Scan Library Files, or enable Settings → Library → Scan my library automatically."
 
 export function MediaConnectorToggleRow({
   label,

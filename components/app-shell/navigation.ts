@@ -76,6 +76,7 @@ const pageTitles = new Map<string, string>([
   ["/images",                 "Images"],
   ["/music",                  "Music"],
   ["/documents",              "Documents"],
+  ["/applications",           "Applications"],
   ["/activity",               "Activity"],
   ["/notifications",          "Notifications"],
   ["/jobs", "Jobs"],

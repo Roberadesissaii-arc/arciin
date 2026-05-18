@@ -77,6 +77,15 @@ export function getFileExtension(filename: string) {
   return parts.length > 1 ? parts.at(-1)?.toLowerCase() ?? "" : ""
 }
 
+export function isApplicationFile(
+  filename?: string | null,
+  extension?: string | null,
+): boolean {
+  const ext = (extension?.replace(/^\./, "").toLowerCase() ||
+    (filename ? getFileExtension(filename) : "")) as string
+  return applicationExtensions.has(ext)
+}
+
 export function inferMediaType(mimeType?: string | null, filename?: string | null) {
   const extension = filename ? getFileExtension(filename) : ""
 
@@ -92,6 +101,11 @@ export function inferMediaType(mimeType?: string | null, filename?: string | nul
     return "AUDIO"
   }
 
+  // Extension wins over generic text/plain (e.g. .bat installers).
+  if (isApplicationFile(filename, extension)) {
+    return "APPLICATION"
+  }
+
   if (documentMimeTypes.has(mimeType ?? "") || documentExtensions.has(extension)) {
     return "DOCUMENT"
   }
@@ -102,8 +116,7 @@ export function inferMediaType(mimeType?: string | null, filename?: string | nul
 
   if (
     applicationMimeTypes.has(mimeType ?? "") ||
-    applicationExtensions.has(extension) ||
-    mimeType === "application/octet-stream" && applicationExtensions.has(extension)
+    (mimeType === "application/octet-stream" && applicationExtensions.has(extension))
   ) {
     return "APPLICATION"
   }

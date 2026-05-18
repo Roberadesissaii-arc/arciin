@@ -71,14 +71,15 @@ const BOTTOM: NavItem[] = [
 ]
 
 const LIBRARY_ROUTES: Record<string, string> = {
-  inbox:     "/inbox",
-  videos:    "/videos",
-  images:    "/images",
-  music:     "/music",
-  documents: "/documents",
+  inbox:          "/inbox",
+  videos:         "/videos",
+  images:         "/images",
+  music:          "/music",
+  documents:      "/documents",
+  applications:   "/applications",
 }
 
-const LIBRARY_ORDER = ["inbox", "videos", "images", "music", "documents"]
+const LIBRARY_ORDER = ["inbox", "videos", "images", "music", "documents", "applications"]
 
 function isActive(pathname: string, href: string) {
   if (href === "/dashboard") return pathname === href

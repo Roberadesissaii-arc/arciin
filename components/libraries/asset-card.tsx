@@ -57,7 +57,11 @@ export function AssetCard({ asset }: { asset: AssetSummary }) {
             <span>{formatBytes(asset.sizeBytes)}</span>
             <span className="size-1 shrink-0 rounded-full bg-border" />
             <Badge className="rounded-md border-0 bg-primary px-2 py-0 text-[11px] font-semibold text-primary-foreground shadow-none hover:bg-primary/90">
-              {formatMediaTypeLabel(asset.mediaType)}
+              {formatMediaTypeLabel(asset.mediaType, {
+                filename: asset.originalFilename,
+                mimeType: asset.mimeType,
+                extension: asset.extension,
+              })}
             </Badge>
           </div>
         </div>

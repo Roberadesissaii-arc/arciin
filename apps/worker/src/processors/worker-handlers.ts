@@ -12,6 +12,7 @@ import {
   JOB_TYPES,
   VIDEO_THUMBNAIL_PLACEHOLDER_SVG,
   candidateStorageObjectPaths,
+  inferMediaType,
   resolveArciinStorageRoot,
   type AnalyzeFilePayload,
   type CalculateStorageUsagePayload,
@@ -22,6 +23,7 @@ import {
 } from "@arciin/shared"
 
 import { workerConfig } from "@/config"
+import { syncConnectorMirrorsForAsset } from "@/services/connector-mirror"
 import { createRealtimeEvent, publishRealtimeEvent } from "@/services/realtime"
 
 async function markJob(
@@ -202,11 +204,16 @@ export async function handleMediaJob(
   if (name === JOB_TYPES.analyzeFile || name === JOB_TYPES.extractMetadata) {
     const metadata = await detectMetadata(objectFilePath)
 
+    const mimeType = metadata.mimeType || asset.mimeType
+    const extension = metadata.extension || asset.extension
+    const mediaType = inferMediaType(mimeType, asset.originalFilename)
+
     await prisma.asset.update({
       where: { id: asset.id },
       data: {
-        mimeType: metadata.mimeType || asset.mimeType,
-        extension: metadata.extension || asset.extension,
+        mimeType,
+        extension,
+        mediaType,
         width: metadata.width ?? asset.width,
         height: metadata.height ?? asset.height,
       },
@@ -308,6 +315,12 @@ export async function handleMediaJob(
         })
       )
     }
+
+    await syncConnectorMirrorsForAsset(asset.id).catch(() => {})
+  }
+
+  if (name === JOB_TYPES.extractMetadata && asset.mediaType === "AUDIO") {
+    await syncConnectorMirrorsForAsset(asset.id).catch(() => {})
   }
 
   await markJob(data.jobRecordId, {

@@ -155,13 +155,32 @@ pnpm db:seed       # Seed default libraries
 pnpm db:studio     # Open Prisma Studio
 ```
 
-### After updating
+### After updating (pull, build, restart)
+
+When you change code on the server or pull a new release from git, run this from the project root (same directory as `install.sh`):
 
 ```bash
+cd /path/to/arciin
 git pull
 pnpm install
-pnpm db:deploy
-pm2 restart all
+pnpm exec prisma migrate deploy
+pnpm build
+pm2 restart arciin-api arciin-web arciin-worker
+```
+
+`pnpm build` compiles the web app, API, and worker. Restart all three PM2 processes so they load the new build.
+
+If you only changed environment variables (`.env`), a restart is enough:
+
+```bash
+pm2 restart arciin-api arciin-web arciin-worker
+```
+
+Check status and logs:
+
+```bash
+pm2 status
+pm2 logs arciin-api --lines 50
 ```
 
 ---

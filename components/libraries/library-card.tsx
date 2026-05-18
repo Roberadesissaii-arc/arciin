@@ -4,18 +4,16 @@ import { ArrowUpRight } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { dashboardStatIconShell } from "@/lib/dashboard-card-styles"
-import { libraryKindIcons } from "@/lib/utils/file-icons"
+import { LibrarySlugIcon } from "@/components/libraries/library-slug-icon"
 import type { LibrarySummary } from "@/lib/types/models"
 
 export function LibraryCard({ library }: { library: LibrarySummary }) {
-  const Icon = libraryKindIcons[library.kind] || libraryKindIcons.DEFAULT
-
   return (
     <Card className="border-border bg-muted/30 shadow-none transition-colors hover:border-primary/30 hover:bg-muted/50">
       <CardHeader className="flex-row items-center justify-between space-y-0">
         <div className="flex items-center gap-3">
           <div className={dashboardStatIconShell}>
-            <Icon className="size-4" />
+            <LibrarySlugIcon slug={library.slug} kind={library.kind} className="size-4" />
           </div>
           <div>
             <CardTitle className="text-foreground">{library.name}</CardTitle>

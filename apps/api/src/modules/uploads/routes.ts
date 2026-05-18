@@ -36,6 +36,8 @@ function libraryKindForMediaType(mediaType: string) {
       return "AUDIO"
     case "DOCUMENT":
       return "DOCUMENT"
+    case "APPLICATION":
+      return "CUSTOM"
     default:
       return "INBOX"
   }
@@ -271,9 +273,14 @@ export async function registerUploadRoutes(fastify: FastifyInstance) {
         const folderForMirror = resolvedFolderId
           ? await fastify.prisma.folder.findUnique({ where: { id: resolvedFolderId } })
           : null
-        if (folderForMirror && assetIsInPlexFolder(folderForMirror)) {
+        const deferMirrorUntilReady = analysis.mediaType === "VIDEO"
+        if (!deferMirrorUntilReady && folderForMirror && assetIsInPlexFolder(folderForMirror)) {
           await syncAssetToPlexMirror(fastify.prisma, asset.id)
-        } else if (folderForMirror && assetIsInJellyfinFolder(folderForMirror)) {
+        } else if (
+          !deferMirrorUntilReady &&
+          folderForMirror &&
+          assetIsInJellyfinFolder(folderForMirror)
+        ) {
           await syncAssetToJellyfinMirror(fastify.prisma, asset.id)
         }
       } catch (mirrorErr) {

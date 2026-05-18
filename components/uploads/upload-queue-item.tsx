@@ -11,7 +11,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
-import { mediaTypeIcons } from "@/lib/utils/file-icons"
+import { MediaTypeIcon } from "@/components/libraries/media-type-icon"
 import { classifyMediaType } from "@/lib/utils/media-type"
 import { useUploadStore, type UploadQueueItem as UploadQueueItemModel } from "@/lib/stores/upload-store"
 
@@ -64,7 +64,6 @@ export function UploadQueueItem({ item }: { item: UploadQueueItemModel }) {
   }, [item.id, item.progress, item.status, removeUpload])
 
   const mediaType = classifyMediaType(item.mimeType, item.fileName)
-  const FileIcon = mediaTypeIcons[mediaType] || mediaTypeIcons.DEFAULT
   const failureDetail = item.error?.trim() || "No details were returned. Check Logs → upload.log on the server."
 
   return (
@@ -77,7 +76,12 @@ export function UploadQueueItem({ item }: { item: UploadQueueItemModel }) {
     >
       <div className="flex items-start gap-3">
         <div className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-zinc-200/80 bg-zinc-100 text-zinc-600">
-          <FileIcon className="size-4" />
+          <MediaTypeIcon
+            mediaType={mediaType}
+            filename={item.fileName}
+            mimeType={item.mimeType}
+            className="size-4"
+          />
         </div>
         <div className="min-w-0 flex-1">
           <div className="truncate text-sm font-medium text-zinc-900">{item.fileName}</div>

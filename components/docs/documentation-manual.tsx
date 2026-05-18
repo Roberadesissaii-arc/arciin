@@ -24,6 +24,7 @@ const BASE = apiBase.startsWith("http") ? apiBase : `${publicUrl}${apiBase}`
 
 const toc = [
   { href: "#overview",  label: "Overview" },
+  { href: "#upgrading", label: "Install & upgrade" },
   { href: "#urls",       label: "URLs & environment" },
   { href: "#external-apps", label: "Your website & API keys" },
   { href: "#playground", label: "API explorer" },
@@ -678,6 +679,27 @@ export function DocumentationManual() {
               │   Workers   │
               └─────────────┘`}</pre>
             </div>
+          </section>
+
+          <Sep />
+
+          {/* ── Install & upgrade ─────────────────────────────────────────── */}
+          <section className="space-y-5">
+            <DocH2 id="upgrading">Install &amp; upgrade</DocH2>
+            <DocP>
+              First-time setup uses <IC>install.sh</IC> from the repository root (dependencies, <IC>.env</IC>, migrations, storage). After that, when you pull changes or edit the server yourself, rebuild and restart the three PM2 apps.
+            </DocP>
+            <CodeBlock title="Upgrade after git pull" lang="sh">{`cd /path/to/arciin
+git pull
+pnpm install
+pnpm exec prisma migrate deploy
+pnpm build
+pm2 restart arciin-api arciin-web arciin-worker`}</CodeBlock>
+            <DocP>
+              <IC>pnpm build</IC> compiles the Next.js web app, Fastify API, and worker. Restart <strong className="text-zinc-900">arciin-api</strong>, <strong className="text-zinc-900">arciin-web</strong>, and <strong className="text-zinc-900">arciin-worker</strong> so each process loads the new output. If you only changed <IC>.env</IC>, restart is enough — no build required.
+            </DocP>
+            <CodeBlock title="Check processes" lang="sh">{`pm2 status
+pm2 logs arciin-api --lines 50`}</CodeBlock>
           </section>
 
           <Sep />

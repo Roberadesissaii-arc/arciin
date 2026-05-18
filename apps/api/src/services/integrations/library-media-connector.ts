@@ -3,10 +3,12 @@ import path from "node:path"
 
 import type { Asset, Folder, Integration, Library, PrismaClient, StorageObject } from "@prisma/client"
 
+import { MEDIA_LIBRARY_SLUGS, mirrorFilenameForDisk } from "@arciin/shared"
+
 import { slugify } from "@/services/slug"
 import { ensureStorageDirectories, getStoragePaths } from "@/services/storage/local-storage"
 
-export const MEDIA_LIBRARY_SLUGS = ["videos", "images", "music"] as const
+export { MEDIA_LIBRARY_SLUGS }
 
 export type ConnectorFolderStatus = {
   libraryId: string
@@ -52,12 +54,6 @@ export const JELLYFIN_CONNECTOR_DEF: MediaConnectorDef = {
   enabledActivityType: "integration.jellyfin_enabled",
   disabledActivityType: "integration.jellyfin_disabled",
   foldersActivityType: "integration.jellyfin_folders",
-}
-
-function safeFilename(originalFilename: string): string {
-  const base = path.basename(originalFilename).normalize("NFKD")
-  const cleaned = base.replace(/[<>:"|?*\x00-\x1f]/g, "-").replace(/\.{2,}/g, ".").trim()
-  return cleaned.length > 0 ? cleaned : "file"
 }
 
 async function uniqueMirrorPath(dir: string, filename: string): Promise<string> {
@@ -263,7 +259,10 @@ async function mirrorAsset(ctx: {
   const { storageRoot, library, folder, asset, storageObject } = ctx
   await ensureStorageDirectories(storageRoot)
 
-  const filename = safeFilename(asset.originalFilename)
+  const filename = mirrorFilenameForDisk(asset.originalFilename, {
+    extension: asset.extension,
+    mimeType: asset.mimeType,
+  })
   const destDir = path.join(storageRoot, "libraries", library.slug, folder.pathCache)
   await mkdir(destDir, { recursive: true })
 

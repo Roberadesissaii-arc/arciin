@@ -124,7 +124,11 @@ function AssetTableRow({ asset }: { asset: AssetSummary }) {
             typeBadgeClass,
           )}
         >
-          {formatMediaTypeLabel(asset.mediaType)}
+          {formatMediaTypeLabel(asset.mediaType, {
+            filename: asset.originalFilename,
+            mimeType: asset.mimeType,
+            extension: asset.extension,
+          })}
         </Badge>
       </TableCell>
       <TableCell className="whitespace-nowrap tabular-nums font-medium text-zinc-700">

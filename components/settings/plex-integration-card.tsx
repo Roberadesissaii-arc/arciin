@@ -14,6 +14,7 @@ import { queryKeys } from "@/lib/api/query-keys"
 import type { IntegrationSummary } from "@/lib/types/models"
 import {
   MEDIA_CONNECTOR_HEADER_BLURB,
+  MEDIA_CONNECTOR_PLEX_SCAN_BLURB,
   MediaConnectorToggleRow,
 } from "@/components/settings/media-connector-toggle-row"
 
@@ -71,6 +72,7 @@ export function PlexIntegrationCard({ integration }: { integration: IntegrationS
 
   const enabled = integration.enabled
   const folders = statusQuery.data?.folders ?? []
+  const mirrorRootHint = statusQuery.data?.mirrorRootHint
   const allReady = folders.length > 0 && folders.every((f) => f.ready)
   const busy = toggleMutation.isPending || repairMutation.isPending
 
@@ -160,6 +162,14 @@ export function PlexIntegrationCard({ integration }: { integration: IntegrationS
                 </li>
               ))}
             </ul>
+          </div>
+        ) : null}
+
+        {enabled && mirrorRootHint ? (
+          <div className="rounded-xl border border-border bg-muted/20 px-3 py-2.5 text-xs leading-relaxed text-muted-foreground">
+            <p className="font-medium text-foreground">Plex library folder on this server</p>
+            <p className="mt-1 font-mono text-[11px] break-all text-zinc-600">{mirrorRootHint}</p>
+            <p className="mt-2">{MEDIA_CONNECTOR_PLEX_SCAN_BLURB}</p>
           </div>
         ) : null}
         </div>

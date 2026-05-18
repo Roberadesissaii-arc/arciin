@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react"
 
+import { MediaTypeIcon } from "@/components/libraries/media-type-icon"
 import { mediaTypeIcons } from "@/lib/utils/file-icons"
 import { cn } from "@/lib/utils"
 import type { AssetSummary } from "@/lib/types/models"
@@ -9,7 +10,6 @@ import type { AssetSummary } from "@/lib/types/models"
 const THUMB_MEDIA = new Set(["IMAGE", "VIDEO"])
 
 function ImageOrIconPreview({ asset }: { asset: AssetSummary }) {
-  const Icon = mediaTypeIcons[asset.mediaType] || mediaTypeIcons.DEFAULT
   const [thumbFailed, setThumbFailed] = useState(false)
   const tryThumb = THUMB_MEDIA.has(asset.mediaType)
   const thumbSrc = `/api/assets/${asset.id}/thumbnail?v=${encodeURIComponent(asset.updatedAt)}`
@@ -31,7 +31,13 @@ function ImageOrIconPreview({ asset }: { asset: AssetSummary }) {
 
   return (
     <div className="flex aspect-[4/3] items-center justify-center rounded-xl border border-border bg-muted/30 text-muted-foreground">
-      <Icon className="size-7" />
+      <MediaTypeIcon
+        mediaType={asset.mediaType}
+        filename={asset.originalFilename}
+        mimeType={asset.mimeType}
+        extension={asset.extension}
+        className="size-7"
+      />
     </div>
   )
 }

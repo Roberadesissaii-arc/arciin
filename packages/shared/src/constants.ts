@@ -39,10 +39,13 @@ export const JOB_QUEUE_NAMES = {
   integrations: "integrations",
 } as const
 
+export const MEDIA_LIBRARY_SLUGS = ["videos", "images", "music"] as const
+
 export const JOB_TYPES = {
   analyzeFile: "analyze_file",
   extractMetadata: "extract_metadata",
   generateThumbnail: "generate_thumbnail",
+  syncConnectorMirror: "sync_connector_mirror",
   cleanupTempFiles: "cleanup_temp_files",
   calculateStorageUsage: "calculate_storage_usage",
   plexSyncPlaceholder: "plex_sync_placeholder",
