@@ -141,6 +141,11 @@ export function NotificationInbox() {
   const safePage = Math.min(Math.max(1, page), totalPages)
   const pageItems = sorted.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE)
 
+  function handleMarkAllRead() {
+    hydrate()
+    markAllRead()
+  }
+
   function handleClearAll() {
     clearAll()
     setPage(1)
@@ -166,7 +171,13 @@ export function NotificationInbox() {
               {safePage} / {totalPages}
             </span>
           ) : null}
-          <Button type="button" variant="outline" size="sm" disabled={unread === 0} onClick={markAllRead}>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={unread === 0}
+            onClick={handleMarkAllRead}
+          >
             <CheckCheck className="size-4" />
             Mark all read
           </Button>

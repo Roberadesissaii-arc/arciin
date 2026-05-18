@@ -118,14 +118,18 @@ export const useNotificationInboxStore = create<NotificationInboxState>((set, ge
     set({ items: next, hydrated: true })
   },
   markRead: (id) => {
-    const next = get().items.map((n) => (n.id === id ? { ...n, read: true } : n))
+    const state = get()
+    const base = state.hydrated ? state.items : loadPersisted()
+    const next = base.map((n) => (n.id === id ? { ...n, read: true } : n))
     persist(next)
-    set({ items: next })
+    set({ items: next, hydrated: true })
   },
   markAllRead: () => {
-    const next = get().items.map((n) => ({ ...n, read: true }))
+    const state = get()
+    const base = state.hydrated ? state.items : loadPersisted()
+    const next = base.map((n) => ({ ...n, read: true }))
     persist(next)
-    set({ items: next })
+    set({ items: next, hydrated: true })
   },
   clearAll: () => {
     persist([])

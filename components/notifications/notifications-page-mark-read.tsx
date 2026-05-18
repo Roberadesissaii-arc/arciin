@@ -6,11 +6,11 @@ import { useNotificationInboxStore } from "@/lib/stores/notification-inbox-store
 
 /** Clears the sidebar badge when the user opens the notifications page. */
 export function NotificationsPageMarkRead() {
-  const markAllRead = useNotificationInboxStore((s) => s.markAllRead)
-
   useEffect(() => {
+    const { hydrate, markAllRead } = useNotificationInboxStore.getState()
+    hydrate()
     markAllRead()
-  }, [markAllRead])
+  }, [])
 
   return null
 }
