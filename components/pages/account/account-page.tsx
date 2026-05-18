@@ -4,6 +4,7 @@ import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   AlertTriangle,
+  Camera,
   CheckCircle2,
   Eye,
   EyeOff,
@@ -15,6 +16,7 @@ import {
   ShieldCheck,
   Smartphone,
   Tablet,
+  Trash2,
   User,
 } from "lucide-react"
 import { useRouter } from "next/navigation"
@@ -22,6 +24,7 @@ import { toast } from "sonner"
 
 import { DashboardPageIntro } from "@/components/app-shell/dashboard-page-intro"
 import { UserIdentityAvatar } from "@/components/app-shell/user-identity-avatar"
+import { clearCachedUserAvatar, writeCachedUserAvatar } from "@/lib/utils/user-avatar-cache"
 import { SectionHeader } from "@/components/settings/settings-panel-primitives"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -29,11 +32,21 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Skeleton } from "@/components/ui/skeleton"
-import { changePassword, getSessions, logout, revokeSession, updateProfile } from "@/lib/api/auth"
+import {
+  changePassword,
+  getSessions,
+  logout,
+  removeProfileAvatar,
+  revokeSession,
+  updateProfile,
+  uploadProfileAvatar,
+} from "@/lib/api/auth"
+import { resolveUserAvatarUrl } from "@/lib/utils/user-avatar-url"
 import { useAuth } from "@/hooks/use-auth"
 import { queryKeys } from "@/lib/api/query-keys"
 import { cn } from "@/lib/utils"
 import { formatRelativeDate, formatDateTime } from "@/lib/utils/format-date"
+import { formatSessionIp } from "@/lib/utils/session-ip"
 import type { SessionDetail, UserRole } from "@/lib/types/models"
 
 type Tab = "identity" | "password" | "sessions" | "danger"
@@ -126,6 +139,29 @@ function IdentityPanel() {
     onError: (e: Error) => toast.error(e.message || "Could not update profile."),
   })
 
+  const avatarMutation = useMutation({
+    mutationFn: uploadProfileAvatar,
+    onSuccess: (data) => {
+      queryClient.setQueryData(queryKeys.authMe, data)
+      const cached = resolveUserAvatarUrl(data.user.avatarUrl, data.user.updatedAt)
+      if (cached) writeCachedUserAvatar(data.user.id, cached)
+      toast.success("Profile photo updated.")
+    },
+    onError: (e: Error) => toast.error(e.message || "Could not upload photo."),
+  })
+
+  const removeAvatarMutation = useMutation({
+    mutationFn: removeProfileAvatar,
+    onSuccess: (data) => {
+      queryClient.setQueryData(queryKeys.authMe, data)
+      clearCachedUserAvatar(data.user.id)
+      toast.success("Profile photo removed.")
+    },
+    onError: (e: Error) => toast.error(e.message || "Could not remove photo."),
+  })
+
+  const avatarSrc = resolveUserAvatarUrl(user?.avatarUrl, user?.updatedAt)
+
   const dirty =
     user && (name.trim() !== user.name || email.trim().toLowerCase() !== user.email.toLowerCase())
   if (meQuery.isLoading) {
@@ -147,10 +183,29 @@ function IdentityPanel() {
       />
 
       <div className="flex flex-col gap-4 border-b border-border pb-6 sm:flex-row sm:items-center">
-        <UserIdentityAvatar
-          name={user?.name ?? "?"}
-          className="size-16 rounded-2xl text-xl"
-        />
+        <div className="relative shrink-0">
+          <UserIdentityAvatar
+            name={user?.name ?? "?"}
+            imageUrl={avatarSrc}
+            userId={user?.id}
+            shape="rounded"
+            className="size-16 rounded-2xl text-xl"
+          />
+          <label className="absolute -bottom-1 -right-1 flex size-8 cursor-pointer items-center justify-center rounded-full border border-border bg-card text-zinc-700 shadow-sm hover:bg-muted">
+            <Camera className="size-3.5" />
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/gif"
+              className="sr-only"
+              disabled={avatarMutation.isPending}
+              onChange={(e) => {
+                const file = e.target.files?.[0]
+                e.target.value = ""
+                if (file) void avatarMutation.mutateAsync(file)
+              }}
+            />
+          </label>
+        </div>
         <div className="min-w-0 space-y-1.5">
           <div className="flex flex-wrap items-center gap-2">
             <p className="text-base font-semibold text-foreground">{user?.name}</p>
@@ -206,30 +261,44 @@ function IdentityPanel() {
               className="border-border bg-white"
             />
           </div>
-          {dirty && (
-            <div className="flex flex-wrap gap-2 pt-1">
-              <Button
-                disabled={mutation.isPending || !name.trim() || !email.trim()}
-                onClick={() => mutation.mutateAsync({ name: name.trim(), email: email.trim().toLowerCase() })}
-              >
-                <Save className="size-4" />
-                {mutation.isPending ? "Saving…" : "Save changes"}
-              </Button>
+          <div className="flex flex-wrap gap-2 pt-1">
+            {dirty && (
+              <>
+                <Button
+                  disabled={mutation.isPending || !name.trim() || !email.trim()}
+                  onClick={() => mutation.mutateAsync({ name: name.trim(), email: email.trim().toLowerCase() })}
+                >
+                  <Save className="size-4" />
+                  {mutation.isPending ? "Saving…" : "Save changes"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="border-border"
+                  onClick={() => {
+                    if (user) {
+                      setName(user.name)
+                      setEmail(user.email)
+                    }
+                  }}
+                >
+                  Discard
+                </Button>
+              </>
+            )}
+            {user?.avatarUrl && (
               <Button
                 type="button"
                 variant="outline"
-                className="border-border"
-                onClick={() => {
-                  if (user) {
-                    setName(user.name)
-                    setEmail(user.email)
-                  }
-                }}
+                className="border-border text-red-700 hover:bg-red-50"
+                disabled={removeAvatarMutation.isPending}
+                onClick={() => removeAvatarMutation.mutateAsync()}
               >
-                Discard
+                <Trash2 className="size-4" />
+                Remove photo
               </Button>
-            </div>
-          )}
+            )}
+          </div>
         </CardContent>
       </Card>
     </div>
@@ -401,7 +470,16 @@ function SessionItem({
           )}
         </div>
         <div className="mt-0.5 flex flex-wrap gap-x-3 text-[11px] text-zinc-500">
-          {session.ipAddress && <span className="font-mono">{session.ipAddress}</span>}
+          <span
+            className={cn("font-mono", !session.ipAddress && "italic text-zinc-400")}
+            title={
+              session.ipAddress
+                ? `Client IP: ${session.ipAddress}`
+                : "IP could not be determined for this session"
+            }
+          >
+            {formatSessionIp(session.ipAddress)}
+          </span>
           <span title={formatDateTime(session.createdAt)}>Started {formatRelativeDate(session.createdAt)}</span>
           <span
             className={cn(expiringSoon && "font-medium text-amber-700")}

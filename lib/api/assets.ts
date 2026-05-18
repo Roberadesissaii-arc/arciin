@@ -66,12 +66,22 @@ export function getAssetsByIds(ids: string[], signal?: AbortSignal) {
 
 export type DuplicateHit = { filename: string; assetId: string }
 
-export function checkDuplicates(
+export async function checkDuplicates(
   filenames: string[],
-  context: { libraryId?: string; folderId?: string | null } = {}
+  context: { libraryId?: string; folderId?: string | null } = {},
 ) {
-  return fetchApi<{ duplicates: DuplicateHit[] }>("/assets/check-duplicates", {
-    method: "POST",
-    body: { filenames, ...context },
-  })
+  const unique = [...new Set(filenames)]
+  const duplicates: DuplicateHit[] = []
+  const chunkSize = 200
+
+  for (let i = 0; i < unique.length; i += chunkSize) {
+    const chunk = unique.slice(i, i + chunkSize)
+    const result = await fetchApi<{ duplicates: DuplicateHit[] }>("/assets/check-duplicates", {
+      method: "POST",
+      body: { filenames: chunk, ...context },
+    })
+    duplicates.push(...result.duplicates)
+  }
+
+  return { duplicates }
 }

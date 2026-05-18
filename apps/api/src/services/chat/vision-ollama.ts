@@ -1,5 +1,6 @@
 /** Shared Ollama vision HTTP helpers for chat services. */
 
+import { normalizeOllamaCloudModelId } from "@/services/chat/ollama-cloud-models"
 import { formatOllamaProviderError, ollamaAuthHeaders } from "@/services/chat/ollama-http"
 
 export function parseVisionJsonObject(text: string): Record<string, unknown> | null {
@@ -28,14 +29,15 @@ export async function ollamaVisionChat(
   images: string[],
   apiKey?: string | null,
 ): Promise<string> {
-  const think: boolean | string = /gpt-oss/i.test(model) ? "low" : false
   const isCloud = baseUrl.includes("ollama.com")
+  const apiModel = isCloud ? normalizeOllamaCloudModelId(model) : model
+  const think: boolean | string = /gpt-oss/i.test(apiModel) ? "low" : false
 
   const res = await fetch(`${baseUrl}/api/chat`, {
     method: "POST",
     headers: ollamaAuthHeaders(apiKey),
     body: JSON.stringify({
-      model,
+      model: apiModel,
       stream: false,
       think,
       messages: [{ role: "user", content: prompt, images }],

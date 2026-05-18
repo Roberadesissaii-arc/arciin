@@ -10,6 +10,7 @@ export async function registerHealthRoutes(fastify: FastifyInstance) {
   fastify.get("/health", async (_request, reply) => {
     let database = "online"
     let redis = "online"
+    let realtime: "online" | "offline" = "online"
     let storage = "online"
     let worker: "online" | "offline" | "unknown" = "unknown"
 
@@ -21,6 +22,7 @@ export async function registerHealthRoutes(fastify: FastifyInstance) {
 
     try {
       await fastify.redis.ping()
+      realtime = "online"
       const heartbeat = await fastify.redis.get(WORKER_HEARTBEAT_KEY)
 
       if (heartbeat) {
@@ -28,6 +30,7 @@ export async function registerHealthRoutes(fastify: FastifyInstance) {
       }
     } catch {
       redis = "offline"
+      realtime = "offline"
       worker = "offline"
     }
 
@@ -42,6 +45,7 @@ export async function registerHealthRoutes(fastify: FastifyInstance) {
         api: "online",
         database,
         redis,
+        realtime,
         worker,
         storage,
         version: apiConfig.appVersion,

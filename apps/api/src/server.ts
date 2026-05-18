@@ -40,6 +40,7 @@ export async function createServer() {
   const logPath = path.join(apiConfig.storage.logsDir, "api.log")
 
   const fastify = Fastify({
+    trustProxy: true,
     logger: {
       level: process.env.LOG_LEVEL ?? "info",
       stream: pino.multistream([

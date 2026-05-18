@@ -11,6 +11,7 @@ const HEALTH_KEYS: Array<keyof Omit<HealthStatus, "version" | "timestamp">> = [
   "api",
   "database",
   "redis",
+  "realtime",
   "worker",
   "storage",
 ]

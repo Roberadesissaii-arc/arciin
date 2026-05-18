@@ -68,7 +68,8 @@ ensure_storage_dirs() {
     "${root}/libraries" \
     "${root}/thumbnails" \
     "${root}/temp" \
-    "${root}/logs"
+    "${root}/logs" \
+    "${root}/avatars"
 }
 
 recover_chat_migration_failure() {

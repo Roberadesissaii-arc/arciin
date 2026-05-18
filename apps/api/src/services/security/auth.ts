@@ -4,6 +4,7 @@ import { hash, verify } from "@node-rs/argon2"
 import type { FastifyReply, FastifyRequest } from "fastify"
 
 import { apiConfig } from "@/config"
+import { clientIpFromRequest, normalizeClientIp } from "@/services/security/client-ip"
 import { enforceApiKeyRateLimit } from "@/services/security/api-key-rate-limit"
 
 export async function hashPassword(password: string) {
@@ -81,8 +82,8 @@ export async function createSession(
     data: {
       userId,
       tokenHash: hashToken(rawToken),
-      userAgent: request.headers["user-agent"],
-      ipAddress: request.ip,
+      userAgent: request.headers["user-agent"] ?? null,
+      ipAddress: normalizeClientIp(clientIpFromRequest(request)),
       expiresAt,
     },
   })
@@ -139,6 +140,17 @@ export async function resolveSession(request: FastifyRequest) {
   return session
 }
 
+async function refreshSessionIp(request: FastifyRequest, sessionId: string) {
+  const ip = normalizeClientIp(clientIpFromRequest(request))
+  if (!ip) return
+  await request.server.prisma.session
+    .updateMany({
+      where: { id: sessionId, OR: [{ ipAddress: null }, { ipAddress: { not: ip } }] },
+      data: { ipAddress: ip },
+    })
+    .catch(() => {})
+}
+
 export async function authenticate(request: FastifyRequest, reply: FastifyReply) {
   const session = await resolveSession(request)
 
@@ -158,6 +170,7 @@ export async function authenticate(request: FastifyRequest, reply: FastifyReply)
     apiKeyId: null,
     apiKeyScopes: null,
   }
+  void refreshSessionIp(request, session.id)
 }
 
 /** Cookie session first, else `Authorization: Bearer arc_…` API key. */
@@ -171,6 +184,7 @@ export async function authenticateFlexible(request: FastifyRequest, reply: Fasti
       apiKeyId: null,
       apiKeyScopes: null,
     }
+    void refreshSessionIp(request, session.id)
     return
   }
 

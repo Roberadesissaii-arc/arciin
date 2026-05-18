@@ -1,26 +1,15 @@
 "use client"
 
-import { useEffect, useRef } from "react"
 import { AnimatePresence, motion } from "framer-motion"
 import { CheckCheck, UploadCloud } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { useUploadStore } from "@/lib/stores/upload-store"
 import { UploadQueueItem } from "@/components/uploads/upload-queue-item"
-import { playUploadCompleteSound } from "@/lib/utils/sounds"
 
 export function UploadQueue() {
   const queue = useUploadStore((state) => state.queue)
   const clearCompleted = useUploadStore((state) => state.clearCompleted)
-
-  // Play sound when any item first reaches READY
-  const prevReadyIds = useRef<Set<string>>(new Set())
-  useEffect(() => {
-    const nowReady = new Set(queue.filter((i) => i.status === "READY").map((i) => i.id))
-    const newlyReady = [...nowReady].filter((id) => !prevReadyIds.current.has(id))
-    if (newlyReady.length > 0) playUploadCompleteSound()
-    prevReadyIds.current = nowReady
-  }, [queue])
 
   if (!queue.length) return null
 

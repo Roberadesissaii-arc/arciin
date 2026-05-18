@@ -65,6 +65,11 @@ function openUrl(url: string) {
   window.open(href, "_blank", "noopener,noreferrer")
 }
 
+const vaultRowIconBtn =
+  "size-7 shrink-0 text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900"
+const vaultRowIconBtnDanger =
+  "size-7 shrink-0 text-zinc-500 transition-colors hover:bg-red-50 hover:text-destructive"
+
 function truncateUrl(url: string, max = 40) {
   const stripped = url.replace(/^https?:\/\//i, "")
   if (stripped.length <= max) return stripped
@@ -86,6 +91,8 @@ export function PasswordVaultPage() {
   const [pendingCopy, setPendingCopy] = useState<{ label: string; entryId: string } | null>(null)
   const [revealed, setRevealed] = useState<Record<string, boolean>>({})
   const [editEntry, setEditEntry] = useState<PasswordVaultEntry | null>(null)
+  const [editRevealedPassword, setEditRevealedPassword] = useState<string | null>(null)
+  const [pendingEditPasswordReveal, setPendingEditPasswordReveal] = useState(false)
   const [deleteEntry, setDeleteEntry] = useState<PasswordVaultEntry | null>(null)
   const [autoPrompted, setAutoPrompted] = useState(false)
 
@@ -132,10 +139,10 @@ export function PasswordVaultPage() {
       updatePasswordVaultEntry(id, {
         name: draft.name.trim(),
         username: draft.username.trim() || undefined,
-        password: draft.password || undefined,
         url: draft.url.trim() || undefined,
         notes: draft.notes.trim() || undefined,
         category: draft.category.trim() || undefined,
+        ...(draft.password !== undefined ? { password: draft.password } : {}),
       }),
     onSuccess: () => {
       toast.success("Credential updated")
@@ -192,6 +199,11 @@ export function PasswordVaultPage() {
     requestUnlockForReveal(entry.id)
   }
 
+  const openEditEntry = (entry: PasswordVaultEntry) => {
+    setEditRevealedPassword(null)
+    setEditEntry(entry)
+  }
+
   const onCopyPassword = (entry: PasswordVaultEntry) => {
     if (!vaultEntryHasPassword(entry)) return
     const canCopyPlain =
@@ -216,6 +228,9 @@ export function PasswordVaultPage() {
         await queryClient.refetchQueries({ queryKey: queryKeys.passwordVault })
       } else {
         await verifyPasswordVault(payload)
+        if (pendingEditPasswordReveal) {
+          await queryClient.refetchQueries({ queryKey: queryKeys.passwordVault })
+        }
       }
 
       const fresh = queryClient.getQueryData<Awaited<ReturnType<typeof getPasswordVault>>>(
@@ -236,6 +251,20 @@ export function PasswordVaultPage() {
         toast.success(pinConfigured ? "Vault unlocked with PIN" : "Vault unlocked")
       } else if (revealId) {
         toast.success("Password revealed")
+      }
+
+      if (pendingEditPasswordReveal && editEntry) {
+        const entry = fresh?.entries.find((e) => e.id === editEntry.id)
+        if (entry?.password) {
+          setEditRevealedPassword(entry.password)
+        } else {
+          toast.error("Could not load password for this entry.")
+        }
+        setPendingEditPasswordReveal(false)
+        setUnlockOpen(false)
+        setPendingRevealId(null)
+        setPendingCopy(null)
+        return
       }
 
       setUnlockOpen(false)
@@ -371,7 +400,7 @@ export function PasswordVaultPage() {
                                 type="button"
                                 variant="ghost"
                                 size="icon"
-                                className="size-7 shrink-0"
+                                className={vaultRowIconBtn}
                                 aria-label="Copy username"
                                 onClick={() => void copyToClipboard(entry.username!, "Username")}
                               >
@@ -393,7 +422,7 @@ export function PasswordVaultPage() {
                                   type="button"
                                   variant="ghost"
                                   size="icon"
-                                  className="size-7 shrink-0"
+                                  className={vaultRowIconBtn}
                                   aria-label={pwdVisible ? "Hide password" : "Show password"}
                                   onClick={() => onEyeClick(entry)}
                                 >
@@ -407,7 +436,7 @@ export function PasswordVaultPage() {
                                   type="button"
                                   variant="ghost"
                                   size="icon"
-                                  className="size-7 shrink-0"
+                                  className={vaultRowIconBtn}
                                   aria-label="Copy password"
                                   onClick={() => onCopyPassword(entry)}
                                 >
@@ -448,9 +477,9 @@ export function PasswordVaultPage() {
                             type="button"
                             variant="ghost"
                             size="icon"
-                            className="size-7 shrink-0"
+                            className={vaultRowIconBtn}
                             aria-label="Edit credential"
-                            onClick={() => setEditEntry(entry)}
+                            onClick={() => openEditEntry(entry)}
                           >
                             <Pencil className="size-3.5" />
                           </Button>
@@ -458,7 +487,10 @@ export function PasswordVaultPage() {
                             type="button"
                             variant="ghost"
                             size="icon"
-                            className="size-7 shrink-0"
+                            className={cn(
+                              vaultRowIconBtn,
+                              !entry.url && "opacity-40 hover:bg-transparent hover:text-zinc-500",
+                            )}
                             aria-label="Open URL"
                             disabled={!entry.url}
                             onClick={() => entry.url && openUrl(entry.url)}
@@ -469,7 +501,7 @@ export function PasswordVaultPage() {
                             type="button"
                             variant="ghost"
                             size="icon"
-                            className="size-7 shrink-0 text-destructive hover:text-destructive"
+                            className={vaultRowIconBtnDanger}
                             aria-label="Delete credential"
                             onClick={() => setDeleteEntry(entry)}
                           >
@@ -495,6 +527,7 @@ export function PasswordVaultPage() {
           if (!open) {
             setPendingRevealId(null)
             setPendingCopy(null)
+            setPendingEditPasswordReveal(false)
           }
         }}
         onUnlock={handleVaultUnlock}
@@ -503,10 +536,23 @@ export function PasswordVaultPage() {
       <VaultEntryEditDialog
         entry={editEntry}
         open={Boolean(editEntry)}
+        revealedPassword={editRevealedPassword}
         busy={editMutation.isPending}
         onOpenChange={(open) => {
-          if (!open) setEditEntry(null)
+          if (!open) {
+            setEditEntry(null)
+            setEditRevealedPassword(null)
+            setPendingEditPasswordReveal(false)
+          }
         }}
+        onRequestPasswordReveal={() => {
+          if (!editEntry) return
+          setPendingEditPasswordReveal(true)
+          setPendingRevealId(null)
+          setPendingCopy(null)
+          setUnlockOpen(true)
+        }}
+        onClearRevealedPassword={() => setEditRevealedPassword(null)}
         onSave={async (id, draft) => {
           await editMutation.mutateAsync({ id, draft })
         }}

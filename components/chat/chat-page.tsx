@@ -8,7 +8,7 @@ import {
   useOllamaAvailableModels,
 } from "@/lib/hooks/use-ollama-available-models"
 import {
-  ArrowUp, ChevronDown, Clock, Copy, File, Info, Loader2, MessageSquare,
+  ArrowUp, ChevronDown, Clock, Cloud, Copy, File, Info, Loader2, MessageSquare,
   Plus, RotateCcw, Sparkles, ThumbsDown, ThumbsUp, Trash2, User, X,
 } from "lucide-react"
 import { toast } from "sonner"
@@ -646,10 +646,15 @@ function OllamaProfileSection({
   selectedModel: string
   onSelect: (model: string) => void
 }) {
+  const isCloud = profile.provider === "ollama-cloud"
   const q = useOllamaAvailableModels(profile.id)
 
-  const models = q.data ?? (profile.defaultModel ? [profile.defaultModel] : [])
+  const models =
+    q.data?.models ??
+    (profile.defaultModel ? [profile.defaultModel] : [])
+  const fromCache = q.data?.fromCache ?? false
   const showLoading = q.isPending && models.length === 0
+  const showProbing = q.isFetching && !fromCache && isCloud
   const errorMessage =
     q.error instanceof Error ? q.error.message : q.isError ? "Could not load models." : null
 
@@ -658,7 +663,7 @@ function OllamaProfileSection({
       <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border/60 bg-card px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
         <span className="flex items-center gap-2">
           {profile.displayName}
-          {q.isFetching && models.length > 0 ? (
+          {showProbing ? (
             <Loader2 className="size-2.5 animate-spin opacity-60" aria-hidden />
           ) : null}
         </span>
@@ -676,11 +681,14 @@ function OllamaProfileSection({
       {showLoading ? (
         <div className="flex items-center gap-2 px-3 py-3 text-[11px] text-muted-foreground">
           <Loader2 className="size-3 animate-spin" />
-          Fetching models…
+          {isCloud && !fromCache ? "First-time cloud model check…" : isCloud ? "Loading cloud models…" : "Fetching models…"}
         </div>
       ) : models.length === 0 ? (
         <div className="px-3 py-2.5 text-[11px] text-muted-foreground">
-          {errorMessage ?? "No models found. Run ollama pull or check your Ollama Cloud key."}
+          {errorMessage ??
+            (isCloud
+              ? "No working cloud models yet. Check your API key under Models → Ollama Cloud."
+              : "No models found. Run ollama pull or check your Ollama instance.")}
         </div>
       ) : (
         models.map((model) => {
@@ -693,12 +701,12 @@ function OllamaProfileSection({
               type="button"
               onClick={() => onSelect(model)}
               className={cn(
-                "flex w-full items-center gap-2 border-b border-border/40 px-3 py-2 text-left font-mono text-[12px] last:border-0 transition-colors",
+                "flex w-full items-center gap-2 border-b border-border/40 px-3 py-2.5 text-left font-mono text-[12px] last:border-0 transition-colors",
                 active ? "bg-primary/[0.07] text-primary" : "text-foreground hover:bg-muted/50",
               )}
             >
-              <span className={cn("size-1.5 shrink-0 rounded-full", active ? "bg-primary" : "bg-zinc-300")} />
               <span className="flex-1 truncate">{model}</span>
+              {isCloud && <Cloud className="size-3.5 shrink-0 opacity-45" aria-hidden />}
               {active && (
                 <span className="shrink-0 text-[9px] font-semibold uppercase tracking-wide text-primary/60">active</span>
               )}
@@ -776,6 +784,54 @@ function OllamaModelInfoHover({
   )
 }
 
+function ScrollFadeList({
+  children,
+  maxHeightClass = "max-h-80",
+}: {
+  children: React.ReactNode
+  maxHeightClass?: string
+}) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [showMore, setShowMore] = useState(false)
+
+  const checkOverflow = useCallback(() => {
+    const el = ref.current
+    if (!el) return
+    setShowMore(el.scrollHeight > el.clientHeight + 6)
+  }, [])
+
+  useEffect(() => {
+    checkOverflow()
+    const el = ref.current
+    if (!el) return
+    const ro = new ResizeObserver(checkOverflow)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [checkOverflow, children])
+
+  return (
+    <div className="relative">
+      <div
+        ref={ref}
+        className={cn(
+          maxHeightClass,
+          "overflow-y-auto overflow-x-hidden scrollbar-hide",
+        )}
+      >
+        {children}
+      </div>
+      {showMore ? (
+        <div
+          className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center bg-gradient-to-t from-card via-card/95 to-transparent pb-1.5 pt-10"
+          aria-hidden
+        >
+          <ChevronDown className="size-4 text-muted-foreground/80" />
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
 // ── Model picker ───────────────────────────────────────────────────────────────
 
 function ModelPicker({
@@ -826,7 +882,8 @@ function ModelPicker({
       </div>
 
       {open && (
-        <div className="absolute bottom-full left-0 z-30 mb-2 max-h-80 w-72 overflow-y-auto overflow-x-hidden rounded-xl border border-border bg-card shadow-lg">
+        <div className="absolute bottom-full left-0 z-30 mb-2 w-72">
+          <ScrollFadeList maxHeightClass="max-h-80 rounded-xl border border-border bg-card shadow-lg">
           {profiles.length === 0 ? (
             <div className="px-3 py-4 text-center text-[12px] text-muted-foreground">
               No models connected.{" "}
@@ -887,6 +944,7 @@ function ModelPicker({
               )
             })
           )}
+          </ScrollFadeList>
         </div>
       )}
     </div>

@@ -2,6 +2,7 @@
 
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
+import { useQuery } from "@tanstack/react-query"
 import {
   Bell, BookOpen, Boxes, ChevronLeft, ChevronRight,
   ChevronsUpDown, Code2, Database, Files, FingerprintPattern, GalleryVerticalEnd, HelpCircle, LayoutDashboard,
@@ -12,6 +13,9 @@ import {
 import { toast } from "sonner"
 
 import { UserIdentityAvatar } from "@/components/app-shell/user-identity-avatar"
+import { getMe } from "@/lib/api/auth"
+import { queryKeys } from "@/lib/api/query-keys"
+import { resolveUserAvatarUrl } from "@/lib/utils/user-avatar-url"
 import { NotificationUnreadBadge } from "@/components/notifications/notification-unread-badge"
 import {
   DropdownMenu,
@@ -136,6 +140,15 @@ function AppSidebarInner({ auth }: { auth: AuthSession }) {
   const { state, toggleSidebar, isMobile } = useSidebar()
   const collapsed = state === "collapsed"
 
+  const meQuery = useQuery({
+    queryKey: queryKeys.authMe,
+    queryFn: ({ signal }) => getMe(signal),
+    initialData: auth,
+    staleTime: 30_000,
+  })
+  const sessionUser = meQuery.data?.user ?? auth.user
+  const avatarSrc = resolveUserAvatarUrl(sessionUser.avatarUrl, sessionUser.updatedAt)
+
   const logoutMutation = useLogout()
   const { data: libraries } = useLibraries()
 
@@ -257,6 +270,7 @@ function AppSidebarInner({ auth }: { auth: AuthSession }) {
               type="button"
               className={cn(
                 "mt-2 flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 outline-none transition-colors",
+                "focus-visible:ring-2 focus-visible:ring-zinc-500/40 focus-visible:ring-offset-2 focus-visible:ring-offset-[#18181B]",
                 collapsed && "justify-center px-0",
               )}
               style={{ background: "rgba(255,255,255,0.03)", border: `1px solid ${DIVIDER}` }}
@@ -264,9 +278,16 @@ function AppSidebarInner({ auth }: { auth: AuthSession }) {
               onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.03)" }}
             >
               <div className="relative shrink-0">
-                <UserIdentityAvatar name={auth.user.name} size="sm" />
+                <UserIdentityAvatar
+                  name={sessionUser.name}
+                  imageUrl={avatarSrc}
+                  userId={sessionUser.id}
+                  size="sm"
+                  shape="circle"
+                  tone="dark"
+                />
                 <span
-                  className="absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full border-2 border-[#18181B] bg-emerald-400"
+                  className="absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full border-2 border-zinc-800 bg-emerald-400"
                   aria-hidden
                 />
               </div>
@@ -274,10 +295,10 @@ function AppSidebarInner({ auth }: { auth: AuthSession }) {
                 <>
                   <div className="min-w-0 flex-1 text-left">
                     <p className="truncate text-[12px] font-semibold leading-none" style={{ color: TEXT_ON }}>
-                      {auth.user.name}
+                      {sessionUser.name}
                     </p>
                     <p className="mt-[3px] truncate text-[10px]" style={{ color: "rgba(255,255,255,0.32)" }}>
-                      {auth.user.email}
+                      {sessionUser.email}
                     </p>
                   </div>
                   <ChevronsUpDown className="h-3.5 w-3.5 shrink-0" style={{ color: "rgba(255,255,255,0.25)" }} />
@@ -296,10 +317,17 @@ function AppSidebarInner({ auth }: { auth: AuthSession }) {
             )}
           >
             <DropdownMenuLabel className="flex items-center gap-2.5 px-2 pb-2 pt-1.5 font-normal">
-              <UserIdentityAvatar name={auth.user.name} size="sm" />
+              <UserIdentityAvatar
+                name={sessionUser.name}
+                imageUrl={avatarSrc}
+                userId={sessionUser.id}
+                size="sm"
+                shape="circle"
+                tone="dark"
+              />
               <div className="min-w-0 flex-1">
-                <p className="truncate text-[13px] font-semibold text-white">{auth.user.name}</p>
-                <p className="mt-0.5 truncate text-[11px] text-zinc-500">{auth.user.email}</p>
+                <p className="truncate text-[13px] font-semibold text-white">{sessionUser.name}</p>
+                <p className="mt-0.5 truncate text-[11px] text-zinc-500">{sessionUser.email}</p>
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator className="bg-white/10" />

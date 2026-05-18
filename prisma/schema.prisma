@@ -114,6 +114,7 @@ model User {
   passwordHash   String
   role           UserRole
   status         UserStatus      @default(ACTIVE)
+  avatarPath     String?
   preferences    Json?
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt

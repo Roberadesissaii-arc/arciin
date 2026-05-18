@@ -8,12 +8,17 @@ import {
   parseUserPreferences,
   type UserPreferences,
 } from "@arciin/shared"
+import { createReadStream } from "node:fs"
+import { access } from "node:fs/promises"
+
 import type { FastifyInstance } from "fastify"
 import { z } from "zod"
 
 import { apiConfig } from "@/config"
 import { serializeAuth, serializeSession, serializeUser } from "@/services/serializers"
 import { loadAccessControlSettings } from "@/services/security/access-control-settings"
+import { clientIpFromRequest, normalizeClientIp } from "@/services/security/client-ip"
+import { recordSecurityEvent } from "@/services/security/security-events"
 import {
   authenticate,
   authenticateFlexible,
@@ -30,6 +35,12 @@ import {
   isLoginLocked,
   recordFailedLogin,
 } from "@/services/security/login-guard"
+import {
+  extensionFromMime,
+  removeUserAvatarFiles,
+  resolveAvatarAbsolutePath,
+  saveUserAvatar,
+} from "@/services/user/avatar"
 
 const loginSchema = z.object({
   email: z.email(),
@@ -226,13 +237,13 @@ export async function registerAuthRoutes(fastify: FastifyInstance) {
     })
     setSessionCookie(reply, rawToken, session.expiresAt, request)
 
-    await fastify.prisma.activityEvent.create({
-      data: {
-        userId: user.id,
-        type: "auth.login",
-        title: "Signed in",
-        message: `${user.name} signed in.`,
-      },
+    const ip = normalizeClientIp(clientIpFromRequest(request)) ?? clientIpFromRequest(request)
+    await recordSecurityEvent(fastify, {
+      userId: user.id,
+      type: "auth.login",
+      title: "Signed in",
+      message: `${user.name} signed in from ${ip}.`,
+      metadata: { clientIp: normalizeClientIp(ip) ?? undefined, status: "ok" },
     })
 
     reply.send({
@@ -312,6 +323,123 @@ export async function registerAuthRoutes(fastify: FastifyInstance) {
     }
   )
 
+  fastify.post(
+    "/auth/profile/avatar",
+    { preHandler: authenticate },
+    async (request, reply) => {
+      if (!request.auth?.session) {
+        reply.status(401).send({
+          error: { code: "UNAUTHENTICATED", message: "Session required for this action." },
+        })
+        return
+      }
+
+      const file = await request.file()
+      if (!file) {
+        reply.status(400).send({
+          error: { code: "VALIDATION_ERROR", message: "Choose an image file to upload." },
+        })
+        return
+      }
+
+      const buffer = await file.toBuffer()
+      const mime = file.mimetype || "application/octet-stream"
+
+      try {
+        const relative = await saveUserAvatar(request.auth.user.id, buffer, mime)
+        const updated = await fastify.prisma.user.update({
+          where: { id: request.auth.user.id },
+          data: { avatarPath: relative },
+        })
+        reply.send({ data: serializeAuth(updated, request.auth.session) })
+      } catch (err) {
+        reply.status(400).send({
+          error: {
+            code: "INVALID_AVATAR",
+            message: err instanceof Error ? err.message : "Could not save profile image.",
+          },
+        })
+      }
+    },
+  )
+
+  fastify.delete(
+    "/auth/profile/avatar",
+    { preHandler: authenticate },
+    async (request, reply) => {
+      if (!request.auth?.session) {
+        reply.status(401).send({
+          error: { code: "UNAUTHENTICATED", message: "Session required for this action." },
+        })
+        return
+      }
+
+      await removeUserAvatarFiles(request.auth.user.id)
+      const updated = await fastify.prisma.user.update({
+        where: { id: request.auth.user.id },
+        data: { avatarPath: null },
+      })
+      reply.send({ data: serializeAuth(updated, request.auth.session) })
+    },
+  )
+
+  fastify.get(
+    "/auth/users/:userId/avatar",
+    { preHandler: authenticate },
+    async (request, reply) => {
+      const { userId } = request.params as { userId: string }
+      const user = await fastify.prisma.user.findUnique({
+        where: { id: userId },
+        select: { avatarPath: true },
+      })
+      if (!user?.avatarPath) {
+        reply.status(404).send({
+          error: { code: "NOT_FOUND", message: "No profile image." },
+        })
+        return
+      }
+
+      const absolute = resolveAvatarAbsolutePath(user.avatarPath)
+      if (!absolute) {
+        reply.status(404).send({
+          error: { code: "NOT_FOUND", message: "No profile image." },
+        })
+        return
+      }
+
+      try {
+        await access(absolute)
+      } catch {
+        reply.status(404).send({
+          error: { code: "NOT_FOUND", message: "Profile image file is missing." },
+        })
+        return
+      }
+
+      const ext = extensionFromMime(
+        user.avatarPath.endsWith(".png")
+          ? "image/png"
+          : user.avatarPath.endsWith(".webp")
+            ? "image/webp"
+            : user.avatarPath.endsWith(".gif")
+              ? "image/gif"
+              : "image/jpeg",
+      )
+      reply.header(
+        "Content-Type",
+        ext === ".png"
+          ? "image/png"
+          : ext === ".webp"
+            ? "image/webp"
+            : ext === ".gif"
+              ? "image/gif"
+              : "image/jpeg",
+      )
+      reply.header("Cache-Control", "private, max-age=3600")
+      return reply.send(createReadStream(absolute))
+    },
+  )
+
   const changePasswordSchema = z.object({
     currentPassword: z.string().min(1),
     newPassword: z.string().min(8),
@@ -357,7 +485,7 @@ export async function registerAuthRoutes(fastify: FastifyInstance) {
         data: sessions.map((s) => ({
           id: s.id,
           userAgent: s.userAgent,
-          ipAddress: s.ipAddress,
+          ipAddress: normalizeClientIp(s.ipAddress),
           createdAt: s.createdAt.toISOString(),
           expiresAt: s.expiresAt.toISOString(),
           isCurrent: s.tokenHash === currentHash,

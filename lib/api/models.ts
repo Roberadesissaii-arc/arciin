@@ -2,6 +2,8 @@ import { fetchApi } from "@/lib/api/client"
 import type {
   CreateModelProfileInput,
   ModelProfile,
+  OllamaAvailableModelsResult,
+  OllamaCloudModelsResult,
   OllamaModelShowData,
   UpdateModelProfileInput,
 } from "@/lib/types/models"
@@ -26,8 +28,26 @@ export function setDefaultModelProfile(id: string) {
   return fetchApi<ModelProfile>(`/models/${id}/set-default`, { method: "POST", body: {} })
 }
 
-export function getAvailableModels(profileId: string, signal?: AbortSignal) {
-  return fetchApi<string[]>(`/models/${profileId}/available-models`, { method: "GET", signal })
+export function getAvailableModels(
+  profileId: string,
+  opts?: { refresh?: boolean; signal?: AbortSignal },
+) {
+  const qs = opts?.refresh ? "?refresh=1" : ""
+  return fetchApi<OllamaAvailableModelsResult>(`/models/${profileId}/available-models${qs}`, {
+    method: "GET",
+    signal: opts?.signal,
+  })
+}
+
+export function getOllamaCloudModels(
+  profileId: string,
+  opts?: { refresh?: boolean; signal?: AbortSignal },
+) {
+  const qs = opts?.refresh ? "?refresh=1" : ""
+  return fetchApi<OllamaCloudModelsResult>(`/models/${profileId}/cloud-models${qs}`, {
+    method: "GET",
+    signal: opts?.signal,
+  })
 }
 
 export function getOllamaModelShow(

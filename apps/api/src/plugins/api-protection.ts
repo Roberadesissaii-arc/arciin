@@ -1,8 +1,13 @@
-import type { FastifyInstance, FastifyRequest } from "fastify"
+import type { FastifyInstance } from "fastify"
 
 import { evaluateIpAccess } from "@arciin/shared"
 
+import { clientIpFromRequest } from "@/services/security/client-ip"
 import { loadApiProtectionSettings } from "@/services/security/instance-security"
+import {
+  recordSecurityEvent,
+  shouldRecordSecurityDedupe,
+} from "@/services/security/security-events"
 
 const EXEMPT_PREFIXES = [
   "/api/health",
@@ -16,15 +21,6 @@ function isExempt(url: string): boolean {
 
 function currentMinuteBucket(): string {
   return String(Math.floor(Date.now() / 60_000))
-}
-
-function clientIp(request: FastifyRequest): string {
-  const forwarded = request.headers["x-forwarded-for"]
-  if (typeof forwarded === "string") {
-    const first = forwarded.split(",")[0]?.trim()
-    if (first) return first
-  }
-  return request.ip
 }
 
 async function incrementRate(
@@ -44,17 +40,34 @@ export async function registerApiProtection(fastify: FastifyInstance) {
     if (isExempt(request.url.split("?")[0] ?? request.url)) return
 
     const settings = await loadApiProtectionSettings(fastify.prisma)
-    const ip = clientIp(request)
+    const ip = clientIpFromRequest(request)
+    const path = request.url.split("?")[0] ?? request.url
 
     const ipResult = evaluateIpAccess(ip, settings)
     if (!ipResult.allowed) {
+      const reason = ipResult.reason ?? "denied"
+      if (await shouldRecordSecurityDedupe(fastify.redis, `ip_denied:${ip}:${reason}`)) {
+        const reasonLabel =
+          reason === "ip_blocked"
+            ? "blocklist"
+            : reason === "allowlist_empty"
+              ? "allowlist empty"
+              : "not on allowlist"
+        void recordSecurityEvent(fastify, {
+          type: "security.ip_denied",
+          title: "API request blocked",
+          message: `${ip} denied (${reasonLabel}) on ${path}.`,
+          metadata: { clientIp: ip, reason, path, status: "blocked" },
+        }).catch(() => {})
+      }
+
       reply.status(403).send({
         error: {
           code: "IP_FORBIDDEN",
           message:
-            ipResult.reason === "ip_blocked"
+            reason === "ip_blocked"
               ? "Your IP address is blocked from this API."
-              : ipResult.reason === "allowlist_empty"
+              : reason === "allowlist_empty"
                 ? "IP allowlist enforcement is on but no addresses are configured."
                 : "Your IP address is not on the allowlist.",
         },
@@ -68,6 +81,15 @@ export async function registerApiProtection(fastify: FastifyInstance) {
       const globalKey = `arciin:rpm:global:${minute}`
       const count = await incrementRate(fastify.redis, globalKey)
       if (count > settings.apiGlobalRequestsPerMinute) {
+        if (await shouldRecordSecurityDedupe(fastify.redis, `rate_global:${ip}`)) {
+          void recordSecurityEvent(fastify, {
+            type: "security.rate_limited",
+            title: "Global API rate limit",
+            message: `${ip} exceeded ${settings.apiGlobalRequestsPerMinute} requests/min on ${path}.`,
+            metadata: { clientIp: ip, path, status: "limited" },
+          }).catch(() => {})
+        }
+
         reply.status(429).send({
           error: {
             code: "RATE_LIMITED",

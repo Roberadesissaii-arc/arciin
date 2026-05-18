@@ -18,6 +18,7 @@ export const queryKeys = {
   remoteAccessSettings: ["settings", "remote-access"] as const,
   cloudflareTunnel: ["settings", "cloudflare-tunnel"] as const,
   securitySettings: ["settings", "security"] as const,
+  securityLog: ["settings", "security", "log"] as const,
   modelProfiles: ["models"] as const,
   chatProfiles: ["chat", "profiles"] as const,
   apiKeys: ["api-keys"] as const,

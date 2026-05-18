@@ -42,6 +42,7 @@ export type UserSummary = {
   email: string
   role: UserRole
   status: UserStatus
+  avatarUrl?: string | null
   createdAt: string
   updatedAt: string
 }
@@ -425,10 +426,28 @@ export type CreateModelProfileInput = {
 
 export type UpdateModelProfileInput = Partial<CreateModelProfileInput>
 
+/** Result of probing one model on ollama.com with the user's API key. */
+export type OllamaCloudModelProbe = {
+  name: string
+  access: "available" | "paid" | "rate_limited" | "error"
+  message?: string
+}
+
+export type OllamaAvailableModelsResult = {
+  models: string[]
+  fromCache: boolean
+}
+
+export type OllamaCloudModelsResult = {
+  probes: OllamaCloudModelProbe[]
+  fromCache: boolean
+}
+
 export type HealthStatus = {
   api: "online" | "offline"
   database: "online" | "offline"
   redis: "online" | "offline"
+  realtime: "online" | "offline"
   worker: "online" | "offline" | "unknown"
   storage: "online" | "offline"
   version: string

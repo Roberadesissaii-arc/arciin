@@ -20,6 +20,7 @@ export type LogFileEntry = {
 function resolveLogSource(filename: string): LogFileEntry["source"] {
   if (filename.startsWith("api")) return "api"
   if (filename.startsWith("worker")) return "worker"
+  if (filename.startsWith("upload")) return "other"
   return "other"
 }
 

@@ -17,6 +17,7 @@ import {
   extractBracketPseudoToolCalls,
   extractProseLibraryFolderMutations,
 } from "@/services/chat/folder-tool-synthetic"
+import { normalizeOllamaCloudModelId } from "@/services/chat/ollama-cloud-models"
 import { formatOllamaProviderError, ollamaAuthHeaders } from "@/services/chat/ollama-http"
 
 export function detectLibraryToolIntent(
@@ -74,8 +75,10 @@ type OllamaMessage = {
 
 const MAX_TOOL_ROUNDS = 4
 
-function thinkOption(model: string): boolean | string {
-  return /gpt-oss/i.test(model) ? "medium" : true
+function thinkOption(model: string, isCloud: boolean): boolean | string {
+  if (/gpt-oss/i.test(model)) return isCloud ? "low" : "medium"
+  if (isCloud) return false
+  return true
 }
 
 /** Stream thinking/text deltas to the client (SSE). */
@@ -113,11 +116,12 @@ async function ollamaChatOnce(
   opts: { stream: boolean; tools?: ToolMode; apiKey?: string | null },
 ): Promise<Response> {
   const isCloud = baseUrl.includes("ollama.com")
+  const apiModel = isCloud ? normalizeOllamaCloudModelId(model) : model
   const body: Record<string, unknown> = {
-    model,
+    model: apiModel,
     messages,
     stream: opts.stream,
-    think: thinkOption(model),
+    think: thinkOption(apiModel, isCloud),
   }
   const tools = opts.tools === undefined ? undefined : resolveOllamaTools(opts.tools)
   if (tools?.length) body.tools = tools

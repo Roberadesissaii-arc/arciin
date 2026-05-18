@@ -41,6 +41,21 @@ export function updateProfile(input: UpdateProfileInput) {
   })
 }
 
+export function uploadProfileAvatar(file: File) {
+  const formData = new FormData()
+  formData.append("file", file)
+  return fetchApi<AuthSession>("/auth/profile/avatar", {
+    method: "POST",
+    body: formData,
+  })
+}
+
+export function removeProfileAvatar() {
+  return fetchApi<AuthSession>("/auth/profile/avatar", {
+    method: "DELETE",
+  })
+}
+
 export function getSessions(signal?: AbortSignal) {
   return fetchApi<SessionDetail[]>("/auth/sessions", {
     method: "GET",

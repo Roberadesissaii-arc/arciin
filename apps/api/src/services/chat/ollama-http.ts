@@ -12,6 +12,12 @@ export function formatOllamaProviderError(
   bodyText: string,
   opts?: { hasApiKey?: boolean; isCloud?: boolean },
 ): string {
+  if (status === 500 || status === 502 || status === 503) {
+    const snippet = bodyText.trim().slice(0, 200)
+    return snippet
+      ? `Ollama Cloud error (${status}): ${snippet}`
+      : `Ollama Cloud error (${status}). Try another model or check ollama.com status.`
+  }
   if (status === 401 || status === 403) {
     if (opts?.isCloud || opts?.hasApiKey) {
       return (
@@ -40,3 +46,4 @@ export function assertOllamaCloudApiKey(
       "Ollama Cloud requires an API key. Add one from ollama.com/settings/api-keys under Models → Ollama Cloud.",
   }
 }
+

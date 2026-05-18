@@ -17,6 +17,7 @@ import { serializeJob } from "@/services/serializers"
 async function collectHealth(fastify: FastifyInstance) {
   let database: "online" | "offline" = "online"
   let redis: "online" | "offline" = "online"
+  let realtime: "online" | "offline" = "online"
   let storage: "online" | "offline" = "online"
   let worker: "online" | "offline" | "unknown" = "unknown"
   let workerLastSeenAt: string | null = null
@@ -29,6 +30,7 @@ async function collectHealth(fastify: FastifyInstance) {
 
   try {
     await fastify.redis.ping()
+    realtime = "online"
     const heartbeat = await fastify.redis.get(WORKER_HEARTBEAT_KEY)
     if (heartbeat) {
       const seenMs = Number(heartbeat)
@@ -37,6 +39,7 @@ async function collectHealth(fastify: FastifyInstance) {
     }
   } catch {
     redis = "offline"
+    realtime = "offline"
     worker = "offline"
   }
 
@@ -49,6 +52,7 @@ async function collectHealth(fastify: FastifyInstance) {
     api: "online" as const,
     database,
     redis,
+    realtime,
     worker,
     storage,
     version: apiConfig.appVersion,

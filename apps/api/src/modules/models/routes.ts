@@ -1,6 +1,12 @@
 import type { FastifyInstance } from "fastify"
 import { z } from "zod"
 
+import { assertOllamaCloudApiKey } from "@/services/chat/ollama-http"
+import {
+  availableCloudModelNames,
+  invalidateOllamaCloudProbeCache,
+  probeOllamaCloudModels,
+} from "@/services/chat/ollama-cloud-models"
 import { requireRole } from "@/services/security/auth"
 
 const OLLAMA_PROVIDERS = new Set(["ollama", "ollama-local", "ollama-cloud"])
@@ -77,6 +83,12 @@ export async function registerModelRoutes(fastify: FastifyInstance) {
       }
       const { isDefault, ...rest } = parsed.data
 
+      const cloudKeyError = assertOllamaCloudApiKey(rest.provider, rest.apiKey)
+      if (cloudKeyError) {
+        reply.status(400).send({ error: cloudKeyError })
+        return
+      }
+
       // If setting as default, clear others first
       if (isDefault) {
         await fastify.prisma.modelProfile.updateMany({ data: { isDefault: false } })
@@ -85,6 +97,9 @@ export async function registerModelRoutes(fastify: FastifyInstance) {
       const profile = await fastify.prisma.modelProfile.create({
         data: { ...rest, isDefault: isDefault ?? false },
       })
+      if (profile.provider === "ollama-cloud" && rest.apiKey) {
+        await invalidateOllamaCloudProbeCache(profile.id, fastify.redis)
+      }
       reply.status(201).send({ data: serializeProfile(profile) })
     },
   )
@@ -111,7 +126,26 @@ export async function registerModelRoutes(fastify: FastifyInstance) {
       const data: Record<string, unknown> = { ...parsed.data }
       if (!("apiKey" in parsed.data)) delete data.apiKey
 
+      const provider = (data.provider as string | undefined) ?? existing.provider
+      const nextKey =
+        typeof data.apiKey === "string" && data.apiKey.trim()
+          ? data.apiKey.trim()
+          : existing.apiKey
+
+      const cloudKeyError = assertOllamaCloudApiKey(provider, nextKey)
+      if (cloudKeyError) {
+        reply.status(400).send({ error: cloudKeyError })
+        return
+      }
+
       const updated = await fastify.prisma.modelProfile.update({ where: { id }, data })
+      if (
+        updated.provider === "ollama-cloud" &&
+        typeof data.apiKey === "string" &&
+        data.apiKey.trim()
+      ) {
+        await invalidateOllamaCloudProbeCache(updated.id, fastify.redis)
+      }
       reply.send({ data: serializeProfile(updated) })
     },
   )
@@ -148,7 +182,43 @@ export async function registerModelRoutes(fastify: FastifyInstance) {
 
       const timeoutMs = profile.provider === "ollama-cloud" ? 20_000 : 10_000
 
+      const cloudKeyError = assertOllamaCloudApiKey(profile.provider, profile.apiKey)
+      if (cloudKeyError) {
+        reply.status(400).send({ error: cloudKeyError })
+        return
+      }
+
+      const refresh = (request.query as { refresh?: string }).refresh === "1"
+
       try {
+        if (profile.provider === "ollama-cloud" && profile.apiKey) {
+          const { probes, fromCache } = await probeOllamaCloudModels({
+            profileId: profile.id,
+            baseUrl,
+            apiKey: profile.apiKey,
+            refresh,
+            redis: fastify.redis,
+          })
+          const available = availableCloudModelNames(probes)
+          if (available.length === 0) {
+            const keyRejected = probes.some((p) => p.access === "paid")
+            if (keyRejected) {
+              reply.status(502).send({
+                error: {
+                  code: "OLLAMA_AUTH",
+                  message:
+                    "No models available with this API key. Paid models need a paid key from ollama.com/settings/api-keys; free models may be rate-limited.",
+                },
+              })
+              return
+            }
+            reply.send({ data: { models: [], fromCache } })
+            return
+          }
+          reply.send({ data: { models: available, fromCache } })
+          return
+        }
+
         const res = await fetch(`${baseUrl}/api/tags`, {
           headers,
           signal: AbortSignal.timeout(timeoutMs),
@@ -157,10 +227,7 @@ export async function registerModelRoutes(fastify: FastifyInstance) {
           reply.status(502).send({
             error: {
               code: "OLLAMA_AUTH",
-              message:
-                profile.provider === "ollama-cloud"
-                  ? "Ollama Cloud rejected the API key. Update it under Models → Ollama Cloud."
-                  : "Ollama rejected the API key on this profile.",
+              message: "Ollama rejected the API key on this profile.",
             },
           })
           return
@@ -171,10 +238,51 @@ export async function registerModelRoutes(fastify: FastifyInstance) {
         }
         const data = await res.json() as { models?: { name: string }[] }
         const models = (data.models ?? []).map((m) => m.name).filter(Boolean)
-        reply.send({ data: models })
+        reply.send({ data: { models, fromCache: true } })
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Could not reach Ollama"
         reply.status(502).send({ error: { code: "OLLAMA_UNREACHABLE", message: msg } })
+      }
+    },
+  )
+
+  /** Full cloud probe results (available / paid / rate-limited) for Models configure UI. */
+  fastify.get(
+    "/models/:id/cloud-models",
+    { preHandler: requireRole(["OWNER", "ADMIN", "MEMBER"]) },
+    async (request, reply) => {
+      const { id } = request.params as { id: string }
+      const profile = await fastify.prisma.modelProfile.findUnique({ where: { id } })
+      if (!profile) {
+        reply.status(404).send({ error: { code: "NOT_FOUND", message: "Not found." } })
+        return
+      }
+      if (profile.provider !== "ollama-cloud") {
+        reply.status(400).send({ error: { code: "NOT_SUPPORTED", message: "Only for Ollama Cloud profiles." } })
+        return
+      }
+
+      const cloudKeyError = assertOllamaCloudApiKey(profile.provider, profile.apiKey)
+      if (cloudKeyError) {
+        reply.status(400).send({ error: cloudKeyError })
+        return
+      }
+
+      const refresh = (request.query as { refresh?: string }).refresh === "1"
+      const baseUrl = ollamaNativeBase(profile.provider, profile.baseUrl)
+
+      try {
+        const { probes, fromCache } = await probeOllamaCloudModels({
+          profileId: profile.id,
+          baseUrl,
+          apiKey: profile.apiKey!,
+          refresh,
+          redis: fastify.redis,
+        })
+        reply.send({ data: { probes, fromCache } })
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Could not probe Ollama Cloud"
+        reply.status(502).send({ error: { code: "OLLAMA_PROBE_FAILED", message: msg } })
       }
     },
   )

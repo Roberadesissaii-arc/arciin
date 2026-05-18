@@ -8,14 +8,10 @@ import { DuplicateResolutionDialog } from "@/components/uploads/duplicate-resolu
 import { useGlobalDropzone } from "@/hooks/use-global-dropzone"
 import { useUploadOrchestrator } from "@/hooks/use-upload-orchestrator"
 import { checkDuplicates, deleteAsset } from "@/lib/api/assets"
+import { installUploadBatchSubscriber } from "@/lib/uploads/install-upload-batch-subscriber"
+import { nextAvailableFilename, renameFile } from "@/lib/uploads/duplicate-filename"
 import { useUploadStore } from "@/lib/stores/upload-store"
 import type { DuplicateConflict } from "@/lib/stores/upload-store"
-
-function addSuffix(filename: string): string {
-  const dot = filename.lastIndexOf(".")
-  if (dot === -1) return `${filename} (1)`
-  return `${filename.slice(0, dot)} (1)${filename.slice(dot)}`
-}
 
 export function GlobalDropzoneProvider({
   children,
@@ -27,26 +23,24 @@ export function GlobalDropzoneProvider({
   const pendingConflicts = useUploadStore((state) => state.pendingConflicts)
   const setPendingConflicts = useUploadStore((state) => state.setPendingConflicts)
 
-  // Keep a stable ref to the upload context so handleFiles doesn't go stale
   const contextRef = useRef(uploadContext)
-  useEffect(() => { contextRef.current = uploadContext }, [uploadContext])
+  useEffect(() => {
+    contextRef.current = uploadContext
+  }, [uploadContext])
+
+  useEffect(() => {
+    installUploadBatchSubscriber()
+  }, [])
 
   const handleFiles = useCallback(
     async (files: File[]) => {
       if (files.length === 0) return
       const ctx = contextRef.current
 
-      toast.info(
-        files.length === 1
-          ? `Uploading ${files[0].name}…`
-          : `Uploading ${files.length} files…`,
-        { duration: 2000 }
-      )
-
       try {
         const result = await checkDuplicates(
           files.map((f) => f.name),
-          { libraryId: ctx?.libraryId, folderId: ctx?.folderId ?? null }
+          { libraryId: ctx?.libraryId, folderId: ctx?.folderId ?? null },
         )
         const dupeMap = new Map(result.duplicates.map((d) => [d.filename, d.assetId]))
 
@@ -62,17 +56,24 @@ export function GlobalDropzoneProvider({
           }
         }
 
-        // Upload files that have no conflict immediately
-        if (clean.length > 0) void uploadFiles(clean)
+        if (clean.length > 0) {
+          toast.info(
+            clean.length === 1
+              ? `Uploading ${clean[0]!.name}…`
+              : `Uploading ${clean.length} files…`,
+            { duration: 2000 },
+          )
+          void uploadFiles(clean)
+        }
 
-        // Show resolution dialog for conflicts
-        if (conflicts.length > 0) setPendingConflicts(conflicts)
+        if (conflicts.length > 0) {
+          setPendingConflicts(conflicts)
+        }
       } catch {
-        // If the duplicate check fails, just upload everything normally
         void uploadFiles(files)
       }
     },
-    [uploadFiles, setPendingConflicts]
+    [uploadFiles, setPendingConflicts],
   )
 
   useGlobalDropzone(handleFiles)
@@ -91,6 +92,7 @@ export function GlobalDropzoneProvider({
     setPendingConflicts(null)
 
     const toUpload: File[] = []
+    const taken = new Set<string>()
 
     for (const conflict of resolved) {
       if (conflict.resolution === "skip") continue
@@ -103,16 +105,22 @@ export function GlobalDropzoneProvider({
           continue
         }
         toUpload.push(conflict.file)
-      } else {
-        // "keep-both" — rename with (1) suffix
-        const renamed = new File([conflict.file], addSuffix(conflict.file.name), {
-          type: conflict.file.type,
-        })
-        toUpload.push(renamed)
+        continue
       }
+
+      const newName = nextAvailableFilename(conflict.file.name, taken)
+      toUpload.push(renameFile(conflict.file, newName))
     }
 
-    if (toUpload.length > 0) void uploadFiles(toUpload)
+    if (toUpload.length > 0) {
+      toast.info(
+        toUpload.length === 1
+          ? `Uploading ${toUpload[0]!.name}…`
+          : `Uploading ${toUpload.length} files…`,
+        { duration: 2000 },
+      )
+      void uploadFiles(toUpload)
+    }
   }
 
   return (

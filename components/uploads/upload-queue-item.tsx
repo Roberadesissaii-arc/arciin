@@ -5,6 +5,12 @@ import { motion } from "framer-motion"
 import { AlertCircle, CheckCircle2, LoaderCircle } from "lucide-react"
 
 import { Progress } from "@/components/ui/progress"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
 import { mediaTypeIcons } from "@/lib/utils/file-icons"
 import { useUploadStore, type UploadQueueItem as UploadQueueItemModel } from "@/lib/stores/upload-store"
 
@@ -68,6 +74,8 @@ export function UploadQueueItem({ item }: { item: UploadQueueItemModel }) {
             : "OTHER"
   const FileIcon = mediaTypeIcons[mediaType] || mediaTypeIcons.DEFAULT
 
+  const failureDetail = item.error?.trim() || "No details were returned. Check Logs → upload.log on the server."
+
   return (
     <motion.div
       layout
@@ -93,11 +101,33 @@ export function UploadQueueItem({ item }: { item: UploadQueueItemModel }) {
               {item.status === "FAILED" ? "—" : `${Math.min(100, Math.max(0, Math.round(item.progress)))}%`}
             </span>
           </div>
-          {item.error ? <div className="mt-2 text-xs font-medium text-red-700">{item.error}</div> : null}
+          {item.error ? (
+            <p className="mt-2 line-clamp-3 text-xs font-medium text-red-700" title={item.error}>
+              {item.error}
+            </p>
+          ) : null}
         </div>
         <div className="mt-1 shrink-0 text-zinc-600">
           {item.status === "FAILED" ? (
-            <AlertCircle className="size-4 text-red-600" />
+            <TooltipProvider delayDuration={200}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    className="rounded-md p-0.5 outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                    aria-label={`Why ${item.fileName} failed`}
+                  >
+                    <AlertCircle className="size-4 text-red-600" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent
+                  side="left"
+                  className="max-w-[min(20rem,calc(100vw-2rem))] text-left text-xs leading-relaxed"
+                >
+                  {failureDetail}
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           ) : isQueueComplete(item) ? (
             <CheckCircle2 className="size-4 text-emerald-600" />
           ) : (

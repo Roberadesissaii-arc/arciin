@@ -1,9 +1,9 @@
 "use client"
 
 import Image from "next/image"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Check, CheckCircle2, ChevronDown, Loader2, Plus, RefreshCw, Settings2, Star, Unplug, X } from "lucide-react"
+import { Check, CheckCircle2, ChevronDown, Cloud, Loader2, Plus, RefreshCw, Settings2, Star, Unplug, X } from "lucide-react"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
@@ -25,11 +25,12 @@ import {
   createModelProfile,
   deleteModelProfile,
   getModelProfiles,
+  getOllamaCloudModels,
   setDefaultModelProfile,
   updateModelProfile,
 } from "@/lib/api/models"
 import { queryKeys } from "@/lib/api/query-keys"
-import type { CreateModelProfileInput, ModelProfile } from "@/lib/types/models"
+import type { CreateModelProfileInput, ModelProfile, OllamaCloudModelProbe } from "@/lib/types/models"
 
 // ── Provider catalogue ─────────────────────────────────────────────────────────
 
@@ -145,7 +146,7 @@ const PROVIDERS: ProviderMeta[] = [
     description: "Run cloud-hosted models on ollama.com — no local GPU required. Models are fetched live from your account.",
     requiresKey: true,
     requiresBaseUrl: false,
-    suggestedModels: ["mistral-large-3", "deepseek-v3.2", "qwen3-coder", "kimi-k2", "gemma3"],
+    suggestedModels: [],
     docsUrl: "https://ollama.com/settings/api-keys",
     badge: "Cloud",
   },
@@ -237,19 +238,20 @@ function ProviderCard({
       {/* Description */}
       <p className="px-4 text-[12px] leading-relaxed text-zinc-500">{meta.description}</p>
 
-      {/* Suggested models */}
-      <div className="mt-3 flex flex-wrap gap-1.5 px-4">
-        {meta.suggestedModels.slice(0, 3).map((m) => (
-          <span key={m} className="rounded-lg bg-muted/60 px-2 py-0.5 font-mono text-[10px] text-muted-foreground">
-            {m}
-          </span>
-        ))}
-        {meta.suggestedModels.length > 3 && (
-          <span className="rounded-lg bg-muted/60 px-2 py-0.5 font-mono text-[10px] text-muted-foreground">
-            +{meta.suggestedModels.length - 3} more
-          </span>
-        )}
-      </div>
+      {meta.suggestedModels.length > 0 && (
+        <div className="mt-3 flex flex-wrap gap-1.5 px-4">
+          {meta.suggestedModels.slice(0, 3).map((m) => (
+            <span key={m} className="rounded-lg bg-muted/60 px-2 py-0.5 font-mono text-[10px] text-muted-foreground">
+              {m}
+            </span>
+          ))}
+          {meta.suggestedModels.length > 3 && (
+            <span className="rounded-lg bg-muted/60 px-2 py-0.5 font-mono text-[10px] text-muted-foreground">
+              +{meta.suggestedModels.length - 3} more
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Actions */}
       <div className="mt-4 flex items-center gap-2 border-t border-border px-4 py-3">
@@ -323,6 +325,7 @@ function ConnectSheet({
   const [scannedModels, setScannedModels] = useState<string[]>([])
   const [scanning, setScanning] = useState(false)
   const [scanError, setScanError] = useState<string | null>(null)
+  const [cloudProbes, setCloudProbes] = useState<OllamaCloudModelProbe[]>([])
 
   const [apiKey, setApiKey] = useState("")
   const [baseUrl, setBaseUrl] = useState(() => {
@@ -341,8 +344,11 @@ function ConnectSheet({
 
   const createMutation = useMutation({
     mutationFn: (input: CreateModelProfileInput) => createModelProfile(input),
-    onSuccess: async () => {
+    onSuccess: async (created) => {
       await queryClient.invalidateQueries({ queryKey: queryKeys.modelProfiles })
+      if (isOllamaCloud) {
+        void queryClient.invalidateQueries({ queryKey: queryKeys.availableModels(created.id) })
+      }
       toast.success(`${meta.name} connected.`)
       onSaved()
     },
@@ -351,8 +357,11 @@ function ConnectSheet({
 
   const updateMutation = useMutation({
     mutationFn: (input: Partial<CreateModelProfileInput>) => updateModelProfile(profile!.id, input),
-    onSuccess: async () => {
+    onSuccess: async (updated) => {
       await queryClient.invalidateQueries({ queryKey: queryKeys.modelProfiles })
+      if (isOllamaCloud) {
+        void queryClient.invalidateQueries({ queryKey: queryKeys.availableModels(updated.id) })
+      }
       toast.success(`${meta.name} updated.`)
       onSaved()
     },
@@ -360,6 +369,35 @@ function ConnectSheet({
   })
 
   const isPending = createMutation.isPending || updateMutation.isPending
+
+  async function scanCloudModels(refresh = false) {
+    if (!profile?.id) {
+      setScanError("Save your API key first, then test models.")
+      return
+    }
+    setScanning(true)
+    setScanError(null)
+    try {
+      const { probes, fromCache } = await getOllamaCloudModels(profile.id, { refresh })
+      setCloudProbes(probes)
+      const available = probes.filter((p) => p.access === "available")
+      if (available.length > 0 && !model) setModel(available[0]!.name)
+      if (available.length === 0) {
+        setScanError("No models responded with your key. Paid models need a paid API key; free models may be rate-limited.")
+      }
+    } catch (e) {
+      setScanError(e instanceof Error ? e.message : "Could not test cloud models")
+      setCloudProbes([])
+    } finally {
+      setScanning(false)
+    }
+  }
+
+  useEffect(() => {
+    if (!open || !isOllamaCloud || !isEdit || !profile?.hasApiKey) return
+    void scanCloudModels(false)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- load cached probes when sheet opens
+  }, [open, isOllamaCloud, isEdit, profile?.id, profile?.hasApiKey])
 
   async function scanLocalModels() {
     setScanning(true)
@@ -563,20 +601,71 @@ function ConnectSheet({
               </Field>
 
               <Field>
-                <FieldLabel htmlFor="cloud-default-model" className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                  Default model{" "}
-                  <span className="ml-1 font-normal normal-case text-muted-foreground/70">(optional)</span>
-                </FieldLabel>
-                <Input
-                  id="cloud-default-model"
-                  value={model}
-                  onChange={(e) => setModel(e.target.value)}
-                  placeholder="e.g. mistral-large-3  (leave blank to auto-detect)"
-                  className="font-mono text-[13px]"
-                />
-                <p className="text-[11px] text-muted-foreground">
-                  The Chat picker fetches all available models from your ollama.com account live — no need to set one here.
-                </p>
+                <div className="flex items-center justify-between">
+                  <FieldLabel className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    Cloud models
+                  </FieldLabel>
+                  {isEdit && profile?.hasApiKey && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-7 gap-1.5 px-2 text-[11px]"
+                      disabled={scanning}
+                      onClick={() => void scanCloudModels(true)}
+                    >
+                      {scanning ? <Loader2 className="size-3 animate-spin" /> : <RefreshCw className="size-3" />}
+                      Test models
+                    </Button>
+                  )}
+                </div>
+                {!isEdit && (
+                  <p className="text-[11px] text-muted-foreground">
+                    Save your key first. Chat will test each ollama.com model and only list ones that work.
+                  </p>
+                )}
+                {scanError && (
+                  <p className="text-[11px] text-amber-700">{scanError}</p>
+                )}
+                {cloudProbes.length > 0 && (
+                  <div className="rounded-xl border border-border bg-zinc-950/40">
+                    {cloudProbes.map((probe) => {
+                      const active = model === probe.name
+                      const canSelect = probe.access === "available"
+                      return (
+                        <button
+                          key={probe.name}
+                          type="button"
+                          disabled={!canSelect}
+                          onClick={() => canSelect && setModel(probe.name)}
+                          className={cn(
+                            "flex w-full items-center gap-2 border-b border-border/50 px-3 py-2.5 text-left font-mono text-[12px] last:border-0",
+                            active && canSelect && "bg-primary/[0.08] text-primary",
+                            canSelect && !active && "text-foreground hover:bg-muted/40",
+                            !canSelect && "cursor-not-allowed text-muted-foreground/60",
+                          )}
+                        >
+                          <span className="flex-1 truncate">{probe.name}</span>
+                          <Cloud className="size-3.5 shrink-0 opacity-50" aria-hidden />
+                          {probe.access === "available" && active && (
+                            <Check className="size-3 shrink-0 text-primary" />
+                          )}
+                          {probe.access === "paid" && (
+                            <span className="shrink-0 text-[9px] uppercase tracking-wide text-amber-600">Paid</span>
+                          )}
+                          {probe.access === "rate_limited" && (
+                            <span className="shrink-0 text-[9px] uppercase tracking-wide text-sky-600">Wait</span>
+                          )}
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+                {isEdit && profile?.hasApiKey && cloudProbes.length === 0 && !scanning && !scanError && (
+                  <p className="text-[11px] text-muted-foreground">
+                    Press Test models to refresh. The first full check is saved for 7 days.
+                  </p>
+                )}
               </Field>
             </>
           )}

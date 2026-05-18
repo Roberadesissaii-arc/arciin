@@ -2,11 +2,9 @@
 
 import { useCallback } from "react"
 import { useQueryClient } from "@tanstack/react-query"
+import { formatUploadFailure } from "@/lib/api/upload-errors"
 import { uploadFile } from "@/lib/api/uploads"
-import {
-  notifyUploadCompleted,
-  notifyUploadFailed,
-} from "@/lib/notifications/notify-upload-realtime"
+import { runWithConcurrency } from "@/lib/uploads/run-with-concurrency"
 import { queryKeys } from "@/lib/api/query-keys"
 import { useUploadStore } from "@/lib/stores/upload-store"
 import { createId } from "@/lib/utils/create-id"
@@ -16,14 +14,18 @@ import { inferDestinationLabel } from "@/lib/utils/media-type"
 export function useUploadOrchestrator() {
   const queryClient = useQueryClient()
   const addOrUpdate = useUploadStore((state) => state.addOrUpdate)
+  const beginUploadBatch = useUploadStore((state) => state.beginUploadBatch)
   const updateProgress = useUploadStore((state) => state.updateProgress)
   const updateStatus = useUploadStore((state) => state.updateStatus)
   const uploadContext = useUploadStore((state) => state.uploadContext)
 
   return useCallback(
     async (files: File[]) => {
-      await Promise.all(
-        files.map(async (file) => {
+      if (files.length === 0) return
+
+      const batchId = beginUploadBatch(files.length)
+
+      await runWithConcurrency(files, 3, async (file) => {
           const id = createId()
           addOrUpdate({
             id,
@@ -33,6 +35,7 @@ export function useUploadOrchestrator() {
             progress: 0,
             status: "QUEUED",
             destination: inferDestinationLabel(file.type, file.name),
+            batchId,
           })
 
           try {
@@ -57,6 +60,7 @@ export function useUploadOrchestrator() {
               status: result.status,
               destination: result.targetLibrary?.name || inferDestinationLabel(file.type, file.name),
               uploadId: result.id,
+              batchId,
             })
 
             await Promise.all([
@@ -66,28 +70,16 @@ export function useUploadOrchestrator() {
               queryClient.invalidateQueries({ queryKey: queryKeys.libraries }),
             ])
 
-            if (result.status === "READY" || result.status === "PROCESSING") {
-              notifyUploadCompleted({
-                dedupeKey: result.id || result.assetId || id,
-                title: `${file.name} uploaded`,
-              })
+            if (result.status === "READY") {
+              updateStatus(id, "READY")
+            } else if (result.status === "PROCESSING") {
+              updateStatus(id, "PROCESSING")
             }
           } catch (error) {
-            updateStatus(
-              id,
-              "FAILED",
-              error instanceof Error ? error.message : "Upload failed."
-            )
-            const errMsg = error instanceof Error ? error.message : "Upload failed."
-            notifyUploadFailed({
-              dedupeKey: id,
-              title: `${file.name} could not be uploaded`,
-              message: errMsg,
-            })
+            updateStatus(id, "FAILED", formatUploadFailure(error))
           }
-        })
-      )
+      })
     },
-    [addOrUpdate, queryClient, updateProgress, updateStatus, uploadContext]
+    [addOrUpdate, beginUploadBatch, queryClient, updateProgress, updateStatus, uploadContext]
   )
 }

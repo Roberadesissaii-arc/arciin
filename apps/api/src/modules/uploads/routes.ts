@@ -13,6 +13,7 @@ import { serializeUpload } from "@/services/serializers"
 import { analyzeStoredFile } from "@/services/classification/media-classification"
 import { checkEndpointRateLimit } from "@/services/security/endpoint-rate-limit"
 import { resolveUploadFolderId, syncAssetToPlexMirror } from "@/services/integrations/plex"
+import { appendUploadLog } from "@/services/logs/upload-log"
 import {
   createObjectStoragePath,
   moveTempToObject,
@@ -80,9 +81,13 @@ export async function registerUploadRoutes(fastify: FastifyInstance) {
 
       const { targetLibraryId, targetFolderId } = queryParsed.data
 
+      let tempPath: string | null = null
+
+      try {
       const instance = await fastify.prisma.instanceConfig.findFirst()
       const storageRoot = instance?.storageRoot
       const tempResult = await writeMultipartToTemp(file, storageRoot)
+      tempPath = tempResult.tempPath
 
       const analysis = await analyzeStoredFile(
         tempResult.tempPath,
@@ -284,6 +289,41 @@ export async function registerUploadRoutes(fastify: FastifyInstance) {
       reply.status(201).send({
         data: serializeUpload(upload),
       })
+      } catch (err) {
+        if (tempPath) {
+          await removeTempFile(tempPath).catch(() => {})
+        }
+
+        const message =
+          err instanceof Error ? err.message : "Upload failed due to an unexpected error."
+        const code =
+          err && typeof err === "object" && "code" in err && typeof err.code === "string"
+            ? err.code
+            : "UPLOAD_FAILED"
+
+        await appendUploadLog({
+          level: "error",
+          fileName: file.filename,
+          message,
+          code,
+          userId: request.auth.user.id,
+          libraryId: targetLibraryId,
+          folderId: targetFolderId,
+          details:
+            err instanceof Error
+              ? { name: err.name, stack: err.stack?.split("\n").slice(0, 8) }
+              : err,
+        })
+
+        request.log.error({ err, fileName: file.filename }, "upload failed")
+
+        reply.status(500).send({
+          error: {
+            code,
+            message,
+          },
+        })
+      }
     }
   )
 

@@ -22,6 +22,7 @@ export function serializeUser(user: User) {
     email: user.email,
     role: user.role,
     status: user.status,
+    avatarUrl: user.avatarPath ? `/api/auth/users/${user.id}/avatar` : null,
     createdAt: user.createdAt.toISOString(),
     updatedAt: user.updatedAt.toISOString(),
   }

@@ -10,6 +10,7 @@ import {
   Radio,
   Server,
   Workflow,
+  Zap,
 } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 
@@ -45,6 +46,12 @@ const SERVICE_META: Record<
     onlineHint: "Queues and realtime pub/sub are reachable.",
     offlineHint: "Redis is unreachable. Start Redis and verify REDIS_URL.",
   },
+  realtime: {
+    label: "Realtime",
+    icon: Zap,
+    onlineHint: "Live upload progress and activity events can reach the browser.",
+    offlineHint: "Redis pub/sub is down — realtime updates will not appear until Redis is back.",
+  },
   worker: {
     label: "Background worker",
     icon: Workflow,
@@ -60,7 +67,7 @@ const SERVICE_META: Record<
   },
 }
 
-const ORDER: ServiceId[] = ["api", "database", "redis", "worker", "storage"]
+const ORDER: ServiceId[] = ["api", "database", "redis", "realtime", "worker", "storage"]
 
 function statusTone(status: string) {
   if (status === "online") return "good"
@@ -129,7 +136,7 @@ export function LogsSystemStatus() {
           </div>
         </div>
       </CardHeader>
-      <CardContent className="grid gap-2 sm:grid-cols-2">
+      <CardContent className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
         {ORDER.map((id) => {
           const meta = SERVICE_META[id]
           const status = health[id]
@@ -171,7 +178,7 @@ export function LogsSystemStatus() {
             </div>
           )
         })}
-        <div className="sm:col-span-2 flex flex-wrap gap-3 border-t border-border pt-3 text-sm">
+        <div className="lg:col-span-3 flex flex-wrap gap-3 border-t border-border pt-3 text-sm">
           <Link href="/jobs" className="inline-flex items-center gap-1 font-medium text-primary hover:underline">
             Background jobs
             <ChevronRight className="size-4" />

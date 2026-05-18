@@ -7,6 +7,8 @@ import {
 } from "@/lib/preferences/notification-policy"
 import { playUploadCompleteSound } from "@/lib/preferences/upload-sound"
 
+import { useUploadStore } from "@/lib/stores/upload-store"
+
 import { recordInboxNotification } from "./record-inbox-notification"
 
 const recentKeys = new Map<string, number>()
@@ -22,11 +24,18 @@ function claimDedupeKey(key: string) {
   return true
 }
 
+function batchHandlesNotifications() {
+  const batch = useUploadStore.getState().uploadBatch
+  return Boolean(batch && !batch.announced)
+}
+
 export function notifyUploadCompleted(input: {
   dedupeKey: string
   title: string
   message?: string
 }) {
+  if (batchHandlesNotifications()) return
+
   const key = input.dedupeKey.trim()
   if (!key || !claimDedupeKey(`upload:ok:${key}`)) return
 
@@ -48,6 +57,8 @@ export function notifyUploadFailed(input: {
   title: string
   message?: string
 }) {
+  if (batchHandlesNotifications()) return
+
   const key = input.dedupeKey.trim()
   if (!key || !claimDedupeKey(`upload:fail:${key}`)) return
 

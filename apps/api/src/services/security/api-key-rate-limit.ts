@@ -1,6 +1,11 @@
 import type { FastifyReply, FastifyRequest } from "fastify"
 
+import { clientIpFromRequest } from "@/services/security/client-ip"
 import { loadApiProtectionSettings } from "@/services/security/instance-security"
+import {
+  recordSecurityEvent,
+  shouldRecordSecurityDedupe,
+} from "@/services/security/security-events"
 
 function currentMinuteBucket(): string {
   return String(Math.floor(Date.now() / 60_000))
@@ -33,6 +38,17 @@ export async function enforceApiKeyRateLimit(
   const count = await incrementRate(request.server.redis, redisKey)
 
   if (count > settings.apiKeyRequestsPerMinute) {
+    const ip = clientIpFromRequest(request)
+    const path = request.url.split("?")[0] ?? request.url
+    if (await shouldRecordSecurityDedupe(request.server.redis, `rate_key:${keyId}`)) {
+      void recordSecurityEvent(request.server, {
+        type: "security.rate_limited",
+        title: "API key rate limit",
+        message: `Key ${keyId.slice(0, 8)}… from ${ip} exceeded ${settings.apiKeyRequestsPerMinute}/min.`,
+        metadata: { clientIp: ip, path, status: "limited" },
+      }).catch(() => {})
+    }
+
     reply.status(429).send({
       error: {
         code: "RATE_LIMITED",

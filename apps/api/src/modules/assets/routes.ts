@@ -502,7 +502,7 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
     async (request, reply) => {
       const parsed = z
         .object({
-          filenames: z.array(z.string().min(1).max(255)).min(1).max(50),
+          filenames: z.array(z.string().min(1).max(255)).min(1).max(200),
           libraryId: z.string().optional(),
           folderId: z.string().nullable().optional(),
         })

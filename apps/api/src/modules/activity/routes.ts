@@ -1,3 +1,4 @@
+import { isSecurityActivityType } from "@arciin/shared"
 import type { FastifyInstance } from "fastify"
 
 import { requireSessionRolesOrApiKeyScopes } from "@/services/security/auth"
@@ -13,12 +14,14 @@ export async function registerActivityRoutes(fastify: FastifyInstance) {
       ),
     },
     async (_request, reply) => {
-      const activity = await fastify.prisma.activityEvent.findMany({
-        orderBy: {
-          createdAt: "desc",
-        },
-        take: 50,
+      const rows = await fastify.prisma.activityEvent.findMany({
+        orderBy: { createdAt: "desc" },
+        take: 120,
       })
+
+      const activity = rows
+        .filter((row) => !isSecurityActivityType(row.type))
+        .slice(0, 50)
 
       reply.send({
         data: activity.map(serializeActivity),

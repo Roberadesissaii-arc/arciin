@@ -1,7 +1,6 @@
 "use client"
 
 import { useCallback, useState } from "react"
-import Link from "next/link"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Ban, ChevronLeft, ChevronRight, Globe, Plus, ShieldCheck, Trash2 } from "lucide-react"
 import { toast } from "sonner"
@@ -10,8 +9,16 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty"
 import { cn } from "@/lib/utils"
+import { getSecurityLog } from "@/lib/api/security"
 import { getSecuritySettings, updateSecuritySettings } from "@/lib/api/settings"
 import { queryKeys } from "@/lib/api/query-keys"
+import {
+  securityLogClientIp,
+  securityLogSummary,
+  securityLogStatus,
+} from "@/lib/security/security-log-display"
+import { formatRelativeDate } from "@/lib/utils/format-date"
+import { Skeleton } from "@/components/ui/skeleton"
 
 const TABS = ["Security log", "Blocked IPs", "Allowed IPs"] as const
 type TabId = (typeof TABS)[number]
@@ -27,10 +34,19 @@ export function SecurityDashboardPanel() {
     queryFn: ({ signal }) => getSecuritySettings(signal),
   })
 
+  const logQuery = useQuery({
+    queryKey: queryKeys.securityLog,
+    queryFn: ({ signal }) => getSecurityLog(signal),
+    enabled: tab === "Security log",
+  })
+
   const mutation = useMutation({
     mutationFn: updateSecuritySettings,
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: queryKeys.securitySettings })
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.securitySettings }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.securityLog }),
+      ])
     },
     onError: (err) => {
       toast.error(err instanceof Error ? err.message : "Could not save.")
@@ -179,31 +195,79 @@ export function SecurityDashboardPanel() {
           <div className="flex items-center gap-2 border-b border-border bg-muted/30 px-5 py-4">
             <ShieldCheck className="size-4 text-primary" />
             <span className="text-sm font-semibold text-foreground">Security log</span>
-            <span className="ml-auto rounded-md bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">
-              Coming soon
-            </span>
+            {logQuery.data && logQuery.data.length > 0 ? (
+              <span className="ml-auto rounded-md bg-muted px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">
+                {logQuery.data.length} event{logQuery.data.length === 1 ? "" : "s"}
+              </span>
+            ) : null}
           </div>
-          <div className="grid grid-cols-[minmax(0,1fr)] border-b border-border bg-muted/20 px-5 py-2.5 text-[10px] font-bold uppercase tracking-wider text-zinc-500 sm:grid-cols-[100px_120px_1fr_88px]">
+          <div className="grid grid-cols-[minmax(0,1fr)] border-b border-border bg-muted/20 px-5 py-2.5 text-[10px] font-bold uppercase tracking-wider text-zinc-500 sm:grid-cols-[minmax(88px,100px)_minmax(100px,120px)_1fr_minmax(72px,88px)]">
             <span className="hidden sm:inline">Time</span>
             <span className="hidden sm:inline">IP</span>
-            <span className="hidden sm:inline">Event</span>
-            <span className="hidden sm:inline">Status</span>
+            <span>Event</span>
+            <span className="hidden text-right sm:inline">Status</span>
           </div>
-          <Empty className="rounded-none border-0 py-12">
-            <EmptyMedia variant="icon">
-              <ShieldCheck />
-            </EmptyMedia>
-            <EmptyHeader>
-              <EmptyTitle>No security events yet</EmptyTitle>
-              <EmptyDescription>
-                Auth denials, IP policy hits, and API blocks will show here when the feed is wired. Until then, use{" "}
-                <Link href="/activity" className="font-medium text-primary underline-offset-4 hover:underline">
-                  Activity
-                </Link>{" "}
-                for recent instance actions.
-              </EmptyDescription>
-            </EmptyHeader>
-          </Empty>
+          {logQuery.isLoading ? (
+            <div className="space-y-0 px-5 py-2">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <Skeleton key={i} className="my-3 h-12 rounded-lg" />
+              ))}
+            </div>
+          ) : logQuery.isError ? (
+            <p className="px-5 py-10 text-center text-sm text-red-600">
+              {logQuery.error instanceof Error ? logQuery.error.message : "Could not load security log."}
+            </p>
+          ) : !logQuery.data?.length ? (
+            <Empty className="rounded-none border-0 py-12">
+              <EmptyMedia variant="icon">
+                <ShieldCheck />
+              </EmptyMedia>
+              <EmptyHeader>
+                <EmptyTitle>No security events yet</EmptyTitle>
+                <EmptyDescription>
+                  Sign-ins, IP blocks, rate limits, and perimeter policy changes. General file and library actions stay
+                  on Activity only.
+                </EmptyDescription>
+              </EmptyHeader>
+            </Empty>
+          ) : (
+            <div className="divide-y divide-border">
+              {logQuery.data.map((event) => {
+                const ip = securityLogClientIp(event)
+                const status = securityLogStatus(event)
+                return (
+                  <div
+                    key={event.id}
+                    className="grid grid-cols-1 gap-1 px-5 py-3.5 sm:grid-cols-[minmax(88px,100px)_minmax(100px,120px)_1fr_minmax(72px,88px)] sm:items-start sm:gap-3"
+                  >
+                    <span className="text-[11px] font-medium text-zinc-500 sm:text-zinc-400">
+                      {formatRelativeDate(event.createdAt)}
+                    </span>
+                    <span className="font-mono text-[12px] text-foreground">
+                      {ip ?? <span className="text-zinc-400">—</span>}
+                    </span>
+                    <p
+                      className="min-w-0 truncate text-[13px] text-foreground"
+                      title={securityLogSummary(event)}
+                    >
+                      {securityLogSummary(event)}
+                    </p>
+                    <span
+                      className={cn(
+                        "text-[11px] font-semibold sm:text-right",
+                        status.tone === "good" && "text-emerald-600",
+                        status.tone === "bad" && "text-red-600",
+                        status.tone === "warn" && "text-amber-600",
+                        status.tone === "muted" && "text-zinc-500",
+                      )}
+                    >
+                      {status.label}
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+          )}
         </div>
       )}
 

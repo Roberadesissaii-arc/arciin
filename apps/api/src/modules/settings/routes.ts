@@ -17,6 +17,10 @@ import { apiConfig } from "@/config"
 import { invalidateAccessControlCache } from "@/services/security/access-control-settings"
 import { invalidateApiProtectionCache } from "@/services/security/instance-security"
 import { hashToken, requireRole } from "@/services/security/auth"
+import { clientIpFromRequest, normalizeClientIp } from "@/services/security/client-ip"
+import { logIpPolicyChanges } from "@/services/security/log-ip-policy-changes"
+import { isSecurityLogType, recordSecurityEvent } from "@/services/security/security-events"
+import { serializeActivity } from "@/services/serializers"
 import { ClearInstanceContentError, clearInstanceContent } from "@/services/settings/clear-instance-content"
 import {
   getCloudflareTunnelState,
@@ -450,6 +454,19 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
   )
 
   fastify.get(
+    "/settings/security/log",
+    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    async (_request, reply) => {
+      const rows = await fastify.prisma.activityEvent.findMany({
+        orderBy: { createdAt: "desc" },
+        take: 200,
+      })
+      const events = rows.filter((row) => isSecurityLogType(row.type)).slice(0, 100)
+      reply.send({ data: events.map(serializeActivity) })
+    },
+  )
+
+  fastify.get(
     "/settings/security",
     { preHandler: requireRole(["OWNER", "ADMIN"]) },
     async (_request, reply) => {
@@ -495,14 +512,17 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
       }
       const raw = (instance.remoteAccessConfig as Record<string, unknown> | null) || {}
       const prevSec = (raw.security as Record<string, unknown> | null) || {}
+      const prevBlocklist = Array.isArray(prevSec.ipBlocklist) ? (prevSec.ipBlocklist as string[]) : []
+      const prevAllowlist = Array.isArray(prevSec.ipAllowlist) ? (prevSec.ipAllowlist as string[]) : []
+      const prevEnforce = Boolean(prevSec.enforceIpAllowlist ?? false)
       const nextSec = {
         publicSignupEnabled:        parsed.data.publicSignupEnabled        ?? Boolean(prevSec.publicSignupEnabled ?? false),
         sessionTimeoutMinutes:      parsed.data.sessionTimeoutMinutes      ?? Number(prevSec.sessionTimeoutMinutes ?? 1440),
         loginAlertsEnabled:         parsed.data.loginAlertsEnabled         ?? Boolean(prevSec.loginAlertsEnabled ?? false),
         maxFailedLogins:            parsed.data.maxFailedLogins            ?? Number(prevSec.maxFailedLogins ?? 10),
-        ipAllowlist:                parsed.data.ipAllowlist                ?? (Array.isArray(prevSec.ipAllowlist) ? (prevSec.ipAllowlist as string[]) : []),
-        ipBlocklist:                parsed.data.ipBlocklist                ?? (Array.isArray(prevSec.ipBlocklist) ? (prevSec.ipBlocklist as string[]) : []),
-        enforceIpAllowlist:         parsed.data.enforceIpAllowlist         ?? Boolean(prevSec.enforceIpAllowlist ?? false),
+        ipAllowlist:                parsed.data.ipAllowlist                ?? prevAllowlist,
+        ipBlocklist:                parsed.data.ipBlocklist                ?? prevBlocklist,
+        enforceIpAllowlist:         parsed.data.enforceIpAllowlist         ?? prevEnforce,
         apiGlobalRequestsPerMinute: parsed.data.apiGlobalRequestsPerMinute ?? Number(prevSec.apiGlobalRequestsPerMinute ?? 0),
         apiKeyRequestsPerMinute:    parsed.data.apiKeyRequestsPerMinute    ?? Number(prevSec.apiKeyRequestsPerMinute ?? 0),
         requireApiKeyExpiry:        parsed.data.requireApiKeyExpiry        ?? Boolean(prevSec.requireApiKeyExpiry ?? false),
@@ -519,6 +539,20 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
       })
       invalidateApiProtectionCache()
       invalidateAccessControlCache()
+
+      const user = request.auth!.user
+      await logIpPolicyChanges(fastify, {
+        actorUserId: user.id,
+        actorName: user.name,
+        actorIp: normalizeClientIp(clientIpFromRequest(request)),
+        prevBlocklist,
+        nextBlocklist: nextSec.ipBlocklist,
+        prevAllowlist,
+        nextAllowlist: nextSec.ipAllowlist,
+        prevEnforce,
+        nextEnforce: nextSec.enforceIpAllowlist,
+      })
+
       reply.send({ data: nextSec })
     }
   )
@@ -573,13 +607,12 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
         },
       })
 
-      await fastify.prisma.activityEvent.create({
-        data: {
-          userId: user.id,
-          type: "auth.sessions_revoked",
-          title: "Sessions revoked",
-          message: `${user.name} revoked ${result.count} active session(s) instance-wide.`,
-        },
+      await recordSecurityEvent(fastify, {
+        userId: user.id,
+        type: "auth.sessions_revoked",
+        title: "Sessions revoked",
+        message: `${user.name} revoked ${result.count} active session(s) instance-wide.`,
+        metadata: { status: "policy" },
       })
 
       reply.send({ data: { revoked: result.count } })
@@ -682,11 +715,27 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
         ipAllowlist: allowlist,
       }
 
+      const prevBlocklist = [...protection.ipBlocklist]
+      const prevAllowlist = [...protection.ipAllowlist]
+
       await fastify.prisma.instanceConfig.update({
         where: { id: instance.id },
         data: { remoteAccessConfig: { ...raw, security: nextSec } },
       })
       invalidateApiProtectionCache()
+
+      const user = request.auth!.user
+      await logIpPolicyChanges(fastify, {
+        actorUserId: user.id,
+        actorName: user.name,
+        actorIp: normalizeClientIp(clientIpFromRequest(request)),
+        prevBlocklist,
+        nextBlocklist: blocklist,
+        prevAllowlist,
+        nextAllowlist: allowlist,
+        prevEnforce: protection.enforceIpAllowlist,
+        nextEnforce: protection.enforceIpAllowlist,
+      })
 
       reply.send({
         data: {
