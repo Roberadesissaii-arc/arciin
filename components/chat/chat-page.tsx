@@ -9,7 +9,7 @@ import {
 } from "@/lib/hooks/use-ollama-available-models"
 import {
   ArrowUp, ChevronDown, Clock, Cloud, Copy, File, Info, Loader2, MessageSquare,
-  Plus, RotateCcw, Sparkles, ThumbsDown, ThumbsUp, Trash2, User, X,
+  Plus, RotateCcw, Sparkles, Square, ThumbsDown, ThumbsUp, Trash2, User, X,
 } from "lucide-react"
 import { toast } from "sonner"
 
@@ -166,6 +166,16 @@ function deriveStreamingThinkingAndAnswer(
     }
   }
   return { thinking: "", answer: accumulated, inReasoningBlock: false }
+}
+
+/** Keep the reasoning panel mounted while Show thinking is on and the reply is still streaming. */
+function displayThinkingDuringStream(
+  reasoningUiEnabled: boolean,
+  derived: { thinking: string; inReasoningBlock: boolean },
+): string | undefined {
+  if (!reasoningUiEnabled) return undefined
+  if (derived.thinking.length > 0 || derived.inReasoningBlock) return derived.thinking
+  return ""
 }
 
 /**
@@ -1032,7 +1042,7 @@ function ThinkingBlock({ content, live }: { content: string; live: boolean }) {
             {content ? (
               <p className="whitespace-pre-wrap">{content}</p>
             ) : live ? (
-              <p className="italic text-muted-foreground/60">Reasoning in progress…</p>
+              <p className="italic text-muted-foreground/60">Waiting for reasoning trace…</p>
             ) : null}
           </div>
         </div>
@@ -1043,6 +1053,18 @@ function ThinkingBlock({ content, live }: { content: string; live: boolean }) {
 
 
 /** True when the assistant bubble should show prose and/or asset cards. */
+function applyAbortedAssistantMessage(prev: Message[], pendingMsgId: string): Message[] {
+  const pending = prev.find((m) => m.id === pendingMsgId)
+  if (!pending) return prev
+  const hasPartial =
+    hasVisibleAssistantAnswer(pending.content ?? "") ||
+    Boolean((pending.thinking ?? "").trim())
+  if (!hasPartial) return prev.filter((m) => m.id !== pendingMsgId)
+  return prev.map((m) =>
+    m.id === pendingMsgId ? { ...m, pending: false } : m,
+  )
+}
+
 function hasVisibleAssistantAnswer(content: string): boolean {
   const trimmed = content.trim()
   if (!trimmed) return false
@@ -1151,22 +1173,22 @@ function MessageBubble({
 }) {
   const isUser = msg.role === "user"
   const hasThinkingText = Boolean((msg.thinking ?? "").length > 0)
-  /** Only show the reasoning panel when the model is actually emitting reasoning (not for every stream). */
-  const inReasoningPanel =
-    !isUser &&
-    reasoningUiEnabled &&
-    (hasThinkingText || (isStreaming && msg.thinking !== undefined))
-  const showThinkingRow = inReasoningPanel
-  const liveThinking = Boolean(inReasoningPanel && isStreaming)
+  /** When Show thinking is on, always show the reasoning panel for assistant replies (streaming or stored). */
+  const showThinkingRow =
+    !isUser && reasoningUiEnabled && (hasThinkingText || isStreaming || Boolean(msg.thinking !== undefined))
+  const liveThinking = Boolean(!isUser && reasoningUiEnabled && isStreaming)
 
   const hasVisibleAnswer = hasVisibleAssistantAnswer(msg.content ?? "")
 
   /**
-   * Hide the answer bubble only while reasoning is visible and the reply has not started yet.
-   * Otherwise the main reply streams token-by-token in the answer bubble.
+   * With reasoning enabled: hide the answer card until reply text (or asset tags) appears,
+   * so reasoning streams first; answer then streams in its own bubble below.
    */
   const hideMainAnswerBubble =
-    !isUser && !hasVisibleAnswer && showThinkingRow && (isStreaming || Boolean(msg.pending))
+    !isUser &&
+    !hasVisibleAnswer &&
+    reasoningUiEnabled &&
+    (hasThinkingText || isStreaming || Boolean(msg.pending))
 
   const showNeutralGenerating =
     !isUser &&
@@ -2259,6 +2281,7 @@ export function ChatPage() {
       role: "assistant",
       content: "",
       pending: true,
+      ...(reasoningUiEnabled ? { thinking: "" } : {}),
     }
 
     stickToBottomRef.current = true
@@ -2374,8 +2397,7 @@ export function ChatPage() {
           }
         }
         const derived = deriveStreamingThinkingAndAnswer(accumulated, thinkingAccum, showThinking)
-        const displayThinking =
-          reasoningUiEnabled && (derived.thinking.length > 0 || derived.inReasoningBlock) ? derived.thinking : undefined
+        const displayThinking = displayThinkingDuringStream(reasoningUiEnabled, derived)
         const displayContent = finalizeAssistantContent(derived.answer, userText, priorMessages)
         setMessages((prev) =>
           prev.map((m) =>
@@ -2432,7 +2454,7 @@ export function ChatPage() {
       }
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") {
-        setMessages((prev) => prev.filter((m) => m.id !== pendingMsg.id))
+        setMessages((prev) => applyAbortedAssistantMessage(prev, pendingMsg.id))
       } else {
         setMessages((prev) =>
           prev.map((m) =>
@@ -2467,6 +2489,7 @@ export function ChatPage() {
       role: "assistant",
       content: "",
       pending: true,
+      ...(reasoningUiEnabled ? { thinking: "" } : {}),
     }
 
     stickToBottomRef.current = true
@@ -2609,10 +2632,7 @@ export function ChatPage() {
         }
 
         const derived = deriveStreamingThinkingAndAnswer(accumulated, thinkingAccum, showThinking)
-        const displayThinking =
-          reasoningUiEnabled && (derived.thinking.length > 0 || derived.inReasoningBlock)
-            ? derived.thinking
-            : undefined
+        const displayThinking = displayThinkingDuringStream(reasoningUiEnabled, derived)
         const displayContent = finalizeAssistantContent(derived.answer, text, messages)
 
         setMessages((prev) =>
@@ -2692,7 +2712,7 @@ export function ChatPage() {
       }
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") {
-        setMessages((prev) => prev.filter((m) => m.id !== pendingMsg.id))
+        setMessages((prev) => applyAbortedAssistantMessage(prev, pendingMsg.id))
       } else {
         setMessages((prev) =>
           prev.map((m) =>
@@ -2709,14 +2729,24 @@ export function ChatPage() {
     }
   }
 
+  function stopGeneration() {
+    if (!streaming) return
+    abortRef.current?.abort()
+  }
+
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault()
-      sendMessage()
+      if (streaming) {
+        stopGeneration()
+      } else {
+        sendMessage()
+      }
     }
   }
 
   const canSend = input.trim().length > 0 && !streaming && profiles.length > 0
+  const canStop = streaming && profiles.length > 0
 
   return (
     <div className="flex min-h-0 flex-1 overflow-hidden">
@@ -2844,19 +2874,35 @@ export function ChatPage() {
                 value={input}
                 onChange={handleInputChange}
                 onKeyDown={handleKeyDown}
-                placeholder="Message…"
-                disabled={streaming || profiles.length === 0}
+                placeholder={streaming ? "Generating… press Stop to interrupt" : "Message…"}
+                disabled={profiles.length === 0}
                 className="min-h-[54px] flex-1 resize-none bg-transparent px-3 py-4 text-[14px] leading-snug text-foreground placeholder:text-muted-foreground focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
               />
               <div className="flex shrink-0 items-center px-2">
-                <Button
-                  size="icon"
-                  disabled={!canSend}
-                  onClick={sendMessage}
-                  className="size-8 rounded-xl bg-primary text-white hover:bg-primary/90 disabled:opacity-40"
-                >
-                  <ArrowUp className="size-4" />
-                </Button>
+                {canStop ? (
+                  <Button
+                    type="button"
+                    size="icon"
+                    onClick={stopGeneration}
+                    title="Stop generating"
+                    aria-label="Stop generating"
+                    className="size-8 rounded-xl bg-destructive text-white hover:bg-destructive/90"
+                  >
+                    <Square className="size-3.5 fill-current" />
+                  </Button>
+                ) : (
+                  <Button
+                    type="button"
+                    size="icon"
+                    disabled={!canSend}
+                    onClick={sendMessage}
+                    title="Send message"
+                    aria-label="Send message"
+                    className="size-8 rounded-xl bg-primary text-white hover:bg-primary/90 disabled:opacity-40"
+                  >
+                    <ArrowUp className="size-4" />
+                  </Button>
+                )}
               </div>
             </div>
           </div>
