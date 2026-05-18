@@ -237,6 +237,7 @@ Set `API_BASE` in `scripts/examples/arciin_example_client.py` to the printed WSL
 | `API_PORT` | API port (default 4001) |
 | `MAX_UPLOAD_SIZE_MB` | Max upload size (web proxy + API; default 10240) |
 | `UPLOAD_RATE_LIMIT_PER_MINUTE` | Per-user upload cap per minute (default 500; was 60) |
+| `LOG_MAX_FILE_BYTES` | Max size per log file before oldest lines are dropped (default 1800000) |
 
 See `.env.example` for the full list.
 

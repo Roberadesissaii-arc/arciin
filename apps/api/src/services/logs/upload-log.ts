@@ -3,6 +3,7 @@ import path from "node:path"
 
 import { apiConfig } from "@/config"
 import { getLogsDirectory } from "@/services/logs/log-files"
+import { trimLogFileToMaxSize } from "@/services/logs/log-rotation"
 
 const UPLOAD_LOG = "upload.log"
 
@@ -33,6 +34,7 @@ export async function appendUploadLog(entry: UploadLogEntry): Promise<void> {
       ...entry,
     })
     await appendFile(filePath, `${line}\n`, "utf8")
+    await trimLogFileToMaxSize(filePath).catch(() => {})
   } catch {
     /* logging must not break uploads */
   }

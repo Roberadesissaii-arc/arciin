@@ -33,10 +33,12 @@ import { registerPrisma } from "@/plugins/prisma"
 import { registerRedis } from "@/plugins/redis"
 import { registerSocket } from "@/plugins/socket"
 import { registerHealthRoutes } from "@/routes/health.routes"
+import { trimOversizedLogFiles } from "@/services/logs/log-files"
 import { ensureStorageDirectories } from "@/services/storage/local-storage"
 
 export async function createServer() {
   await mkdir(apiConfig.storage.logsDir, { recursive: true })
+  const trimmedLogs = await trimOversizedLogFiles()
   const logPath = path.join(apiConfig.storage.logsDir, "api.log")
 
   const fastify = Fastify({
@@ -63,6 +65,18 @@ export async function createServer() {
   await registerApiProtection(fastify)
   await registerSocket(fastify)
   await ensureStorageDirectories()
+
+  if (trimmedLogs > 0) {
+    fastify.log.info({ trimmedLogs }, "Trimmed oversized log files on startup")
+  }
+
+  const logTrimIntervalMs = 15 * 60_000
+  const logTrimTimer = setInterval(() => {
+    void trimOversizedLogFiles()
+  }, logTrimIntervalMs)
+  fastify.addHook("onClose", async () => {
+    clearInterval(logTrimTimer)
+  })
 
   fastify.get("/", async (_request, reply) => {
     reply.send({

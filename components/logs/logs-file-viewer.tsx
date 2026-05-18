@@ -58,7 +58,7 @@ export function LogsFileViewer() {
           <div>
             <CardTitle className="text-foreground">Log output</CardTitle>
             <CardDescription className="text-zinc-600">
-              Last {TAIL_LINES} lines · scroll inside the panel (long lines scroll horizontally).
+              Last {TAIL_LINES} lines · oldest entries drop automatically when a log exceeds ~1.8 MB.
             </CardDescription>
           </div>
           </div>
