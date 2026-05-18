@@ -12,7 +12,12 @@ import { requireSessionRolesOrApiKeyScopes } from "@/services/security/auth"
 import { serializeUpload } from "@/services/serializers"
 import { analyzeStoredFile } from "@/services/classification/media-classification"
 import { checkEndpointRateLimit } from "@/services/security/endpoint-rate-limit"
-import { resolveUploadFolderId, syncAssetToPlexMirror } from "@/services/integrations/plex"
+import { syncAssetToJellyfinMirror, assetIsInJellyfinFolder } from "@/services/integrations/jellyfin"
+import {
+  assetIsInPlexFolder,
+  resolveUploadFolderId,
+  syncAssetToPlexMirror,
+} from "@/services/integrations/plex"
 import { appendUploadLog } from "@/services/logs/upload-log"
 import {
   createObjectStoragePath,
@@ -262,7 +267,21 @@ export async function registerUploadRoutes(fastify: FastifyInstance) {
         }
       }
 
-      await syncAssetToPlexMirror(fastify.prisma, asset.id).catch(() => {})
+      try {
+        const folderForMirror = resolvedFolderId
+          ? await fastify.prisma.folder.findUnique({ where: { id: resolvedFolderId } })
+          : null
+        if (folderForMirror && assetIsInPlexFolder(folderForMirror)) {
+          await syncAssetToPlexMirror(fastify.prisma, asset.id)
+        } else if (folderForMirror && assetIsInJellyfinFolder(folderForMirror)) {
+          await syncAssetToJellyfinMirror(fastify.prisma, asset.id)
+        }
+      } catch (mirrorErr) {
+        request.log.warn(
+          { err: mirrorErr, assetId: asset.id, fileName: file.filename },
+          "connector mirror failed after upload",
+        )
+      }
 
       await recordAndBroadcastActivity(fastify, {
         userId: request.auth.user.id,

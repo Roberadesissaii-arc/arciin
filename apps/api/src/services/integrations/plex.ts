@@ -1,7 +1,6 @@
 import type { PrismaClient } from "@prisma/client"
 
 import {
-  JELLYFIN_CONNECTOR_DEF,
   PLEX_CONNECTOR_DEF,
   clearAssetConnectorMirror,
   clearAssetMirrorIfLeavingConnectorFolders,
@@ -9,8 +8,8 @@ import {
   findConnectorFolder,
   getConnectorStatus,
   isConnectorEnabled,
-  resolveMediaConnectorUploadFolderId,
-  syncAssetToEnabledConnectorMirrors,
+  resolveConnectorFolderId,
+  syncAssetToConnectorMirror,
   assetIsInConnectorFolder,
   type ConnectorFolderStatus,
   type ConnectorStatus,
@@ -32,13 +31,15 @@ export function findPlexFolder(prisma: PrismaClient, libraryId: string) {
   return findConnectorFolder(prisma, libraryId, PLEX_FOLDER_NAME)
 }
 
+/** Prefer explicit folder; otherwise Plex connector folder when integration is enabled. */
 export async function resolveUploadFolderId(
   prisma: PrismaClient,
   libraryId: string,
   librarySlug: string,
   explicitFolderId: string | undefined,
 ) {
-  return resolveMediaConnectorUploadFolderId(prisma, libraryId, librarySlug, explicitFolderId)
+  if (explicitFolderId) return explicitFolderId
+  return resolveConnectorFolderId(prisma, libraryId, librarySlug, PLEX_CONNECTOR_DEF)
 }
 
 export const ensurePlexFolders = (prisma: PrismaClient) =>
@@ -51,7 +52,7 @@ export function assetIsInPlexFolder(folder: Parameters<typeof assetIsInConnector
 }
 
 export const syncAssetToPlexMirror = (prisma: PrismaClient, assetId: string) =>
-  syncAssetToEnabledConnectorMirrors(prisma, assetId, PLEX_CONNECTOR_DEF, JELLYFIN_CONNECTOR_DEF)
+  syncAssetToConnectorMirror(prisma, assetId, PLEX_CONNECTOR_DEF)
 
 export const clearAssetPlexMirror = (prisma: PrismaClient, assetId: string) =>
   clearAssetConnectorMirror(prisma, assetId)

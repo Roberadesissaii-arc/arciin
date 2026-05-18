@@ -3,14 +3,13 @@ import type { PrismaClient } from "@prisma/client"
 import {
   JELLYFIN_CONNECTOR_DEF,
   JELLYFIN_INTEGRATION_ID,
-  PLEX_CONNECTOR_DEF,
   clearAssetConnectorMirror,
   clearAssetMirrorIfLeavingConnectorFolders,
   ensureConnectorFolders,
   findConnectorFolder,
   getConnectorStatus,
   isConnectorEnabled,
-  syncAssetToEnabledConnectorMirrors,
+  syncAssetToConnectorMirror,
   assetIsInConnectorFolder,
   type ConnectorFolderStatus,
   type ConnectorStatus,
@@ -42,7 +41,7 @@ export function assetIsInJellyfinFolder(folder: Parameters<typeof assetIsInConne
 }
 
 export const syncAssetToJellyfinMirror = (prisma: PrismaClient, assetId: string) =>
-  syncAssetToEnabledConnectorMirrors(prisma, assetId, PLEX_CONNECTOR_DEF, JELLYFIN_CONNECTOR_DEF)
+  syncAssetToConnectorMirror(prisma, assetId, JELLYFIN_CONNECTOR_DEF)
 
 export const clearAssetJellyfinMirror = (prisma: PrismaClient, assetId: string) =>
   clearAssetConnectorMirror(prisma, assetId)
