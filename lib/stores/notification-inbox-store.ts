@@ -25,13 +25,20 @@ type InboxMeta = {
   activityBackfillDone: boolean
 }
 
+function normalizeInboxItem(raw: InboxNotification): InboxNotification {
+  return {
+    ...raw,
+    read: raw.read === true,
+  }
+}
+
 function loadPersisted(): InboxNotification[] {
   if (typeof window === "undefined") return []
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) return []
     const parsed = JSON.parse(raw) as InboxNotification[]
-    return Array.isArray(parsed) ? parsed : []
+    return Array.isArray(parsed) ? parsed.map(normalizeInboxItem) : []
   } catch {
     return []
   }
@@ -142,6 +149,10 @@ export const useNotificationInboxStore = create<NotificationInboxState>((set, ge
   },
 }))
 
+export function isInboxNotificationUnread(item: InboxNotification) {
+  return item.read !== true
+}
+
 export function unreadNotificationCount(items: InboxNotification[]) {
-  return items.filter((n) => !n.read).length
+  return items.filter(isInboxNotificationUnread).length
 }

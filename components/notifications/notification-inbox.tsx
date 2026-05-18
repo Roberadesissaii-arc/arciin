@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import { Bell, CheckCheck, Settings, Trash2 } from "lucide-react"
 
@@ -17,6 +17,7 @@ import {
 import { useActivity } from "@/hooks/use-activity"
 import { recordInboxNotification } from "@/lib/notifications/record-inbox-notification"
 import {
+  isInboxNotificationUnread,
   unreadNotificationCount,
   useNotificationInboxStore,
   type InboxNotification,
@@ -26,14 +27,11 @@ import { cn } from "@/lib/utils"
 
 const PAGE_SIZE = 10
 
-const VARIANT_STYLE: Record<
-  InboxNotification["variant"],
-  { dot: string; border: string }
-> = {
-  default: { dot: "bg-zinc-400", border: "border-border" },
-  success: { dot: "bg-emerald-500", border: "border-emerald-500/25" },
-  error: { dot: "bg-red-500", border: "border-red-500/25" },
-  warning: { dot: "bg-amber-500", border: "border-amber-500/25" },
+const VARIANT_BORDER: Record<InboxNotification["variant"], string> = {
+  default: "border-border",
+  success: "border-emerald-500/25",
+  error: "border-red-500/25",
+  warning: "border-amber-500/25",
 }
 
 function mapActivityToInbox(event: {
@@ -90,6 +88,7 @@ function mapActivityToInbox(event: {
 
 export function NotificationInbox() {
   const [page, setPage] = useState(1)
+  const [expandedId, setExpandedId] = useState<string | null>(null)
   const hydrate = useNotificationInboxStore((s) => s.hydrate)
   const items = useNotificationInboxStore((s) => s.items)
   const markRead = useNotificationInboxStore((s) => s.markRead)
@@ -100,10 +99,17 @@ export function NotificationInbox() {
   const setActivityBackfillDone = useNotificationInboxStore((s) => s.setActivityBackfillDone)
 
   const activityQuery = useActivity()
+  const visitMarkedRef = useRef(false)
 
   useEffect(() => {
     hydrate()
   }, [hydrate])
+
+  useEffect(() => {
+    if (!hydrated || visitMarkedRef.current) return
+    visitMarkedRef.current = true
+    markAllRead()
+  }, [hydrated, markAllRead])
 
   useEffect(() => {
     if (!hydrated || activityBackfillDone || items.length > 0 || !activityQuery.data?.length) {
@@ -144,6 +150,13 @@ export function NotificationInbox() {
   function handleMarkAllRead() {
     hydrate()
     markAllRead()
+    setExpandedId(null)
+  }
+
+  function handleOpenItem(item: InboxNotification) {
+    hydrate()
+    markRead(item.id)
+    setExpandedId((current) => (current === item.id ? null : item.id))
   }
 
   function handleClearAll() {
@@ -161,7 +174,9 @@ export function NotificationInbox() {
           </CardTitle>
           <CardDescription className="text-zinc-600">
             {sorted.length > 0
-              ? `${sorted.length} ${sorted.length === 1 ? "alert" : "alerts"} in this browser`
+              ? unread > 0
+                ? `${sorted.length} ${sorted.length === 1 ? "alert" : "alerts"} · ${unread} unread — tap an alert to read it`
+                : `${sorted.length} ${sorted.length === 1 ? "alert" : "alerts"} · all read`
               : "Toasts and live events for this browser. New alerts appear here and in the corner overlay."}
           </CardDescription>
         </div>
@@ -207,35 +222,61 @@ export function NotificationInbox() {
           <>
             <ul className="space-y-2 px-6 pt-0 pb-4">
               {pageItems.map((item) => {
-                const style = VARIANT_STYLE[item.variant]
+                const unreadItem = isInboxNotificationUnread(item)
+                const expanded = expandedId === item.id
                 return (
                   <li key={item.id}>
                     <button
                       type="button"
-                      onClick={() => markRead(item.id)}
+                      onClick={() => handleOpenItem(item)}
+                      aria-expanded={expanded}
                       className={cn(
                         "flex w-full items-start gap-3 rounded-xl border bg-muted/20 px-4 py-3 text-left transition-colors hover:bg-muted/40",
-                        style.border,
-                        !item.read && "ring-1 ring-primary/20",
+                        VARIANT_BORDER[item.variant],
+                        unreadItem && "ring-1 ring-primary/25 bg-muted/30",
+                        !unreadItem && "opacity-90",
                       )}
                     >
-                      <span className={cn("mt-1.5 size-2 shrink-0 rounded-full", style.dot)} />
+                      <span
+                        className={cn(
+                          "mt-1.5 size-2 shrink-0 rounded-full",
+                          unreadItem ? "bg-primary shadow-[0_0_0_3px_rgba(255,79,18,0.2)]" : "bg-zinc-400",
+                        )}
+                        aria-hidden
+                      />
                       <span className="min-w-0 flex-1">
                         <span className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                          <span className="text-[13px] font-semibold text-foreground">{item.title}</span>
-                          {!item.read ? (
+                          <span
+                            className={cn(
+                              "text-[13px] font-semibold",
+                              unreadItem ? "text-foreground" : "text-muted-foreground",
+                            )}
+                          >
+                            {item.title}
+                          </span>
+                          {unreadItem ? (
                             <span className="rounded bg-primary/15 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-primary">
-                              New
+                              Unread
                             </span>
-                          ) : null}
+                          ) : (
+                            <span className="text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+                              Read
+                            </span>
+                          )}
                         </span>
-                        {item.message ? (
-                          <p className="mt-0.5 text-[12px] leading-relaxed text-muted-foreground">
+                        {item.message && !expanded ? (
+                          <p className="mt-0.5 line-clamp-2 text-[12px] leading-relaxed text-muted-foreground">
+                            {item.message}
+                          </p>
+                        ) : null}
+                        {expanded && item.message ? (
+                          <p className="mt-1.5 rounded-lg border border-border/60 bg-background/80 px-3 py-2 text-[12px] leading-relaxed text-foreground">
                             {item.message}
                           </p>
                         ) : null}
                         <p className="mt-1 text-[11px] text-zinc-500" suppressHydrationWarning>
                           {formatRelativeDate(item.createdAt)}
+                          {expanded ? " · tap again to collapse" : " · tap to open"}
                         </p>
                       </span>
                     </button>
