@@ -200,11 +200,30 @@ export async function authenticateFlexible(request: FastifyRequest, reply: Fasti
   }
 
   const token = authHeader.slice(7).trim()
+
   if (!token.startsWith("arc_")) {
+    const bearerSession = await request.server.prisma.session.findUnique({
+      where: { tokenHash: hashToken(token) },
+      include: { user: true },
+    })
+    if (
+      bearerSession &&
+      bearerSession.expiresAt >= new Date() &&
+      bearerSession.user.status === "ACTIVE"
+    ) {
+      request.auth = {
+        user: bearerSession.user,
+        session: bearerSession,
+        apiKeyId: null,
+        apiKeyScopes: null,
+      }
+      void refreshSessionIp(request, bearerSession.id)
+      return
+    }
     reply.status(401).send({
       error: {
         code: "UNAUTHENTICATED",
-        message: "Invalid API key format.",
+        message: "Invalid or expired session token.",
       },
     })
     return

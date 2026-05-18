@@ -101,6 +101,23 @@ export async function registerSocket(fastify: FastifyInstance) {
           ? authHeader.slice(7).trim()
           : null
 
+      if (bearer && !bearer.startsWith("arc_")) {
+        const session = await fastify.prisma.session.findUnique({
+          where: { tokenHash: hashToken(bearer) },
+          include: { user: true },
+        })
+        if (
+          session &&
+          session.expiresAt >= new Date() &&
+          session.user.status === "ACTIVE"
+        ) {
+          socket.data.user = session.user
+          socket.data.session = session
+          next()
+          return
+        }
+      }
+
       if (bearer?.startsWith("arc_")) {
         const apiKey = await fastify.prisma.apiKey.findFirst({
           where: {

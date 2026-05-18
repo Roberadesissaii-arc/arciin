@@ -18,6 +18,7 @@ import { registerInstanceRoutes } from "@/modules/instance/routes"
 import { registerIntegrationRoutes } from "@/modules/integrations/routes"
 import { registerJobRoutes } from "@/modules/jobs/routes"
 import { registerLogsRoutes } from "@/modules/logs/routes"
+import { registerMobileRoutes } from "@/modules/mobile/routes"
 import { registerLibraryRoutes } from "@/modules/libraries/routes"
 import { registerPasswordVaultRoutes } from "@/modules/password-vault/routes"
 import { registerSettingsRoutes } from "@/modules/settings/routes"
@@ -90,6 +91,7 @@ export async function createServer() {
     async (api) => {
       await registerHealthRoutes(api)
       await registerInstanceRoutes(api)
+      await registerMobileRoutes(api)
       await registerAuthRoutes(api)
       await registerLibraryRoutes(api)
       await registerFolderRoutes(api)

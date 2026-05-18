@@ -9,6 +9,7 @@ import {
   parseAiConfig,
   parseAiSecurityConfig,
   parseApiProtectionConfig,
+  MOBILE_PAIRING_CODE_TTL_MINUTES,
 } from "@arciin/shared"
 import type { FastifyInstance } from "fastify"
 import { z } from "zod"
@@ -28,6 +29,12 @@ import {
   stopCloudflareQuickTunnel,
 } from "@/services/remote-access/cloudflare-tunnel"
 import { resolveStorageUsageBytes } from "@/services/storage/local-storage"
+import {
+  createMobilePairingCode,
+  purgeExpiredMobilePairingCodes,
+  revokeActiveMobilePairingCodes,
+} from "@/services/mobile/mobile-pairing"
+import { resolveMobileServerUrls } from "@/services/mobile/mobile-server-urls"
 
 const generalSchema = z.object({
   instanceName: z.string().min(1).max(80),
@@ -873,6 +880,70 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
       }
 
       reply.send({ data: { ok: true as const } })
+    },
+  )
+
+  fastify.get(
+    "/settings/mobile-connection",
+    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    async (request, reply) => {
+      if (!request.auth) return
+      await purgeExpiredMobilePairingCodes(fastify.prisma)
+
+      const active = await fastify.prisma.mobilePairingCode.findFirst({
+        where: {
+          createdById: request.auth.user.id,
+          usedAt: null,
+          expiresAt: { gt: new Date() },
+        },
+        orderBy: { createdAt: "desc" },
+      })
+
+      const urls = await resolveMobileServerUrls(fastify.prisma, request)
+
+      reply.send({
+        data: {
+          ttlMinutes: MOBILE_PAIRING_CODE_TTL_MINUTES,
+          activeCode: active
+            ? {
+                expiresAt: active.expiresAt.toISOString(),
+                createdAt: active.createdAt.toISOString(),
+              }
+            : null,
+          server: urls,
+        },
+      })
+    },
+  )
+
+  fastify.post(
+    "/settings/mobile-connection/code",
+    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    async (request, reply) => {
+      if (!request.auth) return
+
+      const { code, expiresAt } = await createMobilePairingCode(
+        fastify.prisma,
+        request.auth.user.id,
+      )
+
+      reply.send({
+        data: {
+          code,
+          expiresAt: expiresAt.toISOString(),
+          ttlMinutes: MOBILE_PAIRING_CODE_TTL_MINUTES,
+        },
+      })
+    },
+  )
+
+  fastify.delete(
+    "/settings/mobile-connection/code",
+    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    async (request, reply) => {
+      if (!request.auth) return
+      await revokeActiveMobilePairingCodes(fastify.prisma, request.auth.user.id)
+      reply.send({ data: { revoked: true as const } })
     },
   )
 }

@@ -16,6 +16,7 @@ export const queryKeys = {
   generalSettings: ["settings", "general"] as const,
   storageSettings: ["settings", "storage"] as const,
   remoteAccessSettings: ["settings", "remote-access"] as const,
+  mobileConnection: ["settings", "mobile-connection"] as const,
   cloudflareTunnel: ["settings", "cloudflare-tunnel"] as const,
   securitySettings: ["settings", "security"] as const,
   securityLog: ["settings", "security", "log"] as const,

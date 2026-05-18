@@ -12,6 +12,7 @@ import { ApiProtectionPanel } from "@/components/settings/api-protection-panel"
 import { AppearancePanel } from "@/components/settings/appearance-panel"
 import { ClearDataPanel } from "@/components/settings/clear-data-panel"
 import { DomainPanel } from "@/components/settings/domain-panel"
+import { MobileConnectionPanel } from "@/components/settings/mobile-connection-panel"
 import { NotificationsSettingsPanel } from "@/components/settings/notifications-settings-panel"
 import { PasswordsPanel } from "@/components/settings/passwords-panel"
 import { SessionSecurityPanel } from "@/components/settings/session-security-panel"
@@ -62,6 +63,7 @@ export function SettingsPage() {
   const panels: Record<SettingsTab, ReactNode> = {
     storage: <StorageSettingsForm />,
     domain: <DomainPanel />,
+    mobile: <MobileConnectionPanel />,
     passwords: <PasswordsPanel />,
     "data-reset": <ClearDataPanel />,
     "access-control": <AccessControlPanel />,

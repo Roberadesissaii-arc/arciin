@@ -261,6 +261,49 @@ export type StorageSettings = {
   availableBytes?: number | null
 }
 
+export type MobileServerEndpoints = {
+  webUrl: string
+  apiBaseUrl: string
+  socketUrl: string
+  instanceName: string
+  version: string
+  requestOrigin: string | null
+}
+
+export type MobileConnectionSettings = {
+  ttlMinutes: number
+  activeCode: {
+    expiresAt: string
+    createdAt: string
+  } | null
+  server: MobileServerEndpoints
+}
+
+export type MobilePairingCodeResult = {
+  code: string
+  expiresAt: string
+  ttlMinutes: number
+}
+
+export type MobileDiscoverResult = {
+  service: string
+  initialized: boolean
+  instanceName: string
+  version: string
+  webUrl: string
+  apiBaseUrl: string
+  socketUrl: string
+  requestOrigin: string | null
+  pairingSupported: boolean
+}
+
+export type MobilePairResult = {
+  sessionToken: string
+  sessionExpiresAt: string
+  user: UserSummary
+  server: MobileServerEndpoints
+}
+
 export type RemoteAccessSettings = {
   publicUrl?: string | null
   localUrl?: string | null

@@ -6,6 +6,7 @@ import {
   Eraser,
   Gauge,
   Globe,
+  Smartphone,
   FingerprintPattern,
   Layers,
   LogOut,
@@ -17,6 +18,7 @@ import {
 export type SettingsTab =
   | "storage"
   | "domain"
+  | "mobile"
   | "passwords"
   | "data-reset"
   | "access-control"
@@ -31,6 +33,7 @@ export type SettingsTab =
 export const SETTINGS_VALID_TABS: SettingsTab[] = [
   "storage",
   "domain",
+  "mobile",
   "passwords",
   "data-reset",
   "access-control",
@@ -63,6 +66,7 @@ export const SETTINGS_NAV: SettingsNavItem[][] = [
   [
     { id: "storage", label: "Storage", icon: Database },
     { id: "domain", label: "Domain", icon: Globe },
+    { id: "mobile", label: "Mobile connection", icon: Smartphone },
   ],
   [
     { id: "passwords", label: "Passwords", icon: FingerprintPattern },
