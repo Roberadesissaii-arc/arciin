@@ -8,7 +8,7 @@ import {
   findConnectorFolder,
   getConnectorStatus,
   isConnectorEnabled,
-  resolveConnectorFolderId,
+  resolveMediaConnectorUploadFolderId,
   syncAssetToConnectorMirror,
   assetIsInConnectorFolder,
   type ConnectorFolderStatus,
@@ -31,15 +31,19 @@ export function findPlexFolder(prisma: PrismaClient, libraryId: string) {
   return findConnectorFolder(prisma, libraryId, PLEX_FOLDER_NAME)
 }
 
-/** Prefer explicit folder; otherwise Plex connector folder when integration is enabled. */
+/** Use the folder the user is in; library root when none (do not auto-route to Plex). */
 export async function resolveUploadFolderId(
   prisma: PrismaClient,
   libraryId: string,
   librarySlug: string,
   explicitFolderId: string | undefined,
 ) {
-  if (explicitFolderId) return explicitFolderId
-  return resolveConnectorFolderId(prisma, libraryId, librarySlug, PLEX_CONNECTOR_DEF)
+  return resolveMediaConnectorUploadFolderId(
+    prisma,
+    libraryId,
+    librarySlug,
+    explicitFolderId,
+  )
 }
 
 export const ensurePlexFolders = (prisma: PrismaClient) =>
