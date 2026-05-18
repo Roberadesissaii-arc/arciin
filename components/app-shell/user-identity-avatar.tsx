@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useMemo, useState } from "react"
 
 import {
   clearCachedUserAvatar,
@@ -36,40 +36,27 @@ export function UserIdentityAvatar({
   className,
 }: UserIdentityAvatarProps) {
   const letter = (name.trim()[0] ?? "?").toUpperCase()
-  const imgRef = useRef<HTMLImageElement>(null)
-  const [loaded, setLoaded] = useState(false)
-  const [failed, setFailed] = useState(false)
-  const [cachedUrl, setCachedUrl] = useState<string | null>(() =>
-    userId ? readCachedUserAvatar(userId) : null,
+  const storedCache = useMemo(
+    () => (userId ? readCachedUserAvatar(userId) : null),
+    [userId],
   )
-
-  useEffect(() => {
-    setCachedUrl(userId ? readCachedUserAvatar(userId) : null)
-  }, [userId])
-
-  const resolvedUrl = imageUrl?.trim() || cachedUrl
+  const [runtimeCache, setRuntimeCache] = useState<string | null>(null)
+  const resolvedUrl = imageUrl?.trim() || runtimeCache || storedCache
   const isDark = tone === "dark"
 
-  useEffect(() => {
-    setLoaded(false)
-    setFailed(false)
-  }, [resolvedUrl])
-
-  useEffect(() => {
-    if (markLoadedFromImage(imgRef.current)) {
-      setLoaded(true)
-    }
-  }, [resolvedUrl])
+  const [loaded, setLoaded] = useState(false)
+  const [failed, setFailed] = useState(false)
 
   const hasPhoto = Boolean(resolvedUrl) && !failed
   const showImage = hasPhoto && loaded
   const pendingImage = hasPhoto && !loaded
+  const imageKey = resolvedUrl ?? "no-photo"
 
   function persistCache() {
     const url = imageUrl?.trim()
     if (!userId || !url) return
     writeCachedUserAvatar(userId, url)
-    setCachedUrl(url)
+    setRuntimeCache(url)
   }
 
   function handleLoad() {
@@ -80,14 +67,13 @@ export function UserIdentityAvatar({
   function handleError() {
     setFailed(true)
     setLoaded(false)
-    if (userId && resolvedUrl === cachedUrl) {
+    if (userId && resolvedUrl === (runtimeCache ?? storedCache)) {
       clearCachedUserAvatar(userId)
-      setCachedUrl(null)
+      setRuntimeCache(null)
     }
   }
 
   function bindImageRef(el: HTMLImageElement | null) {
-    imgRef.current = el
     if (markLoadedFromImage(el)) {
       setLoaded(true)
       persistCache()
@@ -114,6 +100,7 @@ export function UserIdentityAvatar({
       {resolvedUrl && !failed ? (
         // eslint-disable-next-line @next/next/no-img-element -- self-hosted instance avatar URL
         <img
+          key={imageKey}
           ref={bindImageRef}
           src={resolvedUrl}
           alt=""

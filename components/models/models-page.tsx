@@ -1,7 +1,7 @@
 "use client"
 
 import Image from "next/image"
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Check, CheckCircle2, ChevronDown, Cloud, Loader2, Plus, RefreshCw, Settings2, Star, Unplug, X } from "lucide-react"
 import { toast } from "sonner"
@@ -378,7 +378,7 @@ function ConnectSheet({
     setScanning(true)
     setScanError(null)
     try {
-      const { probes, fromCache } = await getOllamaCloudModels(profile.id, { refresh })
+      const { probes } = await getOllamaCloudModels(profile.id, { refresh })
       setCloudProbes(probes)
       const available = probes.filter((p) => p.access === "available")
       if (available.length > 0 && !model) setModel(available[0]!.name)
@@ -393,11 +393,12 @@ function ConnectSheet({
     }
   }
 
-  useEffect(() => {
-    if (!open || !isOllamaCloud || !isEdit || !profile?.hasApiKey) return
-    void scanCloudModels(false)
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- load cached probes when sheet opens
-  }, [open, isOllamaCloud, isEdit, profile?.id, profile?.hasApiKey])
+  function handleSheetOpenChange(nextOpen: boolean) {
+    onOpenChange(nextOpen)
+    if (nextOpen && isOllamaCloud && isEdit && profile?.hasApiKey) {
+      void scanCloudModels(false)
+    }
+  }
 
   async function scanLocalModels() {
     setScanning(true)
@@ -449,7 +450,7 @@ function ConnectSheet({
         : "Configure the endpoint."
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
+    <Sheet open={open} onOpenChange={handleSheetOpenChange}>
       <SheetContent
         side="right"
         showCloseButton={false}

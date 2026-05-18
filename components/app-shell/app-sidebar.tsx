@@ -42,8 +42,6 @@ const ACTIVE   = "rgba(255,255,255,0.08)"
 const HOVER    = "rgba(255,255,255,0.04)"
 const CNT_BG   = "rgba(255,255,255,0.07)"
 const CNT_TX   = "rgba(255,255,255,0.45)"
-const BORDER   = "rgba(255,255,255,0.07)"
-
 // ── nav data ───────────────────────────────────────────────────────────────
 type NavItem = { id: string; label: string; icon: React.ElementType; href: string }
 
@@ -279,6 +277,7 @@ function AppSidebarInner({ auth }: { auth: AuthSession }) {
             >
               <div className="relative shrink-0">
                 <UserIdentityAvatar
+                  key={sessionUser.id}
                   name={sessionUser.name}
                   imageUrl={avatarSrc}
                   userId={sessionUser.id}
@@ -318,6 +317,7 @@ function AppSidebarInner({ auth }: { auth: AuthSession }) {
           >
             <DropdownMenuLabel className="flex items-center gap-2.5 px-2 pb-2 pt-1.5 font-normal">
               <UserIdentityAvatar
+                key={sessionUser.id}
                 name={sessionUser.name}
                 imageUrl={avatarSrc}
                 userId={sessionUser.id}
