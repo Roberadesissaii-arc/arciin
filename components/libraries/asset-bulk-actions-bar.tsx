@@ -1,7 +1,8 @@
 "use client"
 
 import { useState } from "react"
-import { ArrowRightLeft, Download, Trash2, X } from "lucide-react"
+import { useQueryClient } from "@tanstack/react-query"
+import { ArrowRightLeft, Download, Loader2, Trash2, X } from "lucide-react"
 import { toast } from "sonner"
 
 import { useAssetSelectionRequired } from "@/components/libraries/asset-selection"
@@ -17,7 +18,8 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { Button } from "@/components/ui/button"
-import { useDeleteAsset } from "@/hooks/use-assets"
+import { deleteAsset } from "@/lib/api/assets"
+import { queryKeys } from "@/lib/api/query-keys"
 import { cn } from "@/lib/utils"
 
 function downloadAsset(assetId: string) {
@@ -30,11 +32,12 @@ function downloadAsset(assetId: string) {
 }
 
 export function AssetBulkActionsBar({ defaultLibraryId }: { defaultLibraryId?: string }) {
+  const queryClient = useQueryClient()
   const { selectedIds, selectedAssets, clear } = useAssetSelectionRequired()
-  const deleteAssetMutation = useDeleteAsset()
   const [moveOpen, setMoveOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
   const count = selectedIds.size
   if (count === 0) return null
@@ -60,16 +63,20 @@ export function AssetBulkActionsBar({ defaultLibraryId }: { defaultLibraryId?: s
 
   const handleDelete = async () => {
     setBusy(true)
+    setDeleting(true)
     try {
       for (const asset of selectedAssets) {
-        await deleteAssetMutation.mutateAsync(asset.id)
+        await deleteAsset(asset.id)
       }
+      await queryClient.invalidateQueries({ queryKey: queryKeys.assets() })
+      await queryClient.invalidateQueries({ queryKey: queryKeys.libraries })
       toast.success(count === 1 ? "Asset deleted." : `${count} assets deleted.`)
       clear()
       setDeleteOpen(false)
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not delete assets.")
     } finally {
+      setDeleting(false)
       setBusy(false)
     }
   }
@@ -118,7 +125,7 @@ export function AssetBulkActionsBar({ defaultLibraryId }: { defaultLibraryId?: s
             size="sm"
             variant="outline"
             className="border-destructive/40 text-destructive hover:bg-destructive/10"
-            disabled={busy || deleteAssetMutation.isPending}
+            disabled={busy || deleting}
             onClick={() => setDeleteOpen(true)}
           >
             <Trash2 className="size-4" />
@@ -145,28 +152,36 @@ export function AssetBulkActionsBar({ defaultLibraryId }: { defaultLibraryId?: s
         onComplete={clear}
       />
 
-      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+      <AlertDialog open={deleteOpen} onOpenChange={(open) => !deleting && setDeleteOpen(open)}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              Delete {count} {count === 1 ? "asset" : "assets"}?
+              Delete {count} selected {count === 1 ? "file" : "files"}?
             </AlertDialogTitle>
             <AlertDialogDescription>
-              This soft-deletes the selected files from your libraries. You can&apos;t undo this from
-              the UI.
+              Are you sure you want to delete everything you selected? This removes{" "}
+              {count === 1 ? "this file" : `all ${count} files`} from your libraries. You can&apos;t
+              undo this from the UI.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive text-white hover:bg-destructive/90"
-              disabled={busy}
+              disabled={deleting}
               onClick={(event) => {
                 event.preventDefault()
                 void handleDelete()
               }}
             >
-              Delete
+              {deleting ? (
+                <>
+                  <Loader2 className="mr-2 size-4 animate-spin" />
+                  Deleting…
+                </>
+              ) : (
+                `Delete ${count === 1 ? "file" : "all"}`
+              )}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

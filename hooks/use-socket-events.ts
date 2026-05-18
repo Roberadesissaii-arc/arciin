@@ -14,6 +14,7 @@ import {
   notifyUploadFailed,
   uploadNotifyDedupeKey,
 } from "@/lib/notifications/notify-upload-realtime"
+import { shouldToastForActivityEvent } from "@/lib/notifications/activity-toast-policy"
 import {
   shouldShowActivityFeedToast,
   shouldShowSecurityEventsToast,
@@ -128,7 +129,7 @@ export function useSocketEvents(socket: Socket | null) {
             source: "security",
           })
           toast.warning(title, message ? { description: message } : undefined)
-        } else if (shouldShowActivityFeedToast()) {
+        } else if (shouldShowActivityFeedToast() && shouldToastForActivityEvent(eventType)) {
           recordInboxNotification({
             title,
             message,
