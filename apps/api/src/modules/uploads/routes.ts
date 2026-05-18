@@ -79,8 +79,6 @@ export async function registerUploadRoutes(fastify: FastifyInstance) {
       ),
     },
     async (request, reply) => {
-      if (await checkEndpointRateLimit(request, reply, { key: "upload", limit: 60, windowSec: 60 })) return
-
       const file = await request.file()
 
       if (!file || !request.auth) {
@@ -90,6 +88,17 @@ export async function registerUploadRoutes(fastify: FastifyInstance) {
             message: "A file upload is required.",
           },
         })
+        return
+      }
+
+      const uploadRateLimit = Number(process.env.UPLOAD_RATE_LIMIT_PER_MINUTE || "500")
+      if (
+        await checkEndpointRateLimit(request, reply, {
+          key: `upload:user:${request.auth.user.id}`,
+          limit: Number.isFinite(uploadRateLimit) && uploadRateLimit > 0 ? uploadRateLimit : 500,
+          windowSec: 60,
+        })
+      ) {
         return
       }
 

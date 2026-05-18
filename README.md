@@ -235,6 +235,8 @@ Set `API_BASE` in `scripts/examples/arciin_example_client.py` to the printed WSL
 | `NEXT_PUBLIC_SOCKET_URL` | Leave empty in local dev so cookies work |
 | `PORT` | Web port (default 3004) |
 | `API_PORT` | API port (default 4001) |
+| `MAX_UPLOAD_SIZE_MB` | Max upload size (web proxy + API; default 10240) |
+| `UPLOAD_RATE_LIMIT_PER_MINUTE` | Per-user upload cap per minute (default 500; was 60) |
 
 See `.env.example` for the full list.
 

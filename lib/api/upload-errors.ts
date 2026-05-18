@@ -9,8 +9,11 @@ export function formatUploadFailure(error: unknown): string {
     if (error.status === 403) {
       parts.push("(Your IP may be blocked — check Security.)")
     }
-    if (error.status === 429) {
-      parts.push("(Rate limit — try fewer files at once.)")
+    if (error.status === 429 || error.code === "RATE_LIMITED") {
+      parts.push("(Server rate limit — Arciin will retry automatically; wait or upload in smaller batches.)")
+    }
+    if (error.code === "NETWORK_ERROR") {
+      parts.push("(Connection dropped — often too many files at once; retrying may help.)")
     }
     if (error.status === 413) {
       parts.push("(File exceeds the server upload size limit.)")

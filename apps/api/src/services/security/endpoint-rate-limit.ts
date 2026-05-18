@@ -39,7 +39,7 @@ export async function checkEndpointRateLimit(
       error: {
         code: "RATE_LIMITED",
         message: `Too many requests. Try again in ${opts.windowSec} seconds.`,
-        retryAfterSeconds: opts.windowSec,
+        details: { retryAfterSeconds: opts.windowSec },
       },
     })
     return true

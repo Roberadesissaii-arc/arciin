@@ -24,8 +24,9 @@ export function useUploadOrchestrator() {
       if (files.length === 0) return
 
       const batchId = beginUploadBatch(files.length)
+      const concurrency = files.length > 50 ? 2 : files.length > 20 ? 3 : 4
 
-      await runWithConcurrency(files, 3, async (file) => {
+      await runWithConcurrency(files, concurrency, async (file) => {
           const id = createId()
           addOrUpdate({
             id,
@@ -63,13 +64,6 @@ export function useUploadOrchestrator() {
               batchId,
             })
 
-            await Promise.all([
-              queryClient.invalidateQueries({ queryKey: queryKeys.uploads }),
-              queryClient.invalidateQueries({ queryKey: queryKeys.assets() }),
-              queryClient.invalidateQueries({ queryKey: queryKeys.activity() }),
-              queryClient.invalidateQueries({ queryKey: queryKeys.libraries }),
-            ])
-
             if (result.status === "READY") {
               updateStatus(id, "READY")
             } else if (result.status === "PROCESSING") {
@@ -79,6 +73,13 @@ export function useUploadOrchestrator() {
             updateStatus(id, "FAILED", formatUploadFailure(error))
           }
       })
+
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.uploads }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.assets() }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.activity() }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.libraries }),
+      ])
     },
     [addOrUpdate, beginUploadBatch, queryClient, updateProgress, updateStatus, uploadContext]
   )
