@@ -156,12 +156,20 @@ export function PlexInstallPlaybook({
           <>
             <ol className="list-decimal space-y-2 pl-5 text-[13px] leading-relaxed text-zinc-700">
               <li>
-                In Arciin → Integrations, turn on <strong>Use Plex folders</strong> (creates{" "}
+                In Arciin → Integrations, turn on <strong>Use Plex folders</strong>. Arciin creates{" "}
                 <code className="rounded bg-muted px-1 font-mono text-[11px]">libraries/…/plex</code> under your
-                storage root on this server).
+                storage root — no manual <code className="rounded bg-muted px-1 font-mono text-[11px]">mkdir</code> for
+                those paths.
               </li>
               <li>
-                Run the <strong>setup commands</strong> above on the host.
+                Copy the <strong>host setup script</strong> above into SSH. It creates{" "}
+                <code className="rounded bg-muted px-1 font-mono text-[11px]">{DEFAULT_PLEX_INSTALL_DIR}/config/</code> and
+                writes{" "}
+                <code className="rounded bg-muted px-1 font-mono text-[11px]">
+                  {DEFAULT_PLEX_INSTALL_DIR}/docker-compose.yml
+                </code>{" "}
+                (compose lives beside <code className="rounded bg-muted px-1 font-mono text-[11px]">config/</code>, not
+                inside it).
               </li>
               <li>
                 Get a claim token from{" "}
@@ -174,16 +182,19 @@ export function PlexInstallPlaybook({
                   plex.tv/claim
                   <ExternalLink className="size-3 opacity-70" />
                 </a>{" "}
-                (valid ~4 minutes) and paste it below.
+                (valid ~4 minutes), paste below or edit in the file on disk.
               </li>
               <li>
-                Copy the compose file, save to{" "}
                 <code className="rounded bg-muted px-1 font-mono text-[11px]">
-                  {DEFAULT_PLEX_INSTALL_DIR}/docker-compose.yml
+                  nano {DEFAULT_PLEX_INSTALL_DIR}/docker-compose.yml
+                </code>{" "}
+                — set <code className="rounded bg-muted px-1 font-mono text-[11px]">PLEX_CLAIM</code>,{" "}
+                <code className="rounded bg-muted px-1 font-mono text-[11px]">PUID</code>,{" "}
+                <code className="rounded bg-muted px-1 font-mono text-[11px]">PGID</code>, then{" "}
+                <code className="rounded bg-muted px-1 font-mono text-[11px]">
+                  cd {DEFAULT_PLEX_INSTALL_DIR} && docker compose up -d
                 </code>
-                , set <code className="rounded bg-muted px-1 font-mono text-[11px]">PUID</code> /{" "}
-                <code className="rounded bg-muted px-1 font-mono text-[11px]">PGID</code> to your Linux user, then{" "}
-                <code className="rounded bg-muted px-1 font-mono text-[11px]">docker compose up -d</code>.
+                .
               </li>
               <li>Upload in Arciin, then scan libraries in Plex if needed.</li>
             </ol>

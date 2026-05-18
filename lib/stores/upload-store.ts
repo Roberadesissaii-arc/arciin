@@ -2,7 +2,8 @@
 
 import { create } from "zustand"
 
-import type { UploadStatus } from "@/lib/types/models"
+import type { LibraryKind, UploadStatus } from "@/lib/types/models"
+import { createId } from "@/lib/utils/create-id"
 import { inferDestinationLabel } from "@/lib/utils/media-type"
 
 export type DuplicateConflict = {
@@ -26,6 +27,7 @@ export type UploadQueueItem = {
 export type UploadContext = {
   libraryId?: string
   folderId?: string
+  libraryKind?: LibraryKind
 }
 
 type UploadStoreState = {
@@ -53,7 +55,7 @@ export const useUploadStore = create<UploadStoreState>((set) => ({
     set((state) => ({
       queue: [
         ...files.map((file) => ({
-          id: crypto.randomUUID(),
+          id: createId(),
           fileName: file.name,
           mimeType: file.type,
           sizeBytes: file.size,

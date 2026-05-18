@@ -351,19 +351,17 @@ export async function resolveConnectorFolderId(
   return folder?.id ?? null
 }
 
-/** Plex wins when both connectors are enabled; otherwise Jellyfin. */
+/** Use explicit folder when provided; otherwise library root (not connector folders). */
 export async function resolveMediaConnectorUploadFolderId(
   prisma: PrismaClient,
-  libraryId: string,
-  librarySlug: string,
+  _libraryId: string,
+  _librarySlug: string,
   explicitFolderId: string | undefined,
-  plexDef: MediaConnectorDef,
-  jellyfinDef: MediaConnectorDef,
+  _plexDef: MediaConnectorDef,
+  _jellyfinDef: MediaConnectorDef,
 ): Promise<string | null | undefined> {
   if (explicitFolderId) return explicitFolderId
-  const plexId = await resolveConnectorFolderId(prisma, libraryId, librarySlug, plexDef)
-  if (plexId) return plexId
-  return resolveConnectorFolderId(prisma, libraryId, librarySlug, jellyfinDef)
+  return null
 }
 
 export async function syncAssetToEnabledConnectorMirrors(

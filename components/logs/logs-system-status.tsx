@@ -146,10 +146,8 @@ export function LogsSystemStatus() {
             <div
               key={id}
               className={cn(
-                "rounded-xl border px-3 py-3",
-                tone === "good" && "border-emerald-500/25 bg-emerald-500/5",
-                tone === "bad" && "border-red-500/25 bg-red-500/5",
-                tone === "muted" && "border-zinc-200 bg-zinc-50/80",
+                "rounded-xl border border-border bg-zinc-50/80 px-3 py-3",
+                tone === "bad" && "border-red-500/30",
               )}
             >
               <div className="flex items-start justify-between gap-2">
@@ -161,8 +159,8 @@ export function LogsSystemStatus() {
                   <span
                     className={cn(
                       "size-2 rounded-full",
-                      tone === "good" && "bg-emerald-500 shadow-[0_0_0_3px_rgba(34,197,94,0.2)]",
-                      tone === "bad" && "bg-red-500 shadow-[0_0_0_3px_rgba(239,68,68,0.15)]",
+                      tone === "good" && "bg-emerald-500",
+                      tone === "bad" && "bg-red-500",
                       tone === "muted" && "bg-zinc-400",
                     )}
                   />

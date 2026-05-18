@@ -164,7 +164,8 @@ export async function registerPasswordVaultRoutes(fastify: FastifyInstance) {
         fastify.prisma.instanceConfig.findFirst({ select: { aiConfig: true } }),
       ])
       const display = readPasswordVaultDisplay(instance?.aiConfig)
-      const lockRequired = display.lockSidebarVault
+      const total = rows.length
+      const lockRequired = display.lockSidebarVault && total > 0
       const secretsVisible =
         !lockRequired || isVaultUnlockValid(request, userId)
 
@@ -173,7 +174,7 @@ export async function registerPasswordVaultRoutes(fastify: FastifyInstance) {
       reply.send({
         data: {
           entries: rows.map((r) => redactSecrets(serializeEntry(r), secretsVisible)),
-          total: rows.length,
+          total,
           display,
           lockRequired,
           secretsVisible,

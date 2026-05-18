@@ -1,5 +1,7 @@
 /** Shared Ollama vision HTTP helpers for chat services. */
 
+import { formatOllamaProviderError, ollamaAuthHeaders } from "@/services/chat/ollama-http"
+
 export function parseVisionJsonObject(text: string): Record<string, unknown> | null {
   const trimmed = text.trim()
   try {
@@ -24,12 +26,14 @@ export async function ollamaVisionChat(
   model: string,
   prompt: string,
   images: string[],
+  apiKey?: string | null,
 ): Promise<string> {
   const think: boolean | string = /gpt-oss/i.test(model) ? "low" : false
+  const isCloud = baseUrl.includes("ollama.com")
 
   const res = await fetch(`${baseUrl}/api/chat`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: ollamaAuthHeaders(apiKey),
     body: JSON.stringify({
       model,
       stream: false,
@@ -41,7 +45,12 @@ export async function ollamaVisionChat(
 
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText)
-    throw new Error(`Ollama vision error ${res.status}: ${text.slice(0, 240)}`)
+    throw new Error(
+      formatOllamaProviderError(res.status, text, {
+        hasApiKey: Boolean(apiKey?.trim()),
+        isCloud,
+      }),
+    )
   }
 
   const json = (await res.json()) as { message?: { content?: string } }

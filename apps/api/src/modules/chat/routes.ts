@@ -21,6 +21,7 @@ import type { FastifyInstance, FastifyRequest } from "fastify"
 import { z } from "zod"
 
 import { apiConfig } from "@/config"
+import { assertOllamaCloudApiKey } from "@/services/chat/ollama-http"
 import { streamOllamaWithArciinTools } from "@/services/chat/ollama-chat-with-tools"
 import { organizeImagesLibrary } from "@/services/chat/organize-images-library"
 import {
@@ -331,6 +332,12 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
         return
       }
 
+      const cloudKeyError = assertOllamaCloudApiKey(profile.provider, profile.apiKey)
+      if (cloudKeyError) {
+        reply.status(400).send({ error: cloudKeyError })
+        return
+      }
+
       const instance = await fastify.prisma.instanceConfig.findFirst()
       const baseUrl = getOllamaNativeBase(profile.provider, profile.baseUrl)
       const searchQuery = normalizeVisionSearchQuery(parsed.data.query)
@@ -357,6 +364,7 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
         const pageMatches = await visionSearchLibraryImages({
           baseUrl,
           model,
+          apiKey: profile.apiKey,
           query: searchQuery,
           candidates,
           maxResults,
@@ -407,6 +415,12 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
         return
       }
 
+      const cloudKeyError = assertOllamaCloudApiKey(profile.provider, profile.apiKey)
+      if (cloudKeyError) {
+        reply.status(400).send({ error: cloudKeyError })
+        return
+      }
+
       const instance = await fastify.prisma.instanceConfig.findFirst()
       const baseUrl = getOllamaNativeBase(profile.provider, profile.baseUrl)
 
@@ -422,6 +436,7 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
       const suggestion = await visionSuggestAssetRename({
         baseUrl,
         model,
+        apiKey: profile.apiKey,
         candidate,
       })
 
@@ -472,6 +487,12 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
         return
       }
 
+      const cloudKeyError = assertOllamaCloudApiKey(profile.provider, profile.apiKey)
+      if (cloudKeyError) {
+        reply.status(400).send({ error: cloudKeyError })
+        return
+      }
+
       const instance = await fastify.prisma.instanceConfig.findFirst()
       const baseUrl = getOllamaNativeBase(profile.provider, profile.baseUrl)
 
@@ -481,6 +502,7 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
           storageRoot: instance?.storageRoot,
           baseUrl,
           model,
+          apiKey: profile.apiKey,
           userId: request.auth!.user.id,
           maxAssets: parsed.data.maxAssets,
           publishRealtimeEvent: fastify.publishRealtimeEvent,
@@ -805,6 +827,12 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
         return
       }
 
+      const cloudKeyError = assertOllamaCloudApiKey(profile.provider, profile.apiKey)
+      if (cloudKeyError) {
+        reply.status(400).send({ error: cloudKeyError })
+        return
+      }
+
       const raw = reply.raw
       raw.writeHead(200, {
         "Content-Type": "text/event-stream",
@@ -847,12 +875,14 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
             raw,
             baseUrl: nativeBase,
             model,
+            apiKey: profile.apiKey,
             messages: ollamaMessages,
             toolCtx: {
               prisma: fastify.prisma,
               storageRoot: instance?.storageRoot ?? null,
               baseUrl: nativeBase,
               model,
+              apiKey: profile.apiKey,
               userId: request.auth!.user.id,
               libraryToolAccess: security.libraryToolAccess,
               publishRealtimeEvent: fastify.publishRealtimeEvent,

@@ -1,21 +1,27 @@
 import type { ConnectorStatus } from "@/lib/api/integrations"
 
 import { buildConnectorPathExamples } from "@/lib/integrations/connector-paths"
-import { resolveJellyfinHostPaths } from "@/lib/integrations/jellyfin-install-compose"
-import { resolvePlexHostPaths } from "@/lib/integrations/plex-install-compose"
+import {
+  buildJellyfinDockerCompose,
+  resolveJellyfinHostPaths,
+} from "@/lib/integrations/jellyfin-install-compose"
+import {
+  buildPlexDockerCompose,
+  resolvePlexHostPaths,
+} from "@/lib/integrations/plex-install-compose"
 
 export type MediaStackKind = "plex" | "jellyfin"
 
 export type SetupShellCommands = {
-  /** One-shot bash script: stack dirs + Arciin media folders on this host. */
+  /** Paste-safe bash: creates stack dirs and writes docker-compose.yml on the host. */
   script: string
-  /** Single mkdir line for the media server stack only. */
   stackMkdir: string
-  /** mkdir lines for Arciin connector folders (may be empty until folders are enabled). */
+  /** @deprecated Arciin creates connector folders via Integrations — kept for compatibility. */
   mediaMkdirs: string[]
   storageRoot: string | null
   librariesDir: string | null
   mediaPaths: { videos?: string; images?: string; music?: string }
+  composePath: string
 }
 
 function normalizeRoot(root: string | undefined): string | null {
@@ -28,13 +34,80 @@ function mediaPathsFromStatus(status: ConnectorStatus | undefined, kind: MediaSt
   return kind === "plex" ? resolvePlexHostPaths(status) : resolveJellyfinHostPaths(status)
 }
 
+function needsSudoForPath(path: string) {
+  return /^\/(srv|opt|usr|var|etc|mnt)\//.test(path)
+}
+
+export function quoteShell(path: string): string {
+  if (/^[a-zA-Z0-9_./-]+$/.test(path)) return path
+  return `'${path.replace(/'/g, `'\"'\"'`)}'`
+}
+
+const COMPOSE_HEREDOC_END = "ARCIIN_COMPOSE_YML_END"
+
+function buildPasteableInstallScript(
+  installDir: string,
+  kind: MediaStackKind,
+  compose: string,
+  storageRoot: string | null,
+): string {
+  const sudo = needsSudoForPath(installDir) ? "sudo " : ""
+  const stackLabel = kind === "plex" ? "Plex" : "Jellyfin"
+  const connectorFolder = kind === "plex" ? "plex" : "jellyfin"
+
+  const lines: string[] = [
+    "# Paste into your SSH session on the host that runs Arciin (runs line by line; safe to paste).",
+    `# ${stackLabel} stack — separate from Arciin data under your storage root.`,
+    `#`,
+    `#   ${installDir}/docker-compose.yml   ← compose file (edit claim token / PUID / PGID here)`,
+    `#   ${installDir}/config/            ← ${stackLabel} app database (created empty)`,
+    ...(kind === "jellyfin" ? [`#   ${installDir}/cache/             ← Jellyfin transcode cache`] : []),
+    "#",
+    `# Arciin media paths: enable "Use ${stackLabel} folders" in Integrations — Arciin creates`,
+    `# libraries/videos|images|music/${connectorFolder}/ for you. Do not mkdir those here.`,
+    "",
+    `INSTALL_DIR=${quoteShell(installDir)}`,
+    `${sudo}mkdir -p "$INSTALL_DIR/config"`,
+  ]
+
+  if (kind === "jellyfin") {
+    lines.push(`${sudo}mkdir -p "$INSTALL_DIR/cache"`)
+  }
+
+  lines.push(
+    "",
+    `# Write docker-compose.yml next to config/ (not inside config/)`,
+    `cat <<'${COMPOSE_HEREDOC_END}' | ${sudo}tee "$INSTALL_DIR/docker-compose.yml" > /dev/null`,
+    compose.trimEnd(),
+    COMPOSE_HEREDOC_END,
+    "",
+    'echo ""',
+    `echo "Created $INSTALL_DIR/docker-compose.yml"`,
+    `echo "         $INSTALL_DIR/config/"`,
+  )
+
+  if (storageRoot) {
+    lines.push(`echo "Arciin media folders: ${storageRoot}/libraries/…/${connectorFolder}/"`)
+  } else {
+    lines.push(
+      `echo "Tip: turn on Use ${stackLabel} folders in Arciin → Integrations, then re-copy the compose block for real volume paths."`,
+    )
+  }
+
+  lines.push(
+    `echo 'Next: ${sudo}nano "$INSTALL_DIR/docker-compose.yml"'`,
+    `echo 'Then: cd "$INSTALL_DIR" && docker compose up -d'`,
+  )
+
+  return lines.join("\n")
+}
+
 /** Build copy-paste shell commands from live instance paths (never hardcode /srv/arciin). */
 export function buildMediaServerSetupCommands(
   status: ConnectorStatus | undefined,
   kind: MediaStackKind,
   installDir: string,
 ): SetupShellCommands {
-  const folderName = kind === "plex" ? "plex" : "jellyfin"
   const paths = mediaPathsFromStatus(status, kind)
   const storageRoot = normalizeRoot(status?.storageRoot)
   const librariesDir = normalizeRoot(status?.mirrorRootHint)
@@ -45,67 +118,29 @@ export function buildMediaServerSetupCommands(
     music: paths.music,
   }
 
-  const needsSudo = /^\/(srv|opt|usr|var|etc|mnt)\//.test(installDir)
-  const mkdirPrefix = needsSudo ? "sudo mkdir -p" : "mkdir -p"
+  const sudo = needsSudoForPath(installDir) ? "sudo " : ""
   const stackMkdir =
     kind === "plex"
-      ? `${mkdirPrefix} ${installDir}/config`
-      : `${mkdirPrefix} ${installDir}/config ${installDir}/cache`
+      ? `${sudo}mkdir -p ${quoteShell(`${installDir}/config`)}`
+      : `${sudo}mkdir -p ${quoteShell(`${installDir}/config`)} ${quoteShell(`${installDir}/cache`)}`
 
-  const mediaMkdirs: string[] = []
-  for (const p of [mediaPaths.videos, mediaPaths.images, mediaPaths.music]) {
-    if (p) mediaMkdirs.push(`mkdir -p ${quoteShell(p)}`)
-  }
+  const compose =
+    kind === "plex"
+      ? buildPlexDockerCompose({ installDir, paths })
+      : buildJellyfinDockerCompose({ installDir, paths })
 
-  if (mediaMkdirs.length === 0 && librariesDir) {
-    for (const slug of ["videos", "images", "music"] as const) {
-      mediaMkdirs.push(`mkdir -p ${quoteShell(`${librariesDir}/${slug}/${folderName}`)}`)
-    }
-  }
-
-  const lines: string[] = [
-    "#!/usr/bin/env bash",
-    "set -euo pipefail",
-    "",
-    `# ${kind === "plex" ? "Plex" : "Jellyfin"} on the same host as Arciin`,
-    `# Storage root for this instance: ${storageRoot ?? "(enable connector folders in Integrations first)"}`,
-    "",
-    "# 1) Media server stack directory (Plex/Jellyfin config — separate from Arciin data)",
-    stackMkdir,
-    "",
-  ]
-
-  if (mediaMkdirs.length > 0) {
-    lines.push(
-      "# 2) Arciin media folders on disk (same paths as docker-compose volume mounts)",
-      "#    Arciin also creates these when you upload; this is optional prep before first upload.",
-      ...mediaMkdirs,
-      "",
-    )
-  } else {
-    lines.push(
-      "# 2) In Arciin → Integrations, turn on Use Plex/Jellyfin folders, then re-copy this script.",
-      "",
-    )
-  }
-
-  lines.push(
-    `# 3) Save docker-compose.yml under ${installDir}/ and run: cd ${installDir} && docker compose up -d`,
-  )
+  const composePath = `${installDir}/docker-compose.yml`
+  const script = buildPasteableInstallScript(installDir, kind, compose, storageRoot)
 
   return {
-    script: lines.join("\n"),
+    script,
     stackMkdir,
-    mediaMkdirs,
+    mediaMkdirs: [],
     storageRoot,
     librariesDir,
     mediaPaths,
+    composePath,
   }
-}
-
-export function quoteShell(path: string): string {
-  if (/^[a-zA-Z0-9_./-]+$/.test(path)) return path
-  return `'${path.replace(/'/g, `'\"'\"'`)}'`
 }
 
 /** Human-readable tree using this instance’s paths (not generic /srv). */
@@ -120,7 +155,7 @@ export function buildStorageLayoutTree(
   const stackLine = `${stackInstallDir}/`
   const lines = [
     `${storageRoot}/`,
-    "  libraries/",
+    "  libraries/   ← Arciin creates …/plex (or jellyfin) when Integrations is enabled",
   ]
 
   if (examples.length > 0) {
@@ -136,7 +171,7 @@ export function buildStorageLayoutTree(
 
   lines.push(`  objects/          ← binary storage (not mounted in ${kind === "plex" ? "Plex" : "Jellyfin"})`)
   lines.push("")
-  lines.push(`${stackLine}`)
+  lines.push(`${stackLine}   ← ${kind === "plex" ? "Plex" : "Jellyfin"} Docker stack (not inside Arciin data)`)
   lines.push("  docker-compose.yml")
   lines.push(`  config/           ← ${kind === "plex" ? "Plex" : "Jellyfin"} database`)
 
@@ -146,14 +181,14 @@ export function buildStorageLayoutTree(
 export const CONNECTOR_HOW_IT_WORKS = {
   plex: [
     "Arciin and Plex do not talk over the network. They share folders on the same machine (or any host that can read your storage root).",
-    "Turn on Use Plex folders in Integrations — Arciin registers Videos/Images/Music → Plex in the database and creates those directories on disk under your configured storage root (Settings → Storage).",
-    "When you upload in Arciin, files are stored under libraries/…/plex/ on disk. Plex only needs read access via Docker volume mounts pointing at those host paths.",
-    "Paths in docker-compose.yml must match this instance’s storage root (e.g. dev: /home/you/arciin/data/arciin, production: /data/arciin or /srv/arciin — not a generic example path).",
+    "In Integrations, turn on Use Plex folders — Arciin registers Videos/Images/Music → Plex and creates those directories under your storage root (Settings → Storage). You do not need to create library folders manually on disk.",
+    "The setup script below only prepares /srv/plex (or your install dir): config/ plus docker-compose.yml beside it. Volume lines point at Arciin’s libraries/…/plex paths when folders are enabled.",
+    "When you upload in Arciin, files land under libraries/…/plex/. Plex reads them via Docker volume mounts in docker-compose.yml.",
   ],
   jellyfin: [
     "Arciin and Jellyfin share disk folders the same way as Plex — there is no network API connection between them.",
-    "Turn on Use Jellyfin folders in Integrations — Arciin creates Videos/Images/Music → Jellyfin directories on disk under your configured storage root (Settings → Storage).",
-    "When you upload in Arciin, files land under libraries/…/jellyfin/ on disk. Jellyfin only needs read access via Docker volume mounts pointing at those host paths.",
-    "Paths in docker-compose.yml must match this instance's storage root — use the actual paths shown below, not a generic /srv/arciin example.",
+    "In Integrations, turn on Use Jellyfin folders — Arciin creates Videos/Images/Music → Jellyfin on disk. Do not mkdir those paths manually.",
+    "The setup script prepares your Jellyfin install dir (config/, cache/, docker-compose.yml). Use the paths shown for this instance in the compose file.",
+    "When you upload in Arciin, files land under libraries/…/jellyfin/. Jellyfin reads them via Docker volume mounts.",
   ],
 } as const

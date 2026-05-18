@@ -9,6 +9,8 @@ import {
 } from "@/lib/notifications/notify-upload-realtime"
 import { queryKeys } from "@/lib/api/query-keys"
 import { useUploadStore } from "@/lib/stores/upload-store"
+import { createId } from "@/lib/utils/create-id"
+import { resolveUploadTargetForFile } from "@/lib/uploads/resolve-upload-target"
 import { inferDestinationLabel } from "@/lib/utils/media-type"
 
 export function useUploadOrchestrator() {
@@ -22,7 +24,7 @@ export function useUploadOrchestrator() {
     async (files: File[]) => {
       await Promise.all(
         files.map(async (file) => {
-          const id = crypto.randomUUID()
+          const id = createId()
           addOrUpdate({
             id,
             fileName: file.name,
@@ -35,14 +37,13 @@ export function useUploadOrchestrator() {
 
           try {
             updateStatus(id, "UPLOADING")
+            const target = resolveUploadTargetForFile(file, uploadContext)
             const result = await uploadFile(file, {
               onProgress: (progress) => {
                 updateProgress(id, progress)
               },
-              // Only pin to a library when inside a folder — otherwise let the
-              // server classify by file type and route to the correct library.
-              targetLibraryId: uploadContext?.folderId ? uploadContext.libraryId : undefined,
-              targetFolderId:  uploadContext?.folderId,
+              targetLibraryId: target.targetLibraryId,
+              targetFolderId: target.targetFolderId,
             })
 
             updateProgress(id, result.progress ?? 100)

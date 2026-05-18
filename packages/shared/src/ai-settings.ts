@@ -13,7 +13,7 @@ export const DEFAULT_AI_SETTINGS: AiSettingsResolved = {
   agent: true,
   autonomy: false,
   planning: true,
-  showThinking: false,
+  showThinking: true,
   emojiUsage: "none",
 }
 

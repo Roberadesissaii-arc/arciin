@@ -49,7 +49,7 @@ export function LibraryBrowser({
   // Set upload context so dropped files go to this library's root
   useEffect(() => {
     if (library?.id) {
-      setUploadContext({ libraryId: library.id })
+      setUploadContext({ libraryId: library.id, libraryKind: library.kind })
     }
     return () => setUploadContext(null)
   }, [library?.id, setUploadContext])

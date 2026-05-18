@@ -187,6 +187,7 @@ function parseVisionSearchMatches(
 async function scanBatchesForMatches(opts: {
   baseUrl: string
   model: string
+  apiKey?: string | null
   query: string
   candidates: VisionImageCandidate[]
   relaxed: boolean
@@ -238,6 +239,7 @@ async function scanBatchesForMatches(opts: {
       model,
       prompt,
       batch.map((c) => c.base64),
+      opts.apiKey,
     )
     allMatches.push(...parseVisionSearchMatches(content, batch))
 
@@ -250,6 +252,7 @@ async function scanBatchesForMatches(opts: {
 export async function visionSearchLibraryImages(opts: {
   baseUrl: string
   model: string
+  apiKey?: string | null
   query: string
   candidates: VisionImageCandidate[]
   maxResults: number
@@ -261,6 +264,7 @@ export async function visionSearchLibraryImages(opts: {
   let allMatches = await scanBatchesForMatches({
     baseUrl,
     model,
+    apiKey: opts.apiKey,
     query,
     candidates,
     relaxed: false,
@@ -270,6 +274,7 @@ export async function visionSearchLibraryImages(opts: {
     allMatches = await scanBatchesForMatches({
       baseUrl,
       model,
+      apiKey: opts.apiKey,
       query,
       candidates,
       relaxed: true,
@@ -285,6 +290,7 @@ export async function visionSearchLibraryImages(opts: {
 export async function visionSuggestAssetRename(opts: {
   baseUrl: string
   model: string
+  apiKey?: string | null
   candidate: VisionImageCandidate
 }): Promise<{ title: string; filename: string; description: string }> {
   const prompt = [
@@ -295,7 +301,13 @@ export async function visionSuggestAssetRename(opts: {
     "filename: lowercase, hyphens, keep original extension if possible.",
   ].join("\n")
 
-  const content = await ollamaVisionChat(opts.baseUrl, opts.model, prompt, [opts.candidate.base64])
+  const content = await ollamaVisionChat(
+    opts.baseUrl,
+    opts.model,
+    prompt,
+    [opts.candidate.base64],
+    opts.apiKey,
+  )
   const parsed = parseVisionJsonObject(content)
   const ext = path.extname(opts.candidate.originalFilename) || ".jpg"
   const rawName = typeof parsed?.filename === "string" ? parsed.filename : "renamed-image"

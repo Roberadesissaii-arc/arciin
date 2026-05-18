@@ -1,18 +1,6 @@
+import { getBrowserApiUrl } from "@/lib/api/browser-api-origin"
 import { fetchApi } from "@/lib/api/client"
 import type { UploadSessionSummary } from "@/lib/types/models"
-
-/** POST target for multipart uploads. Prefer the API origin so the browser skips Next.js (proxy buffers bodies with a low default cap). */
-function uploadPostUrl(): string {
-  const origin = process.env.NEXT_PUBLIC_ARCIIN_API_ORIGIN?.replace(/\/$/, "")
-  if (origin) {
-    return `${origin}/api/uploads`
-  }
-  if (process.env.NODE_ENV === "development") {
-    return "http://localhost:4000/api/uploads"
-  }
-  const apiBase = (process.env.NEXT_PUBLIC_API_BASE_URL || "/api").replace(/\/$/, "")
-  return `${apiBase}/uploads`
-}
 
 export function getUploads(signal?: AbortSignal) {
   return fetchApi<UploadSessionSummary[]>("/uploads", {
@@ -45,7 +33,7 @@ export function uploadFile(
   const params = new URLSearchParams()
   if (options?.targetLibraryId) params.set("targetLibraryId", options.targetLibraryId)
   if (options?.targetFolderId)  params.set("targetFolderId",  options.targetFolderId)
-  const url = uploadPostUrl() + (params.size ? `?${params.toString()}` : "")
+  const url = getBrowserApiUrl("uploads") + (params.size ? `?${params.toString()}` : "")
 
   return new Promise<UploadSessionSummary>((resolve, reject) => {
     const formData = new FormData()

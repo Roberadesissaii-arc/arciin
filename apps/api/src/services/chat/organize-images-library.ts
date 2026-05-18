@@ -41,6 +41,7 @@ function matchFolder(folders: FolderRow[], name: string): FolderRow | undefined 
 async function visionSuggestImageFolder(opts: {
   baseUrl: string
   model: string
+  apiKey?: string | null
   candidate: VisionImageCandidate
   existingFolderNames: string[]
 }): Promise<{ folderName: string; createNew: boolean; summary: string }> {
@@ -66,6 +67,7 @@ async function visionSuggestImageFolder(opts: {
     opts.model,
     prompt,
     [opts.candidate.base64],
+    opts.apiKey,
   )
   const parsed = parseVisionJsonObject(content)
   const folderRaw = typeof parsed?.folder === "string" ? parsed.folder : "Miscellaneous"
@@ -106,6 +108,7 @@ export async function organizeImagesLibrary(opts: {
   storageRoot: string | null | undefined
   baseUrl: string
   model: string
+  apiKey?: string | null
   userId: string
   maxAssets?: number
   publishRealtimeEvent?: (event: import("@arciin/shared").RealtimeEvent) => Promise<void>
@@ -167,6 +170,7 @@ export async function organizeImagesLibrary(opts: {
       const suggestion = await visionSuggestImageFolder({
         baseUrl: opts.baseUrl,
         model: opts.model,
+        apiKey: opts.apiKey,
         candidate,
         existingFolderNames: folders.map((f) => f.name),
       })

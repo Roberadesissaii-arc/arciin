@@ -113,10 +113,12 @@ export function NotificationInbox() {
       const mapped = mapActivityToInbox(event)
       if (mapped) {
         recordInboxNotification({
+          id: mapped.id,
           title: mapped.title,
           message: mapped.message,
           variant: mapped.variant,
           source: mapped.source,
+          read: mapped.read,
         })
       }
     }
@@ -221,7 +223,9 @@ export function NotificationInbox() {
                             {item.message}
                           </p>
                         ) : null}
-                        <p className="mt-1 text-[11px] text-zinc-500">{formatRelativeDate(item.createdAt)}</p>
+                        <p className="mt-1 text-[11px] text-zinc-500" suppressHydrationWarning>
+                          {formatRelativeDate(item.createdAt)}
+                        </p>
                       </span>
                     </button>
                   </li>

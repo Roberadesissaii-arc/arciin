@@ -43,14 +43,24 @@ export function PlexMediaServerDocs() {
       </DocP>
 
       <DocP>
-        On <Link href="/integrations" className="font-medium text-primary underline-offset-4 hover:underline">Integrations</Link>, turn on{" "}
-        <strong className="text-zinc-900">Use Plex folders</strong> first. Paths below come from{" "}
+        <strong className="text-zinc-900">Order of operations:</strong> On{" "}
+        <Link href="/integrations" className="font-medium text-primary underline-offset-4 hover:underline">Integrations</Link>, turn on{" "}
+        <strong className="text-zinc-900">Use Plex folders</strong> first — Arciin creates{" "}
+        <IC>libraries/videos|images|music/plex</IC> under your storage root (see{" "}
         <Link href="/settings/storage" className="font-medium text-primary underline-offset-4 hover:underline">
           Settings → Storage
-        </Link>{" "}
-        for this instance (e.g. development under your project <IC>data/arciin</IC>, not a hardcoded <IC>/srv/arciin</IC>{" "}
-        unless you configured that).
+        </Link>
+        ). You do <strong className="text-zinc-900">not</strong> need a separate step to mkdir those folders on disk.
       </DocP>
+
+      <div className="rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm text-zinc-700">
+        <p className="font-medium text-zinc-900">Where files live on the host</p>
+        <pre className="mt-2 overflow-x-auto font-mono text-[11px] leading-relaxed text-zinc-800">{`${DEFAULT_PLEX_INSTALL_DIR}/
+  docker-compose.yml   ← copy setup script writes this file here
+  config/              ← Plex database (empty until container runs)
+
+<your storage root>/libraries/…/plex/   ← Arciin media (Integrations creates these)`}</pre>
+      </div>
 
       <ConnectorSetupCommands
         kind="plex"
@@ -60,7 +70,7 @@ export function PlexMediaServerDocs() {
       />
 
       <DocP>
-        Claim token (valid ~4 minutes):{" "}
+        After the setup script runs: get a claim token (~4 minutes) from{" "}
         <a
           href="https://www.plex.tv/claim/"
           className="font-medium text-primary underline-offset-4 hover:underline"
@@ -69,13 +79,13 @@ export function PlexMediaServerDocs() {
         >
           plex.tv/claim
         </a>
-        . Replace <IC>PLEX_CLAIM</IC> in the compose file, set <IC>PUID</IC>/<IC>PGID</IC>, then{" "}
-        <IC>docker compose up -d</IC> under <IC>{DEFAULT_PLEX_INSTALL_DIR}</IC>.
+        , run <IC>nano {DEFAULT_PLEX_INSTALL_DIR}/docker-compose.yml</IC> to set <IC>PLEX_CLAIM</IC>,{" "}
+        <IC>PUID</IC>, and <IC>PGID</IC>, then <IC>cd {DEFAULT_PLEX_INSTALL_DIR} && docker compose up -d</IC>.
       </DocP>
 
       <CopyableShellBlock
         title={`${DEFAULT_PLEX_INSTALL_DIR}/docker-compose.yml`}
-        description="Volume lines use this instance’s library paths when Plex folders are enabled."
+        description="Same file the setup script writes. Use this block if you already ran setup and only need to refresh volume paths."
         script={compose}
         copyLabel="Copy docker-compose.yml"
       />

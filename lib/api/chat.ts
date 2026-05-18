@@ -1,16 +1,9 @@
+import { getBrowserApiUrl } from "@/lib/api/browser-api-origin"
 import { fetchApi } from "@/lib/api/client"
 
-/** POST URL for SSE chat — must bypass Next.js /api rewrite or the proxy buffers the whole stream. */
+/** POST URL for SSE chat — uses the page origin in the browser so session cookies apply on LAN IPs. */
 export function getChatStreamPostUrl(): string {
-  const origin = process.env.NEXT_PUBLIC_ARCIIN_API_ORIGIN?.replace(/\/$/, "")
-  if (origin) return `${origin}/api/chat`
-  if (process.env.NODE_ENV === "development") return "http://localhost:4000/api/chat"
-  const base = (process.env.NEXT_PUBLIC_API_BASE_URL || "/api").replace(/\/$/, "")
-  if (base.startsWith("http")) return `${base}/chat`
-  if (typeof window !== "undefined") {
-    return `${window.location.origin}${base.startsWith("/") ? base : `/${base}`}/chat`
-  }
-  return "/api/chat"
+  return getBrowserApiUrl("chat")
 }
 
 export interface ChatInstanceContext {

@@ -23,6 +23,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Sidebar, useSidebar } from "@/components/ui/sidebar"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
 import { useLibraries } from "@/hooks/use-libraries"
 import { useLogout } from "@/hooks/use-auth"
@@ -87,11 +88,11 @@ function FlatLink({
   label, icon: Icon, href, collapsed, pathname, showUnreadBadge,
 }: NavItem & { collapsed: boolean; pathname: string; showUnreadBadge?: boolean }) {
   const active = isActive(pathname, href)
-  return (
+  const link = (
     <Link
       href={href}
       className={cn(
-        "group relative flex items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] font-medium transition-colors select-none",
+        "relative flex items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] font-medium transition-colors select-none",
         collapsed && "justify-center px-0",
         showUnreadBadge && collapsed && "relative",
       )}
@@ -102,15 +103,24 @@ function FlatLink({
       <Icon className="h-[15px] w-[15px] shrink-0" />
       {!collapsed && <span className="flex-1 leading-none">{label}</span>}
       {showUnreadBadge ? <NotificationUnreadBadge collapsed={collapsed} /> : null}
-      {collapsed && (
-        <span
-          className="pointer-events-none absolute left-full z-50 ml-2 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-xs opacity-0 transition-opacity group-hover:opacity-100"
-          style={{ background: "#111118", border: `1px solid ${BORDER}`, color: TEXT_ON }}
-        >
-          {label}
-        </span>
-      )}
     </Link>
+  )
+
+  if (!collapsed) {
+    return link
+  }
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{link}</TooltipTrigger>
+      <TooltipContent
+        side="right"
+        sideOffset={10}
+        className="border-white/10 bg-[#111118] px-2.5 py-1.5 text-xs font-medium text-white [&>svg]:hidden"
+      >
+        {label}
+      </TooltipContent>
+    </Tooltip>
   )
 }
 

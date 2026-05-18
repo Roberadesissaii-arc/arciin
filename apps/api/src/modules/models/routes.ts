@@ -146,11 +146,25 @@ export async function registerModelRoutes(fastify: FastifyInstance) {
       const headers: Record<string, string> = {}
       if (profile.apiKey) headers["Authorization"] = `Bearer ${profile.apiKey}`
 
+      const timeoutMs = profile.provider === "ollama-cloud" ? 20_000 : 10_000
+
       try {
         const res = await fetch(`${baseUrl}/api/tags`, {
           headers,
-          signal: AbortSignal.timeout(8000),
+          signal: AbortSignal.timeout(timeoutMs),
         })
+        if (res.status === 401 || res.status === 403) {
+          reply.status(502).send({
+            error: {
+              code: "OLLAMA_AUTH",
+              message:
+                profile.provider === "ollama-cloud"
+                  ? "Ollama Cloud rejected the API key. Update it under Models → Ollama Cloud."
+                  : "Ollama rejected the API key on this profile.",
+            },
+          })
+          return
+        }
         if (!res.ok) {
           reply.status(502).send({ error: { code: "OLLAMA_ERROR", message: `Ollama returned ${res.status}` } })
           return

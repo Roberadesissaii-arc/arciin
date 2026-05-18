@@ -16,6 +16,7 @@ export type ArciinChatToolContext = {
   storageRoot: string | null | undefined
   baseUrl: string
   model: string
+  apiKey?: string | null
   userId: string
   /** Defaults to full access when omitted. */
   libraryToolAccess?: AiLibraryToolAccess
@@ -145,6 +146,7 @@ export async function executeArciinChatTool(
     const matches = await visionSearchLibraryImages({
       baseUrl: ctx.baseUrl,
       model: ctx.model,
+      apiKey: ctx.apiKey,
       query,
       candidates,
       maxResults,
@@ -176,6 +178,7 @@ export async function executeArciinChatTool(
       storageRoot: ctx.storageRoot,
       baseUrl: ctx.baseUrl,
       model: ctx.model,
+      apiKey: ctx.apiKey,
       userId: ctx.userId,
       maxAssets,
       publishRealtimeEvent: ctx.publishRealtimeEvent,

@@ -17,6 +17,7 @@ import {
   extractBracketPseudoToolCalls,
   extractProseLibraryFolderMutations,
 } from "@/services/chat/folder-tool-synthetic"
+import { formatOllamaProviderError, ollamaAuthHeaders } from "@/services/chat/ollama-http"
 
 export function detectLibraryToolIntent(
   userText: string,
@@ -109,8 +110,9 @@ async function ollamaChatOnce(
   baseUrl: string,
   model: string,
   messages: ChatMsg[],
-  opts: { stream: boolean; tools?: ToolMode },
+  opts: { stream: boolean; tools?: ToolMode; apiKey?: string | null },
 ): Promise<Response> {
+  const isCloud = baseUrl.includes("ollama.com")
   const body: Record<string, unknown> = {
     model,
     messages,
@@ -122,9 +124,18 @@ async function ollamaChatOnce(
 
   return fetch(`${baseUrl}/api/chat`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: ollamaAuthHeaders(opts.apiKey),
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(600_000),
+  }).then(async (res) => {
+    if (res.ok) return res
+    const text = await res.text().catch(() => res.statusText)
+    throw new Error(
+      formatOllamaProviderError(res.status, text, {
+        hasApiKey: Boolean(opts.apiKey?.trim()),
+        isCloud,
+      }),
+    )
   })
 }
 
@@ -196,14 +207,15 @@ async function streamFinalAnswer(
   messages: ChatMsg[],
   totalIn: number,
   totalOut: number,
+  apiKey?: string | null,
 ): Promise<void> {
   const answerRes = await ollamaChatOnce(baseUrl, model, messages, {
     stream: true,
     tools: false,
+    apiKey,
   })
-  if (!answerRes.ok || !answerRes.body) {
-    const text = await answerRes.text().catch(() => answerRes.statusText)
-    throw new Error(`Provider error ${answerRes.status}: ${text.slice(0, 200)}`)
+  if (!answerRes.body) {
+    throw new Error("Provider error: empty response body from Ollama.")
   }
   const final = await collectStreamedOllama(answerRes, raw, { thinking: true, text: true })
   const inTok = totalIn + (final.usage?.inputTokens ?? 0)
@@ -224,11 +236,12 @@ export async function streamOllamaWithArciinTools(opts: {
   baseUrl: string
   model: string
   messages: ChatMsg[]
+  apiKey?: string | null
   toolCtx: ArciinChatToolContext
   ai?: AiChatToolBehavior
   security?: Pick<AiSecuritySettingsResolved, "libraryToolAccess" | "readOnlyTools" | "requireToolApproval">
 }): Promise<void> {
-  const { raw, baseUrl, model, toolCtx } = opts
+  const { raw, baseUrl, model, toolCtx, apiKey } = opts
   const agentEnabled = opts.ai?.agent ?? true
   const autonomyEnabled = opts.ai?.autonomy ?? false
   const requireApproval = opts.security?.requireToolApproval ?? false
@@ -260,7 +273,7 @@ export async function streamOllamaWithArciinTools(opts: {
       const result = await executeArciinChatTool(syntheticCall, toolCtx)
       messages.push({ role: "assistant", content: "", tool_calls: [syntheticCall] })
       messages.push({ role: "tool", content: JSON.stringify(result) })
-      await streamFinalAnswer(raw, baseUrl, model, messages, totalIn, totalOut)
+      await streamFinalAnswer(raw, baseUrl, model, messages, totalIn, totalOut, apiKey)
       return
     }
     const createArgs = buildSyntheticCreateLibraryFolderArgsFromUser(lastUser.content)
@@ -272,7 +285,7 @@ export async function streamOllamaWithArciinTools(opts: {
       const result = await executeArciinChatTool(syntheticCall, toolCtx)
       messages.push({ role: "assistant", content: "", tool_calls: [syntheticCall] })
       messages.push({ role: "tool", content: JSON.stringify(result) })
-      await streamFinalAnswer(raw, baseUrl, model, messages, totalIn, totalOut)
+      await streamFinalAnswer(raw, baseUrl, model, messages, totalIn, totalOut, apiKey)
       return
     }
   }
@@ -301,7 +314,7 @@ export async function streamOllamaWithArciinTools(opts: {
       content: JSON.stringify(result),
     })
 
-    await streamFinalAnswer(raw, baseUrl, model, messages, totalIn, totalOut)
+    await streamFinalAnswer(raw, baseUrl, model, messages, totalIn, totalOut, apiKey)
     return
   }
 
@@ -309,11 +322,11 @@ export async function streamOllamaWithArciinTools(opts: {
     const res = await ollamaChatOnce(baseUrl, model, messages, {
       stream: true,
       tools: toolMode,
+      apiKey,
     })
 
-    if (!res.ok || !res.body) {
-      const text = await res.text().catch(() => res.statusText)
-      throw new Error(`Provider error ${res.status}: ${text.slice(0, 200)}`)
+    if (!res.body) {
+      throw new Error("Provider error: empty response body from Ollama.")
     }
 
     const collected = await collectStreamedOllama(res, raw, {
@@ -345,7 +358,7 @@ export async function streamOllamaWithArciinTools(opts: {
             tool_calls: [syntheticCall],
           })
           messages.push({ role: "tool", content: JSON.stringify(toolResult) })
-          await streamFinalAnswer(raw, baseUrl, model, messages, totalIn, totalOut)
+          await streamFinalAnswer(raw, baseUrl, model, messages, totalIn, totalOut, apiKey)
           return
         }
       }
@@ -386,5 +399,5 @@ export async function streamOllamaWithArciinTools(opts: {
     }
   }
 
-  await streamFinalAnswer(raw, baseUrl, model, messages, totalIn, totalOut)
+  await streamFinalAnswer(raw, baseUrl, model, messages, totalIn, totalOut, apiKey)
 }

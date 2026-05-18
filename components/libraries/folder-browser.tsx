@@ -59,7 +59,11 @@ export function FolderBrowser({
   // Set upload context: dropped files go to this library + this folder
   useEffect(() => {
     if (library?.id) {
-      setUploadContext({ libraryId: library.id, folderId: folder?.id })
+      setUploadContext({
+        libraryId: library.id,
+        folderId: folder?.id,
+        libraryKind: library.kind,
+      })
     }
     return () => setUploadContext(null)
   }, [library?.id, folder?.id, setUploadContext])

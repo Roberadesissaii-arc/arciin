@@ -2,6 +2,8 @@
 
 import { create } from "zustand"
 
+import { createId } from "@/lib/utils/create-id"
+
 export type InboxNotificationVariant = "default" | "success" | "error" | "warning"
 
 export type InboxNotification = {
@@ -71,10 +73,12 @@ type NotificationInboxState = {
   activityBackfillDone: boolean
   hydrate: () => void
   push: (input: {
+    id?: string
     title: string
     message?: string
     variant?: InboxNotificationVariant
     source?: InboxNotification["source"]
+    read?: boolean
   }) => void
   markRead: (id: string) => void
   markAllRead: () => void
@@ -96,14 +100,18 @@ export const useNotificationInboxStore = create<NotificationInboxState>((set, ge
     })
   },
   push: (input) => {
+    const id = input.id ?? createId()
+    if (get().items.some((entry) => entry.id === id)) {
+      return
+    }
     const item: InboxNotification = {
-      id: crypto.randomUUID(),
+      id,
       title: input.title,
       message: input.message,
       variant: input.variant ?? "default",
       source: input.source ?? "system",
       createdAt: new Date().toISOString(),
-      read: false,
+      read: input.read ?? false,
     }
     const next = [item, ...get().items].slice(0, MAX_ITEMS)
     persist(next)

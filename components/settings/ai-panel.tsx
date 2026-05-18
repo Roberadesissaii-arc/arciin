@@ -16,6 +16,7 @@ import { getAiSettings, updateAiSettings } from "@/lib/api/settings"
 import { getModelProfiles, getOllamaModelShow } from "@/lib/api/models"
 import { queryKeys } from "@/lib/api/query-keys"
 import { isOllamaProvider } from "@/lib/ollama-providers"
+import { DEFAULT_AI_SETTINGS } from "@arciin/shared"
 import type { AiEmojiUsage, AiSettings } from "@/lib/types/models"
 
 const EMOJI_OPTIONS: { value: AiEmojiUsage; label: string; hint: string }[] = [
@@ -26,11 +27,11 @@ const EMOJI_OPTIONS: { value: AiEmojiUsage; label: string; hint: string }[] = [
 ]
 
 const DEFAULT_SETTINGS: AiSettings = {
-  agent: true,
-  autonomy: false,
-  planning: true,
-  showThinking: false,
-  emojiUsage: "none",
+  agent: DEFAULT_AI_SETTINGS.agent,
+  autonomy: DEFAULT_AI_SETTINGS.autonomy,
+  planning: DEFAULT_AI_SETTINGS.planning,
+  showThinking: DEFAULT_AI_SETTINGS.showThinking,
+  emojiUsage: DEFAULT_AI_SETTINGS.emojiUsage,
 }
 
 export function AiPanel() {

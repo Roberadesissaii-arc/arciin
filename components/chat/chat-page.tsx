@@ -4,6 +4,10 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import Link from "next/link"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
+  prefetchOllamaAvailableModels,
+  useOllamaAvailableModels,
+} from "@/lib/hooks/use-ollama-available-models"
+import {
   ArrowUp, ChevronDown, Clock, Copy, File, Info, Loader2, MessageSquare,
   Plus, RotateCcw, Sparkles, ThumbsDown, ThumbsUp, Trash2, User, X,
 } from "lucide-react"
@@ -12,7 +16,7 @@ import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card"
 import { getAssets, getAssetsByIds } from "@/lib/api/assets"
-import { getAvailableModels, getOllamaModelShow } from "@/lib/api/models"
+import { getOllamaModelShow } from "@/lib/api/models"
 import { fetchApi } from "@/lib/api/client"
 import {
   createChatConversation,
@@ -31,8 +35,9 @@ import {
 } from "@/lib/api/chat"
 import { getAiSettings } from "@/lib/api/settings"
 import { queryKeys } from "@/lib/api/query-keys"
-import { ARCIIN_INTEGRATION_CODE_AI_APPEND } from "@arciin/shared"
+import { ARCIIN_INTEGRATION_CODE_AI_APPEND, DEFAULT_AI_SETTINGS } from "@arciin/shared"
 import { cn } from "@/lib/utils"
+import { createId } from "@/lib/utils/create-id"
 import { isOllamaProvider, ollamaCapabilitiesIncludeVision } from "@/lib/ollama-providers"
 import type { OllamaModelShowData } from "@/lib/types/models"
 
@@ -199,7 +204,8 @@ function finalizeAssistantContent(
   userText: string,
   priorMessages: Message[] = [],
 ): string {
-  let out = stripUnrequestedAssetTags(content, userText)
+  let out = ensureAssetGalleryTag(content, userText, priorMessages)
+  out = stripUnrequestedAssetTags(out, userText, priorMessages)
   out = stripAssetListsWhenQueryingAppDatabases(out, userText)
   out = ensureFilenameListTag(out, userText, priorMessages)
   return out
@@ -302,7 +308,8 @@ Exact paths (use these as clickable links, e.g. [Settings → General](/settings
 ## Answer only what was asked
 - Reply to the user's **actual** message first. Do not pad greetings or small talk with library previews, file cards, or [[ASSETS:...]] tags they did not request.
 - Greetings (hello, hi, hey, thanks, etc.) → brief friendly reply only. No asset tags, no "here are your recent images", no unsolicited organize/search tips unless they ask what you can do.
-- Count or location questions ("how many videos?", "where are my files?") → answer with numbers and/or a markdown link to the right library. Use [[ASSETS:...]] only if they explicitly asked to **see** or **browse** files (e.g. "show me my videos").
+- Count questions ("how many images?") → answer with the number only. If they follow up with **show me** / **show them** (even without saying "images" again), include [[ASSETS:images]] (or [[ASSETS:images:N]] when you gave a count N).
+- Other browse requests ("show me my videos") → short line of prose, then [[ASSETS:...]] on its own line so cards render.
 - Questions about "**databases**", "**my db(s)**", "**logical stores**", or "**App data**" registrations refer **only** to the **App data databases** snapshot in context (PostgreSQL-backed logical stores managed at [/database/app-data](/database/app-data); list them with the same path the context shows for GET /app-databases — **not** the PostgreSQL catalog browser tables, Prisma internals, arbitrary DB clusters, **nor** filenames in [Documents](/documents)). Answer from that snapshot; **never** satisfy them with [[ASSET_LIST:documents]] unless they explicitly asked for **document filenames**.
 - You may offer one short optional sentence of help (e.g. "Ask me to show your images anytime.") — never attach asset cards unless they asked to see files.
 - Having Images/Videos in the instance context does **not** mean the user wants thumbnails on this turn.
@@ -639,35 +646,41 @@ function OllamaProfileSection({
   selectedModel: string
   onSelect: (model: string) => void
 }) {
-  const q = useQuery({
-    queryKey: queryKeys.availableModels(profile.id),
-    queryFn: ({ signal }) => getAvailableModels(profile.id, signal),
-    staleTime: 60_000,
-    retry: false,
-  })
+  const q = useOllamaAvailableModels(profile.id)
 
   const models = q.data ?? (profile.defaultModel ? [profile.defaultModel] : [])
+  const showLoading = q.isPending && models.length === 0
+  const errorMessage =
+    q.error instanceof Error ? q.error.message : q.isError ? "Could not load models." : null
 
   return (
     <>
       <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border/60 bg-card px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-        <span>{profile.displayName}</span>
+        <span className="flex items-center gap-2">
+          {profile.displayName}
+          {q.isFetching && models.length > 0 ? (
+            <Loader2 className="size-2.5 animate-spin opacity-60" aria-hidden />
+          ) : null}
+        </span>
         {profile.isDefault && (
           <span className="rounded bg-amber-50 px-1.5 py-px text-[9px] font-semibold text-amber-700 ring-1 ring-amber-200">
             Default
           </span>
         )}
       </div>
-      {q.isLoading ? (
+      {errorMessage && models.length > 0 ? (
+        <p className="border-b border-border/40 px-3 py-2 text-[10px] leading-snug text-amber-700/90">
+          {errorMessage}
+        </p>
+      ) : null}
+      {showLoading ? (
         <div className="flex items-center gap-2 px-3 py-3 text-[11px] text-muted-foreground">
           <Loader2 className="size-3 animate-spin" />
           Fetching models…
         </div>
-      ) : q.isError || models.length === 0 ? (
+      ) : models.length === 0 ? (
         <div className="px-3 py-2.5 text-[11px] text-muted-foreground">
-          {q.isError
-            ? "Could not reach Ollama — is it running?"
-            : "No models found. Run ollama pull first."}
+          {errorMessage ?? "No models found. Run ollama pull or check your Ollama Cloud key."}
         </div>
       ) : (
         models.map((model) => {
@@ -1275,12 +1288,32 @@ function buildContextBlock(ctx: ChatInstanceContext): string {
     .join("\n")
 }
 
+/** Recent chat turn mentioned a library type (for follow-ups like "show me"). */
+function conversationMentionsMediaType(
+  priorMessages: Message[],
+  kind: "images" | "videos" | "music" | "documents" | "files",
+): boolean {
+  const recent = priorMessages.slice(-8)
+  const pattern =
+    kind === "images"
+      ? /\bimages?|pictures?|photos?\b/i
+      : kind === "videos"
+        ? /\bvideos?\b/i
+        : kind === "music"
+          ? /\bmusic|audio\b/i
+          : kind === "documents"
+            ? /\bdocuments?\b/i
+            : /\bfiles?\b/i
+
+  return recent.some((m) => pattern.test(m.content))
+}
+
 /** User explicitly asked to see/browse files this turn (not just counts or greetings). */
-function userWantsAssetGallery(userText: string): boolean {
+function userWantsAssetGallery(userText: string, priorMessages: Message[] = []): boolean {
   const t = userText.trim()
   if (!t) return false
 
-  if (userWantsFilenameList(userText, [])) return false
+  if (userWantsFilenameList(userText, priorMessages)) return false
 
   if (
     /^(?:hi|hello|hey|howdy|yo|sup|good\s+(?:morning|afternoon|evening)|thanks|thank\s+you|thx|ok(?:ay)?|cool|nice|bye|goodbye)[\s!.,?]*$/i.test(
@@ -1306,7 +1339,89 @@ function userWantsAssetGallery(userText: string): boolean {
     return true
   }
 
+  // Follow-up after a count or list: "show me", "show them", "let me see"
+  const shortShowRequest =
+    /^(?:show\s+me|show\s+them|show\s+those|show\s+it|let\s+me\s+see|display\s+them|see\s+them|preview\s+them)[\s!.,?]*$/i.test(
+      t,
+    ) || /^show[\s!.,?]*$/i.test(t)
+
+  if (shortShowRequest && conversationMentionsMediaType(priorMessages, "images")) return true
+  if (shortShowRequest && conversationMentionsMediaType(priorMessages, "videos")) return true
+  if (shortShowRequest && conversationMentionsMediaType(priorMessages, "music")) return true
+  if (shortShowRequest && conversationMentionsMediaType(priorMessages, "documents")) return true
+  if (shortShowRequest && conversationMentionsMediaType(priorMessages, "files")) return true
+
+  if (wantsSee && !mentionsMedia) {
+    if (conversationMentionsMediaType(priorMessages, "images")) return true
+    if (conversationMentionsMediaType(priorMessages, "videos")) return true
+    if (conversationMentionsMediaType(priorMessages, "music")) return true
+    if (conversationMentionsMediaType(priorMessages, "documents")) return true
+  }
+
   return false
+}
+
+function inferGalleryCountFromContext(priorMessages: Message[], media: string): number | null {
+  const lastAssistant = [...priorMessages].reverse().find((m) => m.role === "assistant")
+  if (!lastAssistant?.content) return null
+  const c = lastAssistant.content
+  const patterns =
+    media === "images"
+      ? [
+          /\b(?:you have|there are|i found|found)\s+(\d+)\s+images?\b/i,
+          /\b(\d+)\s+images?\b/i,
+        ]
+      : media === "videos"
+        ? [/\b(?:you have|there are|found)\s+(\d+)\s+videos?\b/i, /\b(\d+)\s+videos?\b/i]
+        : media === "music"
+          ? [/\b(?:you have|there are|found)\s+(\d+)\s+(?:music|audio|tracks?)\b/i]
+          : [/\b(?:you have|there are|found)\s+(\d+)\s+files?\b/i]
+
+  for (const re of patterns) {
+    const m = c.match(re)
+    if (m) {
+      const n = parseInt(m[1], 10)
+      if (n > 0) return Math.min(n, 9)
+    }
+  }
+  return null
+}
+
+function resolveGalleryMediaType(userText: string, priorMessages: Message[]): string {
+  const t = userText.toLowerCase()
+  if (/\bdocuments?\b/.test(t)) return "documents"
+  if (/\bimages?|pictures?|photos?\b/.test(t)) return "images"
+  if (/\bvideos?\b/.test(t)) return "videos"
+  if (/\bmusic|audio\b/.test(t)) return "music"
+  if (/\ball\s+files?\b/.test(t)) return "all"
+
+  for (const m of [...priorMessages].reverse()) {
+    const c = m.content.toLowerCase()
+    if (/\bimages?|pictures?|photos?\b/.test(c)) return "images"
+    if (/\bvideos?\b/.test(c)) return "videos"
+    if (/\bmusic|audio|tracks?\b/.test(c)) return "music"
+    if (/\bdocuments?\b/.test(c)) return "documents"
+    const tag = m.content.match(/\[\[ASSETS:([a-z]+)/i)?.[1]
+    if (tag && tag !== "ids") return tag
+  }
+
+  return "images"
+}
+
+/** Inject [[ASSETS:…]] when the user asked to preview files but the model only replied with prose. */
+function ensureAssetGalleryTag(
+  content: string,
+  userText: string,
+  priorMessages: Message[],
+): string {
+  if (!userWantsAssetGallery(userText, priorMessages)) return content
+  if (/\[\[ASSETS:/i.test(content)) return content
+
+  const media = resolveGalleryMediaType(userText, priorMessages)
+  const count = inferGalleryCountFromContext(priorMessages, media)
+  const tag = count != null ? `[[ASSETS:${media}:${count}]]` : `[[ASSETS:${media}]]`
+  const trimmed = content.trim()
+  return trimmed ? `${trimmed}\n\n${tag}` : tag
 }
 
 function assistantRecentlyShowedAssets(priorMessages: Message[]): boolean {
@@ -1366,8 +1481,12 @@ function ensureFilenameListTag(content: string, userText: string, priorMessages:
 }
 
 /** Remove [[ASSETS:...]] blocks when the user did not ask to see files. */
-function stripUnrequestedAssetTags(content: string, userText: string): string {
-  if (userWantsAssetGallery(userText) || !/\[\[ASSETS:/i.test(content)) return content
+function stripUnrequestedAssetTags(
+  content: string,
+  userText: string,
+  priorMessages: Message[] = [],
+): string {
+  if (userWantsAssetGallery(userText, priorMessages) || !/\[\[ASSETS:/i.test(content)) return content
   return content
     .replace(/\n*\[\[ASSETS:[^\]]+\]\]\n*/gi, "\n")
     .replace(/\n{3,}/g, "\n\n")
@@ -1805,6 +1924,16 @@ function HistorySidebar({
   )
 }
 
+function formatChatSendError(err: unknown): string {
+  if (err instanceof Error) {
+    if (err.message === "Failed to fetch" || /fetch failed/i.test(err.message)) {
+      return "Could not reach the Arciin API. Check that the API is running (pnpm dev or pm2) and reachable from this device."
+    }
+    return err.message
+  }
+  return "Something went wrong."
+}
+
 // ── Main chat page ─────────────────────────────────────────────────────────────
 
 export function ChatPage() {
@@ -1822,7 +1951,7 @@ export function ChatPage() {
     queryFn: ({ signal }) => getAiSettings(signal),
     staleTime: 30_000,
   })
-  const showThinking = aiSettingsQuery.data?.showThinking ?? false
+  const showThinking = aiSettingsQuery.data?.showThinking ?? DEFAULT_AI_SETTINGS.showThinking
 
   const systemInstruction = typeof window !== "undefined"
     ? (localStorage.getItem(SYSTEM_INSTRUCTION_KEY) ?? ARCIIN_DEFAULT_SYSTEM_INSTRUCTION)
@@ -1855,6 +1984,14 @@ export function ChatPage() {
 
   const profiles      = useMemo(() => profilesQuery.data ?? [], [profilesQuery.data])
   const conversations = useMemo(() => historyQuery.data ?? [], [historyQuery.data])
+
+  useEffect(() => {
+    for (const profile of profiles) {
+      if (isOllamaProvider(profile.provider)) {
+        void prefetchOllamaAvailableModels(queryClient, profile.id)
+      }
+    }
+  }, [profiles, queryClient])
 
   const activeModelLabel = selectedModel || selectedProfile?.defaultModel || ""
   const ollamaChat = Boolean(selectedProfile && isOllamaProvider(selectedProfile.provider))
@@ -2051,7 +2188,7 @@ export function ChatPage() {
     const priorMessages = messages.slice(0, aiIdx)
     const userText = userMsg.content
     const pendingMsg: Message = {
-      id: crypto.randomUUID(),
+      id: createId(),
       role: "assistant",
       content: "",
       pending: true,
@@ -2233,7 +2370,7 @@ export function ChatPage() {
         setMessages((prev) =>
           prev.map((m) =>
             m.id === pendingMsg.id
-              ? { ...m, content: err instanceof Error ? err.message : "Something went wrong.", pending: false }
+              ? { ...m, content: formatChatSendError(err), pending: false }
               : m,
           ),
         )
@@ -2257,9 +2394,9 @@ export function ChatPage() {
       return
     }
 
-    const userMsg: Message = { id: crypto.randomUUID(), role: "user", content: text }
+    const userMsg: Message = { id: createId(), role: "user", content: text }
     const pendingMsg: Message = {
-      id: crypto.randomUUID(),
+      id: createId(),
       role: "assistant",
       content: "",
       pending: true,
@@ -2493,7 +2630,7 @@ export function ChatPage() {
         setMessages((prev) =>
           prev.map((m) =>
             m.id === pendingMsg.id
-              ? { ...m, content: err instanceof Error ? err.message : "Something went wrong.", pending: false }
+              ? { ...m, content: formatChatSendError(err), pending: false }
               : m,
           ),
         )
@@ -2631,7 +2768,7 @@ export function ChatPage() {
                   }
                 }}
                 ollamaShow={ollamaShowQuery.data}
-                ollamaShowLoading={ollamaShowQuery.isFetching}
+                ollamaShowLoading={ollamaShowQuery.isFetching && !ollamaShowQuery.data}
               />
               <div className="h-5 w-px shrink-0 bg-border" />
               <textarea

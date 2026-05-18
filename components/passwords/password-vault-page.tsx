@@ -147,12 +147,13 @@ export function PasswordVaultPage() {
 
   useEffect(() => {
     if (vaultQuery.isLoading || autoPrompted) return
+    if (entries.length === 0) return
     if (!lockRequired || secretsVisible) return
     queueMicrotask(() => {
       setAutoPrompted(true)
       setUnlockOpen(true)
     })
-  }, [vaultQuery.isLoading, lockRequired, secretsVisible, autoPrompted])
+  }, [vaultQuery.isLoading, entries.length, lockRequired, secretsVisible, autoPrompted])
 
   const requestUnlockForReveal = (entryId: string) => {
     setPendingCopy(null)
@@ -245,13 +246,16 @@ export function PasswordVaultPage() {
     }
   }
 
-  const statusLabel = !lockRequired
-    ? "Open"
-    : secretsVisible
-      ? pinConfigured
-        ? "PIN unlocked"
-        : "Unlocked"
-      : "Protected"
+  const statusLabel =
+    entries.length === 0
+      ? "Empty"
+      : !lockRequired
+        ? "Open"
+        : secretsVisible
+          ? pinConfigured
+            ? "PIN unlocked"
+            : "Unlocked"
+          : "Protected"
 
   const busyUnlock = unlockMutation.isPending
 

@@ -20,11 +20,14 @@ export function PasswordVaultPageIntro({
   secretsVisible: boolean
   actions?: React.ReactNode
 }) {
-  const description = pinConfigured
-    ? "Saved credentials stay encrypted on disk. Unlock with your 6-digit PIN to view or copy secrets."
-    : lockRequired && !secretsVisible
-      ? "Unlock the vault to view credentials. Set a PIN under Settings → Passwords for quicker access."
-      : "Import from Settings, then manage logins here. Passwords stay masked until you reveal them."
+  const description =
+    entryCount === 0
+      ? "No credentials stored yet. Import from Settings when you are ready — nothing is locked until you add entries."
+      : pinConfigured
+        ? "Saved credentials stay encrypted on disk. Unlock with your 6-digit PIN to view or copy secrets."
+        : lockRequired && !secretsVisible
+          ? "Unlock the vault to view credentials. Set a PIN under Settings → Passwords for quicker access."
+          : "Import from Settings, then manage logins here. Passwords stay masked until you reveal them."
 
   return (
     <DashboardPageIntro

@@ -62,8 +62,8 @@ export function ConnectorSetupCommands({
       </div>
 
       <CopyableShellBlock
-        title="Setup commands (copy & paste)"
-        description="Run on the Linux host where Arciin stores files. Arciin creates these folders when you enable connector folders and on upload; this script is optional prep."
+        title={`Host setup — writes ${setup.composePath}`}
+        description="Paste into SSH on the Arciin host. Creates the Plex/Jellyfin stack directory and docker-compose.yml (next to config/, not inside it). Library folders come from Integrations — not this script."
         script={setup.script}
         copyLabel="Copy setup script"
       />
