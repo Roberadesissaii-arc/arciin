@@ -1,3 +1,5 @@
+import { applicationExtensions, archiveExtensions, getFileExtension } from "@arciin/shared"
+
 import type { LibraryKind, MediaType } from "@/lib/types/models"
 
 const documentExtensions = new Set([
@@ -36,11 +38,23 @@ const documentMimeTypes = new Set([
   "application/rtf",
 ])
 
-const archiveExtensions = new Set(["zip", "rar", "7z", "tar", "gz"])
+const applicationMimeTypes = new Set([
+  "application/vnd.microsoft.portable-executable",
+  "application/x-msdownload",
+  "application/x-msi",
+  "application/x-msdos-program",
+  "application/x-executable",
+  "application/x-dosexec",
+  "application/vnd.appimage",
+  "application/vnd.debian.binary-package",
+  "application/vnd.apple.installer+xml",
+  "application/x-apple-diskimage",
+  "application/x-iso9660-image",
+])
 
-export function getFileExtension(filename: string) {
-  const parts = filename.split(".")
-  return parts.length > 1 ? parts.at(-1)?.toLowerCase() ?? "" : ""
+export function formatMediaTypeLabel(mediaType: MediaType): string {
+  if (mediaType === "APPLICATION") return "APP"
+  return mediaType
 }
 
 export function classifyMediaType(mimeType?: string | null, filename?: string | null): MediaType {
@@ -66,6 +80,14 @@ export function classifyMediaType(mimeType?: string | null, filename?: string | 
     return "ARCHIVE"
   }
 
+  if (
+    applicationMimeTypes.has(mimeType ?? "") ||
+    applicationExtensions.has(extension) ||
+    (mimeType === "application/octet-stream" && applicationExtensions.has(extension))
+  ) {
+    return "APPLICATION"
+  }
+
   return "OTHER"
 }
 
@@ -79,6 +101,8 @@ export function mediaTypeToLibraryKind(mediaType: MediaType): LibraryKind {
       return "AUDIO"
     case "DOCUMENT":
       return "DOCUMENT"
+    case "APPLICATION":
+      return "CUSTOM"
     default:
       return "INBOX"
   }
@@ -96,6 +120,8 @@ export function inferDestinationLabel(mimeType?: string | null, filename?: strin
       return "Music"
     case "DOCUMENT":
       return "Documents"
+    case "APPLICATION":
+      return "Applications"
     default:
       return "Inbox"
   }

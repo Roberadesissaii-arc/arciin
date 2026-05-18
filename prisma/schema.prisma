@@ -39,6 +39,7 @@ enum MediaType {
   AUDIO
   DOCUMENT
   ARCHIVE
+  APPLICATION
   OTHER
 }
 

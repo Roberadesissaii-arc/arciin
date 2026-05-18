@@ -36,6 +36,32 @@ function libraryKindForMediaType(mediaType: string) {
   }
 }
 
+async function resolveUploadTargetLibrary(
+  prisma: FastifyInstance["prisma"],
+  mediaType: string,
+  targetLibraryId?: string,
+) {
+  if (targetLibraryId) {
+    return prisma.library.findUnique({ where: { id: targetLibraryId } })
+  }
+
+  if (mediaType === "APPLICATION") {
+    const applications = await prisma.library.findFirst({
+      where: { slug: "applications" },
+    })
+    if (applications) return applications
+  }
+
+  return (
+    (await prisma.library.findFirst({
+      where: { kind: libraryKindForMediaType(mediaType) },
+    })) ??
+    (await prisma.library.findFirst({
+      where: { kind: "INBOX" },
+    }))
+  )
+}
+
 export async function registerUploadRoutes(fastify: FastifyInstance) {
   fastify.post(
     "/uploads",
@@ -95,16 +121,11 @@ export async function registerUploadRoutes(fastify: FastifyInstance) {
         file.mimetype
       )
 
-      // If caller specifies a library, use it — otherwise classify by media type
-      const targetLibrary = (
-        targetLibraryId
-          ? await fastify.prisma.library.findUnique({ where: { id: targetLibraryId } })
-          : null
-      ) ?? await fastify.prisma.library.findFirst({
-        where: { kind: libraryKindForMediaType(analysis.mediaType) },
-      }) ?? await fastify.prisma.library.findFirst({
-        where: { kind: "INBOX" },
-      })
+      const targetLibrary = await resolveUploadTargetLibrary(
+        fastify.prisma,
+        analysis.mediaType,
+        targetLibraryId,
+      )
 
       if (!targetLibrary) {
         await removeTempFile(tempResult.tempPath)

@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { useDeleteAsset } from "@/hooks/use-assets"
 import { formatBytes } from "@/lib/utils/format-bytes"
+import { formatMediaTypeLabel } from "@/lib/utils/media-type"
 import { cn } from "@/lib/utils"
 import type { AssetSummary } from "@/lib/types/models"
 
@@ -56,7 +57,7 @@ export function AssetCard({ asset }: { asset: AssetSummary }) {
             <span>{formatBytes(asset.sizeBytes)}</span>
             <span className="size-1 shrink-0 rounded-full bg-border" />
             <Badge className="rounded-md border-0 bg-primary px-2 py-0 text-[11px] font-semibold text-primary-foreground shadow-none hover:bg-primary/90">
-              {asset.mediaType}
+              {formatMediaTypeLabel(asset.mediaType)}
             </Badge>
           </div>
         </div>

@@ -8,6 +8,12 @@ const apiUrl =
   process.env.ARCIIN_API_URL ||
   `http://127.0.0.1:${process.env.API_PORT || "4000"}`
 
+const maxUploadMb = Number(process.env.MAX_UPLOAD_SIZE_MB || "10240")
+const proxyMaxBodyBytes =
+  Number.isFinite(maxUploadMb) && maxUploadMb > 0
+    ? maxUploadMb * 1024 * 1024
+    : 10240 * 1024 * 1024
+
 function resolveAllowedDevOrigins(): string[] {
   const hosts = new Set<string>(["localhost", "127.0.0.1"])
   for (const value of [
@@ -33,7 +39,8 @@ const nextConfig: NextConfig = {
   // Rewritten /api requests buffer the body in Next; default cap is small. Large bodies should use
   // NEXT_PUBLIC_ARCIIN_API_ORIGIN (see lib/api/uploads.ts) so uploads hit Fastify directly.
   experimental: {
-    proxyClientMaxBodySize: "256mb",
+    // Must match API MAX_UPLOAD_SIZE_MB — uploads via /api rewrite buffer in Next.
+    proxyClientMaxBodySize: proxyMaxBodyBytes,
   },
   async rewrites() {
     return [

@@ -18,6 +18,7 @@ export type MediaType =
   | "AUDIO"
   | "DOCUMENT"
   | "ARCHIVE"
+  | "APPLICATION"
   | "OTHER"
 
 export type AssetStatus = "UPLOADING" | "PROCESSING" | "READY" | "FAILED" | "DELETED"

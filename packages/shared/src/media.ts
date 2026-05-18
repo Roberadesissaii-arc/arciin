@@ -36,6 +36,42 @@ const documentMimeTypes = new Set([
 
 export const archiveExtensions = new Set(["zip", "rar", "7z", "tar", "gz"])
 
+/** Installers, executables, disk images, and setup scripts. */
+export const applicationExtensions = new Set([
+  "exe",
+  "msi",
+  "msix",
+  "msp",
+  "msu",
+  "dmg",
+  "pkg",
+  "deb",
+  "rpm",
+  "appimage",
+  "apk",
+  "bat",
+  "cmd",
+  "com",
+  "scr",
+  "app",
+  "iso",
+  "img",
+])
+
+const applicationMimeTypes = new Set([
+  "application/vnd.microsoft.portable-executable",
+  "application/x-msdownload",
+  "application/x-msi",
+  "application/x-msdos-program",
+  "application/x-executable",
+  "application/x-dosexec",
+  "application/vnd.appimage",
+  "application/vnd.debian.binary-package",
+  "application/vnd.apple.installer+xml",
+  "application/x-apple-diskimage",
+  "application/x-iso9660-image",
+])
+
 export function getFileExtension(filename: string) {
   const parts = filename.split(".")
   return parts.length > 1 ? parts.at(-1)?.toLowerCase() ?? "" : ""
@@ -62,6 +98,14 @@ export function inferMediaType(mimeType?: string | null, filename?: string | nul
 
   if (archiveExtensions.has(extension)) {
     return "ARCHIVE"
+  }
+
+  if (
+    applicationMimeTypes.has(mimeType ?? "") ||
+    applicationExtensions.has(extension) ||
+    mimeType === "application/octet-stream" && applicationExtensions.has(extension)
+  ) {
+    return "APPLICATION"
   }
 
   return "OTHER"

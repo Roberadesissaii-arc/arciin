@@ -1,5 +1,6 @@
 import type { LucideIcon } from "lucide-react"
 import {
+  AppWindow,
   Archive,
   FileAudio2,
   FileImage,
@@ -16,6 +17,7 @@ export const mediaTypeIcons: Record<MediaType | "DEFAULT", LucideIcon> = {
   AUDIO: FileAudio2,
   DOCUMENT: FileText,
   ARCHIVE: Archive,
+  APPLICATION: AppWindow,
   OTHER: Inbox,
   DEFAULT: Inbox,
 }

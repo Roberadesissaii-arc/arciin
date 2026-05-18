@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/table"
 import { useDeleteAsset } from "@/hooks/use-assets"
 import { formatBytes } from "@/lib/utils/format-bytes"
+import { formatMediaTypeLabel } from "@/lib/utils/media-type"
 import { formatRelativeDate } from "@/lib/utils/format-date"
 import { cn } from "@/lib/utils"
 import type { AssetSummary } from "@/lib/types/models"
@@ -123,7 +124,7 @@ function AssetTableRow({ asset }: { asset: AssetSummary }) {
             typeBadgeClass,
           )}
         >
-          {asset.mediaType}
+          {formatMediaTypeLabel(asset.mediaType)}
         </Badge>
       </TableCell>
       <TableCell className="whitespace-nowrap tabular-nums font-medium text-zinc-700">

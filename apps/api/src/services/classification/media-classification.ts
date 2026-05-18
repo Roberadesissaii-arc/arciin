@@ -9,7 +9,7 @@ import { getFileExtension, inferMediaType } from "@arciin/shared"
 type MediaAnalysis = {
   mimeType: string
   extension: string
-  mediaType: "VIDEO" | "IMAGE" | "AUDIO" | "DOCUMENT" | "ARCHIVE" | "OTHER"
+  mediaType: "VIDEO" | "IMAGE" | "AUDIO" | "DOCUMENT" | "ARCHIVE" | "APPLICATION" | "OTHER"
   durationSeconds?: number
   width?: number
   height?: number

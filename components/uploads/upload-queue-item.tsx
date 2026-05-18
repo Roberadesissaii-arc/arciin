@@ -12,6 +12,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { mediaTypeIcons } from "@/lib/utils/file-icons"
+import { classifyMediaType } from "@/lib/utils/media-type"
 import { useUploadStore, type UploadQueueItem as UploadQueueItemModel } from "@/lib/stores/upload-store"
 
 function statusCopy(status: UploadQueueItemModel["status"]) {
@@ -62,18 +63,8 @@ export function UploadQueueItem({ item }: { item: UploadQueueItemModel }) {
     return () => window.clearTimeout(timer)
   }, [item.id, item.progress, item.status, removeUpload])
 
-  const mediaType =
-    item.destination === "Videos"
-      ? "VIDEO"
-      : item.destination === "Images"
-        ? "IMAGE"
-        : item.destination === "Music"
-          ? "AUDIO"
-          : item.destination === "Documents"
-            ? "DOCUMENT"
-            : "OTHER"
+  const mediaType = classifyMediaType(item.mimeType, item.fileName)
   const FileIcon = mediaTypeIcons[mediaType] || mediaTypeIcons.DEFAULT
-
   const failureDetail = item.error?.trim() || "No details were returned. Check Logs → upload.log on the server."
 
   return (
