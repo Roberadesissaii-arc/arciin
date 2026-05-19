@@ -56,7 +56,7 @@ export function DomainPanel() {
       if (data.url) {
         setDraft(data.url)
         setInitializingUrl(data.url)
-        toast.success("Tunnel started — URL appears above. Initializing, please wait…")
+        toast.success("Tunnel started — open the public URL in a new tab to sign in there if needed.")
       }
     },
     onError: (e: Error) => toast.error(e.message || "Could not start Cloudflare tunnel."),
@@ -94,11 +94,15 @@ export function DomainPanel() {
         return
       }
       try {
-        await fetch(initializingUrl!, { method: "HEAD", mode: "no-cors", signal: AbortSignal.timeout(5000) })
-        if (!cancelled) setInitializingUrl(null)
+        const tunnel = await getCloudflareTunnelStatus()
+        if (tunnel.running && tunnel.url === initializingUrl) {
+          if (!cancelled) setInitializingUrl(null)
+          return
+        }
       } catch {
-        if (!cancelled) initPollRef.current = setTimeout(poll, 5000)
+        // keep polling
       }
+      if (!cancelled) initPollRef.current = setTimeout(poll, 5000)
     }
 
     initPollRef.current = setTimeout(poll, 4000)
@@ -121,7 +125,8 @@ export function DomainPanel() {
                 <strong className="text-foreground">Local</strong> is this machine or LAN only.{" "}
                 <strong className="text-foreground">Public</strong> is the HTTPS URL Arciin uses for links and
                 callbacks—your own hostname or a Cloudflare quick tunnel (
-                <code className="text-foreground">trycloudflare.com</code>).
+                <code className="text-foreground">trycloudflare.com</code>). While browsing on a LAN IP, keep using
+                that address in the browser; use the public URL in a separate tab when testing from outside.
               </CardDescription>
             </div>
           </div>

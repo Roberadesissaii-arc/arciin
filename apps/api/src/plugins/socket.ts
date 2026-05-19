@@ -36,9 +36,13 @@ function emitRealtimeEvent(io: Server, event: RealtimeEvent) {
 }
 
 export async function registerSocket(fastify: FastifyInstance) {
+  const instance = await fastify.prisma.instanceConfig.findFirst()
+  const instancePublic = instance?.publicUrl?.replace(/\/+$/, "") ?? null
+
   const corsOrigins = [
     apiConfig.ARCIIN_PUBLIC_URL,
     apiConfig.ARCIIN_API_URL,
+    instancePublic,
     "http://localhost:3000",
     "http://127.0.0.1:3000",
   ].filter((v, i, a) => Boolean(v) && a.indexOf(v) === i)

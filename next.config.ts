@@ -16,15 +16,25 @@ const proxyMaxBodyBytes =
 
 function resolveAllowedDevOrigins(): string[] {
   const hosts = new Set<string>(["localhost", "127.0.0.1", "*.trycloudflare.com"])
-  for (const value of [
+  const candidates = [
     process.env.ARCIIN_PUBLIC_URL,
     process.env.NEXT_PUBLIC_ARCIIN_PUBLIC_URL,
-  ]) {
-    if (!value?.trim()) continue
-    try {
-      hosts.add(new URL(value.trim()).hostname)
-    } catch {
-      // ignore invalid URL
+    process.env.ARCIIN_LAN_ORIGINS,
+    process.env.ARCIIN_MOBILE_DEV_ORIGINS,
+  ]
+  for (const raw of candidates) {
+    if (!raw?.trim()) continue
+    for (const part of raw.split(",")) {
+      const value = part.trim()
+      if (!value) continue
+      try {
+        const hostname = /^https?:\/\//i.test(value)
+          ? new URL(value).hostname
+          : value.replace(/:\d+$/, "")
+        if (hostname) hosts.add(hostname)
+      } catch {
+        // ignore invalid URL
+      }
     }
   }
   return [...hosts]

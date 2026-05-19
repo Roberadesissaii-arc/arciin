@@ -33,7 +33,20 @@ async function parseResponse<T>(response: Response) {
     return undefined as T
   }
 
-  const payload = JSON.parse(text) as ApiResponse<T>
+  let payload: ApiResponse<T>
+  try {
+    payload = JSON.parse(text) as ApiResponse<T>
+  } catch {
+    const snippet = text.replace(/\s+/g, " ").slice(0, 120)
+    const hint =
+      response.status >= 500
+        ? "The API timed out or returned an error page. If you started a Cloudflare tunnel, pull the latest server code and restart the API — tunnel start should finish in a few seconds."
+        : "The API returned a non-JSON response."
+    throw new ApiError(`${hint} (${response.status}: ${snippet})`, {
+      status: response.status,
+      code: "INVALID_JSON_RESPONSE",
+    })
+  }
 
   if (!response.ok || isApiFailure(payload)) {
     const error = "error" in payload

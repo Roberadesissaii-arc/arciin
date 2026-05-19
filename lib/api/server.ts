@@ -29,10 +29,14 @@ async function parseServerResponse<T>(response: Response) {
   try {
     payload = JSON.parse(text) as ApiResponse<T>
   } catch {
-    throw new ApiError("The API returned an invalid JSON response.", {
-      status: response.status,
-      code: "INVALID_JSON_RESPONSE",
-    })
+    const snippet = text.replace(/\s+/g, " ").slice(0, 120)
+    throw new ApiError(
+      `The API returned a non-JSON response (${response.status}: ${snippet}).`,
+      {
+        status: response.status,
+        code: "INVALID_JSON_RESPONSE",
+      },
+    )
   }
 
   if (!response.ok || isApiFailure(payload)) {

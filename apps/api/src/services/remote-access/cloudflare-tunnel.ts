@@ -111,8 +111,20 @@ async function probeTunnelPublicUrl(publicUrl: string, timeoutMs = 45_000): Prom
 }
 
 const PUBLIC_PROBE_HINT =
-  "Tunnel is running. The public URL can take 30–60 seconds to work. Open it in a browser; if it fails, wait a moment and refresh."
+  "Tunnel is running. The public URL can take 30–60 seconds to work. Open it in a new tab; use that hostname to sign in if needed."
 
+function schedulePublicTunnelProbe(publicUrl: string) {
+  void (async () => {
+    const reachable = await probeTunnelPublicUrl(publicUrl, 25_000)
+    if (tunnelState.url !== publicUrl || !isProcessAlive(tunnelProcess)) return
+    tunnelState = {
+      ...tunnelState,
+      error: reachable ? null : PUBLIC_PROBE_HINT,
+    }
+  })()
+}
+
+/** Fast path for the HTTP handler — never block on Cloudflare edge probes. */
 async function finalizeTunnelStart(publicUrl: string, localTarget: string): Promise<string> {
   await verifyLocalWebTarget(localTarget)
 
@@ -120,18 +132,11 @@ async function finalizeTunnelStart(publicUrl: string, localTarget: string): Prom
     running: true,
     url: publicUrl,
     localTarget,
-    error: null,
+    error: PUBLIC_PROBE_HINT,
     stale: false,
   }
 
-  const reachable = await probeTunnelPublicUrl(publicUrl)
-  if (!reachable && isProcessAlive(tunnelProcess)) {
-    tunnelState = {
-      ...tunnelState,
-      error: PUBLIC_PROBE_HINT,
-    }
-  }
-
+  schedulePublicTunnelProbe(publicUrl)
   return publicUrl
 }
 
