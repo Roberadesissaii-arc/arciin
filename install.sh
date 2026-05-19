@@ -199,6 +199,7 @@ _apply_app_ports_to_env() {
   local env_file="$1" lan_ip="$2" web_port="$3" api_port="$4"
   _set_env_kv "$env_file" "NODE_ENV" "production"
   _set_env_kv "$env_file" "PORT" "${web_port}"
+  _set_env_kv "$env_file" "ARCIIN_WEB_PORT" "${web_port}"
   _set_env_kv "$env_file" "ARCIIN_BIND_HOST" "0.0.0.0"
   _set_env_kv "$env_file" "ARCIIN_PUBLIC_URL" "http://${lan_ip}:${web_port}"
   _set_env_kv "$env_file" "ARCIIN_API_URL" "http://127.0.0.1:${api_port}"

@@ -2,8 +2,8 @@ import type { LucideIcon } from "lucide-react"
 import {
   Activity,
   Bell,
-  Boxes,
   Brain,
+  BriefcaseBusiness,
   Code2,
   Database,
   Files,
@@ -12,7 +12,7 @@ import {
   KeyRound,
   LayoutDashboard,
   MessageSquare,
-  Plug,
+  PackagePlus,
   Server,
   Settings,
   ShieldCheck,
@@ -35,12 +35,12 @@ export const primaryNavigation: NavigationItem[] = [
   { title: "Overview", href: "/dashboard", icon: LayoutDashboard },
   { title: "AI Chat", href: "/chat", icon: MessageSquare },
   { title: "All Files", href: "/files", icon: Files },
-  { title: "Integrations", href: "/integrations", icon: Plug },
+  { title: "Integrations", href: "/integrations", icon: PackagePlus },
 ]
 
 export const operationsNavigation: NavigationItem[] = [
   { title: "Logs", href: "/logs", icon: Terminal },
-  { title: "Jobs", href: "/jobs", icon: Boxes },
+  { title: "Jobs", href: "/jobs", icon: BriefcaseBusiness },
   { title: "Events", href: "/events", icon: GalleryVerticalEnd },
   { title: "Notifications", href: "/notifications", icon: Bell },
   { title: "Models", href: "/models", icon: Brain },

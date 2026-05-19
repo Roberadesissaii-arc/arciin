@@ -920,6 +920,99 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
       reply.send({ data: profiles })
     },
   )
+
+  const chatSelectionSchema = z.object({
+    profileId: z.string().cuid(),
+    model: z.string().max(200).optional(),
+  })
+
+  fastify.get(
+    "/chat/selection",
+    { preHandler: requireRole(["OWNER", "ADMIN", "MEMBER"]) },
+    async (request, reply) => {
+      const user = await fastify.prisma.user.findUnique({
+        where: { id: request.auth!.user.id },
+        select: { preferences: true },
+      })
+      const root =
+        user?.preferences && typeof user.preferences === "object" && !Array.isArray(user.preferences)
+          ? (user.preferences as Record<string, unknown>)
+          : null
+      const chat = root?.chat
+      if (!chat || typeof chat !== "object") {
+        reply.send({ data: null })
+        return
+      }
+      const profileId = (chat as Record<string, unknown>).profileId
+      const model = (chat as Record<string, unknown>).model
+      if (typeof profileId !== "string" || !profileId) {
+        reply.send({ data: null })
+        return
+      }
+      reply.send({
+        data: {
+          profileId,
+          model: typeof model === "string" ? model : "",
+        },
+      })
+    },
+  )
+
+  const chatSelectionPreHandler = requireRole(["OWNER", "ADMIN", "MEMBER"])
+
+  async function handleChatSelectionSave(
+    request: import("fastify").FastifyRequest,
+    reply: import("fastify").FastifyReply,
+  ) {
+    const parsed = chatSelectionSchema.safeParse(request.body)
+    if (!parsed.success) {
+      reply.status(400).send({
+        error: {
+          code: "VALIDATION_ERROR",
+          message: "Invalid chat selection.",
+          details: parsed.error.flatten(),
+        },
+      })
+      return
+    }
+
+    const profile = await fastify.prisma.modelProfile.findFirst({
+      where: { id: parsed.data.profileId, isEnabled: true },
+    })
+    if (!profile) {
+      reply.status(400).send({
+        error: { code: "INVALID_PROFILE", message: "Model profile not found or disabled." },
+      })
+      return
+    }
+
+    const user = await fastify.prisma.user.findUnique({
+      where: { id: request.auth!.user.id },
+      select: { preferences: true },
+    })
+    const root =
+      user?.preferences && typeof user.preferences === "object" && !Array.isArray(user.preferences)
+        ? { ...(user.preferences as Record<string, unknown>) }
+        : {}
+
+    const selection = {
+      profileId: parsed.data.profileId,
+      model: parsed.data.model?.trim() ?? profile.defaultModel ?? "",
+    }
+    root.chat = selection
+
+    await fastify.prisma.user.update({
+      where: { id: request.auth!.user.id },
+      data: { preferences: root as import("@prisma/client").Prisma.InputJsonValue },
+    })
+
+    reply.send({ data: selection })
+  }
+
+  fastify.put("/chat/selection", { preHandler: chatSelectionPreHandler }, handleChatSelectionSave)
+
+  /** POST alias — iOS PWA often fails CORS preflight on PUT. */
+  fastify.post("/chat/selection", { preHandler: chatSelectionPreHandler }, handleChatSelectionSave)
 }
 
 // ── Ollama native streaming (/api/chat with think:true) ───────────────────────

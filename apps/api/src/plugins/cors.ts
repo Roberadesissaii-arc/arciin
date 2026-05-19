@@ -1,9 +1,17 @@
 import cors from "@fastify/cors"
 import type { FastifyInstance } from "fastify"
 
-import { isSelfHostedLanOrigin } from "@arciin/shared"
+import { isSelfHostedLanHostname, isSelfHostedLanOrigin } from "@arciin/shared"
 
 import { apiConfig } from "@/config"
+
+function isSelfHostedInstance(): boolean {
+  try {
+    return isSelfHostedLanHostname(new URL(apiConfig.ARCIIN_PUBLIC_URL).hostname)
+  } catch {
+    return true
+  }
+}
 
 const developmentOrigins = new Set([
   "http://localhost:3000",
@@ -30,12 +38,13 @@ export async function registerCors(fastify: FastifyInstance) {
 
       if (
         !apiConfig.isProduction ||
+        isSelfHostedInstance() ||
         origin === apiConfig.ARCIIN_PUBLIC_URL ||
         developmentOrigins.has(origin) ||
         isCloudflareQuickTunnelOrigin(origin) ||
         isSelfHostedLanOrigin(origin)
       ) {
-        callback(null, true)
+        callback(null, origin)
         return
       }
 

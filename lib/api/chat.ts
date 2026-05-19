@@ -194,3 +194,16 @@ export function renameChatConversation(id: string, title: string) {
     body: { title },
   })
 }
+
+export type ChatSelection = {
+  profileId: string
+  model: string
+}
+
+export function getChatSelection(signal?: AbortSignal) {
+  return fetchApi<ChatSelection | null>("/chat/selection", { method: "GET", signal })
+}
+
+export function setChatSelection(input: ChatSelection) {
+  return fetchApi<ChatSelection>("/chat/selection", { method: "PUT", body: input })
+}

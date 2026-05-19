@@ -2,7 +2,7 @@ import { createReadStream } from "node:fs"
 import { access, mkdir, writeFile } from "node:fs/promises"
 import path from "node:path"
 
-import type { FastifyInstance } from "fastify"
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify"
 import { z } from "zod"
 
 import { resolveArciinStorageRoot } from "@arciin/shared"
@@ -43,6 +43,69 @@ const assetMoveSchema = z.object({
   folderId: z.string().optional(),
   libraryId: z.string().optional(),
 })
+
+const assetIdParamsSchema = z.object({ assetId: z.string() })
+
+const deleteAssetPreHandler = requireSessionRolesOrApiKeyScopes(
+  ["OWNER", "ADMIN", "MEMBER"],
+  ["assets:write"],
+)
+
+async function handleSoftDeleteAsset(
+  fastify: FastifyInstance,
+  request: FastifyRequest,
+  reply: FastifyReply,
+) {
+  const params = assetIdParamsSchema.parse(request.params)
+
+  const toDelete = await fastify.prisma.asset.findFirst({
+    where: { id: params.assetId, deletedAt: null },
+  })
+
+  if (!toDelete) {
+    reply.status(404).send({
+      error: { code: "ASSET_NOT_FOUND", message: "Asset not found." },
+    })
+    return
+  }
+
+  await clearAssetPlexMirror(fastify.prisma, params.assetId).catch(() => {})
+  await clearAssetJellyfinMirror(fastify.prisma, params.assetId).catch(() => {})
+
+  const asset = await fastify.prisma.asset.update({
+    where: { id: params.assetId },
+    data: {
+      status: "DELETED",
+      deletedAt: new Date(),
+      libraryMirrorPath: null,
+    },
+  })
+
+  if (request.auth) {
+    await recordAndBroadcastActivity(fastify, {
+      userId: request.auth.user.id,
+      type: "asset.deleted",
+      title: "Asset deleted",
+      message: `${asset.originalFilename} was moved to deleted state.`,
+      entityType: "asset",
+      entityId: asset.id,
+    })
+    await fastify.publishRealtimeEvent(
+      buildRealtimeEvent("asset.deleted", {
+        userId: request.auth.user.id,
+        libraryId: asset.libraryId,
+        assetId: asset.id,
+        message: `${asset.originalFilename} deleted.`,
+      }),
+    )
+  }
+
+  reply.send({
+    data: {
+      success: true,
+    },
+  })
+}
 
 export async function registerAssetRoutes(fastify: FastifyInstance) {
   fastify.get(
@@ -194,65 +257,15 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
 
   fastify.delete(
     "/assets/:assetId",
-    {
-      preHandler: requireSessionRolesOrApiKeyScopes(
-        ["OWNER", "ADMIN", "MEMBER"],
-        ["assets:write"],
-      ),
-    },
-    async (request, reply) => {
-      const params = z.object({ assetId: z.string() }).parse(request.params)
+    { preHandler: deleteAssetPreHandler },
+    async (request, reply) => handleSoftDeleteAsset(fastify, request, reply),
+  )
 
-      const toDelete = await fastify.prisma.asset.findFirst({
-        where: { id: params.assetId, deletedAt: null },
-      })
-
-      if (!toDelete) {
-        reply.status(404).send({
-          error: { code: "ASSET_NOT_FOUND", message: "Asset not found." },
-        })
-        return
-      }
-
-      await clearAssetPlexMirror(fastify.prisma, params.assetId).catch(() => {})
-      await clearAssetJellyfinMirror(fastify.prisma, params.assetId).catch(() => {})
-
-      const asset = await fastify.prisma.asset.update({
-        where: {
-          id: params.assetId,
-        },
-        data: {
-          status: "DELETED",
-          deletedAt: new Date(),
-          libraryMirrorPath: null,
-        },
-      })
-
-      if (request.auth) {
-        await recordAndBroadcastActivity(fastify, {
-          userId: request.auth.user.id,
-          type: "asset.deleted",
-          title: "Asset deleted",
-          message: `${asset.originalFilename} was moved to deleted state.`,
-          entityType: "asset",
-          entityId: asset.id,
-        })
-        await fastify.publishRealtimeEvent(
-          buildRealtimeEvent("asset.deleted", {
-            userId: request.auth.user.id,
-            libraryId: asset.libraryId,
-            assetId: asset.id,
-            message: `${asset.originalFilename} deleted.`,
-          })
-        )
-      }
-
-      reply.send({
-        data: {
-          success: true,
-        },
-      })
-    }
+  /** POST alias for mobile clients (iOS PWA can fail CORS preflight on DELETE). */
+  fastify.post(
+    "/assets/:assetId/delete",
+    { preHandler: deleteAssetPreHandler },
+    async (request, reply) => handleSoftDeleteAsset(fastify, request, reply),
   )
 
   fastify.post(

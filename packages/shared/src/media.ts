@@ -36,6 +36,38 @@ const documentMimeTypes = new Set([
 
 export const archiveExtensions = new Set(["zip", "rar", "7z", "tar", "gz"])
 
+const imageExtensions = new Set([
+  "jpg",
+  "jpeg",
+  "png",
+  "gif",
+  "webp",
+  "avif",
+  "bmp",
+  "svg",
+  "heic",
+  "heif",
+  "tiff",
+  "tif",
+  "ico",
+])
+
+const videoExtensions = new Set([
+  "mp4",
+  "m4v",
+  "mov",
+  "webm",
+  "mkv",
+  "avi",
+  "wmv",
+  "flv",
+  "mpeg",
+  "mpg",
+  "3gp",
+])
+
+const audioExtensions = new Set(["mp3", "wav", "flac", "aac", "m4a", "ogg", "opus", "wma"])
+
 /** Installers, executables, disk images, and setup scripts. */
 export const applicationExtensions = new Set([
   "exe",
@@ -119,6 +151,19 @@ export function inferMediaType(mimeType?: string | null, filename?: string | nul
     (mimeType === "application/octet-stream" && applicationExtensions.has(extension))
   ) {
     return "APPLICATION"
+  }
+
+  // Phones often send empty or generic MIME; extension is reliable for media routing.
+  if (imageExtensions.has(extension)) {
+    return "IMAGE"
+  }
+
+  if (videoExtensions.has(extension)) {
+    return "VIDEO"
+  }
+
+  if (audioExtensions.has(extension)) {
+    return "AUDIO"
   }
 
   return "OTHER"

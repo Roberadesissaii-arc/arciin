@@ -11,7 +11,7 @@ import {
 import { createReadStream } from "node:fs"
 import { access } from "node:fs/promises"
 
-import type { FastifyInstance } from "fastify"
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify"
 import { z } from "zod"
 
 import { apiConfig } from "@/config"
@@ -260,68 +260,71 @@ export async function registerAuthRoutes(fastify: FastifyInstance) {
       message: "Provide at least one of name or email.",
     })
 
-  fastify.patch(
-    "/auth/profile",
-    { preHandler: authenticate },
-    async (request, reply) => {
-      if (!request.auth) return
-      const parsed = updateProfileSchema.safeParse(request.body)
-      if (!parsed.success) {
-        reply.status(400).send({
+  const profileAuth = { preHandler: authenticate }
+
+  async function handleProfileUpdate(request: FastifyRequest, reply: FastifyReply) {
+    if (!request.auth) return
+    const parsed = updateProfileSchema.safeParse(request.body)
+    if (!parsed.success) {
+      reply.status(400).send({
+        error: {
+          code: "VALIDATION_ERROR",
+          message: "Invalid profile payload.",
+          details: parsed.error.flatten(),
+        },
+      })
+      return
+    }
+
+    const { user: authUser, session: authSession } = request.auth
+    if (!authSession) {
+      reply.status(401).send({
+        error: { code: "UNAUTHENTICATED", message: "Session required for this action." },
+      })
+      return
+    }
+    const nextEmail = parsed.data.email?.toLowerCase()
+    if (nextEmail && nextEmail !== authUser.email) {
+      const taken = await request.server.prisma.user.findUnique({
+        where: { email: nextEmail },
+      })
+      if (taken) {
+        reply.status(409).send({
           error: {
-            code: "VALIDATION_ERROR",
-            message: "Invalid profile payload.",
-            details: parsed.error.flatten(),
+            code: "EMAIL_IN_USE",
+            message: "That email address is already in use on this instance.",
           },
         })
         return
       }
-
-      const { user: authUser, session: authSession } = request.auth
-      if (!authSession) {
-        reply.status(401).send({
-          error: { code: "UNAUTHENTICATED", message: "Session required for this action." },
-        })
-        return
-      }
-      const nextEmail = parsed.data.email?.toLowerCase()
-      if (nextEmail && nextEmail !== authUser.email) {
-        const taken = await fastify.prisma.user.findUnique({
-          where: { email: nextEmail },
-        })
-        if (taken) {
-          reply.status(409).send({
-            error: {
-              code: "EMAIL_IN_USE",
-              message: "That email address is already in use on this instance.",
-            },
-          })
-          return
-        }
-      }
-
-      const updated = await fastify.prisma.user.update({
-        where: { id: authUser.id },
-        data: {
-          ...(parsed.data.name !== undefined ? { name: parsed.data.name } : {}),
-          ...(nextEmail !== undefined ? { email: nextEmail } : {}),
-        },
-      })
-
-      await fastify.prisma.activityEvent.create({
-        data: {
-          userId: updated.id,
-          type: "profile.updated",
-          title: "Profile updated",
-          message: `${updated.name} updated their profile.`,
-        },
-      })
-
-      reply.send({
-        data: serializeAuth(updated, authSession),
-      })
     }
-  )
+
+    const updated = await request.server.prisma.user.update({
+      where: { id: authUser.id },
+      data: {
+        ...(parsed.data.name !== undefined ? { name: parsed.data.name } : {}),
+        ...(nextEmail !== undefined ? { email: nextEmail } : {}),
+      },
+    })
+
+    await request.server.prisma.activityEvent.create({
+      data: {
+        userId: updated.id,
+        type: "profile.updated",
+        title: "Profile updated",
+        message: `${updated.name} updated their profile.`,
+      },
+    })
+
+    reply.send({
+      data: serializeAuth(updated, authSession),
+    })
+  }
+
+  fastify.patch("/auth/profile", profileAuth, handleProfileUpdate)
+
+  /** POST alias — iOS PWA often fails CORS preflight on PATCH. */
+  fastify.post("/auth/profile", profileAuth, handleProfileUpdate)
 
   fastify.post(
     "/auth/profile/avatar",
@@ -363,25 +366,28 @@ export async function registerAuthRoutes(fastify: FastifyInstance) {
     },
   )
 
-  fastify.delete(
-    "/auth/profile/avatar",
-    { preHandler: authenticate },
-    async (request, reply) => {
-      if (!request.auth?.session) {
-        reply.status(401).send({
-          error: { code: "UNAUTHENTICATED", message: "Session required for this action." },
-        })
-        return
-      }
+  const removeAvatarAuth = { preHandler: authenticate }
 
-      await removeUserAvatarFiles(request.auth.user.id)
-      const updated = await fastify.prisma.user.update({
-        where: { id: request.auth.user.id },
-        data: { avatarPath: null },
+  async function handleRemoveProfileAvatar(request: FastifyRequest, reply: FastifyReply) {
+    if (!request.auth?.session) {
+      reply.status(401).send({
+        error: { code: "UNAUTHENTICATED", message: "Session required for this action." },
       })
-      reply.send({ data: serializeAuth(updated, request.auth.session) })
-    },
-  )
+      return
+    }
+
+    await removeUserAvatarFiles(request.auth.user.id)
+    const updated = await request.server.prisma.user.update({
+      where: { id: request.auth.user.id },
+      data: { avatarPath: null },
+    })
+    reply.send({ data: serializeAuth(updated, request.auth.session) })
+  }
+
+  fastify.delete("/auth/profile/avatar", removeAvatarAuth, handleRemoveProfileAvatar)
+
+  /** POST alias — iOS PWA often fails CORS preflight on DELETE. */
+  fastify.post("/auth/profile/avatar/remove", removeAvatarAuth, handleRemoveProfileAvatar)
 
   fastify.get(
     "/auth/users/:userId/avatar",
@@ -445,37 +451,57 @@ export async function registerAuthRoutes(fastify: FastifyInstance) {
     newPassword: z.string().min(8),
   })
 
-  fastify.patch(
-    "/auth/password",
-    { preHandler: authenticate },
-    async (request, reply) => {
-      if (!request.auth) return
-      const parsed = changePasswordSchema.safeParse(request.body)
-      if (!parsed.success) {
-        reply.status(400).send({ error: { code: "VALIDATION_ERROR", message: "Invalid payload.", details: parsed.error.flatten() } })
-        return
-      }
-      const user = await fastify.prisma.user.findUnique({ where: { id: request.auth.user.id } })
-      if (!user || !(await verifyPassword(parsed.data.currentPassword, user.passwordHash))) {
-        reply.status(400).send({ error: { code: "INVALID_PASSWORD", message: "Current password is incorrect." } })
-        return
-      }
-      const newHash = await hashPassword(parsed.data.newPassword)
-      await fastify.prisma.user.update({ where: { id: user.id }, data: { passwordHash: newHash } })
-      await fastify.prisma.activityEvent.create({
-        data: { userId: user.id, type: "security.password_changed", title: "Password changed", message: `${user.name} changed their password.` },
+  const passwordAuth = { preHandler: authenticate }
+
+  async function handlePasswordChange(request: FastifyRequest, reply: FastifyReply) {
+    if (!request.auth) return
+    const parsed = changePasswordSchema.safeParse(request.body)
+    if (!parsed.success) {
+      reply.status(400).send({
+        error: {
+          code: "VALIDATION_ERROR",
+          message: "Invalid payload.",
+          details: parsed.error.flatten(),
+        },
       })
-      reply.send({ data: { success: true } })
+      return
     }
-  )
+    const user = await request.server.prisma.user.findUnique({
+      where: { id: request.auth.user.id },
+    })
+    if (!user || !(await verifyPassword(parsed.data.currentPassword, user.passwordHash))) {
+      reply.status(400).send({
+        error: { code: "INVALID_PASSWORD", message: "Current password is incorrect." },
+      })
+      return
+    }
+    const newHash = await hashPassword(parsed.data.newPassword)
+    await request.server.prisma.user.update({
+      where: { id: user.id },
+      data: { passwordHash: newHash },
+    })
+    await request.server.prisma.activityEvent.create({
+      data: {
+        userId: user.id,
+        type: "security.password_changed",
+        title: "Password changed",
+        message: `${user.name} changed their password.`,
+      },
+    })
+    reply.send({ data: { success: true } })
+  }
+
+  fastify.patch("/auth/password", passwordAuth, handlePasswordChange)
+
+  /** POST alias — iOS PWA often fails CORS preflight on PATCH. */
+  fastify.post("/auth/password", passwordAuth, handlePasswordChange)
 
   fastify.get(
     "/auth/sessions",
     { preHandler: authenticate },
     async (request, reply) => {
       if (!request.auth) return
-      const currentToken = request.cookies[apiConfig.SESSION_COOKIE_NAME]
-      const currentHash = currentToken ? hashToken(currentToken) : null
+      const currentSessionId = request.auth.session?.id ?? null
       const sessions = await fastify.prisma.session.findMany({
         where: { userId: request.auth.user.id, expiresAt: { gt: new Date() } },
         orderBy: { createdAt: "desc" },
@@ -488,24 +514,27 @@ export async function registerAuthRoutes(fastify: FastifyInstance) {
           ipAddress: normalizeClientIp(s.ipAddress),
           createdAt: s.createdAt.toISOString(),
           expiresAt: s.expiresAt.toISOString(),
-          isCurrent: s.tokenHash === currentHash,
+          isCurrent: currentSessionId !== null && s.id === currentSessionId,
         })),
       })
     }
   )
 
-  fastify.delete(
-    "/auth/sessions/:id",
-    { preHandler: authenticate },
-    async (request, reply) => {
-      if (!request.auth) return
-      const { id } = request.params as { id: string }
-      await fastify.prisma.session.deleteMany({
-        where: { id, userId: request.auth.user.id },
-      })
-      reply.send({ data: { success: true } })
-    }
-  )
+  const revokeSessionAuth = { preHandler: authenticate }
+
+  async function handleRevokeSession(request: FastifyRequest, reply: FastifyReply) {
+    if (!request.auth) return
+    const { id } = request.params as { id: string }
+    await request.server.prisma.session.deleteMany({
+      where: { id, userId: request.auth.user.id },
+    })
+    reply.send({ data: { success: true } })
+  }
+
+  fastify.delete("/auth/sessions/:id", revokeSessionAuth, handleRevokeSession)
+
+  /** POST alias — iOS PWA often fails CORS preflight on DELETE. */
+  fastify.post("/auth/sessions/:id/revoke", revokeSessionAuth, handleRevokeSession)
 
   fastify.get(
     "/auth/preferences",
@@ -528,45 +557,48 @@ export async function registerAuthRoutes(fastify: FastifyInstance) {
     },
   )
 
-  fastify.patch(
-    "/auth/preferences",
-    { preHandler: authenticate },
-    async (request, reply) => {
-      if (!request.auth) return
-      const parsed = userPreferencesPatchSchema.safeParse(request.body)
-      if (!parsed.success) {
-        reply.status(400).send({
-          error: {
-            code: "VALIDATION_ERROR",
-            message: "Invalid preferences payload.",
-            details: parsed.error.flatten(),
-          },
-        })
-        return
-      }
+  const preferencesAuth = { preHandler: authenticate }
 
-      try {
-        const current = await loadUserPreferences(fastify.prisma, request.auth.user.id)
-        const next = mergeUserPreferences(current, parsed.data)
+  async function handlePreferencesUpdate(request: FastifyRequest, reply: FastifyReply) {
+    if (!request.auth) return
+    const parsed = userPreferencesPatchSchema.safeParse(request.body)
+    if (!parsed.success) {
+      reply.status(400).send({
+        error: {
+          code: "VALIDATION_ERROR",
+          message: "Invalid preferences payload.",
+          details: parsed.error.flatten(),
+        },
+      })
+      return
+    }
 
-        await fastify.prisma.user.update({
-          where: { id: request.auth.user.id },
-          data: { preferences: next },
-        })
+    try {
+      const current = await loadUserPreferences(request.server.prisma, request.auth.user.id)
+      const next = mergeUserPreferences(current, parsed.data)
 
-        reply.send({ data: next })
-      } catch (error) {
-        request.log.error({ err: error }, "PATCH /auth/preferences failed")
-        reply.status(500).send({
-          error: {
-            code: "PREFERENCES_SAVE_FAILED",
-            message:
-              "Could not save preferences. Run pnpm db:deploy, then restart the API (pnpm dev:api).",
-          },
-        })
-      }
-    },
-  )
+      await request.server.prisma.user.update({
+        where: { id: request.auth.user.id },
+        data: { preferences: next },
+      })
+
+      reply.send({ data: next })
+    } catch (error) {
+      request.log.error({ err: error }, "auth/preferences update failed")
+      reply.status(500).send({
+        error: {
+          code: "PREFERENCES_SAVE_FAILED",
+          message:
+            "Could not save preferences. Run pnpm db:deploy, then restart the API (pnpm dev:api).",
+        },
+      })
+    }
+  }
+
+  fastify.patch("/auth/preferences", preferencesAuth, handlePreferencesUpdate)
+
+  /** POST alias — iOS PWA often fails CORS preflight on PATCH. */
+  fastify.post("/auth/preferences", preferencesAuth, handlePreferencesUpdate)
 
   fastify.post("/auth/logout", async (request, reply) => {
     const token = request.cookies[apiConfig.SESSION_COOKIE_NAME]

@@ -23,3 +23,9 @@ export function revokeMobilePairingCode() {
     method: "DELETE",
   })
 }
+
+export function revokeMobileDevice(sessionId: string) {
+  return fetchApi<{ revoked: true }>(`/settings/mobile-connection/devices/${sessionId}`, {
+    method: "DELETE",
+  })
+}

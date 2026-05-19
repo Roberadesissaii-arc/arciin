@@ -1,3 +1,4 @@
+import { access, statfs } from "node:fs/promises"
 import path from "node:path"
 
 import type { FastifyInstance } from "fastify"
@@ -7,7 +8,8 @@ import { DEFAULT_LIBRARY_DEFINITIONS } from "@arciin/shared"
 
 import { apiConfig } from "@/config"
 import { serializeAuth } from "@/services/serializers"
-import { createSession, hashPassword, setSessionCookie } from "@/services/security/auth"
+import { createSession, hashPassword, requireRole, setSessionCookie } from "@/services/security/auth"
+import { resolveStorageUsageBytes } from "@/services/storage/local-storage"
 import { checkEndpointRateLimit } from "@/services/security/endpoint-rate-limit"
 import { ensureStorageDirectories } from "@/services/storage/local-storage"
 
@@ -198,4 +200,46 @@ export async function registerInstanceRoutes(fastify: FastifyInstance) {
       data: serializeAuth(result.user, session),
     })
   })
+
+  fastify.get(
+    "/instance/storage-summary",
+    { preHandler: requireRole(["OWNER", "ADMIN", "MEMBER", "VIEWER"]) },
+    async (_request, reply) => {
+      const instance = await fastify.prisma.instanceConfig.findFirst()
+      const defaultStorage = await fastify.prisma.storageLocation.findFirst({
+        where: { isDefault: true },
+      })
+
+      const storageRoot = instance?.storageRoot || defaultStorage?.rootPath || apiConfig.dataDir
+      const storageAgg = await fastify.prisma.storageObject.aggregate({
+        _sum: { sizeBytes: true },
+      })
+      const trackedBytes = Number(storageAgg._sum.sizeBytes ?? 0)
+      const usageBytes = await resolveStorageUsageBytes(storageRoot, trackedBytes)
+      const objectCount = await fastify.prisma.storageObject.count()
+
+      let writable = true
+      let totalBytes: number | null = null
+      let availableBytes: number | null = null
+
+      try {
+        await access(storageRoot)
+        const filesystemStats = await statfs(storageRoot)
+        totalBytes = Number(filesystemStats.bsize * filesystemStats.blocks)
+        availableBytes = Number(filesystemStats.bsize * filesystemStats.bavail)
+      } catch {
+        writable = false
+      }
+
+      reply.send({
+        data: {
+          usageBytes,
+          objectCount,
+          totalBytes,
+          availableBytes,
+          writable,
+        },
+      })
+    },
+  )
 }

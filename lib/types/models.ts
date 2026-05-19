@@ -270,6 +270,18 @@ export type MobileServerEndpoints = {
   requestOrigin: string | null
 }
 
+export type MobileConnectedDevice = {
+  id: string
+  userId: string
+  userName: string
+  userEmail: string
+  deviceName: string
+  userAgent: string | null
+  ipAddress: string | null
+  createdAt: string
+  expiresAt: string
+}
+
 export type MobileConnectionSettings = {
   ttlMinutes: number
   activeCode: {
@@ -277,6 +289,7 @@ export type MobileConnectionSettings = {
     createdAt: string
   } | null
   server: MobileServerEndpoints
+  devices: MobileConnectedDevice[]
 }
 
 export type MobilePairingCodeResult = {
@@ -306,8 +319,13 @@ export type MobilePairResult = {
 
 export type RemoteAccessSettings = {
   publicUrl?: string | null
+  mobilePublicUrl?: string | null
   localUrl?: string | null
+  loopbackUrl?: string | null
+  lanUrls?: string[]
+  primaryLanUrl?: string | null
   currentUrl?: string | null
+  requestOrigin?: string | null
   mode: "local" | "reverse-proxy" | "cloudflare-tunnel"
   reverseProxyEnabled: boolean
   cloudflareTunnelEnabled: boolean
@@ -318,8 +336,11 @@ export type CloudflareTunnelStatus = {
   url: string | null
   localTarget: string | null
   error: string | null
+  /** Tunnel process died; saved trycloudflare URL will return Cloudflare 530. */
+  stale?: boolean
   cloudflareTunnelEnabled: boolean
   publicUrl?: string | null
+  mobilePublicUrl?: string | null
 }
 
 export type PasswordImportEntry = {

@@ -28,7 +28,7 @@ export function DomainPanel() {
   const tunnelQuery = useQuery({
     queryKey: queryKeys.cloudflareTunnel,
     queryFn: ({ signal }) => getCloudflareTunnelStatus(signal),
-    refetchInterval: (q) => (q.state.data?.running ? 10_000 : false),
+    refetchInterval: (q) => (q.state.data?.running || q.state.data?.stale ? 15_000 : false),
   })
 
   const updateMutation = useMutation({
@@ -128,17 +128,43 @@ export function DomainPanel() {
         </CardHeader>
         <CardContent className="space-y-5">
           {data && (
-            <Field>
-              <FieldLabel htmlFor="domain-local-url">Local base URL</FieldLabel>
-              <FieldDescription>Used on this host until a public URL is set.</FieldDescription>
-              <Input
-                id="domain-local-url"
-                readOnly
-                value={data.localUrl ?? ""}
-                className="font-mono text-muted-foreground"
-                tabIndex={-1}
-              />
-            </Field>
+            <div className="space-y-4">
+              <Field>
+                <FieldLabel htmlFor="domain-loopback-url">On this machine (loopback)</FieldLabel>
+                <FieldDescription>Open Arciin in a browser on the server itself.</FieldDescription>
+                <Input
+                  id="domain-loopback-url"
+                  readOnly
+                  value={data.loopbackUrl ?? "http://127.0.0.1:3000"}
+                  className="font-mono text-muted-foreground"
+                  tabIndex={-1}
+                />
+              </Field>
+              {(
+                data.lanUrls?.length
+                  ? data.lanUrls
+                  : [data.primaryLanUrl, data.localUrl].filter((u): u is string => Boolean(u))
+              ).map((lanUrl, index, list) => (
+                  <Field key={lanUrl}>
+                    <FieldLabel htmlFor={`domain-lan-url-${index}`}>
+                      On your network (LAN){list.length > 1 ? ` — ${index + 1}` : ""}
+                    </FieldLabel>
+                    <FieldDescription>
+                      {index === 0
+                        ? "Use from phones and other devices on the same Wi‑Fi."
+                        : "Additional address on this server (if listed)."}
+                    </FieldDescription>
+                    <Input
+                      id={`domain-lan-url-${index}`}
+                      readOnly
+                      value={lanUrl}
+                      className="font-mono text-muted-foreground"
+                      tabIndex={-1}
+                    />
+                  </Field>
+                ),
+              )}
+            </div>
           )}
 
           <Field>
@@ -166,11 +192,16 @@ export function DomainPanel() {
                     Initializing…
                   </Button>
                 ) : (
-                  <Button asChild variant="outline" className="shrink-0 border-border">
-                    <a href={publicHref} target="_blank" rel="noopener noreferrer">
-                      Open
-                      <ExternalLink className="ml-2 size-3.5 opacity-80" aria-hidden />
-                    </a>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="shrink-0 border-border"
+                    onClick={() => {
+                      window.open(publicHref, "_blank", "noopener,noreferrer")
+                    }}
+                  >
+                    Open
+                    <ExternalLink className="ml-2 size-3.5 opacity-80" aria-hidden />
                   </Button>
                 )
               ) : null}
@@ -180,6 +211,11 @@ export function DomainPanel() {
                 Tunnel is starting — this takes about 30–60 seconds. The Open button will activate once the URL is reachable.
               </p>
             )}
+            {publicHref && !isInitializing ? (
+              <p className="text-[12px] text-muted-foreground">
+                Opens your public Arciin URL in a new tab. You may need to sign in again on that address — sessions are tied to the hostname.
+              </p>
+            ) : null}
           </Field>
 
           <div className="flex flex-wrap gap-2">
@@ -216,18 +252,36 @@ export function DomainPanel() {
               <CardTitle className="text-left text-foreground">Cloudflare quick tunnel</CardTitle>
               <CardDescription className="text-left text-zinc-600">
                 Runs <code className="text-foreground">cloudflared</code> on this server and publishes a random{" "}
-                <code className="text-foreground">trycloudflare.com</code> URL. Requires{" "}
-                <code className="text-foreground">cloudflared</code> installed on the host (not bundled with Arciin).
+                <code className="text-foreground">trycloudflare.com</code> URL. Quick tunnels are{" "}
+                <strong className="text-foreground">temporary</strong> (often a few hours) — when they expire,
+                Cloudflare shows <strong className="text-foreground">530</strong> (“origin unregistered”). Generate a
+                new URL or use your own domain for something permanent.
               </CardDescription>
             </div>
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
+          {tunnel?.stale || tunnel?.error ? (
+            <p
+              className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-[13px] leading-relaxed text-amber-900"
+              role="alert"
+            >
+              {tunnel.error ??
+                "This quick tunnel is no longer active. The saved public URL will fail with Cloudflare 530 until you generate a new one."}
+            </p>
+          ) : null}
           <p className="text-sm text-muted-foreground">
             {tunnel?.running ? (
               <>
                 <span className="font-medium text-emerald-700">Tunnel running.</span> The URL is in{" "}
                 <span className="font-medium text-foreground">Public base URL</span> above—use Open to visit it.
+                {tunnel.localTarget ? (
+                  <>
+                    {" "}
+                    Forwards to{" "}
+                    <code className="text-foreground">{tunnel.localTarget}</code> (web UI).
+                  </>
+                ) : null}
               </>
             ) : (
               <>

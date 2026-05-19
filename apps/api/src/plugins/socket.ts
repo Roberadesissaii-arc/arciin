@@ -96,10 +96,14 @@ export async function registerSocket(fastify: FastifyInstance) {
       }
 
       const authHeader = socket.handshake.headers.authorization
-      const bearer =
+      const authPayload = socket.handshake.auth as { token?: unknown } | undefined
+      const bearerFromHeader =
         typeof authHeader === "string" && authHeader.toLowerCase().startsWith("bearer ")
           ? authHeader.slice(7).trim()
           : null
+      const bearerFromAuth =
+        typeof authPayload?.token === "string" ? authPayload.token.trim() : null
+      const bearer = bearerFromHeader || bearerFromAuth
 
       if (bearer && !bearer.startsWith("arc_")) {
         const session = await fastify.prisma.session.findUnique({

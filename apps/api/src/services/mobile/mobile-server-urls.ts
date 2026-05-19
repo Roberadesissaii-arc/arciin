@@ -1,5 +1,7 @@
 import type { FastifyRequest } from "fastify"
 
+import { isSelfHostedLanHostname } from "@arciin/shared"
+
 import { apiConfig } from "@/config"
 
 export type MobileServerUrls = {
@@ -28,12 +30,74 @@ function requestOriginFromHeaders(request?: FastifyRequest): string | null {
   return `${proto}://${host}`
 }
 
+function isHttpsPublicOrigin(url: string): boolean {
+  try {
+    const u = new URL(url)
+    return u.protocol === "https:" && !isLoopbackHost(u.hostname)
+  } catch {
+    return false
+  }
+}
+
+function isLoopbackHost(hostname: string): boolean {
+  const h = hostname.toLowerCase()
+  return h === "localhost" || h === "127.0.0.1" || h === "::1"
+}
+
 export async function resolveMobileServerUrls(
-  prisma: { instanceConfig: { findFirst: () => Promise<{ instanceName: string; publicUrl: string | null } | null> } },
+  prisma: {
+    instanceConfig: {
+      findFirst: () => Promise<{
+        instanceName: string
+        publicUrl: string | null
+        remoteAccessConfig: unknown
+      } | null>
+    }
+  },
   request?: FastifyRequest,
 ): Promise<MobileServerUrls> {
   const instance = await prisma.instanceConfig.findFirst()
-  const webUrl = stripTrailingSlash(instance?.publicUrl || apiConfig.ARCIIN_PUBLIC_URL)
+  const config = (instance?.remoteAccessConfig as Record<string, unknown> | null) || {}
+  const mobilePublicUrl =
+    typeof config.mobilePublicUrl === "string" ? stripTrailingSlash(config.mobilePublicUrl) : null
+  const instancePublic = instance?.publicUrl ? stripTrailingSlash(instance.publicUrl) : null
+  const requestOrigin = requestOriginFromHeaders(request)
+
+  if (requestOrigin) {
+    try {
+      const origin = stripTrailingSlash(requestOrigin)
+      const { hostname } = new URL(origin)
+      if (isSelfHostedLanHostname(hostname)) {
+        return {
+          webUrl: origin,
+          apiBaseUrl: `${origin}/api`,
+          socketUrl: origin,
+          instanceName: instance?.instanceName ?? "Arciin",
+          version: apiConfig.appVersion,
+          requestOrigin,
+        }
+      }
+    } catch {
+      /* fall through */
+    }
+  }
+
+  const publicWeb =
+    (mobilePublicUrl && isHttpsPublicOrigin(mobilePublicUrl) ? mobilePublicUrl : null) ??
+    (instancePublic && isHttpsPublicOrigin(instancePublic) ? instancePublic : null)
+
+  if (publicWeb) {
+    return {
+      webUrl: publicWeb,
+      apiBaseUrl: `${publicWeb}/api`,
+      socketUrl: publicWeb,
+      instanceName: instance?.instanceName ?? "Arciin",
+      version: apiConfig.appVersion,
+      requestOrigin,
+    }
+  }
+
+  const webUrl = stripTrailingSlash(instancePublic || apiConfig.ARCIIN_PUBLIC_URL)
   const apiBaseUrl = `${stripTrailingSlash(apiConfig.ARCIIN_API_URL)}/api`
   const socketUrl = stripTrailingSlash(apiConfig.ARCIIN_API_URL)
 
@@ -43,6 +107,6 @@ export async function resolveMobileServerUrls(
     socketUrl,
     instanceName: instance?.instanceName ?? "Arciin",
     version: apiConfig.appVersion,
-    requestOrigin: requestOriginFromHeaders(request),
+    requestOrigin,
   }
 }

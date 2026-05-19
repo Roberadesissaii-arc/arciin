@@ -57,6 +57,8 @@ export async function fetchServerApi<T>(
   const requestHeaders = new Headers(init.headers)
   const cookieHeader = headerStore.get("cookie")
   const forwardedProto = headerStore.get("x-forwarded-proto")
+  const forwardedHost = headerStore.get("x-forwarded-host")
+  const host = headerStore.get("host")
 
   if (cookieHeader && !requestHeaders.has("cookie")) {
     requestHeaders.set("cookie", cookieHeader)
@@ -64,6 +66,14 @@ export async function fetchServerApi<T>(
 
   if (forwardedProto && !requestHeaders.has("x-forwarded-proto")) {
     requestHeaders.set("x-forwarded-proto", forwardedProto)
+  }
+
+  if (forwardedHost && !requestHeaders.has("x-forwarded-host")) {
+    requestHeaders.set("x-forwarded-host", forwardedHost)
+  }
+
+  if (host && !requestHeaders.has("host")) {
+    requestHeaders.set("host", host)
   }
 
   const response = await fetch(`${serverApiBase}${path}`, {

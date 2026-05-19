@@ -28,6 +28,8 @@ import {
   startCloudflareQuickTunnel,
   stopCloudflareQuickTunnel,
 } from "@/services/remote-access/cloudflare-tunnel"
+import { resolveLocalAccessUrls } from "@/services/remote-access/local-access-urls"
+import { resolveCloudflareTunnelTarget } from "@/services/remote-access/tunnel-target"
 import { resolveStorageUsageBytes } from "@/services/storage/local-storage"
 import {
   createMobilePairingCode,
@@ -35,6 +37,15 @@ import {
   revokeActiveMobilePairingCodes,
 } from "@/services/mobile/mobile-pairing"
 import { resolveMobileServerUrls } from "@/services/mobile/mobile-server-urls"
+import {
+  listMobileConnectedDevices,
+  parseMobileDeviceName,
+  revokeMobileConnectedDevice,
+} from "@/services/mobile/mobile-sessions"
+import {
+  DATABASE_MIGRATION_REQUIRED,
+  isPrismaMissingTableError,
+} from "@/services/database/prisma-errors"
 
 const generalSchema = z.object({
   instanceName: z.string().min(1).max(80),
@@ -277,15 +288,23 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
     {
       preHandler: requireRole(["OWNER", "ADMIN"]),
     },
-    async (_request, reply) => {
+    async (request, reply) => {
       const instance = await fastify.prisma.instanceConfig.findFirst()
       const config = (instance?.remoteAccessConfig as Record<string, unknown> | null) || {}
+      const urls = await resolveMobileServerUrls(fastify.prisma, request)
+      const local = resolveLocalAccessUrls()
 
       reply.send({
         data: {
           publicUrl: instance?.publicUrl ?? null,
-          localUrl: process.env.ARCIIN_PUBLIC_URL || "http://localhost:3000",
-          currentUrl: process.env.ARCIIN_PUBLIC_URL || "http://localhost:3000",
+          mobilePublicUrl:
+            typeof config.mobilePublicUrl === "string" ? config.mobilePublicUrl : null,
+          localUrl: local.localUrl,
+          loopbackUrl: local.loopbackUrl,
+          lanUrls: local.lanUrls,
+          primaryLanUrl: local.primaryLanUrl,
+          currentUrl: instance?.publicUrl ?? urls.requestOrigin ?? local.localUrl,
+          requestOrigin: urls.requestOrigin,
           mode: (instance?.remoteAccessMode as string) || "local",
           reverseProxyEnabled: Boolean(config.reverseProxyEnabled),
           cloudflareTunnelEnabled: Boolean(config.cloudflareTunnelEnabled),
@@ -327,6 +346,7 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
 
       const prevConfig = (instance.remoteAccessConfig as Record<string, unknown> | null) || {}
       const nextConfig = {
+        ...prevConfig,
         reverseProxyEnabled:
           parsed.data.reverseProxyEnabled !== undefined
             ? parsed.data.reverseProxyEnabled
@@ -358,11 +378,21 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
         },
       })
 
+      const urls = await resolveMobileServerUrls(fastify.prisma, request)
+      const raw = (updated.remoteAccessConfig as Record<string, unknown> | null) || {}
+      const local = resolveLocalAccessUrls()
+
       reply.send({
         data: {
           publicUrl: updated.publicUrl ?? null,
-          localUrl: process.env.ARCIIN_PUBLIC_URL || "http://localhost:3000",
-          currentUrl: process.env.ARCIIN_PUBLIC_URL || "http://localhost:3000",
+          mobilePublicUrl:
+            typeof raw.mobilePublicUrl === "string" ? raw.mobilePublicUrl : null,
+          localUrl: local.localUrl,
+          loopbackUrl: local.loopbackUrl,
+          lanUrls: local.lanUrls,
+          primaryLanUrl: local.primaryLanUrl,
+          currentUrl: updated.publicUrl ?? urls.requestOrigin ?? local.localUrl,
+          requestOrigin: urls.requestOrigin,
           mode: updated.remoteAccessMode || "local",
           reverseProxyEnabled: Boolean(nextConfig.reverseProxyEnabled),
           cloudflareTunnelEnabled: Boolean(nextConfig.cloudflareTunnelEnabled),
@@ -377,13 +407,14 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
     async (_request, reply) => {
       const tunnel = getCloudflareTunnelState()
       const instance = await fastify.prisma.instanceConfig.findFirst()
+      const raw = (instance?.remoteAccessConfig as Record<string, unknown> | null) || {}
       reply.send({
         data: {
           ...tunnel,
-          cloudflareTunnelEnabled: Boolean(
-            (instance?.remoteAccessConfig as Record<string, unknown> | null)?.cloudflareTunnelEnabled,
-          ),
+          cloudflareTunnelEnabled: Boolean(raw.cloudflareTunnelEnabled),
           publicUrl: instance?.publicUrl ?? null,
+          mobilePublicUrl:
+            typeof raw.mobilePublicUrl === "string" ? raw.mobilePublicUrl : null,
         },
       })
     },
@@ -404,7 +435,7 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
         return
       }
 
-      const localTarget = process.env.ARCIIN_PUBLIC_URL || "http://localhost:3000"
+      const localTarget = resolveCloudflareTunnelTarget()
 
       try {
         const url = await startCloudflareQuickTunnel(localTarget)
@@ -437,6 +468,58 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
           data: {
             ...getCloudflareTunnelState(),
             publicUrl: url,
+            cloudflareTunnelEnabled: true,
+          },
+        })
+      } catch (error) {
+        reply.status(503).send({
+          error: {
+            code: "CLOUDFLARE_TUNNEL_FAILED",
+            message: error instanceof Error ? error.message : "Could not start Cloudflare tunnel.",
+          },
+        })
+      }
+    },
+  )
+
+  fastify.post(
+    "/settings/cloudflare-tunnel/start-mobile",
+    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    async (request, reply) => {
+      const instance = await fastify.prisma.instanceConfig.findFirst()
+      if (!instance) {
+        reply.status(409).send({
+          error: {
+            code: "INSTANCE_NOT_READY",
+            message: "Claim the instance before starting a tunnel.",
+          },
+        })
+        return
+      }
+
+      const localTarget = resolveCloudflareTunnelTarget()
+
+      try {
+        const url = await startCloudflareQuickTunnel(localTarget)
+        const prevConfig = (instance.remoteAccessConfig as Record<string, unknown> | null) || {}
+        await fastify.prisma.instanceConfig.update({
+          where: { id: instance.id },
+          data: {
+            publicUrl: url,
+            remoteAccessMode: "cloudflare-tunnel",
+            remoteAccessConfig: {
+              ...prevConfig,
+              mobilePublicUrl: url,
+              cloudflareTunnelEnabled: true,
+              reverseProxyEnabled: false,
+            },
+          },
+        })
+
+        reply.send({
+          data: {
+            ...getCloudflareTunnelState(),
+            mobilePublicUrl: url,
             cloudflareTunnelEnabled: true,
           },
         })
@@ -888,31 +971,41 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
     { preHandler: requireRole(["OWNER", "ADMIN"]) },
     async (request, reply) => {
       if (!request.auth) return
-      await purgeExpiredMobilePairingCodes(fastify.prisma)
+      try {
+        await purgeExpiredMobilePairingCodes(fastify.prisma)
 
-      const active = await fastify.prisma.mobilePairingCode.findFirst({
-        where: {
-          createdById: request.auth.user.id,
-          usedAt: null,
-          expiresAt: { gt: new Date() },
-        },
-        orderBy: { createdAt: "desc" },
-      })
+        const active = await fastify.prisma.mobilePairingCode.findFirst({
+          where: {
+            createdById: request.auth.user.id,
+            usedAt: null,
+            expiresAt: { gt: new Date() },
+          },
+          orderBy: { createdAt: "desc" },
+        })
 
-      const urls = await resolveMobileServerUrls(fastify.prisma, request)
+        const urls = await resolveMobileServerUrls(fastify.prisma, request)
+        const devices = await listMobileConnectedDevices(fastify.prisma)
 
-      reply.send({
-        data: {
-          ttlMinutes: MOBILE_PAIRING_CODE_TTL_MINUTES,
-          activeCode: active
-            ? {
-                expiresAt: active.expiresAt.toISOString(),
-                createdAt: active.createdAt.toISOString(),
-              }
-            : null,
-          server: urls,
-        },
-      })
+        reply.send({
+          data: {
+            ttlMinutes: MOBILE_PAIRING_CODE_TTL_MINUTES,
+            activeCode: active
+              ? {
+                  expiresAt: active.expiresAt.toISOString(),
+                  createdAt: active.createdAt.toISOString(),
+                }
+              : null,
+            server: urls,
+            devices,
+          },
+        })
+      } catch (err) {
+        if (isPrismaMissingTableError(err)) {
+          reply.status(503).send({ error: DATABASE_MIGRATION_REQUIRED })
+          return
+        }
+        throw err
+      }
     },
   )
 
@@ -921,19 +1014,26 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
     { preHandler: requireRole(["OWNER", "ADMIN"]) },
     async (request, reply) => {
       if (!request.auth) return
+      try {
+        const { code, expiresAt } = await createMobilePairingCode(
+          fastify.prisma,
+          request.auth.user.id,
+        )
 
-      const { code, expiresAt } = await createMobilePairingCode(
-        fastify.prisma,
-        request.auth.user.id,
-      )
-
-      reply.send({
-        data: {
-          code,
-          expiresAt: expiresAt.toISOString(),
-          ttlMinutes: MOBILE_PAIRING_CODE_TTL_MINUTES,
-        },
-      })
+        reply.send({
+          data: {
+            code,
+            expiresAt: expiresAt.toISOString(),
+            ttlMinutes: MOBILE_PAIRING_CODE_TTL_MINUTES,
+          },
+        })
+      } catch (err) {
+        if (isPrismaMissingTableError(err)) {
+          reply.status(503).send({ error: DATABASE_MIGRATION_REQUIRED })
+          return
+        }
+        throw err
+      }
     },
   )
 
@@ -942,8 +1042,54 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
     { preHandler: requireRole(["OWNER", "ADMIN"]) },
     async (request, reply) => {
       if (!request.auth) return
-      await revokeActiveMobilePairingCodes(fastify.prisma, request.auth.user.id)
-      reply.send({ data: { revoked: true as const } })
+      try {
+        await revokeActiveMobilePairingCodes(fastify.prisma, request.auth.user.id)
+        reply.send({ data: { revoked: true as const } })
+      } catch (err) {
+        if (isPrismaMissingTableError(err)) {
+          reply.status(503).send({ error: DATABASE_MIGRATION_REQUIRED })
+          return
+        }
+        throw err
+      }
+    },
+  )
+
+  fastify.delete(
+    "/settings/mobile-connection/devices/:id",
+    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    async (request, reply) => {
+      if (!request.auth) return
+      const { id } = request.params as { id: string }
+
+      try {
+        const removed = await revokeMobileConnectedDevice(fastify.prisma, id)
+        if (!removed) {
+          reply.status(404).send({
+            error: {
+              code: "MOBILE_SESSION_NOT_FOUND",
+              message: "That mobile session is not active or was already disconnected.",
+            },
+          })
+          return
+        }
+
+        await recordSecurityEvent(fastify, {
+          userId: request.auth.user.id,
+          type: "auth.sessions_revoked",
+          title: "Mobile device disconnected",
+          message: `${request.auth.user.name} revoked mobile access for ${removed.user.name} (${parseMobileDeviceName(removed.userAgent)}).`,
+          metadata: { status: "mobile_disconnect", actorUserId: removed.user.id },
+        })
+
+        reply.send({ data: { revoked: true as const } })
+      } catch (err) {
+        if (isPrismaMissingTableError(err)) {
+          reply.status(503).send({ error: DATABASE_MIGRATION_REQUIRED })
+          return
+        }
+        throw err
+      }
     },
   )
 }

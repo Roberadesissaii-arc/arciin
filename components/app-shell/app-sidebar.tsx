@@ -7,7 +7,12 @@ import {
   Bell, BookOpen, Boxes, ChevronLeft, ChevronRight,
   ChevronsUpDown, Code2, Database, Files, FingerprintPattern, GalleryVerticalEnd, HelpCircle, LayoutDashboard,
   Library,
-  ListTree, LogOut, MessageSquare, Minus, MonitorDot, PackagePlus,
+  BriefcaseBusiness,
+  LogOut,
+  MessageSquare,
+  Minus,
+  MonitorDot,
+  PackagePlus,
   Settings, ShieldCheck, Terminal, UserCog,
 } from "lucide-react"
 import { toast } from "sonner"
@@ -55,7 +60,7 @@ const PRIMARY: NavItem[] = [
 /** Flat sidebar links (same row style as Overview / AI Chat) — no section parent. */
 const SIDEBAR_SECONDARY_NAV: NavItem[] = [
   { id: "logs",     label: "Logs",     icon: Terminal,   href: "/logs" },
-  { id: "jobs",     label: "Jobs",     icon: ListTree,   href: "/jobs" },
+  { id: "jobs",     label: "Jobs",     icon: BriefcaseBusiness, href: "/jobs" },
   { id: "events",   label: "Events",   icon: GalleryVerticalEnd, href: "/events" },
   { id: "models",   label: "Models",   icon: Boxes,      href: "/models" },
   { id: "activity", label: "Activity", icon: MonitorDot, href: "/activity" },

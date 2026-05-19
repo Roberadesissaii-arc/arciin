@@ -15,7 +15,7 @@ const proxyMaxBodyBytes =
     : 10240 * 1024 * 1024
 
 function resolveAllowedDevOrigins(): string[] {
-  const hosts = new Set<string>(["localhost", "127.0.0.1"])
+  const hosts = new Set<string>(["localhost", "127.0.0.1", "*.trycloudflare.com"])
   for (const value of [
     process.env.ARCIIN_PUBLIC_URL,
     process.env.NEXT_PUBLIC_ARCIIN_PUBLIC_URL,

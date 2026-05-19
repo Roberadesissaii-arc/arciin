@@ -140,6 +140,35 @@ export async function resolveSession(request: FastifyRequest) {
   return session
 }
 
+/** Mobile PWA / API clients: `Authorization: Bearer <session_token>` (not API keys). */
+async function resolveBearerSession(request: FastifyRequest) {
+  const authHeader = request.headers.authorization
+  if (!authHeader?.toLowerCase().startsWith("bearer ")) {
+    return null
+  }
+
+  const token = authHeader.slice(7).trim()
+  if (!token || token.startsWith("arc_")) {
+    return null
+  }
+
+  const session = await request.server.prisma.session.findUnique({
+    where: { tokenHash: hashToken(token) },
+    include: { user: true },
+  })
+
+  if (!session || session.expiresAt < new Date() || session.user.status !== "ACTIVE") {
+    return null
+  }
+
+  return session
+}
+
+/** Cookie session, or Bearer session token (mobile). */
+export async function resolveSessionFromRequest(request: FastifyRequest) {
+  return (await resolveSession(request)) ?? (await resolveBearerSession(request))
+}
+
 async function refreshSessionIp(request: FastifyRequest, sessionId: string) {
   const ip = normalizeClientIp(clientIpFromRequest(request))
   if (!ip) return
@@ -152,7 +181,7 @@ async function refreshSessionIp(request: FastifyRequest, sessionId: string) {
 }
 
 export async function authenticate(request: FastifyRequest, reply: FastifyReply) {
-  const session = await resolveSession(request)
+  const session = await resolveSessionFromRequest(request)
 
   if (!session) {
     reply.status(401).send({
@@ -175,7 +204,7 @@ export async function authenticate(request: FastifyRequest, reply: FastifyReply)
 
 /** Cookie session first, else `Authorization: Bearer arc_…` API key. */
 export async function authenticateFlexible(request: FastifyRequest, reply: FastifyReply) {
-  const session = await resolveSession(request)
+  const session = await resolveSessionFromRequest(request)
 
   if (session) {
     request.auth = {
@@ -202,24 +231,6 @@ export async function authenticateFlexible(request: FastifyRequest, reply: Fasti
   const token = authHeader.slice(7).trim()
 
   if (!token.startsWith("arc_")) {
-    const bearerSession = await request.server.prisma.session.findUnique({
-      where: { tokenHash: hashToken(token) },
-      include: { user: true },
-    })
-    if (
-      bearerSession &&
-      bearerSession.expiresAt >= new Date() &&
-      bearerSession.user.status === "ACTIVE"
-    ) {
-      request.auth = {
-        user: bearerSession.user,
-        session: bearerSession,
-        apiKeyId: null,
-        apiKeyScopes: null,
-      }
-      void refreshSessionIp(request, bearerSession.id)
-      return
-    }
     reply.status(401).send({
       error: {
         code: "UNAUTHENTICATED",
@@ -316,7 +327,7 @@ export function requireSessionRolesOrApiKeyScopes(
 
 export function requireRole(roles: Array<"OWNER" | "ADMIN" | "MEMBER" | "VIEWER">) {
   const handler = async (request: FastifyRequest, reply: FastifyReply) => {
-    await authenticate(request, reply)
+    await authenticateFlexible(request, reply)
 
     if (!request.auth) {
       return

@@ -351,7 +351,7 @@ export async function registerModelRoutes(fastify: FastifyInstance) {
 
   fastify.post(
     "/models/:id/set-default",
-    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    { preHandler: requireRole(["OWNER", "ADMIN", "MEMBER"]) },
     async (request, reply) => {
       const { id } = request.params as { id: string }
       const existing = await fastify.prisma.modelProfile.findUnique({ where: { id } })

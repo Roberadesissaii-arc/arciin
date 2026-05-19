@@ -1,4 +1,4 @@
-import { MOBILE_DISCOVER_SERVICE_ID } from "@arciin/shared"
+import { MOBILE_DISCOVER_SERVICE_ID, MOBILE_SESSION_USER_AGENT_PREFIX } from "@arciin/shared"
 import type { FastifyInstance, FastifyRequest } from "fastify"
 import type { User } from "@prisma/client"
 import { z } from "zod"
@@ -44,7 +44,7 @@ async function issueMobileSession(
 
   await fastify.prisma.session.update({
     where: { id: session.id },
-    data: { userAgent: `Arciin Mobile · ${deviceLabel}` },
+    data: { userAgent: `${MOBILE_SESSION_USER_AGENT_PREFIX} · ${deviceLabel}` },
   })
 
   return {

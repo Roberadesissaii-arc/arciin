@@ -24,9 +24,11 @@ import {
   getChatConversation,
   getChatConversations,
   getChatInstanceContext,
+  getChatSelection,
   getChatStreamPostUrl,
   getChatVisionRecent,
   saveChatMessages,
+  setChatSelection,
   setChatMessageFeedback,
   updateChatMessage,
   type ChatConversationSummary,
@@ -2127,6 +2129,24 @@ export function ChatPage() {
     } else {
       setSelectedModel(profile.defaultModel ?? "")
     }
+
+    void getChatSelection()
+      .then((remote) => {
+        if (!remote?.profileId) return
+        const remoteProfile = profiles.find((p) => p.id === remote.profileId)
+        if (!remoteProfile) return
+        setSelectedProfile(remoteProfile)
+        setSelectedModel(remote.model || remoteProfile.defaultModel || "")
+        try {
+          localStorage.setItem(CHAT_SELECTED_PROFILE_ID_KEY, remoteProfile.id)
+          localStorage.setItem(CHAT_SELECTED_MODEL_KEY, remote.model)
+        } catch {
+          /* private mode */
+        }
+      })
+      .catch(() => {
+        /* use local fallback above */
+      })
   }, [profiles, selectedProfile])
 
   // ── Scroll ─────────────────────────────────────────────────────────────────
@@ -2863,6 +2883,9 @@ export function ChatPage() {
                   } catch {
                     /* private mode */
                   }
+                  void setChatSelection({ profileId: profile.id, model }).catch(() => {
+                    /* offline */
+                  })
                 }}
                 ollamaShow={ollamaShowQuery.data}
                 ollamaShowLoading={ollamaShowQuery.isFetching && !ollamaShowQuery.data}
