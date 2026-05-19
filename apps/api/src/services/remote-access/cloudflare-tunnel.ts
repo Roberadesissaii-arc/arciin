@@ -59,27 +59,80 @@ export function stopCloudflareQuickTunnel() {
   }
 }
 
-async function verifyTunnelPublicUrl(publicUrl: string, timeoutMs = 20_000): Promise<void> {
-  const healthUrl = `${publicUrl.replace(/\/+$/, "")}/api/health`
+/** Ensure Next.js (tunnel origin) is up before starting cloudflared. */
+async function verifyLocalWebTarget(localTarget: string): Promise<void> {
+  const healthUrl = `${localTarget.replace(/\/+$/, "")}/api/health`
+  try {
+    const res = await fetch(healthUrl, {
+      signal: AbortSignal.timeout(8_000),
+      headers: { Accept: "application/json" },
+    })
+    if (!res.ok) {
+      throw new Error(
+        `Arciin is not responding on ${localTarget} (HTTP ${res.status}). Start the web app (pnpm start / PM2) before generating a tunnel.`,
+      )
+    }
+  } catch (err) {
+    if (err instanceof Error && err.name === "AbortError") {
+      throw new Error(
+        `Arciin did not respond on ${localTarget} in time. Confirm the web UI is running on that port, then try again.`,
+      )
+    }
+    const message = err instanceof Error ? err.message : String(err)
+    throw new Error(`Cannot reach ${localTarget}: ${message}`)
+  }
+}
+
+/**
+ * Best-effort check through Cloudflare edge. Slow or flaky from the same host — never tear down the tunnel on failure.
+ */
+async function probeTunnelPublicUrl(publicUrl: string, timeoutMs = 45_000): Promise<boolean> {
+  const base = publicUrl.replace(/\/+$/, "")
+  const candidates = [`${base}/api/health`, `${base}/login`, base]
   const deadline = Date.now() + timeoutMs
-  let lastError: Error | null = null
 
   while (Date.now() < deadline) {
-    try {
-      const res = await fetch(healthUrl, { signal: AbortSignal.timeout(4_000) })
-      if (res.ok) return
-      lastError = new Error(`Health check returned ${res.status}`)
-    } catch (err) {
-      lastError = err instanceof Error ? err : new Error(String(err))
+    if (!isProcessAlive(tunnelProcess)) return false
+
+    for (const url of candidates) {
+      try {
+        const res = await fetch(url, {
+          signal: AbortSignal.timeout(12_000),
+          redirect: "follow",
+        })
+        if (res.ok || res.status === 307 || res.status === 308) return true
+      } catch {
+        // Cloudflare edge can lag; keep retrying
+      }
     }
-    await new Promise((r) => setTimeout(r, 750))
+    await new Promise((r) => setTimeout(r, 1_500))
+  }
+  return false
+}
+
+const PUBLIC_PROBE_HINT =
+  "Tunnel is running. The public URL can take 30–60 seconds to work. Open it in a browser; if it fails, wait a moment and refresh."
+
+async function finalizeTunnelStart(publicUrl: string, localTarget: string): Promise<string> {
+  await verifyLocalWebTarget(localTarget)
+
+  tunnelState = {
+    running: true,
+    url: publicUrl,
+    localTarget,
+    error: null,
+    stale: false,
   }
 
-  throw new Error(
-    lastError
-      ? `Tunnel URL was published but is not reachable yet (${lastError.message}). Wait a few seconds and try again.`
-      : "Tunnel URL was published but is not reachable yet. Wait a few seconds and try again.",
-  )
+  const reachable = await probeTunnelPublicUrl(publicUrl)
+  if (!reachable && isProcessAlive(tunnelProcess)) {
+    tunnelState = {
+      ...tunnelState,
+      error: PUBLIC_PROBE_HINT,
+    }
+  }
+
+  return publicUrl
 }
 
 export function startCloudflareQuickTunnel(localTarget: string): Promise<string> {
@@ -91,7 +144,7 @@ export function startCloudflareQuickTunnel(localTarget: string): Promise<string>
     existing.localTarget === normalizedTarget &&
     !existing.stale
   ) {
-    return verifyTunnelPublicUrl(existing.url).then(() => existing.url!)
+    return finalizeTunnelStart(existing.url, normalizedTarget)
   }
 
   return new Promise((resolve, reject) => {
@@ -134,15 +187,8 @@ export function startCloudflareQuickTunnel(localTarget: string): Promise<string>
       if (!match) return
       const publicUrl = match[0]
       finish(() => {
-        tunnelState = {
-          running: true,
-          url: publicUrl,
-          localTarget: normalizedTarget,
-          error: null,
-          stale: false,
-        }
-        void verifyTunnelPublicUrl(publicUrl)
-          .then(() => resolve(publicUrl))
+        void finalizeTunnelStart(publicUrl, normalizedTarget)
+          .then(resolve)
           .catch((err) => {
             stopCloudflareQuickTunnel()
             reject(err instanceof Error ? err : new Error(String(err)))

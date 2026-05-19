@@ -263,8 +263,12 @@ export function DomainPanel() {
         <CardContent className="space-y-4">
           {tunnel?.stale || tunnel?.error ? (
             <p
-              className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-[13px] leading-relaxed text-amber-900"
-              role="alert"
+              className={
+                tunnel.running && !tunnel.stale
+                  ? "rounded-xl border border-sky-500/30 bg-sky-500/10 px-4 py-3 text-[13px] leading-relaxed text-sky-900"
+                  : "rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-[13px] leading-relaxed text-amber-900"
+              }
+              role="status"
             >
               {tunnel.error ??
                 "This quick tunnel is no longer active. The saved public URL will fail with Cloudflare 530 until you generate a new one."}
