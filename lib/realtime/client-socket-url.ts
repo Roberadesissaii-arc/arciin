@@ -15,12 +15,20 @@ export function getSocketUrlSsrDefault(): string {
   return "http://localhost:3000"
 }
 
-/** Resolved URL for Socket.IO (browser: current origin when proxied). */
+/** Resolved URL for Socket.IO (browser: always same-origin so /socket.io rewrite works). */
 export function getClientSocketUrl(): string {
-  const explicit = process.env.NEXT_PUBLIC_SOCKET_URL?.trim()
-  if (explicit) return explicit.replace(/\/$/, "")
-
   if (typeof window !== "undefined") {
+    const explicit = process.env.NEXT_PUBLIC_SOCKET_URL?.trim()
+    if (explicit) {
+      try {
+        const explicitOrigin = new URL(explicit.replace(/\/$/, "")).origin
+        if (explicitOrigin === window.location.origin) {
+          return explicitOrigin
+        }
+      } catch {
+        // ignore — fall through to current page origin
+      }
+    }
     return window.location.origin
   }
 

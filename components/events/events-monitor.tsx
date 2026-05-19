@@ -193,7 +193,11 @@ export function EventsMonitor() {
 
   useEffect(() => {
     const resolvedUrl = getClientSocketUrl()
-    const socket: Socket = io(resolvedUrl, { withCredentials: true, transports: ["websocket", "polling"] })
+    const socket: Socket = io(resolvedUrl, {
+      path: "/socket.io",
+      withCredentials: true,
+      transports: ["polling", "websocket"],
+    })
 
     socket.on("connect", () => { setConnected(true); setError(null) })
     socket.on("disconnect", () => setConnected(false))
@@ -201,7 +205,7 @@ export function EventsMonitor() {
       setConnected(false)
       const hint =
         err.message.includes("xhr poll") || err.message.includes("websocket")
-          ? `${err.message} — restart pnpm dev after proxy changes; API + Redis must be running.`
+          ? `${err.message} — open Arciin on the same URL you use in the browser (tunnel or LAN). Clear NEXT_PUBLIC_SOCKET_URL if it points at a different host. API + Redis must be running.`
           : err.message
       setError(hint)
     })

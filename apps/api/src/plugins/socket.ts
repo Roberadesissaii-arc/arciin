@@ -7,6 +7,30 @@ import { isSelfHostedLanOrigin, SOCKET_EVENT_CHANNEL, type RealtimeEvent } from 
 import { apiConfig } from "@/config"
 import { hashApiKey, hashToken, scopeAllows } from "@/services/security/auth"
 
+function isSelfHostedInstance(): boolean {
+  try {
+    const { hostname } = new URL(apiConfig.ARCIIN_PUBLIC_URL)
+    return (
+      hostname === "localhost" ||
+      hostname === "127.0.0.1" ||
+      /^192\.168\./.test(hostname) ||
+      /^10\./.test(hostname) ||
+      /^172\.(1[6-9]|2\d|3[01])\./.test(hostname)
+    )
+  } catch {
+    return true
+  }
+}
+
+function isCloudflareQuickTunnelOrigin(origin: string): boolean {
+  try {
+    const { hostname, protocol } = new URL(origin)
+    return protocol === "https:" && hostname.endsWith(".trycloudflare.com")
+  } catch {
+    return false
+  }
+}
+
 function emitRealtimeEvent(io: Server, event: RealtimeEvent) {
   let emitted = false
 
@@ -54,7 +78,13 @@ export async function registerSocket(fastify: FastifyInstance) {
           callback(null, true)
           return
         }
-        if (corsOrigins.includes(origin) || isSelfHostedLanOrigin(origin)) {
+        if (
+          corsOrigins.includes(origin) ||
+          isSelfHostedLanOrigin(origin) ||
+          isCloudflareQuickTunnelOrigin(origin) ||
+          !apiConfig.isProduction ||
+          isSelfHostedInstance()
+        ) {
           callback(null, true)
           return
         }
