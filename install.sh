@@ -2,12 +2,50 @@
 # ================================================================
 #  Arciin — Local / WSL Installer
 #  Supports: Debian/Ubuntu/WSL (apt)
-#  Usage:  bash install.sh              — install or update
+#  Usage:  bash install.sh              — install or update (native / PM2)
+#          bash install.sh --docker     — Docker Compose (recommended on Raspberry Pi)
 #          bash install.sh --reset-db   — drop arciin DB and reinstall schema
 # ================================================================
 set -Eeuo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+is_raspberry_pi() {
+  [[ -f /proc/device-tree/model ]] && grep -qi raspberry /proc/device-tree/model 2>/dev/null
+}
+
+docker_available() {
+  command -v docker &>/dev/null && (docker compose version &>/dev/null || command -v docker-compose &>/dev/null)
+}
+
+print_docker_hint() {
+  echo ""
+  echo -e "    ${YELLOW}Tip:${RESET} Use Docker to avoid installing Node, PostgreSQL, and Redis on the host:"
+  echo -e "         ${DIM}./install.sh --docker${RESET}  or  ${DIM}./scripts/docker-setup.sh${RESET}"
+  echo -e "         ${DIM}See docs/DOCKER.md (Raspberry Pi, SSD bind mounts)${RESET}"
+  echo ""
+}
+
+for _arg in "$@"; do
+  case "$_arg" in
+    --docker|-d) ARCIIN_INSTALL_MODE=docker ;;
+    --help|-h)
+      echo "Usage: ./install.sh [--docker] [--reset-db]"
+      echo "  --docker     Run scripts/docker-setup.sh (Compose + bind-mounted storage)"
+      echo "  --reset-db   Drop and recreate the arciin PostgreSQL database (native only)"
+      echo ""
+      echo "Environment:"
+      echo "  ARCIIN_INSTALL_MODE=docker     Same as --docker"
+      echo "  ARCIIN_SKIP_SYSTEM_PACKAGES=1  Skip apt install (native; deps must exist)"
+      echo "  ARCIIN_SKIP_INSTALL_CHOICE=1   Skip Docker vs native menu"
+      exit 0
+      ;;
+  esac
+done
+
+if [[ "${ARCIIN_INSTALL_MODE:-}" == "docker" ]]; then
+  exec "${ROOT_DIR}/scripts/docker-setup.sh"
+fi
 DEFAULT_NODE_MAJOR=24
 DEFAULT_PNPM_VERSION=10.32.1
 DEFAULT_WEB_PORT=3000
@@ -633,22 +671,86 @@ fi
 command -v sudo >/dev/null 2>&1 || fail "sudo is required"
 command -v curl >/dev/null 2>&1 || fail "curl is required"
 
+# ── Install mode (Docker vs native) ───────────────────────────────────────────
+if [[ -t 0 ]] && [[ "${ARCIIN_SKIP_INSTALL_CHOICE:-0}" != "1" ]] && [[ "${ARCIIN_INSTALL_MODE:-}" != "native" ]]; then
+  echo ""
+  echo -e "  ${BOLD}${WHITE}How do you want to run Arciin?${RESET}"
+  echo ""
+  if is_raspberry_pi; then
+    echo -e "    ${BOLD}1)${RESET} Docker ${DIM}(recommended on Raspberry Pi — no apt Node/Postgres stack)${RESET}"
+  else
+    echo -e "    ${BOLD}1)${RESET} Docker ${DIM}(isolated Postgres/Redis; easy updates)${RESET}"
+  fi
+  echo -e "    ${BOLD}2)${RESET} Native ${DIM}(PM2 on this machine — needs apt packages)${RESET}"
+  echo ""
+  read -r -p "  Choice [1]: " _install_choice
+  _install_choice="${_install_choice:-1}"
+  if [[ "$_install_choice" == "1" ]]; then
+    if docker_available; then
+      exec "${ROOT_DIR}/scripts/docker-setup.sh"
+    fi
+    warn "Docker is not installed yet."
+    if is_raspberry_pi; then
+      echo -e "    ${DIM}curl -fsSL https://get.docker.com | sh && sudo usermod -aG docker \$USER${RESET}"
+      echo -e "    ${DIM}Log out/in, then: ./scripts/docker-setup.sh${RESET}"
+    fi
+    fail "Install Docker first, or choose native (2)."
+  fi
+  ARCIIN_INSTALL_MODE=native
+fi
+
+if is_raspberry_pi && [[ "${ARCIIN_INSTALL_MODE:-}" == "native" ]]; then
+  warn "Native install on ARM can hit apt conflicts. Docker is often easier: ./install.sh --docker"
+fi
+
 # ── 1. System packages ────────────────────────────────────────────────────────
 step "System packages"
 
-spin_ok "Updating package lists..." "Package lists updated" sudo apt-get update -qq
-
-if [[ "${ARCIIN_UPGRADE_SYSTEM:-1}" == "1" ]]; then
-  spin_ok "Upgrading installed packages..." "System packages upgraded" sudo apt-get upgrade -y -qq
-else
-  ok "Skipping apt upgrade (set ARCIIN_UPGRADE_SYSTEM=1 to enable)"
-fi
-
-spin_ok "Installing dependencies..." "curl, git, ffmpeg, lsof, PostgreSQL, Redis ready" \
-  sudo apt-get install -y -qq \
+_apt_install_system_deps() {
+  local log held
+  log="$(mktemp)"
+  if sudo apt-get install -y -qq \
     ca-certificates curl git gnupg build-essential unzip python3 openssl \
     libssl-dev pkg-config libatomic1 lsof \
-    ffmpeg redis-server postgresql postgresql-contrib
+    ffmpeg redis-server postgresql postgresql-contrib >"$log" 2>&1; then
+    rm -f "$log"
+    return 0
+  fi
+  held=0
+  if grep -qiE 'held broken|broken packages|unmet dependencies' "$log" 2>/dev/null; then
+    held=1
+  fi
+  echo ""
+  sed 's/^/    /' "$log"
+  rm -f "$log"
+  echo ""
+  if [[ "$held" == "1" ]]; then
+    warn "apt reported held or broken packages (common on Raspberry Pi)."
+  else
+    warn "apt could not install required packages."
+  fi
+  echo -e "    ${DIM}Fix apt:${RESET}  sudo apt --fix-broken install && sudo dpkg --configure -a"
+  echo -e "    ${DIM}Or Docker:${RESET} ./install.sh --docker  ${DIM}(see docs/DOCKER.md)${RESET}"
+  print_docker_hint
+  fail "System package installation failed"
+}
+
+if [[ "${ARCIIN_SKIP_SYSTEM_PACKAGES:-0}" == "1" ]]; then
+  ok "Skipping system packages (ARCIIN_SKIP_SYSTEM_PACKAGES=1)"
+else
+  spin_ok "Updating package lists..." "Package lists updated" sudo apt-get update -qq
+
+  if [[ "${ARCIIN_UPGRADE_SYSTEM:-1}" == "1" ]]; then
+    spin_ok "Upgrading installed packages..." "System packages upgraded" sudo apt-get upgrade -y -qq
+  else
+    ok "Skipping apt upgrade (set ARCIIN_UPGRADE_SYSTEM=1 to enable)"
+  fi
+
+  doing "Installing dependencies (curl, git, ffmpeg, PostgreSQL, Redis)..."
+  if _apt_install_system_deps; then
+    done_ "curl, git, ffmpeg, lsof, PostgreSQL, Redis ready"
+  fi
+fi
 
 # ── 2. Node.js ────────────────────────────────────────────────────────────────
 step "Node.js"
@@ -819,4 +921,6 @@ echo -e "    ${DIM}bash install.sh --reset-db${RESET}            Drop DB and re-
 echo -e "    ${DIM}ARCIIN_SKIP_PM2=1 ./install.sh${RESET}        Install without PM2"
 echo -e "    ${DIM}ARCIIN_SKIP_FIREWALL=1 ./install.sh${RESET}   Skip UFW configuration"
 echo -e "    ${DIM}ARCIIN_UPGRADE_SYSTEM=0 ./install.sh${RESET}   Skip apt upgrade"
+echo -e "    ${DIM}./install.sh --docker${RESET}                  Docker (Pi / avoid apt conflicts)"
+echo -e "    ${DIM}ARCIIN_SKIP_SYSTEM_PACKAGES=1 ./install.sh${RESET}  Skip apt deps (native only)"
 echo ""

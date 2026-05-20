@@ -49,14 +49,12 @@ Arciin is a self-hosted private file, library, and media management platform. Ru
 
 ## Prerequisites
 
-- **Linux** or **WSL2**
-- **Node.js** 20+ (installer targets Node 24)
-- **pnpm** 10+ (`corepack enable`)
-- **PostgreSQL** 14+
-- **Redis** 6+
-- **FFmpeg** / **ffprobe** (media processing)
+Pick **one** install path:
 
-Optional: **Docker** + **Docker Compose** for containerized deployment.
+| Path | You need on the host |
+|------|----------------------|
+| **Docker** (recommended on **Raspberry Pi**) | [Docker](https://docs.docker.com/engine/install/) + Compose plugin |
+| **Native** (`./install.sh`) | Linux/WSL2, Node 20+, pnpm, PostgreSQL 14+, Redis 6+, FFmpeg |
 
 ---
 
@@ -69,9 +67,19 @@ git clone https://github.com/Roberadesissaii-arc/arciin.git
 cd arciin
 ```
 
-### 2. Run the installer
+### 2. Install
 
-Checks dependencies, installs packages, creates `.env`, runs migrations, seeds defaults, and sets up storage directories.
+**Docker** (Raspberry Pi, NAS, or when apt fails with “held broken packages”):
+
+```bash
+chmod +x scripts/docker-setup.sh install.sh
+./install.sh --docker
+# or: ./scripts/docker-setup.sh
+```
+
+You will choose (or set) **`ARCIIN_HOST_DATA_DIR`** — the real folder on your SSD/HDD where files are stored. See [`docs/DOCKER.md`](./docs/DOCKER.md).
+
+**Native** (PM2 on the host — Arceserver-style servers):
 
 ```bash
 chmod +x install.sh
@@ -83,6 +91,7 @@ Optional flags:
 ```bash
 ARCIIN_UPGRADE_SYSTEM=1 ./install.sh   # also apt-install missing system packages
 ARCIIN_SKIP_DB_INIT=1  ./install.sh    # skip migrate + seed
+ARCIIN_SKIP_SYSTEM_PACKAGES=1 ./install.sh   # skip apt (deps already installed)
 ```
 
 ### 3. Configure `.env`
@@ -267,18 +276,27 @@ Create API keys in the app: **Developer → API Keys**.
 
 ## Docker
 
-```bash
-cp .env.example .env
-# Set ARCIIN_SETUP_TOKEN, SESSION_SECRET, and your host URLs
+Full guide: **[`docs/DOCKER.md`](./docs/DOCKER.md)** (storage bind mounts, Raspberry Pi, troubleshooting).
 
+```bash
+./scripts/docker-setup.sh
+# Interactive: picks SSD path, writes .env, runs compose
+```
+
+Or manually:
+
+```bash
+cp .env.docker.example .env
+# Set ARCIIN_HOST_DATA_DIR=/mnt/your-ssd/arciin-data
+# Set ARCIIN_SETUP_TOKEN, SESSION_SECRET, ARCIIN_PUBLIC_URL
+
+export ARCIIN_HOST_DATA_DIR=/mnt/your-ssd/arciin-data
 docker compose up --build -d
 ```
 
-Caddy handles the reverse proxy (see `docker/caddy/Caddyfile`). Dockerfiles:
+Open **http://localhost** (Caddy on port 80). Your files live on disk at **`ARCIIN_HOST_DATA_DIR`**, not inside the container.
 
-- `Dockerfile.web` — Next.js
-- `Dockerfile.api` — Fastify API
-- `Dockerfile.worker` — background worker
+Caddy reverse proxy: `docker/caddy/Caddyfile`. Images: `Dockerfile.web`, `Dockerfile.api`, `Dockerfile.worker`.
 
 ---
 
@@ -319,6 +337,7 @@ arciin/
 | Doc | Contents |
 |-----|----------|
 | [`docs/DEVELOPMENT.md`](./docs/DEVELOPMENT.md) | Day-to-day dev workflow |
+| [`docs/DOCKER.md`](./docs/DOCKER.md) | Docker, Pi, SSD bind mounts |
 | [`docs/DEPLOYMENT.md`](./docs/DEPLOYMENT.md) | Production and self-hosting |
 | [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) | System design |
 | [`docs/API.md`](./docs/API.md) | API overview |

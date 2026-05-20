@@ -1,5 +1,7 @@
 # Deployment
 
+For **Docker on Raspberry Pi**, SSD bind mounts, and “held broken packages” on apt, read **[DOCKER.md](./DOCKER.md)** first.
+
 Arciin ships with Docker assets for a local-first self-hosted deployment:
 
 - `Dockerfile.web`
@@ -10,25 +12,33 @@ Arciin ships with Docker assets for a local-first self-hosted deployment:
 
 ## Compose flow
 
-1. Copy the example environment file:
+1. Run the setup script (recommended):
 
 ```bash
-cp .env.example .env
+./scripts/docker-setup.sh
+```
+
+Or copy the Docker env template:
+
+```bash
+cp .env.docker.example .env
 ```
 
 2. Update at least:
 
+- `ARCIIN_HOST_DATA_DIR` — folder on your **host** SSD/HDD (bind mount)
 - `ARCIIN_SETUP_TOKEN`
 - `SESSION_SECRET`
-- `ARCIIN_PUBLIC_URL`
+- `ARCIIN_PUBLIC_URL` — `http://localhost` or `http://<lan-ip>`
 
 3. Start the stack:
 
 ```bash
+export ARCIIN_HOST_DATA_DIR=/path/on/host   # must match .env
 docker compose up --build -d
 ```
 
-4. Open `http://localhost`
+4. Open `http://localhost/setup?token=<ARCIIN_SETUP_TOKEN>`
 
 ## Services
 
@@ -43,9 +53,13 @@ The compose file provisions:
 
 Persistent volumes:
 
-- `postgres_data`
-- `redis_data`
-- `arciin_data`
+- `postgres_data` — database files
+- `redis_data` — queue/cache
+
+Media and uploads use a **bind mount** (not a named Docker volume):
+
+- Host: `ARCIIN_HOST_DATA_DIR` (e.g. `/mnt/nvme/arciin-data`)
+- Container: `/data/arciin` on `api` and `worker`
 
 ## Reverse proxy
 
@@ -100,9 +114,8 @@ pnpm dev
 Docker:
 
 ```bash
-cp .env.example .env
-# set ARCIIN_SETUP_TOKEN and SESSION_SECRET (install.sh randomizes these on bare metal)
-docker compose up --build -d
+./scripts/docker-setup.sh
+# or: cp .env.docker.example .env && docker compose up --build -d
 # open http://localhost/setup?token=<ARCIIN_SETUP_TOKEN>
 ```
 
