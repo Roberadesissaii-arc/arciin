@@ -100,7 +100,7 @@ export function PlexIntegrationCard({ integration }: { integration: IntegrationS
                 : "shrink-0 border-border bg-muted/40 text-zinc-600"
             }
           >
-            {enabled ? "Connected" : "Disconnected"}
+            {enabled ? "Enabled" : "Off"}
           </Badge>
         </div>
       </CardHeader>

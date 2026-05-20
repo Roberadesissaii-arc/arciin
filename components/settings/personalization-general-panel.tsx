@@ -2,6 +2,7 @@
 
 import { LayoutGrid } from "lucide-react"
 
+import { DocumentThumbnailsSettings } from "@/components/settings/document-thumbnails-settings"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { SettingsSelect } from "@/components/settings/settings-select"
@@ -37,6 +38,7 @@ export function PersonalizationGeneralPanel() {
   }
 
   return (
+    <div className="space-y-5">
     <Card className="border-border bg-card shadow-none">
       <CardHeader className="pb-3">
         <SectionHeader
@@ -83,5 +85,7 @@ export function PersonalizationGeneralPanel() {
         </SettingRow>
       </CardContent>
     </Card>
+    <DocumentThumbnailsSettings />
+    </div>
   )
 }

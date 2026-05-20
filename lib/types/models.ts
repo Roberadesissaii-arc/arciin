@@ -69,9 +69,46 @@ export type InstanceStatus = {
   setupRequired: boolean
   instanceName?: string
   version: string
-  /** API runtime data directory; use during setup (especially Docker /data/arciin). */
+  /** Host or native path to pre-fill setup (not the in-container path when using Docker). */
   suggestedStorageRoot?: string
+  runtimeStorageRoot?: string
+  hostStorageRoot?: string | null
+  isDockerRuntime?: boolean
   storageRootHint?: string
+}
+
+export type StorageVolumeOption = {
+  id: string
+  label: string
+  arciinPath: string
+  mountPoint: string | null
+  kind: "recommended" | "mount" | "runtime" | "os-root" | "custom"
+  filesystem: string | null
+  device: string | null
+  totalBytes: number | null
+  availableBytes: number | null
+  writable: boolean
+  recommended: boolean
+  largeExternal: boolean
+}
+
+export type StorageDiscovery = {
+  runtimeDataDir: string
+  hostDataDir: string | null
+  isDockerRuntime: boolean
+  recommendedArciinPath: string
+  osRoot: {
+    mountPoint: string
+    totalBytes: number | null
+    availableBytes: number | null
+  }
+  volumes: StorageVolumeOption[]
+  installNotes: string[]
+}
+
+export type StoragePrepareResult = {
+  arciinPath: string
+  writable: boolean
 }
 
 export type InstanceSummary = {
@@ -256,13 +293,37 @@ export type GeneralSettings = {
 
 export type StorageSettings = {
   instanceName?: string
+  /** Path shown in UI (host bind mount when Docker). */
   storageRoot: string
+  runtimeStorageRoot?: string
+  hostStorageRoot?: string | null
+  isDockerRuntime?: boolean
   defaultLocationId?: string | null
   writable: boolean
   usageBytes: number
   objectCount: number
   totalBytes?: number | null
   availableBytes?: number | null
+}
+
+export type StorageMigrateStatus = {
+  active: boolean
+  job: {
+    id: string
+    status: string
+    progress: number
+    error: string | null
+    result: unknown
+    createdAt: string
+    completedAt: string | null
+  } | null
+}
+
+export type StorageMigrateStartResult = {
+  jobId: string
+  fromRoot: string
+  toRoot: string
+  displayRoot: string
 }
 
 export type MobileServerEndpoints = {

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 
 import { AssetBulkActionsBar } from "@/components/libraries/asset-bulk-actions-bar"
+import { AssetViewerProvider } from "@/components/libraries/asset-viewer-context"
 import { AssetSelectionProvider, useAssetSelectionRequired } from "@/components/libraries/asset-selection"
 import { cn } from "@/lib/utils"
 import type { AssetSummary } from "@/lib/types/models"
@@ -204,9 +205,11 @@ export function SelectableAssetsContainer({
 }) {
   return (
     <AssetSelectionProvider assets={assets}>
-      <SelectableAssetsContainerInner defaultLibraryId={defaultLibraryId}>
-        {children}
-      </SelectableAssetsContainerInner>
+      <AssetViewerProvider assets={assets}>
+        <SelectableAssetsContainerInner defaultLibraryId={defaultLibraryId}>
+          {children}
+        </SelectableAssetsContainerInner>
+      </AssetViewerProvider>
     </AssetSelectionProvider>
   )
 }

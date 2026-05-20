@@ -15,6 +15,8 @@ export const queryKeys = {
   job: (jobId: string) => ["job", jobId] as const,
   generalSettings: ["settings", "general"] as const,
   storageSettings: ["settings", "storage"] as const,
+  storageVolumes: ["settings", "storage", "volumes"] as const,
+  storageMigrateStatus: ["settings", "storage", "migrate"] as const,
   remoteAccessSettings: ["settings", "remote-access"] as const,
   mobileConnection: ["settings", "mobile-connection"] as const,
   cloudflareTunnel: ["settings", "cloudflare-tunnel"] as const,

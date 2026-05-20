@@ -3,7 +3,9 @@
 import { useEffect, useRef, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 
+import { AssetPreviewFrame } from "@/components/libraries/asset-preview-frame"
 import { MediaTypeIcon } from "@/components/libraries/media-type-icon"
+import { thumbnailStatusLabel } from "@/components/libraries/thumbnail-status-badge"
 import { mediaTypeIcons } from "@/lib/utils/file-icons"
 import { cn } from "@/lib/utils"
 import type { AssetSummary } from "@/lib/types/models"
@@ -20,20 +22,24 @@ const THUMB_MEDIA = new Set(["IMAGE", "VIDEO"])
 function DocumentThumbnailPlaceholder({
   asset,
   loading = false,
+  badgeLabel,
 }: {
   asset: AssetSummary
   loading?: boolean
+  badgeLabel: string
 }) {
   return (
-    <div className="relative flex aspect-[4/3] items-center justify-center overflow-hidden rounded-xl border border-border bg-muted/40 text-muted-foreground">
-      <MediaTypeIcon
-        mediaType={asset.mediaType}
-        filename={asset.originalFilename}
-        mimeType={asset.mimeType}
-        extension={asset.extension}
-        className={cn("size-7", loading && "arciin-doc-icon-pulse")}
-      />
-    </div>
+    <AssetPreviewFrame asset={asset} badgeLabel={badgeLabel}>
+      <div className="relative flex aspect-[4/3] items-center justify-center overflow-hidden rounded-xl border border-border bg-muted/40 text-muted-foreground">
+        <MediaTypeIcon
+          mediaType={asset.mediaType}
+          filename={asset.originalFilename}
+          mimeType={asset.mimeType}
+          extension={asset.extension}
+          className={cn("size-7", loading && "arciin-doc-icon-pulse")}
+        />
+      </div>
+    </AssetPreviewFrame>
   )
 }
 
@@ -45,47 +51,57 @@ function PdfDocumentPreview({ asset }: { asset: AssetSummary }) {
     asset.originalFilename.split(".").pop() ??
     "pdf"
   ).toUpperCase()
+  const thumbLoading = !thumb
+  const badgeLabel = thumbnailStatusLabel(asset, thumbLoading, ext)
 
   if (thumb) {
     return (
-      <div className="relative aspect-[4/3] overflow-hidden rounded-xl border border-border bg-muted/40">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          key={`${asset.id}-${asset.updatedAt}`}
-          src={thumb}
-          alt=""
-          className="size-full object-cover"
-          loading="lazy"
-        />
-        <span className="absolute bottom-1.5 right-2 rounded-md bg-black/35 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white/90 backdrop-blur-sm">
-          {ext}
-        </span>
-      </div>
+      <AssetPreviewFrame asset={asset} badgeLabel={badgeLabel}>
+        <div className="relative aspect-[4/3] overflow-hidden rounded-xl border border-border bg-muted/40">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            key={`${asset.id}-${asset.updatedAt}`}
+            src={thumb}
+            alt=""
+            className="size-full object-cover"
+            loading="lazy"
+          />
+        </div>
+      </AssetPreviewFrame>
     )
   }
 
-  return <DocumentThumbnailPlaceholder asset={asset} loading />
+  return (
+    <DocumentThumbnailPlaceholder asset={asset} loading badgeLabel={badgeLabel} />
+  )
 }
 
 function ServerAssetThumbnail({ asset }: { asset: AssetSummary }) {
   const [thumbFailed, setThumbFailed] = useState(false)
+  const [thumbLoaded, setThumbLoaded] = useState(false)
   const thumbSrc = `/api/assets/${asset.id}/thumbnail?v=${encodeURIComponent(asset.updatedAt)}`
+  const thumbLoading =
+    !thumbFailed && !thumbLoaded && (asset.status === "PROCESSING" || THUMB_MEDIA.has(asset.mediaType))
+  const badgeLabel = thumbnailStatusLabel(asset, thumbLoading)
 
   if (thumbFailed) {
-    return <DocumentThumbnailPlaceholder asset={asset} />
+    return <DocumentThumbnailPlaceholder asset={asset} badgeLabel={badgeLabel} />
   }
 
   return (
-    <div className="relative aspect-[4/3] overflow-hidden rounded-xl border border-border bg-muted/40">
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={thumbSrc}
-        alt=""
-        className="size-full object-cover"
-        loading="lazy"
-        onError={() => setThumbFailed(true)}
-      />
-    </div>
+    <AssetPreviewFrame asset={asset} badgeLabel={badgeLabel}>
+      <div className="relative aspect-[4/3] overflow-hidden rounded-xl border border-border bg-muted/40">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={thumbSrc}
+          alt=""
+          className="size-full object-cover"
+          loading="lazy"
+          onLoad={() => setThumbLoaded(true)}
+          onError={() => setThumbFailed(true)}
+        />
+      </div>
+    </AssetPreviewFrame>
   )
 }
 
@@ -115,7 +131,8 @@ function ImageOrIconPreview({ asset }: { asset: AssetSummary }) {
     return <ServerAssetThumbnail key={thumbKey} asset={asset} />
   }
 
-  return <DocumentThumbnailPlaceholder asset={asset} />
+  const badgeLabel = thumbnailStatusLabel(asset, false)
+  return <DocumentThumbnailPlaceholder asset={asset} badgeLabel={badgeLabel} />
 }
 
 function VideoAssetPreview({ asset }: { asset: AssetSummary }) {
@@ -139,7 +156,10 @@ function VideoAssetPreview({ asset }: { asset: AssetSummary }) {
     }
   }, [hover])
 
+  const badgeLabel = thumbnailStatusLabel(asset, false)
+
   return (
+    <AssetPreviewFrame asset={asset} badgeLabel={badgeLabel}>
     <div
       className="relative aspect-[4/3] overflow-hidden rounded-xl border border-border bg-muted/40"
       onMouseEnter={() => setHover(true)}
@@ -183,6 +203,7 @@ function VideoAssetPreview({ asset }: { asset: AssetSummary }) {
       )}
       <span className="sr-only">Video — hover for muted preview</span>
     </div>
+    </AssetPreviewFrame>
   )
 }
 
@@ -219,7 +240,10 @@ function AudioAssetPreview({ asset }: { asset: AssetSummary }) {
     el.muted = true
   }, [playMode])
 
+  const badgeLabel = thumbnailStatusLabel(asset, false)
+
   return (
+    <AssetPreviewFrame asset={asset} badgeLabel={badgeLabel}>
     <div
       role="button"
       tabIndex={0}
@@ -308,6 +332,7 @@ function AudioAssetPreview({ asset }: { asset: AssetSummary }) {
         Audio — hover for muted preview, click to play with sound, click again to stop
       </span>
     </div>
+    </AssetPreviewFrame>
   )
 }
 

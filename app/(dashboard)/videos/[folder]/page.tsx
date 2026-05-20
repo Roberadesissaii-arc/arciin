@@ -10,7 +10,6 @@ export default async function VideosFolderPage({
   return (
     <FolderBrowser
       librarySlug="videos"
-      libraryTitle="Videos"
       folderSlug={folder}
       mediaType="VIDEO"
     />

@@ -2,27 +2,19 @@
 
 import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { AlertTriangle, FolderTree, Save, Server } from "lucide-react"
+import { Database, FolderOpen, HardDrive, Save } from "lucide-react"
 import { toast } from "sonner"
 
+import { StorageMigratePanel } from "@/components/settings/storage-migrate-panel"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Field, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Progress } from "@/components/ui/progress"
+import { Skeleton } from "@/components/ui/skeleton"
 import { getStorageSettings, updateStorageSettings } from "@/lib/api/settings"
 import { queryKeys } from "@/lib/api/query-keys"
 import { formatBytes } from "@/lib/utils/format-bytes"
-import { cn } from "@/lib/utils"
-import { DocumentThumbnailsSettings } from "@/components/settings/document-thumbnails-settings"
 
-const LAYOUT_HINTS = [
-  { label: "objects", hint: "Binary blobs keyed by storage object id" },
-  { label: "libraries", hint: "Library-scoped file trees" },
-  { label: "thumbnails", hint: "Generated previews" },
-  { label: "temp", hint: "Upload and job scratch space" },
-  { label: "logs", hint: "Optional local logs" },
-] as const
+const FOLDERS = ["objects", "libraries", "thumbnails", "temp", "logs"] as const
 
 export function StorageSettingsForm() {
   const queryClient = useQueryClient()
@@ -30,12 +22,14 @@ export function StorageSettingsForm() {
     queryKey: queryKeys.storageSettings,
     queryFn: ({ signal }) => getStorageSettings(signal),
   })
-  const [storageRoot, setStorageRoot] = useState("")
+  const [pathDraft, setPathDraft] = useState("")
+
   const updateMutation = useMutation({
     mutationFn: updateStorageSettings,
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: queryKeys.storageSettings })
-      toast.success("Storage settings updated.")
+      setPathDraft("")
+      toast.success("Storage path saved.")
     },
     onError: (err) => {
       toast.error(err instanceof Error ? err.message : "Could not update storage.")
@@ -43,136 +37,136 @@ export function StorageSettingsForm() {
   })
 
   const d = storageQuery.data
-  const effectiveValue = storageRoot || d?.storageRoot || ""
+  const displayPath = pathDraft || d?.storageRoot || ""
   const usagePct =
     d?.totalBytes && d.totalBytes > 0 && d.usageBytes >= 0
       ? Math.min(100, Math.round((d.usageBytes / d.totalBytes) * 100))
       : null
 
-  return (
-    <div className="space-y-6">
-
-      {d && d.totalBytes != null && d.totalBytes > 0 && (
-        <Card className="border-border bg-card">
-          <CardHeader className="pb-2">
-            <div className="flex flex-wrap items-end justify-between gap-2">
-              <div>
-                <CardTitle className="text-base text-foreground">Volume usage</CardTitle>
-                <CardDescription className="text-zinc-600">
-                  {formatBytes(d.usageBytes)} of {formatBytes(d.totalBytes)} on the filesystem hosting the root
-                </CardDescription>
-              </div>
-              {usagePct != null && (
-                <span className="text-sm font-semibold tabular-nums text-primary">{usagePct}%</span>
-              )}
-            </div>
-          </CardHeader>
-          <CardContent>
-            <Progress value={usagePct ?? 0} className="h-2.5" />
-            <p className="mt-2 text-xs text-muted-foreground">
-              Database metadata stays in PostgreSQL; binaries never live inside the DB.
-            </p>
-          </CardContent>
-        </Card>
-      )}
-
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
-        <Card className="border-border bg-card">
-          <CardHeader>
-            <div className="flex items-center gap-2.5">
-              <Server className="size-5 text-muted-foreground" />
-              <div>
-                <CardTitle className="text-foreground">Storage root</CardTitle>
-                <CardDescription className="text-zinc-600">
-                  Absolute path on this host where Arciin writes objects, libraries, temp files, and thumbnails. The
-                  default install uses{" "}
-                  <span className="font-mono text-foreground/90">/srv/arciin-storage/arciin</span> (outside the git
-                  clone). Docker containers use <span className="font-mono text-foreground/90">/data/arciin</span>{" "}
-                  (bind mount from <span className="font-mono text-foreground/90">ARCIIN_HOST_DATA_DIR</span> on the
-                  host).
-                </CardDescription>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {d?.instanceName && (
-              <p className="rounded-xl border border-border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
-                Instance <span className="font-medium text-foreground">{d.instanceName}</span>
-                {d.defaultLocationId ? (
-                  <span className="text-zinc-500"> · default location synced</span>
-                ) : null}
-              </p>
-            )}
-            <Field>
-              <FieldLabel htmlFor="storageRoot">Root path</FieldLabel>
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <Input
-                  id="storageRoot"
-                  value={effectiveValue}
-                  onChange={(e) => setStorageRoot(e.target.value)}
-                  className="font-mono text-[13px] sm:flex-1"
-                  spellCheck={false}
-                  autoComplete="off"
-                />
-                <Button
-                  className="shrink-0 gap-1.5 bg-primary text-white hover:bg-primary/90 sm:w-auto"
-                  disabled={updateMutation.isPending || !effectiveValue}
-                  onClick={() => updateMutation.mutate(effectiveValue)}
-                >
-                  <Save className="size-3.5" />
-                  {updateMutation.isPending ? "Saving…" : "Save"}
-                </Button>
-              </div>
-            </Field>
-            <div
-              className={cn(
-                "flex gap-3 rounded-xl border px-3 py-3 text-sm",
-                d?.writable ? "border-amber-500/25 bg-amber-500/[0.06]" : "border-destructive/30 bg-destructive/5",
-              )}
-            >
-              <AlertTriangle
-                className={cn("mt-0.5 size-4 shrink-0", d?.writable ? "text-amber-600" : "text-destructive")}
-              />
-              <p className="text-muted-foreground">
-                {d?.writable
-                  ? "Changing the root does not move existing files. Migrate data or update libraries before pointing production traffic at a new path."
-                  : "This path is not writable from the API process. Fix permissions or choose a directory the service user owns."}
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="border-border bg-card">
-          <CardHeader>
-            <div className="flex items-center gap-2.5">
-              <FolderTree className="size-5 text-muted-foreground" />
-              <div>
-                <CardTitle className="text-foreground">Recommended layout</CardTitle>
-                <CardDescription className="text-zinc-600">
-                  Keep structure predictable for backups and future workers.
-                </CardDescription>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <ul className="space-y-2">
-              {LAYOUT_HINTS.map(({ label, hint }) => (
-                <li
-                  key={label}
-                  className="flex items-start justify-between gap-3 rounded-lg border border-border/80 bg-muted/25 px-3 py-2.5"
-                >
-                  <code className="shrink-0 rounded bg-background/80 px-1.5 py-0.5 font-mono text-[12px] text-foreground">
-                    {label}
-                  </code>
-                  <span className="text-right text-[12px] leading-snug text-muted-foreground">{hint}</span>
-                </li>
-              ))}
-            </ul>
-          </CardContent>
-        </Card>
-
-        <DocumentThumbnailsSettings />
+  if (storageQuery.isLoading) {
+    return (
+      <div className="space-y-4">
+        <Skeleton className="h-36 w-full rounded-2xl" />
+        <Skeleton className="h-64 w-full rounded-2xl" />
       </div>
+    )
+  }
+
+  return (
+    <div className="mx-auto max-w-3xl space-y-8">
+      {/* Usage + path hero */}
+      <div className="overflow-hidden rounded-2xl border border-border bg-gradient-to-br from-zinc-900 via-card to-card">
+        <div className="border-b border-border/60 px-5 py-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="flex size-10 items-center justify-center rounded-xl bg-primary/15">
+                <HardDrive className="size-5 text-primary" />
+              </div>
+              <div>
+                <h2 className="text-base font-semibold text-foreground">Active storage</h2>
+                <p className="text-[12px] text-muted-foreground">
+                  {d?.writable ? "Writable" : "Not writable"} · metadata in PostgreSQL only
+                </p>
+              </div>
+            </div>
+            {usagePct != null ? (
+              <span className="text-2xl font-semibold tabular-nums text-primary">{usagePct}%</span>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="space-y-4 px-5 py-4">
+          {d?.totalBytes != null && d.totalBytes > 0 ? (
+            <div>
+              <div className="mb-1.5 flex justify-between text-[11px] text-muted-foreground">
+                <span>{formatBytes(d.usageBytes)} used</span>
+                <span>{formatBytes(d.totalBytes)} on volume</span>
+              </div>
+              <Progress value={usagePct ?? 0} className="h-2 bg-muted" />
+            </div>
+          ) : null}
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="rounded-xl border border-border/60 bg-black/20 px-3 py-2.5">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                Root path
+              </p>
+              <p className="mt-1 break-all font-mono text-[12px] leading-snug text-foreground">
+                {d?.storageRoot ?? "—"}
+              </p>
+            </div>
+            <div className="rounded-xl border border-border/60 bg-black/20 px-3 py-2.5">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                Inventory
+              </p>
+              <p className="mt-1 flex items-center gap-1.5 text-sm font-medium text-foreground">
+                <Database className="size-3.5 text-muted-foreground" />
+                {(d?.objectCount ?? 0).toLocaleString()} objects
+              </p>
+            </div>
+          </div>
+
+          {d?.isDockerRuntime && d.hostStorageRoot && d.runtimeStorageRoot ? (
+            <p className="rounded-lg border border-border/50 bg-muted/20 px-3 py-2 text-[11px] leading-relaxed text-muted-foreground">
+              Docker maps <span className="font-mono text-foreground/90">{d.hostStorageRoot}</span> on the
+              host to <span className="font-mono text-foreground/90">{d.runtimeStorageRoot}</span> in the
+              container. Use the transfer tool below or update <span className="font-mono">ARCIIN_HOST_DATA_DIR</span>{" "}
+              and re-run <span className="font-mono">docker-setup.sh</span>.
+            </p>
+          ) : null}
+        </div>
+      </div>
+
+      {/* Folder layout — compact */}
+      <div className="rounded-2xl border border-border bg-card/60 px-5 py-4">
+        <div className="mb-3 flex items-center gap-2">
+          <FolderOpen className="size-4 text-muted-foreground" />
+          <h3 className="text-sm font-semibold text-foreground">Folder layout</h3>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {FOLDERS.map((name) => (
+            <code
+              key={name}
+              className="rounded-lg border border-border/80 bg-muted/30 px-2.5 py-1 font-mono text-[11px] text-foreground/90"
+            >
+              {name}/
+            </code>
+          ))}
+        </div>
+      </div>
+
+      {/* Migration */}
+      <StorageMigratePanel usageBytes={d?.usageBytes ?? 0} />
+
+      {/* Advanced: manual path (collapsed visually) */}
+      <details className="group rounded-2xl border border-border bg-card/40">
+        <summary className="cursor-pointer list-none px-5 py-3.5 text-sm font-medium text-muted-foreground marker:content-none [&::-webkit-details-marker]:hidden">
+          <span className="group-open:text-foreground">Advanced — edit path manually</span>
+        </summary>
+        <div className="space-y-3 border-t border-border/80 px-5 pb-4 pt-3">
+          <p className="text-[11px] leading-relaxed text-muted-foreground">
+            Only changes the configured path. Does not copy files. Prefer &quot;Move storage&quot; above.
+          </p>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <Input
+              value={displayPath}
+              onChange={(e) => setPathDraft(e.target.value)}
+              className="font-mono text-[12px]"
+              spellCheck={false}
+              autoComplete="off"
+            />
+            <Button
+              variant="outline"
+              className="shrink-0 gap-1.5"
+              disabled={updateMutation.isPending || !displayPath}
+              onClick={() => updateMutation.mutate(displayPath)}
+            >
+              <Save className="size-3.5" />
+              Save path
+            </Button>
+          </div>
+        </div>
+      </details>
     </div>
   )
 }

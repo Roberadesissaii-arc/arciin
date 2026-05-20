@@ -47,5 +47,6 @@ export const JOB_TYPES = {
   syncConnectorMirror: "sync_connector_mirror",
   cleanupTempFiles: "cleanup_temp_files",
   calculateStorageUsage: "calculate_storage_usage",
+  migrateStorage: "migrate_storage",
   plexSyncPlaceholder: "plex_sync_placeholder",
 } as const

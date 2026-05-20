@@ -96,10 +96,22 @@ _arciin_list_storage_candidates() {
 
   echo "$ARCIIN_DEFAULT_STORAGE"
 
-  for path in /mnt/*/arciin-data /media/*/*/arciin-data; do
+  for path in \
+    /mnt/*/arciin-data /mnt/*/arciin \
+    /media/*/*/arciin-data /media/*/*/arciin \
+    /run/media/*/*/arciin-data /run/media/*/*/arciin; do
     [[ "$path" == *"*"* ]] && continue
     _arciin_can_use_storage_path "$path" && echo "$path"
   done
+
+  if command -v lsblk &>/dev/null; then
+    while IFS= read -r mp; do
+      [[ -z "$mp" || "$mp" == "/" ]] && continue
+      [[ "$mp" == /boot* ]] && continue
+      local candidate="${mp%/}/arciin"
+      _arciin_can_use_storage_path "$candidate" && echo "$candidate"
+    done < <(lsblk -rno MOUNTPOINT 2>/dev/null | sort -u)
+  fi
 
   if [[ -n "$repo_root" ]]; then
     local in_repo="${repo_root}/data/arciin"
@@ -121,6 +133,87 @@ _arciin_storage_choice_hint() {
   fi
 }
 
+# Optional SSD / large disk guidance (install.sh only — never auto-format without consent).
+_arciin_prompt_attach_storage_disk() {
+  if [[ ! -t 0 ]] || ! command -v lsblk &>/dev/null; then
+    return 0
+  fi
+
+  local line name size type mount fstype
+  local -a unmounted=()
+  while read -r name size type mount fstype; do
+    [[ "$type" == "disk" || "$type" == "part" ]] || continue
+    [[ -n "$mount" ]] && continue
+    [[ "$name" == loop* ]] && continue
+    [[ "${size%G}" != "$size" && "${size%G}" -lt 8 ]] 2>/dev/null && continue
+    unmounted+=("${name} ${size} ${fstype:-unknown}")
+  done < <(lsblk -rno NAME,SIZE,TYPE,MOUNTPOINT,FSTYPE 2>/dev/null)
+
+  if [[ "${#unmounted[@]}" -eq 0 ]]; then
+    return 0
+  fi
+
+  echo "" >&2
+  echo "  Detected block device(s) not mounted (possible USB/SATA SSD):" >&2
+  local entry
+  for entry in "${unmounted[@]}"; do
+    echo "    • /dev/${entry%% *} — ${entry#* }" >&2
+  done
+  echo "" >&2
+  echo "  Arciin will NOT format disks from the web UI." >&2
+  read -r -p "  Mount a disk now with sudo (guided, no format)? [y/N]: " mount_now
+  if [[ ! "$mount_now" =~ ^[Yy] ]]; then
+    read -r -p "  Show example commands to format/mount yourself? [y/N]: " show_cmds
+    if [[ "$show_cmds" =~ ^[Yy] ]]; then
+      echo "" >&2
+      echo "  Example (replace sdX1 with your partition — WRONG DEVICE ERASES DATA):" >&2
+      echo "    sudo mkdir -p /mnt/arciin-ssd" >&2
+      echo "    sudo mkfs.ext4 -L arciin-data /dev/sdX1    # only if the disk is empty" >&2
+      echo "    echo '/dev/sdX1 /mnt/arciin-ssd ext4 defaults,nofail 0 2' | sudo tee -a /etc/fstab" >&2
+      echo "    sudo mount -a" >&2
+      echo "    # Then pick /mnt/arciin-ssd/arciin in the installer or setup UI." >&2
+      echo "" >&2
+    fi
+    return 0
+  fi
+
+  read -r -p "  Mount point [/mnt/arciin-ssd]: " mp
+  mp="${mp:-/mnt/arciin-ssd}"
+  read -r -p "  Device to mount (e.g. sdb1): " dev
+  dev="${dev#/dev/}"
+  [[ -n "$dev" ]] || {
+    _arciin_storage_msg "Skipped — no device entered."
+    return 0
+  }
+  if [[ ! -b "/dev/${dev}" ]]; then
+    _arciin_storage_msg "/dev/${dev} not found — skipped."
+    return 0
+  fi
+  read -r -p "  Format /dev/${dev} first? THIS ERASES THE DISK [y/N]: " do_fmt
+  if [[ "$do_fmt" =~ ^[Yy] ]]; then
+    read -r -p "  Type FORMAT ${dev} to confirm: " confirm
+    if [[ "$confirm" == "FORMAT ${dev}" ]]; then
+      sudo mkfs.ext4 -F -L arciin-data "/dev/${dev}" || {
+        _arciin_storage_msg "mkfs failed."
+        return 0
+      }
+    else
+      _arciin_storage_msg "Format cancelled."
+      return 0
+    fi
+  fi
+  sudo mkdir -p "$mp" || return 0
+  if ! grep -q "[[:space:]]${mp}[[:space:]]" /etc/fstab 2>/dev/null; then
+    echo "/dev/${dev} ${mp} ext4 defaults,nofail 0 2" | sudo tee -a /etc/fstab >/dev/null
+  fi
+  sudo mount "$mp" 2>/dev/null || sudo mount "/dev/${dev}" "$mp" || {
+    _arciin_storage_msg "Mount failed — use lsblk and mount manually."
+    return 0
+  }
+  sudo chown -R "$(id -u):$(id -g)" "$mp" 2>/dev/null || true
+  _arciin_storage_msg "Mounted at ${mp} — it will appear in the storage list."
+}
+
 # Interactive menu; prints chosen path to stdout. Uses preset when non-interactive.
 _arciin_prompt_storage_path() {
   local repo_root="${1:-}"
@@ -135,6 +228,8 @@ _arciin_prompt_storage_path() {
     echo "$ARCIIN_DEFAULT_STORAGE"
     return 0
   fi
+
+  _arciin_prompt_attach_storage_disk
 
   echo "" >&2
   echo "  Where should Arciin store your files?" >&2

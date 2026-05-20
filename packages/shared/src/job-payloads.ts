@@ -23,6 +23,12 @@ export type CalculateStorageUsagePayload = {
   requestedByUserId?: string
 }
 
+export type MigrateStoragePayload = {
+  fromRoot: string
+  toRoot: string
+  requestedByUserId?: string
+}
+
 export type PlexSyncPlaceholderPayload = {
   integrationId: string
   requestedByUserId?: string

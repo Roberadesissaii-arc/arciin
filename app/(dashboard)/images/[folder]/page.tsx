@@ -10,7 +10,6 @@ export default async function ImagesFolderPage({
   return (
     <FolderBrowser
       librarySlug="images"
-      libraryTitle="Images"
       folderSlug={folder}
       mediaType="IMAGE"
     />

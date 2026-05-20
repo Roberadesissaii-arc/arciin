@@ -5,8 +5,23 @@ import { normalizeConfiguredStorageRoot } from "@arciin/shared"
 
 import { apiConfig } from "@/config"
 
+function hostDataDir(): string | null {
+  const raw = process.env.ARCIIN_HOST_DATA_DIR?.trim()
+  return raw ? path.resolve(raw) : null
+}
+
 export function resolveEffectiveStorageRoot(configured: string | null | undefined): string {
-  return normalizeConfiguredStorageRoot(configured, apiConfig.dataDir)
+  return normalizeConfiguredStorageRoot(configured, apiConfig.dataDir, hostDataDir())
+}
+
+/** Path shown in UI: host bind mount when Docker, else effective runtime path. */
+export function resolveDisplayStorageRoot(configured: string | null | undefined): string {
+  const effective = resolveEffectiveStorageRoot(configured)
+  const host = hostDataDir()
+  if (host && effective === path.resolve(apiConfig.dataDir)) {
+    return host
+  }
+  return effective
 }
 
 export async function loadEffectiveStorageRoot(prisma: PrismaClient): Promise<string> {

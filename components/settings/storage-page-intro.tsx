@@ -41,7 +41,7 @@ export function StoragePageIntro() {
     <DashboardPageIntro
       title="Storage"
       subtitle="Managed root · usage · object inventory"
-      description="Arciin keeps originals and derived files under a single configurable root on this machine. Review usage here, then adjust the path only when you know the filesystem layout."
+      description="Disk usage, active root, and one-click transfer when you add a larger drive."
       badge={badge}
       footer={
         <StorageOverviewStats data={d} isLoading={storageQuery.isLoading} />

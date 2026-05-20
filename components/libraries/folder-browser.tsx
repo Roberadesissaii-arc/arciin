@@ -1,8 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
-import Link from "next/link"
-import { ChevronRight, Grid3X3, List, Search } from "lucide-react"
+import { Grid3X3, List, Search } from "lucide-react"
 
 import { PageHeader } from "@/components/app-shell/page-header"
 import { BrowserSectionHeading } from "@/components/libraries/browser-section-heading"
@@ -29,12 +28,10 @@ import { cn } from "@/lib/utils"
 
 export function FolderBrowser({
   librarySlug,
-  libraryTitle,
   folderSlug,
   mediaType,
 }: {
   librarySlug: string
-  libraryTitle: string
   folderSlug: string
   mediaType?: MediaType
 }) {
@@ -90,15 +87,6 @@ export function FolderBrowser({
 
   return (
     <div className="space-y-6">
-      {/* Breadcrumb */}
-      <div className="flex items-center gap-1.5 text-[13px] text-muted-foreground">
-        <Link href={`/${librarySlug}`} className="transition-colors hover:text-foreground/80">
-          {libraryTitle}
-        </Link>
-        <ChevronRight className="size-3.5 shrink-0" />
-        <span className="text-foreground/90">{folderName}</span>
-      </div>
-
       <PageHeader
         title={folderName}
         description={`Contents of the ${folderName} folder.`}

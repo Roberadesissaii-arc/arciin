@@ -11,7 +11,11 @@ import type {
   CloudflareTunnelStatus,
   RemoteAccessSettings,
   SecuritySettings,
+  StorageDiscovery,
+  StorageMigrateStartResult,
+  StorageMigrateStatus,
   StorageSettings,
+  StorageVolumeOption,
 } from "@/lib/types/models"
 
 export function getGeneralSettings(signal?: AbortSignal) {
@@ -35,6 +39,33 @@ export function updateStorageSettings(storageRoot: string) {
     body: {
       storageRoot,
     },
+  })
+}
+
+export type StorageVolumesResponse = StorageDiscovery & {
+  currentStorageRoot: string
+  currentEffectiveRoot: string
+  migrationTargets: StorageVolumeOption[]
+}
+
+export function getStorageVolumes(signal?: AbortSignal) {
+  return fetchApi<StorageVolumesResponse>("/settings/storage/volumes", {
+    method: "GET",
+    signal,
+  })
+}
+
+export function getStorageMigrateStatus(signal?: AbortSignal) {
+  return fetchApi<StorageMigrateStatus>("/settings/storage/migrate/status", {
+    method: "GET",
+    signal,
+  })
+}
+
+export function startStorageMigration(targetPath: string) {
+  return fetchApi<StorageMigrateStartResult>("/settings/storage/migrate", {
+    method: "POST",
+    body: { targetPath },
   })
 }
 

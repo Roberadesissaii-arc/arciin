@@ -14,6 +14,7 @@ const LEGACY_ABSOLUTE_STORAGE_ROOTS = new Set(["/app/data/arciin"])
 export function normalizeConfiguredStorageRoot(
   configured: string | null | undefined,
   runtimeDataDir: string,
+  hostDataDir?: string | null,
 ): string {
   const runtime = path.resolve(runtimeDataDir)
   const raw = configured?.trim()
@@ -21,6 +22,11 @@ export function normalizeConfiguredStorageRoot(
 
   const resolved = path.resolve(raw)
   if (resolved === runtime) return resolved
+
+  const host = hostDataDir?.trim() ? path.resolve(hostDataDir.trim()) : null
+  if (host && resolved === host) {
+    return runtime
+  }
 
   const slash = raw.replace(/\\/g, "/")
   if (LEGACY_RELATIVE_STORAGE_ROOTS.has(slash) || LEGACY_RELATIVE_STORAGE_ROOTS.has(raw)) {

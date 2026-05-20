@@ -8,7 +8,7 @@ import type Redis from "ioredis"
 import sharp from "sharp"
 
 import type { Prisma } from "@prisma/client"
-import { prisma } from "@arciin/database"
+import { prisma, runStorageMigration } from "@arciin/database"
 import {
   JOB_TYPES,
   VIDEO_THUMBNAIL_PLACEHOLDER_SVG,
@@ -20,6 +20,7 @@ import {
   type AnalyzeFilePayload,
   type CalculateStorageUsagePayload,
   type CleanupTempFilesPayload,
+  type MigrateStoragePayload,
   type ExtractMetadataPayload,
   type GenerateThumbnailPayload,
   type PlexSyncPlaceholderPayload,
@@ -402,6 +403,7 @@ export async function handleStorageJob(
   data:
     | (CleanupTempFilesPayload & { jobRecordId?: string })
     | (CalculateStorageUsagePayload & { jobRecordId?: string })
+    | (MigrateStoragePayload & { jobRecordId?: string })
 ) {
   await markJob(data.jobRecordId, { status: "ACTIVE", progress: 10 })
 
@@ -458,6 +460,38 @@ export async function handleStorageJob(
         objectsDirExists: exists,
       },
     })
+    return
+  }
+
+  if (name === JOB_TYPES.migrateStorage && "fromRoot" in data && "toRoot" in data) {
+    const payload = data as MigrateStoragePayload & { jobRecordId?: string }
+    try {
+      const result = await runStorageMigration(
+        prisma,
+        {
+          fromRoot: path.resolve(payload.fromRoot),
+          toRoot: path.resolve(payload.toRoot),
+          jobRecordId: payload.jobRecordId ?? "",
+          userId: payload.requestedByUserId,
+          displayRootLabel: payload.toRoot,
+        },
+        async (progress, phase) => {
+          await markJob(payload.jobRecordId, {
+            status: "ACTIVE",
+            progress,
+            result: { phase },
+          })
+        },
+      )
+      await markJob(payload.jobRecordId, {
+        status: "COMPLETED",
+        progress: 100,
+        result: result as unknown as Record<string, unknown>,
+      })
+    } catch (error) {
+      await markJobFailure(payload.jobRecordId, error)
+      throw error
+    }
   }
 }
 

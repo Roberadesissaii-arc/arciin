@@ -10,7 +10,6 @@ export default async function MusicFolderPage({
   return (
     <FolderBrowser
       librarySlug="music"
-      libraryTitle="Music"
       folderSlug={folder}
       mediaType="AUDIO"
     />

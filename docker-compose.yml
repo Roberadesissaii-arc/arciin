@@ -40,6 +40,7 @@ services:
       DATABASE_URL: postgresql://arciin:arciin@postgres:5432/arciin
       REDIS_URL: redis://redis:6379
       ARCIIN_DATA_DIR: /data/arciin
+      ARCIIN_HOST_DATA_DIR: ${ARCIIN_HOST_DATA_DIR:-/srv/arciin-storage/arciin}
       ARCIIN_PUBLIC_URL: http://localhost
       ARCIIN_API_URL: http://api:4000
       NEXT_PUBLIC_API_BASE_URL: /api
@@ -66,6 +67,7 @@ services:
       DATABASE_URL: postgresql://arciin:arciin@postgres:5432/arciin
       REDIS_URL: redis://redis:6379
       ARCIIN_DATA_DIR: /data/arciin
+      ARCIIN_HOST_DATA_DIR: ${ARCIIN_HOST_DATA_DIR:-/srv/arciin-storage/arciin}
     depends_on:
       postgres:
         condition: service_healthy

@@ -21,6 +21,7 @@ import { ARCIIN_DEV_STORAGE_ROOT } from "@arciin/shared"
 
 import { useClaimInstance } from "@/hooks/use-instance"
 import { getInstanceStatus } from "@/lib/api/instance"
+import { SetupStoragePicker } from "@/components/auth/setup-storage-picker"
 import { cn } from "@/lib/utils"
 import {
   setupDetailsSchema,
@@ -270,17 +271,14 @@ export function SetupForm() {
                 />
                 <FieldError errors={[form.formState.errors.instanceName]} />
               </Field>
-              <Field>
-                <FieldLabel htmlFor="storageRoot">Storage root path</FieldLabel>
-                <Input
-                  id="storageRoot"
-                  className="h-11 rounded-lg border-white/10 bg-white/[0.03]"
-                  {...form.register("storageRoot")}
+              <Field className="sm:col-span-2">
+                <FieldLabel htmlFor="storageRoot">Storage location</FieldLabel>
+                <SetupStoragePicker
+                  value={storageRoot ?? ""}
+                  onChange={(path) => form.setValue("storageRoot", path, { shouldValidate: true })}
+                  hint={storageRootHint}
+                  errorMessage={form.formState.errors.storageRoot?.message}
                 />
-                <FieldError errors={[form.formState.errors.storageRoot]} />
-                {storageRootHint ? (
-                  <FieldDescription>{storageRootHint}</FieldDescription>
-                ) : null}
               </Field>
             </div>
             <div className="grid gap-4 sm:grid-cols-2">

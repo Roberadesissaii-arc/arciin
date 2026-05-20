@@ -8,6 +8,10 @@ import { resolveEffectiveStorageRoot } from "@/services/storage/effective-storag
 import { serializeAuth } from "@/services/serializers"
 import { createSession, hashPassword, requireRole, setSessionCookie } from "@/services/security/auth"
 import {
+  discoverStorageVolumes,
+  prepareStoragePathForSetup,
+} from "@/services/storage/discover-storage"
+import {
   ensureStorageDirectories,
   probeStorageRoot,
   resolveStorageUsageBytes,
@@ -43,21 +47,90 @@ export async function registerInstanceRoutes(fastify: FastifyInstance) {
   fastify.get("/instance/status", async (_request, reply) => {
     const instance = await fastify.prisma.instanceConfig.findFirst()
 
+    const discovery = await discoverStorageVolumes()
+    const suggested =
+      discovery.isDockerRuntime && discovery.hostDataDir
+        ? discovery.hostDataDir
+        : discovery.recommendedArciinPath
+
     reply.send({
       data: {
         initialized: Boolean(instance),
         setupRequired: !instance,
         instanceName: instance?.instanceName,
         version: apiConfig.appVersion,
-        suggestedStorageRoot: apiConfig.dataDir,
-        storageRootHint:
-          apiConfig.dataDir === "/data/arciin"
-            ? "Docker: files are stored at /data/arciin (bind-mounted from your host folder)."
-            : apiConfig.dataDir.startsWith("/srv/")
-              ? "Files are stored outside the application folder on this server."
-              : undefined,
+        suggestedStorageRoot: suggested,
+        runtimeStorageRoot: discovery.runtimeDataDir,
+        hostStorageRoot: discovery.hostDataDir,
+        isDockerRuntime: discovery.isDockerRuntime,
+        storageRootHint: discovery.isDockerRuntime
+          ? discovery.hostDataDir
+            ? `Docker: container path /data/arciin is bind-mounted from ${discovery.hostDataDir} on the host. Re-run ./scripts/docker-setup.sh to change the host folder.`
+            : "Docker: set ARCIIN_HOST_DATA_DIR in .env (default /srv/arciin-storage/arciin) and run ./scripts/docker-setup.sh before claim."
+          : discovery.recommendedArciinPath.startsWith("/srv/")
+            ? "Files are stored outside the application folder on this server."
+            : undefined,
       },
     })
+  })
+
+  fastify.get("/instance/storage-discovery", async (_request, reply) => {
+    if (await isInitialized(fastify)) {
+      reply.status(409).send({
+        error: {
+          code: "INSTANCE_ALREADY_INITIALIZED",
+          message: "Storage discovery is only available before claim.",
+        },
+      })
+      return
+    }
+
+    reply.send({ data: await discoverStorageVolumes() })
+  })
+
+  fastify.post("/instance/storage-prepare", async (request, reply) => {
+    if (await checkEndpointRateLimit(request, reply, { key: "storage-prepare", limit: 20, windowSec: 300 })) {
+      return
+    }
+
+    if (await isInitialized(fastify)) {
+      reply.status(409).send({
+        error: {
+          code: "INSTANCE_ALREADY_INITIALIZED",
+          message: "Storage preparation is only available before claim.",
+        },
+      })
+      return
+    }
+
+    const bodySchema = z.object({ path: z.string().min(1) })
+    const parsed = bodySchema.safeParse(request.body)
+    if (!parsed.success) {
+      reply.status(400).send({
+        error: { code: "VALIDATION_ERROR", message: "Invalid path.", details: parsed.error.flatten() },
+      })
+      return
+    }
+
+    try {
+      const result = await prepareStoragePathForSetup(parsed.data.path)
+      reply.send({ data: result })
+    } catch (error) {
+      const code = error instanceof Error ? error.message : "PREPARE_FAILED"
+      if (code === "INVALID_PATH" || code === "PATH_NOT_ALLOWED") {
+        reply.status(400).send({
+          error: {
+            code,
+            message:
+              "Path must be an absolute folder under /srv, /mnt, /media, or /data (no parent traversal).",
+          },
+        })
+        return
+      }
+      reply.status(500).send({
+        error: { code: "PREPARE_FAILED", message: "Could not create or verify the storage directory." },
+      })
+    }
   })
 
   fastify.post("/instance/claim", async (request, reply) => {

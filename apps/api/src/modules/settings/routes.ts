@@ -8,6 +8,8 @@ import {
   parseApiProtectionConfig,
   MOBILE_PAIRING_CODE_TTL_MINUTES,
 } from "@arciin/shared"
+import path from "node:path"
+
 import type { FastifyInstance } from "fastify"
 import { z } from "zod"
 
@@ -27,7 +29,24 @@ import {
 } from "@/services/remote-access/cloudflare-tunnel"
 import { resolveLocalAccessUrls } from "@/services/remote-access/local-access-urls"
 import { resolveCloudflareTunnelTarget } from "@/services/remote-access/tunnel-target"
-import { resolveEffectiveStorageRoot } from "@/services/storage/effective-storage-root"
+import {
+  resolveDisplayStorageRoot,
+  resolveEffectiveStorageRoot,
+} from "@/services/storage/effective-storage-root"
+import {
+  discoverStorageVolumes,
+  filterMigrationTargets,
+} from "@/services/storage/discover-storage"
+import {
+  loadEffectiveStorageRoot,
+} from "@/services/storage/effective-storage-root"
+import {
+  StorageMigrationError,
+  storageMigrationDisplayRoot,
+  validateStorageMigrationTarget,
+} from "@/services/storage/migrate-storage"
+import { storageQueue } from "@/services/jobs/queues"
+import { JOB_TYPES } from "@arciin/shared"
 import { probeStorageRoot, resolveStorageUsageBytes } from "@/services/storage/local-storage"
 import {
   createMobilePairingCode,
@@ -170,9 +189,9 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
         },
       })
 
-      const storageRoot = resolveEffectiveStorageRoot(
-        instance?.storageRoot ?? defaultStorage?.rootPath,
-      )
+      const configured = instance?.storageRoot ?? defaultStorage?.rootPath
+      const storageRoot = resolveEffectiveStorageRoot(configured)
+      const displayStorageRoot = resolveDisplayStorageRoot(configured)
       const storageAgg = await fastify.prisma.storageObject.aggregate({
         _sum: { sizeBytes: true },
       })
@@ -180,11 +199,15 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
       const usageBytes = await resolveStorageUsageBytes(storageRoot, trackedBytes)
       const objectCount = await fastify.prisma.storageObject.count()
       const { writable, totalBytes, availableBytes } = await probeStorageRoot(storageRoot)
+      const discovery = await discoverStorageVolumes()
 
       reply.send({
         data: {
           instanceName: instance?.instanceName,
-          storageRoot,
+          storageRoot: displayStorageRoot,
+          runtimeStorageRoot: storageRoot,
+          hostStorageRoot: discovery.hostDataDir,
+          isDockerRuntime: discovery.isDockerRuntime,
           defaultLocationId: defaultStorage?.id ?? null,
           writable,
           usageBytes,
@@ -257,7 +280,12 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
       reply.send({
         data: {
           instanceName: instance.instanceName,
-          storageRoot,
+          storageRoot: resolveDisplayStorageRoot(storageRoot),
+          runtimeStorageRoot: storageRoot,
+          hostStorageRoot: process.env.ARCIIN_HOST_DATA_DIR?.trim()
+            ? path.resolve(process.env.ARCIIN_HOST_DATA_DIR.trim())
+            : null,
+          isDockerRuntime: path.resolve(apiConfig.dataDir) === "/data/arciin",
           defaultLocationId: null,
           writable,
           usageBytes: await resolveStorageUsageBytes(storageRoot, trackedBytes),
@@ -267,6 +295,119 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
         },
       })
     }
+  )
+
+  fastify.get(
+    "/settings/storage/volumes",
+    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    async (_request, reply) => {
+      const effective = await loadEffectiveStorageRoot(fastify.prisma)
+      const discovery = await discoverStorageVolumes()
+      const displayRoot = resolveDisplayStorageRoot(
+        (await fastify.prisma.instanceConfig.findFirst())?.storageRoot,
+      )
+
+      reply.send({
+        data: {
+          ...discovery,
+          currentStorageRoot: displayRoot,
+          currentEffectiveRoot: effective,
+          migrationTargets: filterMigrationTargets(discovery, effective),
+        },
+      })
+    },
+  )
+
+  fastify.get(
+    "/settings/storage/migrate/status",
+    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    async (_request, reply) => {
+      const job = await fastify.prisma.job.findFirst({
+        where: { type: JOB_TYPES.migrateStorage },
+        orderBy: { createdAt: "desc" },
+      })
+
+      if (!job) {
+        reply.send({ data: { active: false, job: null } })
+        return
+      }
+
+      const active = job.status === "QUEUED" || job.status === "ACTIVE"
+      reply.send({
+        data: {
+          active,
+          job: {
+            id: job.id,
+            status: job.status,
+            progress: job.progress,
+            error: job.error,
+            result: job.result,
+            createdAt: job.createdAt.toISOString(),
+            completedAt: job.completedAt?.toISOString() ?? null,
+          },
+        },
+      })
+    },
+  )
+
+  fastify.post(
+    "/settings/storage/migrate",
+    { preHandler: requireRole(["OWNER"]) },
+    async (request, reply) => {
+      const bodySchema = z.object({ targetPath: z.string().min(1) })
+      const parsed = bodySchema.safeParse(request.body)
+      if (!parsed.success) {
+        reply.status(400).send({
+          error: { code: "VALIDATION_ERROR", message: "Invalid migration payload." },
+        })
+        return
+      }
+
+      try {
+        const { fromRoot, toRoot, bytesToCopy } = await validateStorageMigrationTarget(
+          fastify.prisma,
+          parsed.data.targetPath,
+        )
+
+        const job = await fastify.prisma.job.create({
+          data: {
+            type: JOB_TYPES.migrateStorage,
+            status: "QUEUED",
+            progress: 0,
+            payload: {
+              fromRoot,
+              toRoot,
+              requestedByUserId: request.auth?.user.id,
+              bytesToCopy,
+            },
+          },
+        })
+
+        await storageQueue.add(JOB_TYPES.migrateStorage, {
+          fromRoot,
+          toRoot,
+          requestedByUserId: request.auth?.user.id,
+          jobRecordId: job.id,
+        })
+
+        reply.status(202).send({
+          data: {
+            jobId: job.id,
+            fromRoot,
+            toRoot,
+            displayRoot: storageMigrationDisplayRoot(toRoot),
+          },
+        })
+      } catch (error) {
+        if (error instanceof StorageMigrationError) {
+          reply.status(400).send({
+            error: { code: error.code, message: error.message },
+          })
+          return
+        }
+        throw error
+      }
+    },
   )
 
   fastify.get(
