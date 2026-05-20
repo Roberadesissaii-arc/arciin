@@ -179,6 +179,14 @@ pm2 restart arciin-api arciin-web arciin-worker
 
 `pnpm build` compiles the web app, API, and worker. Restart all three PM2 processes so they load the new build.
 
+Shortcut (web rebuild + PM2 restart):
+
+```bash
+pnpm deploy
+```
+
+If `arciin-web` shows **errored** and logs say *Could not find a production build in the '.next' directory*, you skipped `pnpm build` — run the full block above, not only `pm2 restart all`.
+
 If you only changed environment variables (`.env`), a restart is enough:
 
 ```bash

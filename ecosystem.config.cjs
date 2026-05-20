@@ -60,6 +60,7 @@ if (!fs.existsSync(LOG_DIR)) {
 const dotenv = parseEnvFile(path.join(ROOT, ".env"))
 const bindHost = dotenv.ARCIIN_BIND_HOST || "0.0.0.0"
 const apiPort = String(dotenv.API_PORT || "4000")
+const runWeb = path.join(ROOT, "scripts/run-web-prod.sh")
 const runApi = path.join(ROOT, "scripts/run-api-prod.sh")
 const runWorker = path.join(ROOT, "scripts/run-worker-prod.sh")
 
@@ -86,8 +87,8 @@ module.exports = {
     {
       name: "arciin-web",
       cwd: ROOT,
-      script: path.join(ROOT, "node_modules/next/dist/bin/next"),
-      args: `start -H ${bindHost} -p ${port}`,
+      script: runWeb,
+      interpreter: "bash",
       exec_mode: "fork",
       watch: false,
       autorestart: true,
