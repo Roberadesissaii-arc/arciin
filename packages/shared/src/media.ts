@@ -257,3 +257,24 @@ export function inferMediaType(mimeType?: string | null, filename?: string | nul
 
   return "OTHER"
 }
+
+/** PDFs eligible for first-page thumbnail generation (ffmpeg). */
+export function assetSupportsDocumentThumbnail(
+  mediaType: string,
+  mimeType?: string | null,
+  extension?: string | null,
+  originalFilename?: string | null,
+): boolean {
+  const mime = (mimeType ?? "").toLowerCase()
+  if (mime === "application/pdf") return true
+
+  const ext = (extension ?? "").toLowerCase()
+  if (ext === "pdf") return true
+
+  const name = (originalFilename ?? "").toLowerCase()
+  if (name.endsWith(".pdf")) return true
+
+  if (mediaType === "DOCUMENT" && mime.includes("pdf")) return true
+
+  return false
+}

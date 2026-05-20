@@ -1,4 +1,5 @@
-import { access, mkdir, readdir, rm, stat } from "node:fs/promises"
+import { access, mkdir, readdir, rm, stat, unlink } from "node:fs/promises"
+import { tmpdir } from "node:os"
 import path from "node:path"
 
 import { execa } from "execa"
@@ -11,6 +12,7 @@ import { prisma } from "@arciin/database"
 import {
   JOB_TYPES,
   VIDEO_THUMBNAIL_PLACEHOLDER_SVG,
+  assetSupportsDocumentThumbnail,
   candidateStorageObjectPaths,
   inferMediaType,
   normalizeConfiguredStorageRoot,
@@ -87,11 +89,52 @@ async function detectMetadata(filePath: string) {
   }
 }
 
+async function generatePdfThumbnail(filePath: string, thumbnailPath: string) {
+  const tmpPng = path.join(tmpdir(), `arciin-doc-${process.pid}-${Date.now()}.png`)
+  try {
+    const r = await execa(
+      "ffmpeg",
+      [
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-y",
+        "-i",
+        filePath,
+        "-frames:v",
+        "1",
+        "-vf",
+        "scale=640:-1",
+        tmpPng,
+      ],
+      { timeout: 120_000, reject: false },
+    )
+    if (r.exitCode !== 0) return null
+    try {
+      await access(tmpPng)
+    } catch {
+      return null
+    }
+    await sharp(tmpPng, { failOn: "none" })
+      .resize(640, 360, { fit: "inside" })
+      .webp({ quality: 82 })
+      .toFile(thumbnailPath)
+    return thumbnailPath
+  } catch {
+    return null
+  } finally {
+    await unlink(tmpPng).catch(() => {})
+  }
+}
+
 async function generateThumbnail(
   assetId: string,
   filePath: string,
   storageRoot: string,
   mediaType: string,
+  mimeType?: string | null,
+  extension?: string | null,
+  originalFilename?: string | null,
 ) {
   const thumbnailsDir = path.join(storageRoot, "thumbnails")
   await mkdir(thumbnailsDir, { recursive: true })
@@ -147,6 +190,12 @@ async function generateThumbnail(
         .webp({ quality: 80 })
         .toFile(thumbnailPath)
       return thumbnailPath
+    }
+
+    if (
+      assetSupportsDocumentThumbnail(mediaType, mimeType, extension, originalFilename)
+    ) {
+      return generatePdfThumbnail(filePath, thumbnailPath)
     }
 
     return null
@@ -267,6 +316,9 @@ export async function handleMediaJob(
       objectFilePath,
       storageRoot,
       asset.mediaType,
+      asset.mimeType,
+      asset.extension,
+      asset.originalFilename,
     )
 
     await prisma.asset.update({

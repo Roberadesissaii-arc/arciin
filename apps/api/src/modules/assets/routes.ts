@@ -5,7 +5,7 @@ import path from "node:path"
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify"
 import { z } from "zod"
 
-import { isCodeFilename, resolveArciinStorageRoot } from "@arciin/shared"
+import { assetSupportsDocumentThumbnail, isCodeFilename, resolveArciinStorageRoot } from "@arciin/shared"
 
 import { apiConfig } from "@/config"
 import { buildRealtimeEvent } from "@/services/events/publish-event"
@@ -32,6 +32,7 @@ import {
 import { PLEX_CONNECTOR_DEF, JELLYFIN_CONNECTOR_DEF } from "@/services/integrations/library-media-connector"
 import { requireSessionRolesOrApiKeyScopes } from "@/services/security/auth"
 import { serializeAsset } from "@/services/serializers"
+import { loadUserPreferences } from "@/services/user/preferences"
 
 const assetUpdateSchema = z.object({
   title: z.string().max(200).optional(),
@@ -591,6 +592,19 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
         return
       }
 
+      const userPrefs = request.auth?.user?.id
+        ? await loadUserPreferences(fastify.prisma, request.auth.user.id)
+        : null
+      const documentThumbsEnabled = userPrefs?.media.documentThumbnails ?? false
+      const wantsDocumentThumb =
+        documentThumbsEnabled &&
+        assetSupportsDocumentThumbnail(
+          asset.mediaType,
+          asset.mimeType,
+          asset.extension,
+          asset.originalFilename,
+        )
+
       const instance = await fastify.prisma.instanceConfig.findFirst()
 
       const sourcePathResolved = await resolveReadableObjectPath({
@@ -636,10 +650,18 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
         /* generate below */
       }
 
-      if (!hadFile && (asset.mediaType === "VIDEO" || asset.mediaType === "IMAGE")) {
+      if (
+        !hadFile &&
+        (asset.mediaType === "VIDEO" ||
+          asset.mediaType === "IMAGE" ||
+          wantsDocumentThumb)
+      ) {
         await ensureThumbnailWritten({
           assetId: asset.id,
           mediaType: asset.mediaType,
+          mimeType: asset.mimeType,
+          extension: asset.extension,
+          originalFilename: asset.originalFilename,
           sourcePath: sourcePathResolved,
           thumbnailPath,
         })
@@ -674,6 +696,16 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
           writeFile(thumbnailPath, inline).catch(() => {}),
         )
         return reply.send(inline)
+      }
+
+      if (!wantsDocumentThumb) {
+        reply.status(404).send({
+          error: {
+            code: "THUMBNAIL_DISABLED",
+            message: "Document thumbnails are disabled. Enable them in Settings → Storage.",
+          },
+        })
+        return
       }
 
       reply.status(404).send({

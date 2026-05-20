@@ -14,6 +14,7 @@ import { getStorageSettings, updateStorageSettings } from "@/lib/api/settings"
 import { queryKeys } from "@/lib/api/query-keys"
 import { formatBytes } from "@/lib/utils/format-bytes"
 import { cn } from "@/lib/utils"
+import { DocumentThumbnailsSettings } from "@/components/settings/document-thumbnails-settings"
 
 const LAYOUT_HINTS = [
   { label: "objects", hint: "Binary blobs keyed by storage object id" },
@@ -169,6 +170,8 @@ export function StorageSettingsForm() {
             </ul>
           </CardContent>
         </Card>
+
+        <DocumentThumbnailsSettings />
       </div>
     </div>
   )

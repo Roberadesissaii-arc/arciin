@@ -1,17 +1,35 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
+import { useQuery } from "@tanstack/react-query"
 
 import { MediaTypeIcon } from "@/components/libraries/media-type-icon"
 import { mediaTypeIcons } from "@/lib/utils/file-icons"
 import { cn } from "@/lib/utils"
 import type { AssetSummary } from "@/lib/types/models"
+import { assetSupportsDocumentThumbnail } from "@arciin/shared"
+import { getUserPreferences } from "@/lib/api/user-preferences"
+import { queryKeys } from "@/lib/api/query-keys"
 
 const THUMB_MEDIA = new Set(["IMAGE", "VIDEO"])
 
 function ImageOrIconPreview({ asset }: { asset: AssetSummary }) {
+  const { data: prefs } = useQuery({
+    queryKey: queryKeys.userPreferences,
+    queryFn: ({ signal }) => getUserPreferences(signal),
+    staleTime: 60_000,
+  })
   const [thumbFailed, setThumbFailed] = useState(false)
-  const tryThumb = THUMB_MEDIA.has(asset.mediaType)
+  const docThumbs = prefs?.media.documentThumbnails ?? false
+  const tryThumb =
+    THUMB_MEDIA.has(asset.mediaType) ||
+    (docThumbs &&
+      assetSupportsDocumentThumbnail(
+        asset.mediaType,
+        asset.mimeType,
+        asset.extension,
+        asset.originalFilename,
+      ))
   const thumbSrc = `/api/assets/${asset.id}/thumbnail?v=${encodeURIComponent(asset.updatedAt)}`
 
   if (tryThumb && !thumbFailed) {

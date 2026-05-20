@@ -66,10 +66,17 @@ export type AccessibilityPreferences = {
   keyboardNav: boolean
 }
 
+/** Technical media options (off by default). */
+export type MediaPreferences = {
+  /** Render first-page previews for PDFs and queue thumbnail jobs. */
+  documentThumbnails: boolean
+}
+
 export type UserPreferences = {
   notifications: NotificationPreferences
   appearance: AppearancePreferences
   accessibility: AccessibilityPreferences
+  media: MediaPreferences
 }
 
 export const DEFAULT_USER_PREFERENCES: UserPreferences = {
@@ -94,6 +101,9 @@ export const DEFAULT_USER_PREFERENCES: UserPreferences = {
     reduceAnimations: false,
     highContrast: false,
     keyboardNav: false,
+  },
+  media: {
+    documentThumbnails: false,
   },
 }
 
@@ -142,6 +152,8 @@ export function parseUserPreferences(raw: unknown): UserPreferences {
     root.accessibility && typeof root.accessibility === "object"
       ? (root.accessibility as Record<string, unknown>)
       : {}
+  const media =
+    root.media && typeof root.media === "object" ? (root.media as Record<string, unknown>) : {}
 
   const defaults = DEFAULT_USER_PREFERENCES
 
@@ -183,6 +195,12 @@ export function parseUserPreferences(raw: unknown): UserPreferences {
       highContrast: asBool(accessibility.highContrast, defaults.accessibility.highContrast),
       keyboardNav: asBool(accessibility.keyboardNav, defaults.accessibility.keyboardNav),
     },
+    media: {
+      documentThumbnails: asBool(
+        media.documentThumbnails,
+        defaults.media.documentThumbnails,
+      ),
+    },
   }
 }
 
@@ -192,12 +210,14 @@ export function mergeUserPreferences(
     notifications: Partial<NotificationPreferences>
     appearance: Partial<AppearancePreferences>
     accessibility: Partial<AccessibilityPreferences>
+    media: Partial<MediaPreferences>
   }>,
 ): UserPreferences {
   return parseUserPreferences({
     notifications: { ...current.notifications, ...patch.notifications },
     appearance: { ...current.appearance, ...patch.appearance },
     accessibility: { ...current.accessibility, ...patch.accessibility },
+    media: { ...current.media, ...patch.media },
   })
 }
 

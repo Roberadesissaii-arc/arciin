@@ -10,6 +10,7 @@ import {
 import { execa } from "execa"
 import sharp from "sharp"
 
+import { ensureDocumentThumbnailWritten } from "@/services/media/document-thumbnail"
 import { getStoragePaths } from "@/services/storage/local-storage"
 
 export function resolvedThumbnailPath(
@@ -80,6 +81,9 @@ export async function renderImageWebpThumbnailBuffer(sourcePath: string): Promis
 export async function ensureThumbnailWritten(opts: {
   assetId: string
   mediaType: string
+  mimeType?: string | null
+  extension?: string | null
+  originalFilename?: string | null
   sourcePath: string
   thumbnailPath: string
 }): Promise<boolean> {
@@ -146,6 +150,15 @@ export async function ensureThumbnailWritten(opts: {
         return false
       }
     }
+
+    return ensureDocumentThumbnailWritten({
+      mediaType: opts.mediaType,
+      mimeType: opts.mimeType,
+      extension: opts.extension,
+      originalFilename: opts.originalFilename,
+      sourcePath: src,
+      thumbnailPath: opts.thumbnailPath,
+    })
   } catch {
     return false
   }

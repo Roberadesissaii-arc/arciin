@@ -10,6 +10,7 @@ export function updateUserPreferences(
     notifications: Partial<UserPreferences["notifications"]>
     appearance: Partial<UserPreferences["appearance"]>
     accessibility: Partial<UserPreferences["accessibility"]>
+    media: Partial<UserPreferences["media"]>
   }>,
 ) {
   return fetchApi<UserPreferences>("/auth/preferences", {

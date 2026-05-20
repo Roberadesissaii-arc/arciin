@@ -3,11 +3,13 @@ import path from "node:path"
 import type { FastifyInstance } from "fastify"
 import { z } from "zod"
 
-import { JOB_TYPES } from "@arciin/shared"
+import { JOB_TYPES, assetSupportsDocumentThumbnail } from "@arciin/shared"
 
 import { buildRealtimeEvent } from "@/services/events/publish-event"
 import { recordAndBroadcastActivity } from "@/services/activity/record-and-broadcast-activity"
 import { mediaQueue } from "@/services/jobs/queues"
+import { enqueueGenerateThumbnailJob } from "@/services/media/thumbnail-jobs"
+import { loadUserPreferences } from "@/services/user/preferences"
 import { requireSessionRolesOrApiKeyScopes } from "@/services/security/auth"
 import { serializeUpload } from "@/services/serializers"
 import { analyzeStoredFile } from "@/services/classification/media-classification"
@@ -259,24 +261,32 @@ export async function registerUploadRoutes(fastify: FastifyInstance) {
         })
 
         if (analysis.mediaType === "VIDEO" || analysis.mediaType === "IMAGE") {
-          const thumbnailJob = await fastify.prisma.job.create({
-            data: {
-              type: JOB_TYPES.generateThumbnail,
-              status: "QUEUED",
-              progress: 0,
-              payload: {
-                assetId: asset.id,
-                uploadId: upload.id,
-                userId: request.auth.user.id,
-              },
-            },
-          })
-
-          await mediaQueue.add(JOB_TYPES.generateThumbnail, {
+          await enqueueGenerateThumbnailJob(fastify.prisma, mediaQueue, {
             assetId: asset.id,
             uploadId: upload.id,
             userId: request.auth.user.id,
-            jobRecordId: thumbnailJob.id,
+          })
+        }
+      }
+
+      if (!requiresProcessing) {
+        const prefs = await loadUserPreferences(
+          fastify.prisma,
+          request.auth.user.id,
+        )
+        if (
+          prefs.media.documentThumbnails &&
+          assetSupportsDocumentThumbnail(
+            analysis.mediaType,
+            analysis.mimeType,
+            analysis.extension,
+            file.filename,
+          )
+        ) {
+          await enqueueGenerateThumbnailJob(fastify.prisma, mediaQueue, {
+            assetId: asset.id,
+            uploadId: upload.id,
+            userId: request.auth.user.id,
           })
         }
       }

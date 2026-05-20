@@ -47,6 +47,7 @@ export function useUserPreferencesSettings() {
       notifications: Partial<UserPreferences["notifications"]>
       appearance: Partial<UserPreferences["appearance"]>
       accessibility: Partial<UserPreferences["accessibility"]>
+      media: Partial<UserPreferences["media"]>
     }>,
     successLabel?: string,
   ) {

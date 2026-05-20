@@ -41,6 +41,9 @@ import {
   resolveAvatarAbsolutePath,
   saveUserAvatar,
 } from "@/services/user/avatar"
+import { loadUserPreferences } from "@/services/user/preferences"
+import { mediaQueue } from "@/services/jobs/queues"
+import { queueDocumentThumbnailBackfill } from "@/services/media/thumbnail-jobs"
 
 const loginSchema = z.object({
   email: z.email(),
@@ -85,19 +88,13 @@ const userPreferencesPatchSchema = z
         keyboardNav: z.boolean().optional(),
       })
       .optional(),
+    media: z
+      .object({
+        documentThumbnails: z.boolean().optional(),
+      })
+      .optional(),
   })
   .strict()
-
-async function loadUserPreferences(
-  prisma: FastifyInstance["prisma"],
-  userId: string,
-): Promise<UserPreferences> {
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    select: { preferences: true },
-  })
-  return parseUserPreferences(user?.preferences ?? null)
-}
 
 export async function registerAuthRoutes(fastify: FastifyInstance) {
   fastify.get(
@@ -581,6 +578,18 @@ export async function registerAuthRoutes(fastify: FastifyInstance) {
         where: { id: request.auth.user.id },
         data: { preferences: next },
       })
+
+      const enabledDocs =
+        !current.media.documentThumbnails && next.media.documentThumbnails
+      if (enabledDocs) {
+        void queueDocumentThumbnailBackfill(
+          request.server.prisma,
+          mediaQueue,
+          request.auth.user.id,
+        ).catch((err) => {
+          request.log.warn({ err }, "document thumbnail backfill failed")
+        })
+      }
 
       reply.send({ data: next })
     } catch (error) {
