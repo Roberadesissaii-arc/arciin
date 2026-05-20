@@ -126,17 +126,14 @@ async function renderPdfThumbDataUrl(fileUrl: string): Promise<string | null> {
 }
 
 export function usePdfThumbnail(fileUrl: string | undefined, enabled: boolean): string | null {
-  const [thumb, setThumb] = useState<string | null>(
-    fileUrl && memCache.has(fileUrl) ? memCache.get(fileUrl)! : null,
-  )
+  const [thumb, setThumb] = useState<string | null>(null)
+
+  const memHit =
+    enabled && fileUrl && memCache.has(fileUrl) ? memCache.get(fileUrl)! : null
 
   useEffect(() => {
     if (!enabled || !fileUrl) return
-
-    if (memCache.has(fileUrl)) {
-      setThumb(memCache.get(fileUrl)!)
-      return
-    }
+    if (memCache.has(fileUrl)) return
 
     let cancelled = false
 
@@ -170,7 +167,7 @@ export function usePdfThumbnail(fileUrl: string | undefined, enabled: boolean): 
     }
   }, [fileUrl, enabled])
 
-  return thumb
+  return thumb ?? memHit
 }
 
 export function pdfThumbnailSourceKey(assetId: string, updatedAt: string) {

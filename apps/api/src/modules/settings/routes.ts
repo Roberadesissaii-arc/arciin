@@ -1,5 +1,3 @@
-import path from "node:path"
-
 import {
   AI_EMOJI_USAGE_LEVELS,
   AI_LIBRARY_TOOL_ACCESS_LEVELS,

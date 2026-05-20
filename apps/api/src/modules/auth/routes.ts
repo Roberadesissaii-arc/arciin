@@ -5,8 +5,6 @@ import {
   TOAST_STYLES,
   UI_RADIUS_OPTIONS,
   mergeUserPreferences,
-  parseUserPreferences,
-  type UserPreferences,
 } from "@arciin/shared"
 import { createReadStream } from "node:fs"
 import { access } from "node:fs/promises"

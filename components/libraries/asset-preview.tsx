@@ -57,18 +57,47 @@ function PdfDocumentPreview({ asset }: { asset: AssetSummary }) {
   )
 }
 
+function ServerAssetThumbnail({ asset }: { asset: AssetSummary }) {
+  const [thumbFailed, setThumbFailed] = useState(false)
+  const thumbSrc = `/api/assets/${asset.id}/thumbnail?v=${encodeURIComponent(asset.updatedAt)}`
+
+  if (thumbFailed) {
+    return (
+      <div className="flex aspect-[4/3] items-center justify-center rounded-xl border border-border bg-muted/30 text-muted-foreground">
+        <MediaTypeIcon
+          mediaType={asset.mediaType}
+          filename={asset.originalFilename}
+          mimeType={asset.mimeType}
+          extension={asset.extension}
+          className="size-7"
+        />
+      </div>
+    )
+  }
+
+  return (
+    <div className="relative aspect-[4/3] overflow-hidden rounded-xl border border-border bg-muted/40">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={thumbSrc}
+        alt=""
+        className="size-full object-cover"
+        loading="lazy"
+        onError={() => setThumbFailed(true)}
+      />
+    </div>
+  )
+}
+
 function ImageOrIconPreview({ asset }: { asset: AssetSummary }) {
   const { data: prefs } = useQuery({
     queryKey: queryKeys.userPreferences,
     queryFn: ({ signal }) => getUserPreferences(signal),
     staleTime: 60_000,
   })
-  const [thumbFailed, setThumbFailed] = useState(false)
   const docThumbs = prefs?.media.documentThumbnails ?? false
+  const thumbKey = `${asset.id}-${asset.updatedAt}`
 
-  useEffect(() => {
-    setThumbFailed(false)
-  }, [asset.id, asset.updatedAt])
   const isPdfDoc =
     docThumbs &&
     assetSupportsDocumentThumbnail(
@@ -79,26 +108,11 @@ function ImageOrIconPreview({ asset }: { asset: AssetSummary }) {
     )
 
   if (isPdfDoc) {
-    return <PdfDocumentPreview asset={asset} />
+    return <PdfDocumentPreview key={thumbKey} asset={asset} />
   }
 
-  const tryThumb = THUMB_MEDIA.has(asset.mediaType)
-  const thumbSrc = `/api/assets/${asset.id}/thumbnail?v=${encodeURIComponent(asset.updatedAt)}`
-
-  if (tryThumb && !thumbFailed) {
-    return (
-      <div className="relative aspect-[4/3] overflow-hidden rounded-xl border border-border bg-muted/40">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          key={`${asset.id}-${asset.updatedAt}`}
-          src={thumbSrc}
-          alt=""
-          className="size-full object-cover"
-          loading="lazy"
-          onError={() => setThumbFailed(true)}
-        />
-      </div>
-    )
+  if (THUMB_MEDIA.has(asset.mediaType)) {
+    return <ServerAssetThumbnail key={thumbKey} asset={asset} />
   }
 
   return (
