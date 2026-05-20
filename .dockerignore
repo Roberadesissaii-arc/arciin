@@ -16,27 +16,28 @@ coverage
 !.env.example
 !.env.docker.example
 
-# Logs
+# Logs (root only — do not use bare `logs`; it is too broad)
 *.log
-logs
+/logs
+/logs/**
 
-# ── Arciin runtime storage (NEVER copy into Docker build context) ─────────────
-# If ARCIIN_HOST_DATA_DIR points inside this repo, these folders can be gigabytes
-# of media and will cause "no space left on device" during `docker compose build`.
-objects
-libraries
-thumbnails
-temp
-avatars
-**/objects/**
-**/libraries/**
-**/thumbnails/**
-**/temp/**
-**/avatars/**
+# ── Arciin runtime storage on disk (repo ROOT only) ───────────────────────────
+# Leading `/` is required. Without it, `libraries` would also exclude
+# `components/libraries/` (React UI) and break `next build` in Docker CI.
+/objects
+/objects/**
+/libraries
+/libraries/**
+/thumbnails
+/thumbnails/**
+/temp
+/temp/**
+/avatars
+/avatars/**
 
 # Dev-only in-repo storage
-data
-data/**
+/data
+/data/**
 
 # Local PM2 / runtime
 .pm2
