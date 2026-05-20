@@ -56,24 +56,89 @@ _detect_lan_ip() {
   [[ -n "$ip" ]] && echo "$ip" || echo "127.0.0.1"
 }
 
+_can_use_storage_path() {
+  local path="$1"
+  if [[ -d "$path" ]] && [[ -w "$path" ]]; then
+    return 0
+  fi
+  local parent
+  parent="$(dirname "$path")"
+  [[ -d "$parent" ]] && [[ -w "$parent" ]]
+}
+
+_resolve_and_create_host_data_dir() {
+  local path="$1" parent resolved
+
+  if [[ "$path" != /* ]]; then
+    resolved="$(cd "${ROOT_DIR}" && mkdir -p "$path" && cd "$path" && pwd)" || true
+    if [[ -n "${resolved:-}" ]]; then
+      echo "$resolved"
+      return 0
+    fi
+    fail "Could not create storage folder: ${ROOT_DIR}/${path}"
+  fi
+
+  if [[ -d "$path" ]]; then
+    if [[ ! -w "$path" ]]; then
+      fail "Storage folder exists but is not writable: ${path}"
+    fi
+    cd "$path" && pwd
+    return 0
+  fi
+
+  parent="$(dirname "$path")"
+  if [[ ! -d "$parent" ]]; then
+    fail "Parent folder does not exist: ${parent} (create the mount first, or pick another path)"
+  fi
+
+  if mkdir -p "$path" 2>/dev/null; then
+    cd "$path" && pwd
+    return 0
+  fi
+
+  if command -v sudo &>/dev/null; then
+    warn "Permission denied creating ${path}"
+    read -r -p "  Create it with sudo and give ownership to $(id -un)? [y/N]: " use_sudo
+    if [[ "$use_sudo" =~ ^[Yy] ]]; then
+      if sudo mkdir -p "$path" && sudo chown -R "$(id -u):$(id -g)" "$path"; then
+        ok "Created ${path}"
+        cd "$path" && pwd
+        return 0
+      fi
+    fi
+  fi
+
+  echo ""
+  fail "Cannot create ${path} (permission denied).
+  Use a folder you own, for example:
+    ${ROOT_DIR}/data/arciin
+    /media/<user>/<drive>/arciin-data   (USB / external disk)
+  Or run: sudo mkdir -p ${path} && sudo chown -R $(id -un):$(id -gn) ${path}"
+}
+
 _list_storage_candidates() {
-  echo "${ROOT_DIR}/data/arciin"
-  if [[ -d /mnt ]]; then
-    local d
-    for d in /mnt/*; do
-      [[ -d "$d" ]] && echo "${d}/arciin-data"
-    done
+  local path
+  for path in \
+    "${ROOT_DIR}/data/arciin" \
+    /mnt/*/arciin-data \
+    /media/*/*/arciin-data; do
+    [[ "$path" == *"*"* ]] && continue
+    _can_use_storage_path "$path" && echo "$path"
+  done
+  if [[ -d /srv ]] && [[ -w /srv ]]; then
+    _can_use_storage_path "/srv/arciin" && echo "/srv/arciin"
   fi
-  if [[ -d /media ]]; then
-    local u m
-    for u in /media/*; do
-      [[ -d "$u" ]] || continue
-      for m in "$u"/*; do
-        [[ -d "$m" ]] && echo "${m}/arciin-data"
-      done
-    done
+}
+
+_storage_choice_label() {
+  local path="$1"
+  if [[ "$path" == "${ROOT_DIR}/data/arciin" ]]; then
+    echo " ${DIM}(in project — always works)${RESET}"
+  elif [[ "$path" == /media/* ]]; then
+    echo " ${DIM}(external drive — good for large media libraries)${RESET}"
+  elif [[ "$path" == /mnt/* ]]; then
+    echo " ${DIM}(mounted drive)${RESET}"
   fi
-  [[ -d /srv ]] && echo "/srv/arciin"
 }
 
 _ensure_env_kv() {
@@ -87,13 +152,23 @@ _ensure_env_kv() {
 
 _prepare_host_data_dir() {
   local host_dir="$1"
-  mkdir -p "${host_dir}/objects" "${host_dir}/libraries" "${host_dir}/thumbnails" "${host_dir}/temp" "${host_dir}/logs" "${host_dir}/avatars"
+  if ! mkdir -p "${host_dir}/objects" "${host_dir}/libraries" "${host_dir}/thumbnails" \
+    "${host_dir}/temp" "${host_dir}/logs" "${host_dir}/avatars" 2>/dev/null; then
+    if command -v sudo &>/dev/null; then
+      sudo mkdir -p "${host_dir}/objects" "${host_dir}/libraries" "${host_dir}/thumbnails" \
+        "${host_dir}/temp" "${host_dir}/logs" "${host_dir}/avatars"
+      sudo chown -R "$(id -u):$(id -g)" "$host_dir"
+    else
+      fail "Could not create subfolders under ${host_dir}"
+    fi
+  fi
 
-  # node:20-alpine runs as uid 1000
-  if [[ -w "$host_dir" ]] && [[ "$(stat -c '%u' "$host_dir" 2>/dev/null || echo 0)" != "1000" ]]; then
+  # node:20-alpine runs as uid 1000 — container must write uploads here
+  if [[ "$(stat -c '%u' "$host_dir" 2>/dev/null || echo 0)" != "1000" ]]; then
     if command -v sudo &>/dev/null && [[ "$(id -u)" -ne 1000 ]]; then
-      warn "Ensuring container user (uid 1000) can write to ${host_dir}"
-      sudo chown -R 1000:1000 "$host_dir" 2>/dev/null || warn "Could not chown ${host_dir} — if uploads fail, run: sudo chown -R 1000:1000 ${host_dir}"
+      warn "Granting Docker (uid 1000) write access to ${host_dir}"
+      sudo chown -R 1000:1000 "$host_dir" 2>/dev/null \
+        || warn "If uploads fail: sudo chown -R 1000:1000 ${host_dir}"
     fi
   fi
   ok "Storage directory: ${host_dir}"
@@ -132,9 +207,12 @@ if [[ -z "$HOST_DATA" ]] && [[ -t 0 ]]; then
   echo -e "  ${DIM}This path is on your real drive (bind mount), not inside the container.${RESET}"
   echo ""
   mapfile -t CANDIDATES < <(_list_storage_candidates | awk '!seen[$0]++' | head -8)
+  if [[ "${#CANDIDATES[@]}" -eq 0 ]]; then
+    CANDIDATES=("${ROOT_DIR}/data/arciin")
+  fi
   n=1
   for c in "${CANDIDATES[@]}"; do
-    echo -e "    ${n}) ${c}"
+    echo -e "    ${n}) ${c}$(_storage_choice_label "$c")"
     n=$((n + 1))
   done
   echo -e "    ${n}) Enter a custom path"
@@ -151,12 +229,7 @@ elif [[ -z "$HOST_DATA" ]]; then
   HOST_DATA="${ROOT_DIR}/data/arciin"
 fi
 
-# Resolve relative paths from repo root
-if [[ "$HOST_DATA" != /* ]]; then
-  HOST_DATA="$(cd "${ROOT_DIR}" && mkdir -p "$HOST_DATA" && cd "$HOST_DATA" && pwd)"
-else
-  mkdir -p "$HOST_DATA"
-fi
+HOST_DATA="$(_resolve_and_create_host_data_dir "$HOST_DATA")"
 
 _prepare_host_data_dir "$HOST_DATA"
 

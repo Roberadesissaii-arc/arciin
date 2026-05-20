@@ -40,7 +40,8 @@ Arciin avoids that with a **bind mount**:
 |------|----------|
 | `./data/arciin` | Quick test in the git clone |
 | `/mnt/ssd/arciin-data` | NVMe/USB SSD on a Pi or server |
-| `/media/pi/MyPassport/arciin` | External USB drive |
+| `/media/pi/MyPassport/arciin` | External USB drive (recommended on Pi for large libraries) |
+| `/srv/arciin` | Only if `/srv` is writable by your user, or create with `sudo` first |
 
 Create the folder and ensure the container user can write (uid **1000**):
 
