@@ -1,4 +1,4 @@
-import type { FastifyInstance } from "fastify"
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify"
 import { z } from "zod"
 
 import { isVaultImportEntry, parsePasswordImportFile } from "@arciin/shared"
@@ -363,68 +363,68 @@ export async function registerPasswordVaultRoutes(fastify: FastifyInstance) {
     },
   )
 
-  fastify.patch(
-    "/settings/password-vault/display",
-    { preHandler: requireRole(["OWNER", "ADMIN"]) },
-    async (request, reply) => {
-      const parsed = displayPatchSchema.safeParse(request.body)
-      if (!parsed.success) {
-        reply.status(400).send({
-          error: { code: "VALIDATION_ERROR", message: "Invalid display settings." },
-        })
-        return
-      }
+  const vaultDisplayAuth = { preHandler: requireRole(["OWNER", "ADMIN"]) }
 
-      const instance = await fastify.prisma.instanceConfig.findFirst()
-      if (!instance) {
-        reply.status(409).send({
-          error: { code: "INSTANCE_NOT_READY", message: "Instance not initialized." },
-        })
-        return
-      }
-
-      const currentDisplay = readPasswordVaultDisplay(instance.aiConfig)
-      if (
-        parsed.data.revealByDefault === true &&
-        !currentDisplay.revealByDefault
-      ) {
-        const password = parsed.data.accountPassword
-        if (!password) {
-          reply.status(400).send({
-            error: {
-              code: "PASSWORD_REQUIRED",
-              message: "Account password is required to enable reveal by default.",
-            },
-          })
-          return
-        }
-
-        const user = await fastify.prisma.user.findUnique({
-          where: { id: request.auth!.user.id },
-          select: { passwordHash: true },
-        })
-        if (!user || !(await verifyPassword(password, user.passwordHash))) {
-          reply.status(401).send({
-            error: {
-              code: "INVALID_PASSWORD",
-              message: "Incorrect account password.",
-            },
-          })
-          return
-        }
-      }
-
-      const { accountPassword, ...displayPatch } = parsed.data
-      void accountPassword
-      const nextAi = mergePasswordVaultDisplay(instance.aiConfig, displayPatch)
-      await fastify.prisma.instanceConfig.update({
-        where: { id: instance.id },
-        data: { aiConfig: toPrismaAiConfig(nextAi) },
+  async function handlePasswordVaultDisplayPatch(request: FastifyRequest, reply: FastifyReply) {
+    const parsed = displayPatchSchema.safeParse(request.body)
+    if (!parsed.success) {
+      reply.status(400).send({
+        error: { code: "VALIDATION_ERROR", message: "Invalid display settings." },
       })
+      return
+    }
 
-      reply.send({ data: readPasswordVaultDisplay(nextAi) })
-    },
-  )
+    const instance = await fastify.prisma.instanceConfig.findFirst()
+    if (!instance) {
+      reply.status(409).send({
+        error: { code: "INSTANCE_NOT_READY", message: "Instance not initialized." },
+      })
+      return
+    }
+
+    const currentDisplay = readPasswordVaultDisplay(instance.aiConfig)
+    if (parsed.data.revealByDefault === true && !currentDisplay.revealByDefault) {
+      const password = parsed.data.accountPassword
+      if (!password) {
+        reply.status(400).send({
+          error: {
+            code: "PASSWORD_REQUIRED",
+            message: "Account password is required to enable reveal by default.",
+          },
+        })
+        return
+      }
+
+      const user = await fastify.prisma.user.findUnique({
+        where: { id: request.auth!.user.id },
+        select: { passwordHash: true },
+      })
+      if (!user || !(await verifyPassword(password, user.passwordHash))) {
+        reply.status(401).send({
+          error: {
+            code: "INVALID_PASSWORD",
+            message: "Incorrect account password.",
+          },
+        })
+        return
+      }
+    }
+
+    const { accountPassword, ...displayPatch } = parsed.data
+    void accountPassword
+    const nextAi = mergePasswordVaultDisplay(instance.aiConfig, displayPatch)
+    await fastify.prisma.instanceConfig.update({
+      where: { id: instance.id },
+      data: { aiConfig: toPrismaAiConfig(nextAi) },
+    })
+
+    reply.send({ data: readPasswordVaultDisplay(nextAi) })
+  }
+
+  fastify.patch("/settings/password-vault/display", vaultDisplayAuth, handlePasswordVaultDisplayPatch)
+
+  /** POST alias — iOS PWA often fails CORS preflight on PATCH. */
+  fastify.post("/settings/password-vault/display", vaultDisplayAuth, handlePasswordVaultDisplayPatch)
 
   fastify.get(
     "/settings/password-vault/ai-snapshot",

@@ -60,7 +60,7 @@ export function updatePasswordVaultDisplay(
   input: Partial<PasswordVaultDisplaySettings> & { accountPassword?: string },
 ) {
   return fetchApi<PasswordVaultDisplaySettings>("/settings/password-vault/display", {
-    method: "PATCH",
+    method: "POST",
     body: input,
   })
 }
