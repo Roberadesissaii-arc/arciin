@@ -17,6 +17,26 @@ import {
 
 const THUMB_MEDIA = new Set(["IMAGE", "VIDEO"])
 
+function DocumentThumbnailPlaceholder({
+  asset,
+  loading = false,
+}: {
+  asset: AssetSummary
+  loading?: boolean
+}) {
+  return (
+    <div className="relative flex aspect-[4/3] items-center justify-center overflow-hidden rounded-xl border border-border bg-muted/40 text-muted-foreground">
+      <MediaTypeIcon
+        mediaType={asset.mediaType}
+        filename={asset.originalFilename}
+        mimeType={asset.mimeType}
+        extension={asset.extension}
+        className={cn("size-7", loading && "arciin-doc-icon-pulse")}
+      />
+    </div>
+  )
+}
+
 function PdfDocumentPreview({ asset }: { asset: AssetSummary }) {
   const pdfUrl = pdfThumbnailSourceKey(asset.id, asset.updatedAt)
   const thumb = usePdfThumbnail(pdfUrl, true)
@@ -44,17 +64,7 @@ function PdfDocumentPreview({ asset }: { asset: AssetSummary }) {
     )
   }
 
-  return (
-    <div className="relative flex aspect-[4/3] items-center justify-center overflow-hidden rounded-xl border border-border bg-gradient-to-br from-red-950/30 via-muted/40 to-purple-950/20 text-muted-foreground">
-      <MediaTypeIcon
-        mediaType={asset.mediaType}
-        filename={asset.originalFilename}
-        mimeType={asset.mimeType}
-        extension={asset.extension}
-        className="size-7 animate-pulse"
-      />
-    </div>
-  )
+  return <DocumentThumbnailPlaceholder asset={asset} loading />
 }
 
 function ServerAssetThumbnail({ asset }: { asset: AssetSummary }) {
@@ -62,17 +72,7 @@ function ServerAssetThumbnail({ asset }: { asset: AssetSummary }) {
   const thumbSrc = `/api/assets/${asset.id}/thumbnail?v=${encodeURIComponent(asset.updatedAt)}`
 
   if (thumbFailed) {
-    return (
-      <div className="flex aspect-[4/3] items-center justify-center rounded-xl border border-border bg-muted/30 text-muted-foreground">
-        <MediaTypeIcon
-          mediaType={asset.mediaType}
-          filename={asset.originalFilename}
-          mimeType={asset.mimeType}
-          extension={asset.extension}
-          className="size-7"
-        />
-      </div>
-    )
+    return <DocumentThumbnailPlaceholder asset={asset} />
   }
 
   return (
@@ -115,17 +115,7 @@ function ImageOrIconPreview({ asset }: { asset: AssetSummary }) {
     return <ServerAssetThumbnail key={thumbKey} asset={asset} />
   }
 
-  return (
-    <div className="flex aspect-[4/3] items-center justify-center rounded-xl border border-border bg-muted/30 text-muted-foreground">
-      <MediaTypeIcon
-        mediaType={asset.mediaType}
-        filename={asset.originalFilename}
-        mimeType={asset.mimeType}
-        extension={asset.extension}
-        className="size-7"
-      />
-    </div>
-  )
+  return <DocumentThumbnailPlaceholder asset={asset} />
 }
 
 function VideoAssetPreview({ asset }: { asset: AssetSummary }) {
