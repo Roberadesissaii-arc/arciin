@@ -582,10 +582,12 @@ export async function registerAuthRoutes(fastify: FastifyInstance) {
       const enabledDocs =
         !current.media.documentThumbnails && next.media.documentThumbnails
       if (enabledDocs) {
+        const instance = await request.server.prisma.instanceConfig.findFirst()
         void queueDocumentThumbnailBackfill(
           request.server.prisma,
           mediaQueue,
           request.auth.user.id,
+          instance?.storageRoot,
         ).catch((err) => {
           request.log.warn({ err }, "document thumbnail backfill failed")
         })

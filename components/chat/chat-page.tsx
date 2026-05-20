@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
+import { flushSync } from "react-dom"
 import Link from "next/link"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
@@ -60,6 +61,8 @@ type Message = {
   role: "user" | "assistant"
   content: string
   thinking?: string
+  /** Live status while tools run before answer tokens arrive. */
+  streamStatus?: string
   pending?: boolean
   usage?: TokenUsage
   /** Persisted row id (same as id when loaded from history). */
@@ -216,11 +219,18 @@ function finalizeAssistantContent(
   userText: string,
   priorMessages: Message[] = [],
 ): string {
-  let out = ensureAssetGalleryTag(content, userText, priorMessages)
+  let out = stripUnrequestedAssetTags(content, userText, priorMessages)
+  out = ensureFilenameListTag(out, userText, priorMessages)
+  out = ensureAssetGalleryTag(out, userText, priorMessages)
   out = stripUnrequestedAssetTags(out, userText, priorMessages)
   out = stripAssetListsWhenQueryingAppDatabases(out, userText)
-  out = ensureFilenameListTag(out, userText, priorMessages)
   return out
+}
+
+/** User is asking about source code / Python scripts — not image/document previews. */
+function userRequestsCodeFiles(userText: string): boolean {
+  const t = userText.trim().toLowerCase()
+  return /\b(python|py\s+files?|\.py\b|scripts?|source\s*code|code\s+files?)\b/.test(t)
 }
 
 /** Arciin "App data databases" (/database/app-data) vs file libraries — never treat as Documents filenames. */
@@ -374,6 +384,7 @@ When the user asks to **list**, **name**, or **enumerate** files (e.g. "list my 
 Rules:
 - If the user only asks about **folders** (what folders exist in Images/Videos/etc., hierarchy, counts per folder), answer from the **Folders (snapshot)** in the context block only — **do not** add [[ASSET_LIST:…]] unless they clearly asked for **individual file names** in the library.
 - For **list-only** requests, use [[ASSET_LIST:…]] and skip [[ASSETS:…]] unless they also asked to preview files.
+- **Python / code:** "show me my py files", "all my .py files", "my Python scripts" → [[ASSET_LIST:code]] only. Never [[ASSETS:images]] or image preview cards — .py files are not photos.
 - For **show + list**, you may use both tags (list after cards).
 - Never say you lack access to filenames when [[ASSET_LIST:…]] can be used.
 - Only one [[ASSETS:…]] tag per response when previewing. Never use asset tags on greetings.
@@ -1207,7 +1218,8 @@ function MessageBubble({
     !hideMainAnswerBubble &&
     !showNeutralGenerating &&
     ((msg.pending && !hasVisibleAnswer && !hasThinkingText && !isStreaming) ||
-      (isStreaming && !hasVisibleAnswer && !hasThinkingText && !showThinkingRow))
+      (isStreaming && !hasVisibleAnswer && !hasThinkingText && !showThinkingRow) ||
+      (isStreaming && Boolean(msg.streamStatus) && !hasVisibleAnswer))
 
   return (
     <div className={`flex gap-3 ${isUser ? "flex-row-reverse" : "flex-row"}`}>
@@ -1240,7 +1252,7 @@ function MessageBubble({
           ) : showComposingInBubble ? (
             <span className="flex items-center gap-1.5 text-muted-foreground">
               <Loader2 className="size-3.5 animate-spin" />
-              Working on it…
+              {msg.streamStatus ?? "Working on it…"}
             </span>
           ) : isUser ? (
             <span className="whitespace-pre-wrap">{msg.content}</span>
@@ -1425,6 +1437,7 @@ function userWantsAssetGallery(userText: string, priorMessages: Message[] = []):
   const t = userText.trim()
   if (!t) return false
 
+  if (userRequestsCodeFiles(userText)) return false
   if (userWantsFilenameList(userText, priorMessages)) return false
 
   if (
@@ -1440,14 +1453,19 @@ function userWantsAssetGallery(userText: string, priorMessages: Message[] = []):
       t,
     ) ||
     /\b(show|see|view|open)\s+(?:all\s+)?(?:my\s+)?(?:the\s+)?(?:recent\s+)?/i.test(t)
-  const mentionsMedia =
-    /\b(images?|pictures?|photos?|videos?|files?|music|documents?|library|libraries|media|assets?|uploads?)\b/i.test(
+  const mentionsVisualMedia =
+    /\b(images?|pictures?|photos?|videos?|music|documents?|library|libraries|media|assets?|uploads?)\b/i.test(
       t,
     )
+  const mentionsGenericFiles = /\bfiles?\b/i.test(t) && !userRequestsCodeFiles(userText)
 
-  if (wantsSee && mentionsMedia) return true
+  if (wantsSee && (mentionsVisualMedia || mentionsGenericFiles)) return true
 
-  if (/\b(show|see|display)\b/i.test(t) && /\b(recent|latest|newest)\b/i.test(t) && mentionsMedia) {
+  if (
+    /\b(show|see|display)\b/i.test(t) &&
+    /\b(recent|latest|newest)\b/i.test(t) &&
+    (mentionsVisualMedia || mentionsGenericFiles)
+  ) {
     return true
   }
 
@@ -1457,13 +1475,14 @@ function userWantsAssetGallery(userText: string, priorMessages: Message[] = []):
       t,
     ) || /^show[\s!.,?]*$/i.test(t)
 
+  if (shortShowRequest && conversationMentionsMediaType(priorMessages, "code")) return false
   if (shortShowRequest && conversationMentionsMediaType(priorMessages, "images")) return true
   if (shortShowRequest && conversationMentionsMediaType(priorMessages, "videos")) return true
   if (shortShowRequest && conversationMentionsMediaType(priorMessages, "music")) return true
   if (shortShowRequest && conversationMentionsMediaType(priorMessages, "documents")) return true
-  if (shortShowRequest && conversationMentionsMediaType(priorMessages, "files")) return true
 
-  if (wantsSee && !mentionsMedia) {
+  if (wantsSee && !mentionsVisualMedia && !mentionsGenericFiles) {
+    if (conversationMentionsMediaType(priorMessages, "code")) return false
     if (conversationMentionsMediaType(priorMessages, "images")) return true
     if (conversationMentionsMediaType(priorMessages, "videos")) return true
     if (conversationMentionsMediaType(priorMessages, "music")) return true
@@ -1501,6 +1520,7 @@ function inferGalleryCountFromContext(priorMessages: Message[], media: string): 
 
 function resolveGalleryMediaType(userText: string, priorMessages: Message[]): string {
   const t = userText.toLowerCase()
+  if (userRequestsCodeFiles(userText)) return "code"
   if (/\bdocuments?\b/.test(t)) return "documents"
   if (/\bimages?|pictures?|photos?\b/.test(t)) return "images"
   if (/\bvideos?\b/.test(t)) return "videos"
@@ -1547,13 +1567,25 @@ function userWantsFilenameList(userText: string, priorMessages: Message[]): bool
   if (!t) return false
 
   if (userMeansAppDataDatabases(userText)) return false
+
+  const wantsBrowseCode =
+    userRequestsCodeFiles(userText) &&
+    /\b(show\s+me|let\s+me\s+see|display|browse|view|list|what\s+are|which|all|every)\b/.test(t)
+  if (wantsBrowseCode) return true
+
   const listIntent =
     /\b(list|enumerate|filenames?|file\s+names?|name\s+them)\b/.test(t) ||
     /^list\s+(?:them|those|these|it|my)\b/.test(t) ||
     /\blist\s+(?:them\s+)?(?:here|again|in\s+chat)\b/.test(t) ||
     /\bno,?\s*list\b/.test(t)
 
-  if (!listIntent) return false
+  if (!listIntent) {
+    const shortShow =
+      /^(?:show\s+me|show\s+them|show\s+those|let\s+me\s+see)[\s!.,?]*$/i.test(t) ||
+      /^show[\s!.,?]*$/i.test(t)
+    if (shortShow && conversationMentionsMediaType(priorMessages, "code")) return true
+    return false
+  }
 
   if (
     /\b(documents?|files?|images?|pictures?|photos?|videos?|music|python|scripts?|code|\.py|assets?|them|those|these)\b/.test(
@@ -1599,17 +1631,34 @@ function ensureFilenameListTag(content: string, userText: string, priorMessages:
   return trimmed ? `${trimmed}\n\n[[ASSET_LIST:${media}]]` : `[[ASSET_LIST:${media}]]`
 }
 
-/** Remove [[ASSETS:...]] blocks when the user did not ask to see files. */
+function responseUsesCodeFilenameList(content: string): boolean {
+  return /\[\[ASSET_LIST:(?:code|python|py)\]\]/i.test(content)
+}
+
+/** Remove [[ASSETS:...]] preview cards when the user wanted a filename list or code files only. */
 function stripUnrequestedAssetTags(
   content: string,
   userText: string,
   priorMessages: Message[] = [],
 ): string {
-  if (userWantsAssetGallery(userText, priorMessages) || !/\[\[ASSETS:/i.test(content)) return content
+  if (!/\[\[ASSETS:/i.test(content)) return content
+
+  const stripGallery = () =>
+    content
+      .replace(/\n*\[\[ASSETS:[^\]]+\]\]\n*/gi, "\n")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim()
+
+  if (userRequestsCodeFiles(userText)) return stripGallery()
+  if (responseUsesCodeFilenameList(content) && !userWantsAssetGallery(userText, priorMessages)) {
+    return stripGallery()
+  }
+  if (/\[\[ASSET_LIST:/i.test(content) && userWantsFilenameList(userText, priorMessages)) {
+    return stripGallery()
+  }
+  if (!userWantsAssetGallery(userText, priorMessages)) return stripGallery()
+
   return content
-    .replace(/\n*\[\[ASSETS:[^\]]+\]\]\n*/gi, "\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim()
 }
 
 function assistantRecentlyShowedImages(priorMessages: Message[]): boolean {
@@ -2429,6 +2478,7 @@ export function ChatPage() {
       let buffer = ""
       let accumulated = ""
       let thinkingAccum = ""
+      let streamStatus = ""
       let streamDone = false
 
       while (true) {
@@ -2444,7 +2494,12 @@ export function ChatPage() {
           if (sseLine === "[DONE]") { streamDone = true; continue }
           try {
             const json = JSON.parse(sseLine) as {
-              error?: string; text?: string; thinking?: string; usage?: TokenUsage; libraryAction?: string
+              error?: string
+              text?: string
+              thinking?: string
+              status?: string
+              usage?: TokenUsage
+              libraryAction?: string
             }
             if (json.error) throw new Error(json.error)
             if (json.libraryAction) {
@@ -2453,8 +2508,12 @@ export function ChatPage() {
               void queryClient.invalidateQueries({ queryKey: ["folders"] })
               void queryClient.invalidateQueries({ queryKey: queryKeys.chatContext })
             }
+            if (json.status) streamStatus = json.status
             if (json.thinking) thinkingAccum += json.thinking
-            if (json.text) accumulated += json.text
+            if (json.text) {
+              accumulated += json.text
+              streamStatus = ""
+            }
             if (json.usage) finalUsage = json.usage
           } catch (parseErr) {
             if (parseErr instanceof Error && parseErr.message !== "Unexpected end of JSON input") throw parseErr
@@ -2463,13 +2522,22 @@ export function ChatPage() {
         const derived = deriveStreamingThinkingAndAnswer(accumulated, thinkingAccum, showThinking)
         const displayThinking = displayThinkingDuringStream(reasoningUiEnabled, derived)
         const displayContent = finalizeAssistantContent(derived.answer, userText, priorMessages)
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === pendingMsg.id
-              ? { ...m, content: displayContent, thinking: displayThinking, pending: false, usage: finalUsage ?? m.usage }
-              : m,
-          ),
-        )
+        flushSync(() => {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === pendingMsg.id
+                ? {
+                    ...m,
+                    content: displayContent,
+                    thinking: displayThinking,
+                    streamStatus: streamStatus || undefined,
+                    pending: false,
+                    usage: finalUsage ?? m.usage,
+                  }
+                : m,
+            ),
+          )
+        })
         if (streamDone || done) break
       }
 
@@ -2649,6 +2717,7 @@ export function ChatPage() {
       let buffer = ""
       let accumulated  = ""  // text/content chunks (may contain <think> tags in some models)
       let thinkingAccum = "" // dedicated thinking chunks (Ollama native / compat)
+      let streamStatus = ""
       let streamDone = false
 
       while (true) {
@@ -2673,6 +2742,7 @@ export function ChatPage() {
               error?: string
               text?: string
               thinking?: string
+              status?: string
               usage?: TokenUsage
               libraryAction?: string
             }
@@ -2685,8 +2755,12 @@ export function ChatPage() {
               void queryClient.invalidateQueries({ queryKey: queryKeys.chatContext })
             }
 
+            if (json.status) streamStatus = json.status
             if (json.thinking) thinkingAccum += json.thinking
-            if (json.text) accumulated += json.text
+            if (json.text) {
+              accumulated += json.text
+              streamStatus = ""
+            }
             if (json.usage) finalUsage = json.usage
           } catch (parseErr) {
             if (parseErr instanceof Error && parseErr.message !== "Unexpected end of JSON input") {
@@ -2699,20 +2773,22 @@ export function ChatPage() {
         const displayThinking = displayThinkingDuringStream(reasoningUiEnabled, derived)
         const displayContent = finalizeAssistantContent(derived.answer, text, messages)
 
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === pendingMsg.id
-              ? {
-                  ...m,
-                  content: displayContent,
-                  thinking: displayThinking,
-                  
-                  pending: false,
-                  usage: finalUsage ?? m.usage,
-                }
-              : m,
-          ),
-        )
+        flushSync(() => {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === pendingMsg.id
+                ? {
+                    ...m,
+                    content: displayContent,
+                    thinking: displayThinking,
+                    streamStatus: streamStatus || undefined,
+                    pending: false,
+                    usage: finalUsage ?? m.usage,
+                  }
+                : m,
+            ),
+          )
+        })
 
         if (streamDone || done) break
       }

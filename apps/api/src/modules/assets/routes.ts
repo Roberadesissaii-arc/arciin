@@ -650,13 +650,14 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
         /* generate below */
       }
 
+      let generatedThumb = false
       if (
         !hadFile &&
         (asset.mediaType === "VIDEO" ||
           asset.mediaType === "IMAGE" ||
           wantsDocumentThumb)
       ) {
-        await ensureThumbnailWritten({
+        generatedThumb = await ensureThumbnailWritten({
           assetId: asset.id,
           mediaType: asset.mediaType,
           mimeType: asset.mimeType,
@@ -664,6 +665,13 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
           originalFilename: asset.originalFilename,
           sourcePath: sourcePathResolved,
           thumbnailPath,
+        })
+      }
+
+      if (generatedThumb && wantsDocumentThumb) {
+        await fastify.prisma.asset.update({
+          where: { id: asset.id },
+          data: { updatedAt: new Date() },
         })
       }
 

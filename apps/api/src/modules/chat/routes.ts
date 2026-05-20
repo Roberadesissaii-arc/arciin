@@ -23,6 +23,7 @@ import { z } from "zod"
 import { assertOllamaCloudApiKey } from "@/services/chat/ollama-http"
 import { executeArciinChatTool } from "@/services/chat/arciin-chat-tools"
 import { streamOllamaWithArciinTools } from "@/services/chat/ollama-chat-with-tools"
+import { flushSseResponse, writeSseEvent } from "@/services/chat/sse-stream"
 import { buildSyntheticReadTextAssetArgsFromUser } from "@/services/chat/read-text-asset-synthetic"
 import { organizeImagesLibrary } from "@/services/chat/organize-images-library"
 import {
@@ -859,6 +860,7 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
         return
       }
 
+      reply.hijack()
       const raw = reply.raw
       raw.writeHead(200, {
         "Content-Type": "text/event-stream",
@@ -954,13 +956,21 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
             }
           }
           const compatMessages = appendSystemInstructions(safeText, compatAppend)
-          await streamOpenAICompat({ raw, baseUrl, apiKey: profile.apiKey ?? "", model, messages: compatMessages })
+          await streamOpenAICompat({
+            raw,
+            baseUrl,
+            apiKey: profile.apiKey ?? "",
+            model,
+            messages: compatMessages,
+            provider: profile.provider,
+          })
         }
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Provider error"
-        raw.write(`data: ${JSON.stringify({ error: msg })}\n\n`)
+        writeSseEvent(raw, { error: msg })
       } finally {
         raw.write("data: [DONE]\n\n")
+        flushSseResponse(raw)
         raw.end()
       }
     },
@@ -1136,21 +1146,23 @@ async function streamOllamaNative({
             ? thinkingFull.slice(prevThinkingFull.length)
             : thinkingFull
           prevThinkingFull = thinkingFull
-          if (delta) raw.write(`data: ${JSON.stringify({ thinking: delta })}\n\n`)
+          if (delta) writeSseEvent(raw, { thinking: delta })
         }
         if (contentFull && contentFull !== prevContentFull) {
           const delta = contentFull.startsWith(prevContentFull)
             ? contentFull.slice(prevContentFull.length)
             : contentFull
           prevContentFull = contentFull
-          if (delta) raw.write(`data: ${JSON.stringify({ text: delta })}\n\n`)
+          if (delta) writeSseEvent(raw, { text: delta })
         }
 
         if (json.done) {
           const inputTokens  = json.prompt_eval_count ?? 0
           const outputTokens = json.eval_count ?? 0
           if (inputTokens > 0 || outputTokens > 0) {
-            raw.write(`data: ${JSON.stringify({ usage: { inputTokens, outputTokens, totalTokens: inputTokens + outputTokens } })}\n\n`)
+            writeSseEvent(raw, {
+              usage: { inputTokens, outputTokens, totalTokens: inputTokens + outputTokens },
+            })
           }
           return
         }
@@ -1166,26 +1178,35 @@ async function streamOllamaNative({
 // ── OpenAI-compatible streaming ────────────────────────────────────────────────
 
 async function streamOpenAICompat({
-  raw, baseUrl, apiKey, model, messages,
+  raw, baseUrl, apiKey, model, messages, provider,
 }: {
   raw: import("http").ServerResponse
   baseUrl: string
   apiKey: string
   model: string
   messages: { role: string; content: string }[]
+  provider?: string
 }) {
+  const isDeepSeek =
+    provider === "deepseek" || /deepseek\.com/i.test(baseUrl)
+
+  const body: Record<string, unknown> = {
+    model,
+    messages,
+    stream: true,
+    stream_options: { include_usage: true },
+  }
+  if (isDeepSeek) {
+    body.reasoning_effort = "medium"
+  }
+
   const res = await fetch(`${baseUrl}/chat/completions`, {
     method: "POST",
     headers: {
       "Authorization": `Bearer ${apiKey}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      model,
-      messages,
-      stream: true,
-      stream_options: { include_usage: true },
-    }),
+    body: JSON.stringify(body),
   })
 
   if (!res.ok || !res.body) {
@@ -1216,21 +1237,23 @@ async function streamOpenAICompat({
           choices?: { delta?: { content?: string; thinking?: string } }[]
           usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number }
         }
-        const delta    = json.choices?.[0]?.delta
-        const thinking = delta?.thinking  // Ollama 0.6+ dedicated thinking field
-        const text     = delta?.content
+        const delta = json.choices?.[0]?.delta as
+          | { content?: string; thinking?: string; reasoning_content?: string }
+          | undefined
+        const thinking = delta?.reasoning_content ?? delta?.thinking
+        const text = delta?.content
 
-        if (thinking) raw.write(`data: ${JSON.stringify({ thinking })}\n\n`)
-        if (text)     raw.write(`data: ${JSON.stringify({ text })}\n\n`)
+        if (thinking) writeSseEvent(raw, { thinking })
+        if (text) writeSseEvent(raw, { text })
 
         if (json.usage?.total_tokens) {
-          raw.write(`data: ${JSON.stringify({
+          writeSseEvent(raw, {
             usage: {
-              inputTokens:  json.usage.prompt_tokens     ?? 0,
+              inputTokens: json.usage.prompt_tokens ?? 0,
               outputTokens: json.usage.completion_tokens ?? 0,
-              totalTokens:  json.usage.total_tokens      ?? 0,
+              totalTokens: json.usage.total_tokens ?? 0,
             },
-          })}\n\n`)
+          })
         }
       } catch {
         // skip malformed chunks
@@ -1306,20 +1329,20 @@ async function streamAnthropic({
           inputTokens = json.message?.usage?.input_tokens ?? 0
         }
         if (json.type === "content_block_delta" && json.delta?.type === "text_delta") {
-          raw.write(`data: ${JSON.stringify({ text: json.delta.text })}\n\n`)
+          writeSseEvent(raw, { text: json.delta.text ?? "" })
         }
         if (json.type === "message_delta") {
           outputTokens = json.usage?.output_tokens ?? outputTokens
         }
         if (json.type === "message_stop") {
           if (inputTokens > 0 || outputTokens > 0) {
-            raw.write(`data: ${JSON.stringify({
+            writeSseEvent(raw, {
               usage: {
                 inputTokens,
                 outputTokens,
                 totalTokens: inputTokens + outputTokens,
               },
-            })}\n\n`)
+            })
           }
           return
         }

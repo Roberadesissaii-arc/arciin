@@ -2,6 +2,11 @@
 const SELF_TOAST_ACTIVITY_TYPES = new Set([
   "asset.deleted",
   "asset.moved",
+  "asset.created",
+  "asset.classified",
+  "upload.completed",
+  "upload.failed",
+  "thumbnail.created",
 ])
 
 export function shouldToastForActivityEvent(eventType: string) {

@@ -109,18 +109,9 @@ export function useSocketEvents(socket: Socket | null) {
               : undefined
         const isSecurity = eventType.startsWith("auth.")
 
-        if (eventType === "upload.completed") {
-          notifyUploadCompleted({
-            dedupeKey: uploadNotifyDedupeKey(payload),
-            title,
-            message,
-          })
-        } else if (eventType === "upload.failed") {
-          notifyUploadFailed({
-            dedupeKey: uploadNotifyDedupeKey(payload),
-            title,
-            message,
-          })
+        // upload.completed / upload.failed are handled on dedicated socket events (with batch suppression).
+        if (eventType === "upload.completed" || eventType === "upload.failed") {
+          /* no activity toast */
         } else if (isSecurity && shouldShowSecurityEventsToast()) {
           recordInboxNotification({
             title,

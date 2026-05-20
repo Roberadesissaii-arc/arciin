@@ -10,8 +10,52 @@ import type { AssetSummary } from "@/lib/types/models"
 import { assetSupportsDocumentThumbnail } from "@arciin/shared"
 import { getUserPreferences } from "@/lib/api/user-preferences"
 import { queryKeys } from "@/lib/api/query-keys"
+import {
+  pdfThumbnailSourceKey,
+  usePdfThumbnail,
+} from "@/hooks/use-pdf-thumbnail"
 
 const THUMB_MEDIA = new Set(["IMAGE", "VIDEO"])
+
+function PdfDocumentPreview({ asset }: { asset: AssetSummary }) {
+  const pdfUrl = pdfThumbnailSourceKey(asset.id, asset.updatedAt)
+  const thumb = usePdfThumbnail(pdfUrl, true)
+  const ext = (
+    asset.extension ??
+    asset.originalFilename.split(".").pop() ??
+    "pdf"
+  ).toUpperCase()
+
+  if (thumb) {
+    return (
+      <div className="relative aspect-[4/3] overflow-hidden rounded-xl border border-border bg-muted/40">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          key={`${asset.id}-${asset.updatedAt}`}
+          src={thumb}
+          alt=""
+          className="size-full object-cover"
+          loading="lazy"
+        />
+        <span className="absolute bottom-1.5 right-2 rounded-md bg-black/35 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white/90 backdrop-blur-sm">
+          {ext}
+        </span>
+      </div>
+    )
+  }
+
+  return (
+    <div className="relative flex aspect-[4/3] items-center justify-center overflow-hidden rounded-xl border border-border bg-gradient-to-br from-red-950/30 via-muted/40 to-purple-950/20 text-muted-foreground">
+      <MediaTypeIcon
+        mediaType={asset.mediaType}
+        filename={asset.originalFilename}
+        mimeType={asset.mimeType}
+        extension={asset.extension}
+        className="size-7 animate-pulse"
+      />
+    </div>
+  )
+}
 
 function ImageOrIconPreview({ asset }: { asset: AssetSummary }) {
   const { data: prefs } = useQuery({
@@ -21,15 +65,24 @@ function ImageOrIconPreview({ asset }: { asset: AssetSummary }) {
   })
   const [thumbFailed, setThumbFailed] = useState(false)
   const docThumbs = prefs?.media.documentThumbnails ?? false
-  const tryThumb =
-    THUMB_MEDIA.has(asset.mediaType) ||
-    (docThumbs &&
-      assetSupportsDocumentThumbnail(
-        asset.mediaType,
-        asset.mimeType,
-        asset.extension,
-        asset.originalFilename,
-      ))
+
+  useEffect(() => {
+    setThumbFailed(false)
+  }, [asset.id, asset.updatedAt])
+  const isPdfDoc =
+    docThumbs &&
+    assetSupportsDocumentThumbnail(
+      asset.mediaType,
+      asset.mimeType,
+      asset.extension,
+      asset.originalFilename,
+    )
+
+  if (isPdfDoc) {
+    return <PdfDocumentPreview asset={asset} />
+  }
+
+  const tryThumb = THUMB_MEDIA.has(asset.mediaType)
   const thumbSrc = `/api/assets/${asset.id}/thumbnail?v=${encodeURIComponent(asset.updatedAt)}`
 
   if (tryThumb && !thumbFailed) {
@@ -37,6 +90,7 @@ function ImageOrIconPreview({ asset }: { asset: AssetSummary }) {
       <div className="relative aspect-[4/3] overflow-hidden rounded-xl border border-border bg-muted/40">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
+          key={`${asset.id}-${asset.updatedAt}`}
           src={thumbSrc}
           alt=""
           className="size-full object-cover"

@@ -321,12 +321,19 @@ export async function handleMediaJob(
       asset.originalFilename,
     )
 
-    await prisma.asset.update({
-      where: { id: asset.id },
-      data: {
-        status: "READY",
-      },
-    })
+    const assetPatch: { status?: "READY"; updatedAt?: Date } = {}
+    if (asset.status !== "READY") {
+      assetPatch.status = "READY"
+    }
+    if (thumbnailPath) {
+      assetPatch.updatedAt = new Date()
+    }
+    if (Object.keys(assetPatch).length > 0) {
+      await prisma.asset.update({
+        where: { id: asset.id },
+        data: assetPatch,
+      })
+    }
 
     const upload = await prisma.uploadSession.findFirst({
       where: {
@@ -334,7 +341,11 @@ export async function handleMediaJob(
       },
     })
 
-    if (upload) {
+    /** PDFs are often READY before thumbnail jobs run — do not re-emit upload.completed (Sonner spam). */
+    const uploadNotYetAnnounced =
+      upload && upload.status !== "READY" && upload.completedAt == null
+
+    if (uploadNotYetAnnounced) {
       await prisma.uploadSession.update({
         where: { id: upload.id },
         data: {
@@ -353,7 +364,7 @@ export async function handleMediaJob(
           assetId: asset.id,
           progress: 100,
           message: `${asset.originalFilename} is ready.`,
-        })
+        }),
       )
     }
 
@@ -365,7 +376,7 @@ export async function handleMediaJob(
           libraryId: asset.libraryId,
           assetId: asset.id,
           message: "Thumbnail created.",
-        })
+        }),
       )
     }
 

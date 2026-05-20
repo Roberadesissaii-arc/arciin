@@ -74,31 +74,75 @@ function filterCollected(files: File[]): File[] {
   })
 }
 
+/**
+ * Windows/macOS often expose every dragged file on `dataTransfer.files`, while
+ * `webkitGetAsEntry()` may only resolve the first item when many loose files are dropped.
+ */
+export function shouldPreferDataTransferFileList(
+  dataTransfer: DataTransfer,
+  filteredFiles: File[],
+): boolean {
+  const rawFiles = Array.from(dataTransfer.files || [])
+  const itemCount = dataTransfer.items?.length ?? 0
+
+  const folderOnlyPlaceholder =
+    itemCount <= 1 &&
+    rawFiles.length === 1 &&
+    isLikelyDirectoryPlaceholder(rawFiles[0]!)
+
+  if (filteredFiles.length > 1) return true
+  if (filteredFiles.length === 1 && !folderOnlyPlaceholder) return true
+  if (filteredFiles.length >= itemCount && itemCount > 1) return true
+
+  return false
+}
+
+async function collectViaWebkitEntries(dataTransfer: DataTransfer): Promise<File[]> {
+  const items = dataTransfer.items
+  if (!items?.length || typeof items[0]?.webkitGetAsEntry !== "function") {
+    return []
+  }
+
+  const collected: File[] = []
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i]
+    if (!item || item.kind !== "file") continue
+    const entry = item.webkitGetAsEntry()
+    if (!entry) continue
+    try {
+      const files = await readEntry(entry, "")
+      collected.push(...files)
+    } catch {
+      const fallback = item.getAsFile()
+      if (fallback) collected.push(fallback)
+    }
+  }
+
+  return filterCollected(collected)
+}
+
 /** Expand folder drag-and-drop into real files (fixes Windows sending only the folder name). */
 export async function collectFilesFromDataTransfer(
   dataTransfer: DataTransfer | null,
 ): Promise<File[]> {
   if (!dataTransfer) return []
 
-  const items = dataTransfer.items
-  if (items?.length && typeof items[0]?.webkitGetAsEntry === "function") {
-    const collected: File[] = []
-    for (let i = 0; i < items.length; i++) {
-      const item = items[i]
-      if (!item || item.kind !== "file") continue
-      const entry = item.webkitGetAsEntry()
-      if (!entry) continue
-      try {
-        const files = await readEntry(entry, "")
-        collected.push(...files)
-      } catch {
-        const fallback = item.getAsFile()
-        if (fallback) collected.push(fallback)
-      }
-    }
-    const filtered = filterCollected(collected)
-    if (filtered.length > 0) return filtered
+  const fromFileList = filterCollected(Array.from(dataTransfer.files || []))
+
+  if (shouldPreferDataTransferFileList(dataTransfer, fromFileList)) {
+    return fromFileList
   }
 
-  return filterCollected(Array.from(dataTransfer.files || []))
+  const fromWebkit = await collectViaWebkitEntries(dataTransfer)
+  if (fromWebkit.length > 0) {
+    if (
+      fromFileList.length > fromWebkit.length &&
+      shouldPreferDataTransferFileList(dataTransfer, fromFileList)
+    ) {
+      return fromFileList
+    }
+    return fromWebkit
+  }
+
+  return fromFileList
 }

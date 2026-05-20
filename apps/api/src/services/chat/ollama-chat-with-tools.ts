@@ -20,6 +20,7 @@ import {
 import { buildSyntheticReadTextAssetArgsFromUser } from "@/services/chat/read-text-asset-synthetic"
 import { normalizeOllamaCloudModelId } from "@/services/chat/ollama-cloud-models"
 import { formatOllamaProviderError, ollamaAuthHeaders } from "@/services/chat/ollama-http"
+import { writeSseEvent } from "@/services/chat/sse-stream"
 
 export function detectLibraryToolIntent(
   userText: string,
@@ -135,7 +136,7 @@ function writeSseDelta(
   if (!full || full === prevFull) return prevFull
   const delta = full.startsWith(prevFull) ? full.slice(prevFull.length) : full
   if (delta) {
-    raw.write(`data: ${JSON.stringify({ [kind]: delta })}\n\n`)
+    writeSseEvent(raw, { [kind]: delta })
   }
   return full
 }
@@ -268,15 +269,13 @@ async function streamFinalAnswer(
   const final = await collectStreamedOllama(answerRes, raw, { thinking: true, text: true })
   const inTok = totalIn + (final.usage?.inputTokens ?? 0)
   const outTok = totalOut + (final.usage?.outputTokens ?? 0)
-  raw.write(
-    `data: ${JSON.stringify({
-      usage: {
-        inputTokens: inTok,
-        outputTokens: outTok,
-        totalTokens: inTok + outTok,
-      },
-    })}\n\n`,
-  )
+  writeSseEvent(raw, {
+    usage: {
+      inputTokens: inTok,
+      outputTokens: outTok,
+      totalTokens: inTok + outTok,
+    },
+  })
 }
 
 export async function streamOllamaWithArciinTools(opts: {
@@ -315,7 +314,7 @@ export async function streamOllamaWithArciinTools(opts: {
   if (lastUser && agentEnabled && !requireApproval) {
     const readArgs = buildSyntheticReadTextAssetArgsFromUser(lastUser.content, priorUserTexts)
     if (readArgs) {
-      raw.write(`data: ${JSON.stringify({ libraryAction: "read_text_asset" })}\n\n`)
+      writeSseEvent(raw, { libraryAction: "read_text_asset", status: "Reading file…" })
       const syntheticCall = {
         function: { name: "read_text_asset" as const, arguments: readArgs },
       }
@@ -330,7 +329,7 @@ export async function streamOllamaWithArciinTools(opts: {
   if (lastUser && agentEnabled && folderMutationsOk && !requireApproval) {
     const delArgs = buildSyntheticDeleteLibraryFolderArgsFromUser(lastUser.content)
     if (delArgs) {
-      raw.write(`data: ${JSON.stringify({ libraryAction: "delete_library_folder" })}\n\n`)
+      writeSseEvent(raw, { libraryAction: "delete_library_folder", status: "Updating folders…" })
       const syntheticCall = {
         function: { name: "delete_library_folder" as const, arguments: delArgs },
       }
@@ -342,7 +341,7 @@ export async function streamOllamaWithArciinTools(opts: {
     }
     const createArgs = buildSyntheticCreateLibraryFolderArgsFromUser(lastUser.content)
     if (createArgs) {
-      raw.write(`data: ${JSON.stringify({ libraryAction: "create_library_folder" })}\n\n`)
+      writeSseEvent(raw, { libraryAction: "create_library_folder", status: "Creating folder…" })
       const syntheticCall = {
         function: { name: "create_library_folder" as const, arguments: createArgs },
       }
@@ -360,7 +359,7 @@ export async function streamOllamaWithArciinTools(opts: {
   }
 
   if (libraryIntent && lastUser && agentEnabled && autonomyEnabled && !requireApproval) {
-    raw.write(`data: ${JSON.stringify({ libraryAction: libraryIntent })}\n\n`)
+    writeSseEvent(raw, { libraryAction: libraryIntent, status: "Searching your library…" })
 
     const args = toolArgsForIntent(libraryIntent, lastUser.content)
     const syntheticCall = {
@@ -414,7 +413,7 @@ export async function streamOllamaWithArciinTools(opts: {
         for (const p of [...pseudo, ...prose]) {
           if (p.name !== "delete_library_folder" && p.name !== "create_library_folder") continue
           const syntheticCall = { function: { name: p.name, arguments: p.arguments } }
-          raw.write(`data: ${JSON.stringify({ libraryAction: p.name })}\n\n`)
+          writeSseEvent(raw, { libraryAction: p.name, status: "Updating library…" })
           const toolResult = await executeArciinChatTool(syntheticCall, toolCtx)
           messages.push({
             role: "assistant",
@@ -429,7 +428,7 @@ export async function streamOllamaWithArciinTools(opts: {
 
       // Some thinking models leave `content` empty and put the user-visible reply in `thinking`.
       if (!answer && thinking) {
-        raw.write(`data: ${JSON.stringify({ text: thinking })}\n\n`)
+        writeSseEvent(raw, { text: thinking })
       }
       raw.write(
         `data: ${JSON.stringify({
@@ -453,7 +452,10 @@ export async function streamOllamaWithArciinTools(opts: {
       if (!agentEnabled) break
       const toolName = call.function?.name
       if (toolName) {
-        raw.write(`data: ${JSON.stringify({ libraryAction: toolName })}\n\n`)
+        writeSseEvent(raw, {
+          libraryAction: toolName,
+          status: toolName ? `Running ${toolName.replace(/_/g, " ")}…` : "Running tool…",
+        })
       }
       const result = await executeArciinChatTool(call, toolCtx)
       messages.push({
@@ -463,5 +465,6 @@ export async function streamOllamaWithArciinTools(opts: {
     }
   }
 
+  writeSseEvent(raw, { status: "Writing answer…" })
   await streamFinalAnswer(raw, baseUrl, model, messages, totalIn, totalOut, apiKey)
 }
