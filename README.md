@@ -234,7 +234,7 @@ Set `API_BASE` in `scripts/examples/arciin_example_client.py` to the printed WSL
 |----------|---------|
 | `DATABASE_URL` | PostgreSQL connection string |
 | `REDIS_URL` | Redis for queues and realtime |
-| `ARCIIN_DATA_DIR` | On-disk storage root (default `./data/arciin`) |
+| `ARCIIN_DATA_DIR` | On-disk storage root (default `/srv/arciin-storage/arciin`, outside the repo) |
 | `ARCIIN_SETUP_TOKEN` | Secret for first-run setup only |
 | `ARCIIN_PUBLIC_URL` | Browser-facing URL |
 | `ARCIIN_API_URL` | API origin for server-side use |

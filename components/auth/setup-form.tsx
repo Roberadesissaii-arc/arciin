@@ -17,6 +17,8 @@ import {
 } from "lucide-react"
 import { toast } from "sonner"
 
+import { ARCIIN_DEV_STORAGE_ROOT } from "@arciin/shared"
+
 import { useClaimInstance } from "@/hooks/use-instance"
 import { getInstanceStatus } from "@/lib/api/instance"
 import { cn } from "@/lib/utils"
@@ -122,7 +124,7 @@ export function SetupForm() {
       .then((status) => {
         if (cancelled || !status.suggestedStorageRoot) return
         const current = form.getValues("storageRoot")
-        if (!current?.trim() || current === "./data/arciin") {
+        if (!current?.trim() || current === ARCIIN_DEV_STORAGE_ROOT || current === "./data/arciin") {
           form.setValue("storageRoot", status.suggestedStorageRoot)
         }
         if (status.storageRootHint) setStorageRootHint(status.storageRootHint)
@@ -361,7 +363,7 @@ export function SetupForm() {
                 Storage
               </div>
               <div className="mt-0.5 truncate text-sm font-medium text-white">
-                {storageRoot?.trim() || "./data/arciin"}
+                {storageRoot?.trim() || "/srv/arciin-storage/arciin"}
               </div>
             </div>
             <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-3 sm:p-3.5">

@@ -50,7 +50,7 @@ function placeholderPath(
     paths.librariesDir?.replace(/\/$/, "") ??
     (paths.storageRoot
       ? `${paths.storageRoot.replace(/\/$/, "")}/libraries`
-      : "./data/arciin/libraries")
+      : "/srv/arciin-storage/arciin/libraries")
   return `${base}/${kind}/jellyfin`
 }
 

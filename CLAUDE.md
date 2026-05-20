@@ -459,22 +459,28 @@ Store metadata in PostgreSQL.
 
 ## Storage Direction
 
-Default local path:
+Default host path (native install and Docker bind mount):
+
+```txt
+/srv/arciin-storage/arciin
+```
+
+Inside Docker containers (bind mount target):
+
+```txt
+/data/arciin
+```
+
+Dev-only (inside git clone — not recommended for production):
 
 ```txt
 ./data/arciin
 ```
 
-Default Docker path:
-
-```txt
-/data/arciin
-```
-
 Recommended structure:
 
 ```txt
-/data/arciin
+/srv/arciin-storage/arciin
   /objects
   /libraries
   /thumbnails

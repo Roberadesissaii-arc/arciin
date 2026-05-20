@@ -150,7 +150,9 @@ export function buildStorageLayoutTree(
   stackInstallDir: string,
 ): string {
   const folderName = kind === "plex" ? "plex" : "jellyfin"
-  const storageRoot = normalizeRoot(status?.storageRoot) ?? "./data/arciin  ← your ARCIIN_DATA_DIR / Settings → Storage"
+  const storageRoot =
+    normalizeRoot(status?.storageRoot) ??
+    "/srv/arciin-storage/arciin  ← your ARCIIN_DATA_DIR / Settings → Storage"
   const examples = buildConnectorPathExamples(status)
   const stackLine = `${stackInstallDir}/`
   const lines = [

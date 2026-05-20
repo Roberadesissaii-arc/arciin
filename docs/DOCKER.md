@@ -38,17 +38,36 @@ Arciin avoids that with a **bind mount**:
 
 | Host | Use case |
 |------|----------|
-| `./data/arciin` | Quick test in the git clone |
+| `/srv/arciin-storage/arciin` | **Default** — outside the git clone; safe across app updates |
 | `/mnt/ssd/arciin-data` | NVMe or mounted SSD |
 | `/media/user/MyDrive/arciin-data` | External USB drive (good for large libraries) |
-| `/srv/arciin` | Only if `/srv` is writable by your user, or create with `sudo` first |
+| `./data/arciin` | Dev-only quick test inside the repo (not recommended for production) |
 
-Create the folder and ensure the container user can write (uid **1000**):
+You do **not** need to run `mkdir` or `rsync` by hand for a normal install.
+
+`./scripts/docker-setup.sh` and `./install.sh`:
+
+1. Ask where to store files (default **`/srv/arciin-storage/arciin`**).
+2. Create that folder (with `sudo` if needed).
+3. **Migrate automatically** if they find existing data under `data/arciin` in the repo or a previous `ARCIIN_DATA_DIR` / `ARCIIN_HOST_DATA_DIR` in `.env`, and the new location is still empty.
+4. Create `objects`, `libraries`, `thumbnails`, and other subfolders.
+5. Write the chosen path to `.env` (`ARCIIN_HOST_DATA_DIR` for Docker, `ARCIIN_DATA_DIR` for native).
+
+For Docker, the setup script also sets ownership to uid **1000** when required so the API container can write.
+
+### Moving data out of the git clone
+
+Re-run setup after pulling the latest scripts:
 
 ```bash
-sudo mkdir -p /mnt/ssd/arciin-data
-sudo chown -R 1000:1000 /mnt/ssd/arciin-data
+./install.sh --docker
+# or
+./scripts/docker-setup.sh
 ```
+
+Pick **`/srv/arciin-storage/arciin`** (or your preferred path). If the destination is empty and files still live under `./data/arciin`, the installer copies them once and updates `.env`.
+
+Manual `rsync` is only needed when data lives on **another machine** or a path the installer cannot see (for example copying from a different host over SSH).
 
 ---
 
@@ -100,9 +119,11 @@ chmod +x scripts/docker-setup.sh install.sh
 The script will:
 
 1. Show your detected host name (OS or hardware).
-2. Ask where to store files (or use `ARCIIN_HOST_DATA_DIR=/your/path`).
-3. Create `.env` with secrets and storage path.
-4. Run `docker compose up --build -d`.
+2. Bootstrap `.env` from `.env.docker.example`.
+3. Ask where to store files (or use `ARCIIN_HOST_DATA_DIR=/your/path`).
+4. Create the storage folder, migrate legacy `data/arciin` if present, and prepare subfolders.
+5. Fill in secrets and storage paths in `.env`.
+6. Run `docker compose up --build -d`.
 
 The first image build can take several minutes on slower hardware. Later starts are fast.
 

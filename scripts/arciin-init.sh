@@ -24,7 +24,7 @@ if [[ -f "${ROOT_DIR}/.env" ]]; then
 fi
 
 DATABASE_URL="${DATABASE_URL:-postgresql://arciin:arciin@localhost:5432/arciin}"
-ARCIIN_DATA_DIR="${ARCIIN_DATA_DIR:-./data/arciin}"
+ARCIIN_DATA_DIR="${ARCIIN_DATA_DIR:-/srv/arciin-storage/arciin}"
 
 wait_for_postgres() {
   local host port user tries=30

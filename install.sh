@@ -12,6 +12,8 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # shellcheck source=scripts/lib/host-platform.sh
 source "${ROOT_DIR}/scripts/lib/host-platform.sh"
+# shellcheck source=scripts/lib/storage-defaults.sh
+source "${ROOT_DIR}/scripts/lib/storage-defaults.sh"
 
 docker_available() {
   command -v docker &>/dev/null && (docker compose version &>/dev/null || command -v docker-compose &>/dev/null)
@@ -247,7 +249,7 @@ _apply_app_ports_to_env() {
   _set_env_kv "$env_file" "NEXT_PUBLIC_API_BASE_URL" "/api"
   _set_env_kv "$env_file" "NEXT_PUBLIC_ARCIIN_PUBLIC_URL" "http://${lan_ip}:${web_port}"
   if ! grep -q '^ARCIIN_DATA_DIR=' "$env_file" 2>/dev/null; then
-    _set_env_kv "$env_file" "ARCIIN_DATA_DIR" "./data/arciin"
+    _set_env_kv "$env_file" "ARCIIN_DATA_DIR" "$ARCIIN_DEFAULT_STORAGE"
   fi
   if ! grep -q '^MAX_UPLOAD_SIZE_MB=' "$env_file" 2>/dev/null; then
     _set_env_kv "$env_file" "MAX_UPLOAD_SIZE_MB" "10240"
@@ -600,6 +602,27 @@ ensure_env_file() {
   fi
 }
 
+ensure_arciin_storage_path() {
+  local env_file="${ROOT_DIR}/.env"
+  [[ -f "$env_file" ]] || return 0
+
+  local preset="${ARCIIN_DATA_DIR:-}"
+  if [[ -z "$preset" ]]; then
+    preset="$(grep '^ARCIIN_DATA_DIR=' "$env_file" 2>/dev/null | cut -d= -f2- | tr -d '"' || true)"
+  fi
+  # Empty or legacy in-repo placeholder → prompt (or default) during install.
+  if [[ "$preset" == "./data/arciin" ]] || [[ "$preset" == "${ROOT_DIR}/data/arciin" ]]; then
+    preset=""
+  fi
+
+  local resolved
+  resolved="$(_arciin_setup_host_storage "${ROOT_DIR}" "$preset" "${env_file}" 0)" \
+    || fail "Could not set up file storage."
+
+  _set_env_kv "$env_file" "ARCIIN_DATA_DIR" "$resolved"
+  ok "File storage: ${resolved}"
+}
+
 ensure_session_secret() {
   local env_file="${ROOT_DIR}/.env"
   [[ -f "${env_file}" ]] || return 0
@@ -781,6 +804,7 @@ spin_ok "Activating pnpm ${DEFAULT_PNPM_VERSION}..." "pnpm $(pnpm --version) rea
 step "Environment"
 
 ensure_env_file
+ensure_arciin_storage_path
 ensure_session_secret
 ensure_setup_token
 ensure_production_secrets

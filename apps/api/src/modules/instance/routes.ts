@@ -53,7 +53,9 @@ export async function registerInstanceRoutes(fastify: FastifyInstance) {
         storageRootHint:
           apiConfig.dataDir === "/data/arciin"
             ? "Docker: files are stored at /data/arciin (bind-mounted from your host folder)."
-            : undefined,
+            : apiConfig.dataDir.startsWith("/srv/")
+              ? "Files are stored outside the application folder on this server."
+              : undefined,
       },
     })
   })

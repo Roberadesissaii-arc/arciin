@@ -6,7 +6,7 @@ loadEnv()
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   REDIS_URL: z.string().min(1),
-  ARCIIN_DATA_DIR: z.string().default("./data/arciin"),
+  ARCIIN_DATA_DIR: z.string().default("/srv/arciin-storage/arciin"),
 })
 
 export const workerConfig = envSchema.parse(process.env)

@@ -816,22 +816,28 @@ logs if needed
 
 ## Storage Rules
 
-Default development storage:
+Default host storage (outside the git clone):
+
+```txt
+/srv/arciin-storage/arciin
+```
+
+Inside Docker containers (bind mount target):
+
+```txt
+/data/arciin
+```
+
+Dev-only (inside the repo):
 
 ```txt
 ./data/arciin
 ```
 
-Default Docker storage:
-
-```txt
-/data/arciin
-```
-
 Recommended layout:
 
 ```txt
-/data/arciin
+/srv/arciin-storage/arciin
   /objects
   /libraries
   /thumbnails
@@ -1231,7 +1237,7 @@ NODE_ENV=development
 DATABASE_URL=postgresql://arciin:arciin@localhost:5432/arciin
 REDIS_URL=redis://localhost:6379
 
-ARCIIN_DATA_DIR=./data/arciin
+ARCIIN_DATA_DIR=/srv/arciin-storage/arciin
 ARCIIN_SETUP_TOKEN=dev-token
 ARCIIN_PUBLIC_URL=http://localhost:3000
 ARCIIN_API_URL=http://localhost:4000

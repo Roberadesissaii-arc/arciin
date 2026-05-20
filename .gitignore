@@ -48,6 +48,9 @@ next-env.d.ts
 # reference project (local only)
 /Arceclaw
 
+# Local media (use /srv/arciin-storage/arciin in production — see docs/DOCKER.md)
+/data/
+
 # IDE / local tool configs
 /.claude/
 /.cursor/

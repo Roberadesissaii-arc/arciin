@@ -11,7 +11,7 @@ const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   DATABASE_URL: z.string().min(1),
   REDIS_URL: z.string().min(1),
-  ARCIIN_DATA_DIR: z.string().default("./data/arciin"),
+  ARCIIN_DATA_DIR: z.string().default("/srv/arciin-storage/arciin"),
   ARCIIN_SETUP_TOKEN: z.string().optional(),
   ARCIIN_PUBLIC_URL: z.string().url().default("http://localhost:3000"),
   ARCIIN_API_URL: z.string().url().default("http://localhost:4000"),
