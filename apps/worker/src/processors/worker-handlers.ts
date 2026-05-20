@@ -13,6 +13,7 @@ import {
   VIDEO_THUMBNAIL_PLACEHOLDER_SVG,
   candidateStorageObjectPaths,
   inferMediaType,
+  normalizeConfiguredStorageRoot,
   resolveArciinStorageRoot,
   type AnalyzeFilePayload,
   type CalculateStorageUsagePayload,
@@ -342,7 +343,10 @@ export async function handleStorageJob(
   await markJob(data.jobRecordId, { status: "ACTIVE", progress: 10 })
 
   const instance = await prisma.instanceConfig.findFirst()
-  const storageRoot = instance?.storageRoot || "./data/arciin"
+  const storageRoot = normalizeConfiguredStorageRoot(
+    instance?.storageRoot,
+    path.resolve(workerConfig.ARCIIN_DATA_DIR),
+  )
 
   if (name === JOB_TYPES.cleanupTempFiles) {
     const tempDir = path.join(storageRoot, "temp")

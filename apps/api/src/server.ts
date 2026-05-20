@@ -35,6 +35,7 @@ import { registerRedis } from "@/plugins/redis"
 import { registerSocket } from "@/plugins/socket"
 import { registerHealthRoutes } from "@/routes/health.routes"
 import { trimOversizedLogFiles } from "@/services/logs/log-files"
+import { repairInstanceStorageRootsIfNeeded } from "@/services/storage/effective-storage-root"
 import { ensureStorageDirectories } from "@/services/storage/local-storage"
 
 export async function createServer() {
@@ -66,6 +67,15 @@ export async function createServer() {
   await registerApiProtection(fastify)
   await registerSocket(fastify)
   await ensureStorageDirectories()
+
+  const storageRepair = await repairInstanceStorageRootsIfNeeded(fastify.prisma)
+  if (storageRepair.repaired) {
+    fastify.log.warn(
+      { from: storageRepair.previousRoot, to: storageRepair.storageRoot },
+      "Corrected instance storage root to match ARCIIN_DATA_DIR",
+    )
+    await ensureStorageDirectories(storageRepair.storageRoot)
+  }
 
   if (trimmedLogs > 0) {
     fastify.log.info({ trimmedLogs }, "Trimmed oversized log files on startup")

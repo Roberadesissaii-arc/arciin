@@ -215,3 +215,4 @@ See also [`DEPLOYMENT.md`](./DEPLOYMENT.md) and [`../docker/caddy/Caddyfile`](..
 | Phone cannot connect | Set `ARCIIN_PUBLIC_URL` to `http://<lan-ip>`, open firewall for port 80 |
 | Data “missing” after rebuild | Check `ARCIIN_HOST_DATA_DIR` in `.env` — files live only on that host path |
 | Cannot create storage path | Pick a writable folder or: `sudo mkdir -p <path> && sudo chown -R $USER:$USER <path>` |
+| Settings shows `/app/data/arciin`, **Writable: No** | Setup saved the dev path `./data/arciin` instead of the mount. Pull latest, then `docker compose up --build -d api` (auto-fixes to `/data/arciin`), or set **Settings → Storage** root to `/data/arciin` and ensure `sudo chown -R 1000:1000 "$ARCIIN_HOST_DATA_DIR"` |

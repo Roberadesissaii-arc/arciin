@@ -3,7 +3,9 @@ import path from "node:path"
 
 import type { Asset, Folder, Library, PrismaClient, StorageObject } from "@prisma/client"
 import { prisma } from "@arciin/database"
-import { MEDIA_LIBRARY_SLUGS, mirrorFilenameForDisk } from "@arciin/shared"
+import { MEDIA_LIBRARY_SLUGS, mirrorFilenameForDisk, normalizeConfiguredStorageRoot } from "@arciin/shared"
+
+import { workerConfig } from "@/config"
 
 function slugify(value: string) {
   return value
@@ -75,7 +77,10 @@ async function syncForFolderName(
   }
 
   const instance = await db.instanceConfig.findFirst()
-  const storageRoot = instance?.storageRoot ?? "./data/arciin"
+  const storageRoot = normalizeConfiguredStorageRoot(
+    instance?.storageRoot,
+    path.resolve(workerConfig.ARCIIN_DATA_DIR),
+  )
 
   if (asset.libraryMirrorPath) {
     await unlink(path.join(storageRoot, asset.libraryMirrorPath)).catch(() => {})

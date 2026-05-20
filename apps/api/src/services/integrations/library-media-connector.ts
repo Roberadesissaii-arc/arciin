@@ -6,6 +6,7 @@ import type { Asset, Folder, Integration, Library, PrismaClient, StorageObject }
 import { MEDIA_LIBRARY_SLUGS, mirrorFilenameForDisk } from "@arciin/shared"
 
 import { slugify } from "@/services/slug"
+import { resolveEffectiveStorageRoot } from "@/services/storage/effective-storage-root"
 import { ensureStorageDirectories, getStoragePaths } from "@/services/storage/local-storage"
 
 export { MEDIA_LIBRARY_SLUGS }
@@ -115,7 +116,7 @@ export async function ensureConnectorFolders(
   const folderSlug = slugify(def.folderName)
 
   const instance = await prisma.instanceConfig.findFirst()
-  const storageRoot = path.resolve(instance?.storageRoot ?? "./data/arciin")
+  const storageRoot = resolveEffectiveStorageRoot(instance?.storageRoot)
   await ensureStorageDirectories(storageRoot)
 
   for (const library of libraries) {
@@ -219,7 +220,7 @@ export async function getConnectorStatus(
   if (!integration) return null
 
   const instance = await prisma.instanceConfig.findFirst()
-  const storageRoot = path.resolve(instance?.storageRoot ?? "./data/arciin")
+  const storageRoot = resolveEffectiveStorageRoot(instance?.storageRoot)
   const paths = getStoragePaths(storageRoot)
   const folderSlug = slugify(def.folderName)
 
@@ -298,7 +299,7 @@ export async function syncAssetToConnectorMirror(
   }
 
   const instance = await prisma.instanceConfig.findFirst()
-  const storageRoot = instance?.storageRoot ?? "./data/arciin"
+  const storageRoot = resolveEffectiveStorageRoot(instance?.storageRoot)
 
   if (asset.libraryMirrorPath) {
     await unlink(path.join(storageRoot, asset.libraryMirrorPath)).catch(() => {})
@@ -328,7 +329,7 @@ export async function clearAssetConnectorMirror(prisma: PrismaClient, assetId: s
   if (!asset?.libraryMirrorPath) return
 
   const instance = await prisma.instanceConfig.findFirst()
-  const storageRoot = instance?.storageRoot ?? "./data/arciin"
+  const storageRoot = resolveEffectiveStorageRoot(instance?.storageRoot)
   await unlink(path.join(storageRoot, asset.libraryMirrorPath)).catch(() => {})
   await prisma.asset.update({
     where: { id: assetId },

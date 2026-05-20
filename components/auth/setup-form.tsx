@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { useForm, useWatch } from "react-hook-form"
 import {
@@ -18,6 +18,7 @@ import {
 import { toast } from "sonner"
 
 import { useClaimInstance } from "@/hooks/use-instance"
+import { getInstanceStatus } from "@/lib/api/instance"
 import { cn } from "@/lib/utils"
 import {
   setupDetailsSchema,
@@ -79,6 +80,7 @@ export function SetupForm() {
   const router = useRouter()
   const claimMutation = useClaimInstance()
   const [step, setStep] = useState<"details" | "libraries">("details")
+  const [storageRootHint, setStorageRootHint] = useState<string | null>(null)
   const form = useForm<SetupSchema>({
     defaultValues: {
       setupToken: "",
@@ -87,7 +89,7 @@ export function SetupForm() {
       adminEmail: "",
       adminPassword: "",
       confirmPassword: "",
-      storageRoot: "./data/arciin",
+      storageRoot: "",
       libraries: [...setupLibraryOptions],
       acceptedTermsAndPrivacy: false,
     },
@@ -113,6 +115,23 @@ export function SetupForm() {
     control: form.control,
     name: "acceptedTermsAndPrivacy",
   })
+
+  useEffect(() => {
+    let cancelled = false
+    void getInstanceStatus()
+      .then((status) => {
+        if (cancelled || !status.suggestedStorageRoot) return
+        const current = form.getValues("storageRoot")
+        if (!current?.trim() || current === "./data/arciin") {
+          form.setValue("storageRoot", status.suggestedStorageRoot)
+        }
+        if (status.storageRootHint) setStorageRootHint(status.storageRootHint)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [form])
 
   const applyFieldErrors = (
     fieldErrors: Partial<Record<keyof SetupSchema, string[] | undefined>>,
@@ -257,6 +276,9 @@ export function SetupForm() {
                   {...form.register("storageRoot")}
                 />
                 <FieldError errors={[form.formState.errors.storageRoot]} />
+                {storageRootHint ? (
+                  <FieldDescription>{storageRootHint}</FieldDescription>
+                ) : null}
               </Field>
             </div>
             <div className="grid gap-4 sm:grid-cols-2">

@@ -68,6 +68,9 @@ export type InstanceStatus = {
   setupRequired: boolean
   instanceName?: string
   version: string
+  /** API runtime data directory; use during setup (especially Docker /data/arciin). */
+  suggestedStorageRoot?: string
+  storageRootHint?: string
 }
 
 export type InstanceSummary = {

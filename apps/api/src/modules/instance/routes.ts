@@ -1,17 +1,18 @@
-import { access, statfs } from "node:fs/promises"
-import path from "node:path"
-
 import type { FastifyInstance } from "fastify"
 import { z } from "zod"
 
 import { DEFAULT_LIBRARY_DEFINITIONS } from "@arciin/shared"
 
 import { apiConfig } from "@/config"
+import { resolveEffectiveStorageRoot } from "@/services/storage/effective-storage-root"
 import { serializeAuth } from "@/services/serializers"
 import { createSession, hashPassword, requireRole, setSessionCookie } from "@/services/security/auth"
-import { resolveStorageUsageBytes } from "@/services/storage/local-storage"
+import {
+  ensureStorageDirectories,
+  probeStorageRoot,
+  resolveStorageUsageBytes,
+} from "@/services/storage/local-storage"
 import { checkEndpointRateLimit } from "@/services/security/endpoint-rate-limit"
-import { ensureStorageDirectories } from "@/services/storage/local-storage"
 
 const claimSchema = z
   .object({
@@ -48,6 +49,11 @@ export async function registerInstanceRoutes(fastify: FastifyInstance) {
         setupRequired: !instance,
         instanceName: instance?.instanceName,
         version: apiConfig.appVersion,
+        suggestedStorageRoot: apiConfig.dataDir,
+        storageRootHint:
+          apiConfig.dataDir === "/data/arciin"
+            ? "Docker: files are stored at /data/arciin (bind-mounted from your host folder)."
+            : undefined,
       },
     })
   })
@@ -88,7 +94,9 @@ export async function registerInstanceRoutes(fastify: FastifyInstance) {
       return
     }
 
-    const storageRoot = path.resolve(parsed.data.storageRoot || apiConfig.dataDir)
+    const storageRoot = resolveEffectiveStorageRoot(
+      parsed.data.storageRoot || apiConfig.dataDir,
+    )
     await ensureStorageDirectories(storageRoot)
 
     const passwordHash = await hashPassword(parsed.data.adminPassword)
@@ -210,26 +218,16 @@ export async function registerInstanceRoutes(fastify: FastifyInstance) {
         where: { isDefault: true },
       })
 
-      const storageRoot = instance?.storageRoot || defaultStorage?.rootPath || apiConfig.dataDir
+      const storageRoot = resolveEffectiveStorageRoot(
+        instance?.storageRoot ?? defaultStorage?.rootPath,
+      )
       const storageAgg = await fastify.prisma.storageObject.aggregate({
         _sum: { sizeBytes: true },
       })
       const trackedBytes = Number(storageAgg._sum.sizeBytes ?? 0)
       const usageBytes = await resolveStorageUsageBytes(storageRoot, trackedBytes)
       const objectCount = await fastify.prisma.storageObject.count()
-
-      let writable = true
-      let totalBytes: number | null = null
-      let availableBytes: number | null = null
-
-      try {
-        await access(storageRoot)
-        const filesystemStats = await statfs(storageRoot)
-        totalBytes = Number(filesystemStats.bsize * filesystemStats.blocks)
-        availableBytes = Number(filesystemStats.bsize * filesystemStats.bavail)
-      } catch {
-        writable = false
-      }
+      const { writable, totalBytes, availableBytes } = await probeStorageRoot(storageRoot)
 
       reply.send({
         data: {

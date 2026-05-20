@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto"
 import fs from "node:fs"
-import { mkdir, access, rename, stat, readdir } from "node:fs/promises"
+import { mkdir, access, rename, stat, readdir, statfs } from "node:fs/promises"
 import path from "node:path"
 import { pipeline } from "node:stream/promises"
 
@@ -122,6 +122,24 @@ export async function assertStorageWritable(rootPath: string) {
   } catch {
     return false
   }
+}
+
+export async function probeStorageRoot(rootPath: string) {
+  let writable = false
+  let totalBytes: number | null = null
+  let availableBytes: number | null = null
+
+  try {
+    await access(rootPath, fs.constants.R_OK)
+    writable = await assertStorageWritable(rootPath)
+    const filesystemStats = await statfs(rootPath)
+    totalBytes = Number(filesystemStats.bsize * filesystemStats.blocks)
+    availableBytes = Number(filesystemStats.bsize * filesystemStats.bavail)
+  } catch {
+    writable = false
+  }
+
+  return { writable, totalBytes, availableBytes }
 }
 
 /** Prefer tracked object bytes when a directory walk returns zero (wrong path, permissions). */

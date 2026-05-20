@@ -1,4 +1,3 @@
-import { access, statfs } from "node:fs/promises"
 import path from "node:path"
 
 import {
@@ -30,7 +29,8 @@ import {
 } from "@/services/remote-access/cloudflare-tunnel"
 import { resolveLocalAccessUrls } from "@/services/remote-access/local-access-urls"
 import { resolveCloudflareTunnelTarget } from "@/services/remote-access/tunnel-target"
-import { resolveStorageUsageBytes } from "@/services/storage/local-storage"
+import { resolveEffectiveStorageRoot } from "@/services/storage/effective-storage-root"
+import { probeStorageRoot, resolveStorageUsageBytes } from "@/services/storage/local-storage"
 import {
   createMobilePairingCode,
   purgeExpiredMobilePairingCodes,
@@ -172,25 +172,16 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
         },
       })
 
-      const storageRoot = instance?.storageRoot || defaultStorage?.rootPath || "./data/arciin"
+      const storageRoot = resolveEffectiveStorageRoot(
+        instance?.storageRoot ?? defaultStorage?.rootPath,
+      )
       const storageAgg = await fastify.prisma.storageObject.aggregate({
         _sum: { sizeBytes: true },
       })
       const trackedBytes = Number(storageAgg._sum.sizeBytes ?? 0)
       const usageBytes = await resolveStorageUsageBytes(storageRoot, trackedBytes)
       const objectCount = await fastify.prisma.storageObject.count()
-      let writable = true
-      let totalBytes: number | null = null
-      let availableBytes: number | null = null
-
-      try {
-        await access(storageRoot)
-        const filesystemStats = await statfs(storageRoot)
-        totalBytes = Number(filesystemStats.bsize * filesystemStats.blocks)
-        availableBytes = Number(filesystemStats.bsize * filesystemStats.bavail)
-      } catch {
-        writable = false
-      }
+      const { writable, totalBytes, availableBytes } = await probeStorageRoot(storageRoot)
 
       reply.send({
         data: {
@@ -226,7 +217,7 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
         return
       }
 
-      const storageRoot = path.resolve(parsed.data.storageRoot)
+      const storageRoot = resolveEffectiveStorageRoot(parsed.data.storageRoot)
       const instance = await fastify.prisma.instanceConfig.findFirst()
 
       if (!instance) {
@@ -259,25 +250,22 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
         })
       })
 
+      const storageAgg = await fastify.prisma.storageObject.aggregate({
+        _sum: { sizeBytes: true },
+      })
+      const trackedBytes = Number(storageAgg._sum.sizeBytes ?? 0)
+      const { writable, totalBytes, availableBytes } = await probeStorageRoot(storageRoot)
+
       reply.send({
         data: {
           instanceName: instance.instanceName,
           storageRoot,
           defaultLocationId: null,
-          writable: true,
-          usageBytes: await resolveStorageUsageBytes(
-            storageRoot,
-            Number(
-              (
-                await fastify.prisma.storageObject.aggregate({
-                  _sum: { sizeBytes: true },
-                })
-              )._sum.sizeBytes ?? 0,
-            ),
-          ),
+          writable,
+          usageBytes: await resolveStorageUsageBytes(storageRoot, trackedBytes),
           objectCount: await fastify.prisma.storageObject.count(),
-          totalBytes: null,
-          availableBytes: null,
+          totalBytes,
+          availableBytes,
         },
       })
     }

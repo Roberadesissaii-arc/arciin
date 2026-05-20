@@ -19,6 +19,7 @@ import {
   syncAssetToPlexMirror,
 } from "@/services/integrations/plex"
 import { appendUploadLog } from "@/services/logs/upload-log"
+import { resolveEffectiveStorageRoot } from "@/services/storage/effective-storage-root"
 import {
   createObjectStoragePath,
   moveTempToObject,
@@ -127,7 +128,7 @@ export async function registerUploadRoutes(fastify: FastifyInstance) {
 
       try {
       const instance = await fastify.prisma.instanceConfig.findFirst()
-      const storageRoot = instance?.storageRoot
+      const storageRoot = resolveEffectiveStorageRoot(instance?.storageRoot)
       const tempResult = await writeMultipartToTemp(file, storageRoot)
       tempPath = tempResult.tempPath
 

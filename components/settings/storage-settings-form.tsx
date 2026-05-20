@@ -85,7 +85,8 @@ export function StorageSettingsForm() {
                 <CardDescription className="text-zinc-600">
                   Absolute path on this host where Arciin writes objects, libraries, temp files, and thumbnails. The
                   default install uses <span className="font-mono text-foreground/90">./data/arciin</span>; Docker
-                  commonly mounts <span className="font-mono text-foreground/90">/data/arciin</span>.
+                  must use <span className="font-mono text-foreground/90">/data/arciin</span> (bind mount from{" "}
+                  <span className="font-mono text-foreground/90">ARCIIN_HOST_DATA_DIR</span> on the host).
                 </CardDescription>
               </div>
             </div>
