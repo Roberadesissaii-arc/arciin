@@ -34,6 +34,7 @@ const toc = [
   { href: "#plex-media-server", label: "Plex (Docker)" },
   { href: "#assets",    label: "Assets" },
   { href: "#uploads",   label: "File uploads" },
+  { href: "#example-scripts", label: "Example scripts" },
   { href: "#databases", label: "App databases" },
   { href: "#responses", label: "JSON responses" },
   { href: "#realtime",  label: "Realtime (Socket.IO)" },
@@ -1536,8 +1537,8 @@ curl -sS -X POST "$API/assets/$ASSET_ID/move" \\
               <IC>libraries:read</IC>), then query <IC>targetLibraryId</IC> (cuid). Omit it for auto-routing.
             </Callout>
             <Callout variant="tip" title="Example scripts">
-              See <IC>scripts/examples/README.md</IC> — ten <IC>*_example.py</IC> scripts and{" "}
-              <IC>arciin_example_client.py</IC>. WSL: <IC>arciin_wsl_hosts.sh</IC>.
+              Full list and auth notes: <Link href="/docs#example-scripts" className="font-medium text-primary underline-offset-4 hover:underline">Example scripts (this manual)</Link>.
+              On the server repo: <IC>scripts/examples/</IC> (not a browser URL).
             </Callout>
             <div className="space-y-2">
               <EndpointRow method="POST" path="/uploads"                    desc="Multipart upload — query targetLibraryId, targetFolderId" />
@@ -1569,6 +1570,65 @@ GET ${BASE}/libraries → match slug "images" → use id as targetLibraryId`}
               python={buildPythonMultipartUploadSnippet({ apiBase: BASE, librarySlug: "images" })}
               curl={buildCurlMultipartUploadSnippet({ apiBase: BASE, librarySlug: "images" })}
             />
+          </section>
+
+          <Sep />
+
+          {/* ── Example scripts (repo) ───────────────────────────────────── */}
+          <section className="space-y-5">
+            <DocH2 id="example-scripts">Example scripts (Python)</DocH2>
+            <DocP>
+              Runnable automation lives in the Arciin install under{" "}
+              <IC>scripts/examples/</IC> on the server — there is no{" "}
+              <IC>/scripts/examples/README.md</IC> page in the web UI. Use this section and{" "}
+              <Link href="/docs#uploads" className="font-medium text-primary underline-offset-4 hover:underline">
+                File uploads
+              </Link>{" "}
+              for copy-paste API examples.
+            </DocP>
+            <Callout variant="tip" title="Setup">
+              <IC>pip install requests</IC> — Socket.IO examples also need{" "}
+              <IC>python-socketio[client]</IC> and <IC>websocket-client</IC>. Edit shared config once in{" "}
+              <IC>arciin_example_client.py</IC> (API base, API key or email/password).
+            </Callout>
+            <div className="overflow-hidden rounded-xl border border-zinc-200">
+              <table className="w-full text-left text-sm">
+                <thead className="border-b border-zinc-200 bg-zinc-50 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+                  <tr>
+                    <th className="px-4 py-2.5">Script</th>
+                    <th className="px-4 py-2.5">Purpose</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-100">
+                  {[
+                    ["health_check_example.py", "Ping API, database, Redis, worker"],
+                    ["list_libraries_example.py", "List libraries with ids (slug → targetLibraryId)"],
+                    ["list_folders_example.py", "List folders in a library"],
+                    ["create_folder_example.py", "Create a folder"],
+                    ["upload_image_example.py", "Multipart upload to Images"],
+                    ["upload_video_example.py", "Multipart upload to Videos"],
+                    ["upload_auto_classify_example.py", "Upload without library — MIME auto-route"],
+                    ["list_assets_example.py", "List recent assets"],
+                    ["app_databases_example.py", "Logical App data databases"],
+                    ["socket_events_example.py", "Socket.IO live events"],
+                  ].map(([name, desc]) => (
+                    <tr key={name}>
+                      <td className="px-4 py-2 font-mono text-xs text-zinc-800">{name}</td>
+                      <td className="px-4 py-2 text-zinc-600">{desc}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <DocP className="text-zinc-600">
+              Create keys under{" "}
+              <Link href="/developer/api-keys" className="font-medium text-primary underline-offset-4 hover:underline">
+                Developer → API keys
+              </Link>
+              . Typical scopes: <IC>uploads:create</IC>, <IC>libraries:read</IC>,{" "}
+              <IC>events:subscribe</IC> (Socket.IO). WSL: run <IC>arciin_wsl_hosts.sh</IC> in the repo and point{" "}
+              <IC>API_BASE</IC> at <IC>http://&lt;WSL-IP&gt;:4000/api</IC>.
+            </DocP>
           </section>
 
           <Sep />

@@ -294,7 +294,9 @@ Exact paths (use these as clickable links, e.g. [Settings → General](/settings
 - PostgreSQL explorer (tables): [Database hub](/database)
 - Logical App data databases (JSON in Postgres via Arciin): [App data databases](/database/app-data)
 - Background jobs: [Jobs](/jobs)
-- API keys: [API Keys](/api-keys)
+- API keys: [API Keys](/developer/api-keys) (alias redirect: /api-keys)
+- Documentation – uploads: [Documentation → File uploads](/docs#uploads)
+- Documentation – Python/curl examples: [Documentation → Example scripts](/docs#example-scripts)
 - Webhooks: [Webhooks](/webhooks)
 - Events stream: [Events](/events)
 - Models / AI config: [Models](/models)
@@ -396,8 +398,8 @@ Never use [[ASSETS:images]] when displayTag or specific IDs were returned.
 - When you show URLs or JSON for this instance, you **must** copy **exact \`id\` values** from the snapshot (library id vs folder id — do not confuse them). Never invent placeholder IDs like \`fld_abc123\`.
 - Libraries are **fixed** (Videos, Images, Music, Documents, Inbox). **POST** to \`{REST_BASE}/libraries\` to create a new top-level library returns **403** — do not suggest it. Users organize with **folders**: **POST** \`{REST_BASE}/libraries/{libraryId}/folders\` with body \`{"name":"Folder name"}\`. For a folder at the **library root**, **omit** \`parentFolderId\` or set it to **null**.
 - **Uploads (multipart):** **POST** \`{REST_BASE}/uploads\` with form field \`file\`. Optional query **\`targetLibraryId={cuid}\`** (from libraries snapshot — **not** \`librarySlug\`) and **\`targetFolderId={cuid}\`**. Omit \`targetLibraryId\` for MIME auto-routing. Scope **uploads:create**; use **libraries:read** to list libraries and map slug→id.
-- Repo examples: \`scripts/examples/README.md\` — ten \`*_example.py\` scripts + \`arciin_example_client.py\` + \`arciin_wsl_hosts.sh\`.
-- Full manual: [Documentation](/docs). Keys: [API Keys](/developer/api-keys) (**uploads:create**, **libraries:read**, **events:subscribe** for Socket.IO).
+- Runnable examples on disk: \`scripts/examples/*.py\` (not web URLs). In-app guide: [Documentation → Example scripts](/docs#example-scripts). Upload API: [Documentation → File uploads](/docs#uploads).
+- **Footer links for code answers:** [Documentation → File uploads](/docs#uploads) · [Documentation → Example scripts](/docs#example-scripts) · [API Keys](/developer/api-keys). Never link \`{REST_BASE}/scripts/…\` or \`{REST_BASE}/developer/…\` — those 404.
 
 ### Preferred tool / language (required order)
 - When the user asks **how to call the API**, **write a script**, **upload from Python/Node**, or similar — and they **did not** name a language: ask once (*"Python, Node.js, curl, or Postman?"*), then output **only** that format.
@@ -1380,7 +1382,7 @@ function buildContextBlock(ctx: ChatInstanceContext): string {
     "--- Current Instance Data ---",
     `REST API base (use this exact prefix in examples): ${restBase}`,
     "Libraries — use each line's id as targetLibraryId (query) on POST /uploads and in /libraries/{id}/folders:",
-    "Example scripts: scripts/examples/README.md (upload_image_example.py, create_folder_example.py, app_databases_example.py, socket_events_example.py, …)",
+    "In-app docs (clickable in chat): [Uploads](/docs#uploads) · [Example scripts](/docs#example-scripts) · [API keys](/developer/api-keys) — do NOT use http://…/scripts/examples/README.md (not a route).",
     libLines || "- (none)",
     `Libraries (summary): ${libs || "none"}`,
     folderBlock,
