@@ -1,6 +1,6 @@
 # Deployment
 
-For **Docker on Raspberry Pi**, SSD bind mounts, and “held broken packages” on apt, read **[DOCKER.md](./DOCKER.md)** first.
+For **Docker** (any Linux host), SSD bind mounts, and apt troubleshooting, read **[DOCKER.md](./DOCKER.md)** first.
 
 Arciin ships with Docker assets for a local-first self-hosted deployment:
 

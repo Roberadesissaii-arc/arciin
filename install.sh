@@ -3,16 +3,15 @@
 #  Arciin — Local / WSL Installer
 #  Supports: Debian/Ubuntu/WSL (apt)
 #  Usage:  bash install.sh              — install or update (native / PM2)
-#          bash install.sh --docker     — Docker Compose (recommended on Raspberry Pi)
+#          bash install.sh --docker     — Docker Compose (any Linux with Docker)
 #          bash install.sh --reset-db   — drop arciin DB and reinstall schema
 # ================================================================
 set -Eeuo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-is_raspberry_pi() {
-  [[ -f /proc/device-tree/model ]] && grep -qi raspberry /proc/device-tree/model 2>/dev/null
-}
+# shellcheck source=scripts/lib/host-platform.sh
+source "${ROOT_DIR}/scripts/lib/host-platform.sh"
 
 docker_available() {
   command -v docker &>/dev/null && (docker compose version &>/dev/null || command -v docker-compose &>/dev/null)
@@ -22,7 +21,7 @@ print_docker_hint() {
   echo ""
   echo -e "    ${YELLOW}Tip:${RESET} Use Docker to avoid installing Node, PostgreSQL, and Redis on the host:"
   echo -e "         ${DIM}./install.sh --docker${RESET}  or  ${DIM}./scripts/docker-setup.sh${RESET}"
-  echo -e "         ${DIM}See docs/DOCKER.md (Raspberry Pi, SSD bind mounts)${RESET}"
+  echo -e "         ${DIM}See docs/DOCKER.md${RESET}"
   echo ""
 }
 
@@ -675,12 +674,9 @@ command -v curl >/dev/null 2>&1 || fail "curl is required"
 if [[ -t 0 ]] && [[ "${ARCIIN_SKIP_INSTALL_CHOICE:-0}" != "1" ]] && [[ "${ARCIIN_INSTALL_MODE:-}" != "native" ]]; then
   echo ""
   echo -e "  ${BOLD}${WHITE}How do you want to run Arciin?${RESET}"
+  echo -e "  ${DIM}Host:${RESET} $(host_display_name)"
   echo ""
-  if is_raspberry_pi; then
-    echo -e "    ${BOLD}1)${RESET} Docker ${DIM}(recommended on Raspberry Pi — no apt Node/Postgres stack)${RESET}"
-  else
-    echo -e "    ${BOLD}1)${RESET} Docker ${DIM}(isolated Postgres/Redis; easy updates)${RESET}"
-  fi
+  echo -e "    ${BOLD}1)${RESET} Docker ${DIM}(recommended — Postgres/Redis/Node in containers)${RESET}"
   echo -e "    ${BOLD}2)${RESET} Native ${DIM}(PM2 on this machine — needs apt packages)${RESET}"
   echo ""
   read -r -p "  Choice [1]: " _install_choice
@@ -690,17 +686,11 @@ if [[ -t 0 ]] && [[ "${ARCIIN_SKIP_INSTALL_CHOICE:-0}" != "1" ]] && [[ "${ARCIIN
       exec "${ROOT_DIR}/scripts/docker-setup.sh"
     fi
     warn "Docker is not installed yet."
-    if is_raspberry_pi; then
-      echo -e "    ${DIM}curl -fsSL https://get.docker.com | sh && sudo usermod -aG docker \$USER${RESET}"
-      echo -e "    ${DIM}Log out/in, then: ./scripts/docker-setup.sh${RESET}"
-    fi
+    echo -e "    ${DIM}curl -fsSL https://get.docker.com | sh && sudo usermod -aG docker \$USER${RESET}"
+    echo -e "    ${DIM}Log out/in, then: ./scripts/docker-setup.sh${RESET}"
     fail "Install Docker first, or choose native (2)."
   fi
   ARCIIN_INSTALL_MODE=native
-fi
-
-if is_raspberry_pi && [[ "${ARCIIN_INSTALL_MODE:-}" == "native" ]]; then
-  warn "Native install on ARM can hit apt conflicts. Docker is often easier: ./install.sh --docker"
 fi
 
 # ── 1. System packages ────────────────────────────────────────────────────────
@@ -725,7 +715,7 @@ _apt_install_system_deps() {
   rm -f "$log"
   echo ""
   if [[ "$held" == "1" ]]; then
-    warn "apt reported held or broken packages (common on Raspberry Pi)."
+    warn "apt reported held or broken packages on this host."
   else
     warn "apt could not install required packages."
   fi
@@ -921,6 +911,6 @@ echo -e "    ${DIM}bash install.sh --reset-db${RESET}            Drop DB and re-
 echo -e "    ${DIM}ARCIIN_SKIP_PM2=1 ./install.sh${RESET}        Install without PM2"
 echo -e "    ${DIM}ARCIIN_SKIP_FIREWALL=1 ./install.sh${RESET}   Skip UFW configuration"
 echo -e "    ${DIM}ARCIIN_UPGRADE_SYSTEM=0 ./install.sh${RESET}   Skip apt upgrade"
-echo -e "    ${DIM}./install.sh --docker${RESET}                  Docker (Pi / avoid apt conflicts)"
+echo -e "    ${DIM}./install.sh --docker${RESET}                  Docker (avoid host apt stack)"
 echo -e "    ${DIM}ARCIIN_SKIP_SYSTEM_PACKAGES=1 ./install.sh${RESET}  Skip apt deps (native only)"
 echo ""

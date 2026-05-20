@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ================================================================
-#  Arciin — Docker / Compose setup (Raspberry Pi, NAS, desktop)
+#  Arciin — Docker / Compose setup (Linux, any hardware)
 #  Usage:  ./scripts/docker-setup.sh
 #          ARCIIN_HOST_DATA_DIR=/mnt/ssd/arciin ./scripts/docker-setup.sh
 # ================================================================
@@ -8,6 +8,9 @@ set -Eeuo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${ROOT_DIR}"
+
+# shellcheck source=scripts/lib/host-platform.sh
+source "${ROOT_DIR}/scripts/lib/host-platform.sh"
 
 BOLD="\033[1m"
 GREEN="\033[32m"
@@ -21,16 +24,6 @@ RESET="\033[0m"
 ok()   { echo -e "  ${GREEN}✔${RESET}  $1"; }
 warn() { echo -e "  ${YELLOW}⚠${RESET}  $1"; }
 fail() { echo -e "  ${RED}✖${RESET}  $1"; exit 1; }
-
-is_raspberry_pi() {
-  if [[ -f /proc/device-tree/model ]] && grep -qi raspberry /proc/device-tree/model 2>/dev/null; then
-    return 0
-  fi
-  case "$(uname -m)" in
-    armv7l|aarch64|arm64) return 0 ;;
-  esac
-  return 1
-}
 
 docker_compose_cmd() {
   if docker compose version &>/dev/null; then
@@ -176,28 +169,22 @@ _prepare_host_data_dir() {
 
 echo ""
 echo -e "  ${BOLD}${WHITE}Arciin — Docker setup${RESET}"
+echo -e "  ${DIM}Host:${RESET} $(host_display_name)"
 echo ""
 
 if ! command -v docker &>/dev/null; then
   echo -e "  Docker is not installed."
   echo ""
-  if is_raspberry_pi; then
-    echo -e "  ${BOLD}Raspberry Pi (recommended):${RESET}"
-    echo -e "    curl -fsSL https://get.docker.com | sh"
-    echo -e "    sudo usermod -aG docker \$USER"
-    echo -e "    ${DIM}Log out and back in, then re-run:${RESET} ./scripts/docker-setup.sh"
-  else
-    echo -e "    ${DIM}https://docs.docker.com/engine/install/${RESET}"
-  fi
+  echo -e "    curl -fsSL https://get.docker.com | sh"
+  echo -e "    sudo usermod -aG docker \$USER"
+  echo -e "    ${DIM}Log out and back in, then re-run:${RESET} ./scripts/docker-setup.sh"
+  echo -e "    ${DIM}https://docs.docker.com/engine/install/${RESET}"
   exit 1
 fi
 
 COMPOSE="$(docker_compose_cmd)" || fail "Docker Compose v2 is required (install the docker-compose-plugin package)."
 
-if is_raspberry_pi; then
-  warn "Raspberry Pi detected — first ${BOLD}docker compose build${RESET} can take 20–40 minutes on Pi 4."
-  warn "Use a fast SD card or USB SSD for the database volume; put media on ARCIIN_HOST_DATA_DIR."
-fi
+warn "First ${BOLD}docker compose build${RESET} may take several minutes on this host."
 
 # ── Storage path ────────────────────────────────────────────────────────────
 HOST_DATA="${ARCIIN_HOST_DATA_DIR:-}"

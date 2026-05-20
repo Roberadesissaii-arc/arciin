@@ -53,7 +53,7 @@ Pick **one** install path:
 
 | Path | You need on the host |
 |------|----------------------|
-| **Docker** (recommended on **Raspberry Pi**) | [Docker](https://docs.docker.com/engine/install/) + Compose plugin |
+| **Docker** (recommended for most installs) | [Docker](https://docs.docker.com/engine/install/) + Compose plugin |
 | **Native** (`./install.sh`) | Linux/WSL2, Node 20+, pnpm, PostgreSQL 14+, Redis 6+, FFmpeg |
 
 ---
@@ -69,7 +69,7 @@ cd arciin
 
 ### 2. Install
 
-**Docker** (Raspberry Pi, NAS, or when apt fails with “held broken packages”):
+**Docker** (Ubuntu Server, NAS, home lab, or when native apt fails):
 
 ```bash
 chmod +x scripts/docker-setup.sh install.sh
@@ -276,7 +276,7 @@ Create API keys in the app: **Developer → API Keys**.
 
 ## Docker
 
-Full guide: **[`docs/DOCKER.md`](./docs/DOCKER.md)** (storage bind mounts, Raspberry Pi, troubleshooting).
+Full guide: **[`docs/DOCKER.md`](./docs/DOCKER.md)** (storage bind mounts, any Linux host, troubleshooting).
 
 ```bash
 ./scripts/docker-setup.sh
@@ -337,7 +337,7 @@ arciin/
 | Doc | Contents |
 |-----|----------|
 | [`docs/DEVELOPMENT.md`](./docs/DEVELOPMENT.md) | Day-to-day dev workflow |
-| [`docs/DOCKER.md`](./docs/DOCKER.md) | Docker, Pi, SSD bind mounts |
+| [`docs/DOCKER.md`](./docs/DOCKER.md) | Docker on any Linux host, SSD bind mounts |
 | [`docs/DEPLOYMENT.md`](./docs/DEPLOYMENT.md) | Production and self-hosting |
 | [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) | System design |
 | [`docs/API.md`](./docs/API.md) | API overview |

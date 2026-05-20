@@ -1,6 +1,6 @@
-# Docker & Raspberry Pi
+# Docker deployment
 
-Arciin runs well in Docker on a desktop, NAS, or **Raspberry Pi 4** (64-bit Raspberry Pi OS). Docker keeps PostgreSQL, Redis, Node, and the app inside containers while your **photos and videos live on a real folder** you choose on an SSD, HDD, or USB drive.
+Arciin runs in Docker on **any Linux host** with Docker Engine and Compose — home servers, NAS boxes, Ubuntu Server, Debian, cloud VMs, and small boards like Raspberry Pi. Containers hold the app stack; your **files stay on a real folder** on disk via a bind mount.
 
 ---
 
@@ -8,13 +8,13 @@ Arciin runs well in Docker on a desktop, NAS, or **Raspberry Pi 4** (64-bit Rasp
 
 | | **Docker** (`./scripts/docker-setup.sh`) | **Native** (`./install.sh`) |
 |---|------------------------------------------|-----------------------------|
-| **Best for** | Raspberry Pi, clean servers, “just run it” | Maximum bare-metal performance, existing PM2/Postgres |
-| **System packages** | Only Docker (+ Compose) on the host | apt: Node 24, PostgreSQL, Redis, FFmpeg, build tools |
+| **Best for** | Most installs — isolated deps, simple updates | Maximum bare-metal performance, existing PM2/Postgres |
+| **System packages** | Docker (+ Compose) on the host only | apt: Node, PostgreSQL, Redis, FFmpeg, build tools |
 | **Updates** | `docker compose pull && docker compose up -d` | `git pull && ./install.sh` |
 | **Your files** | Bind mount: host path → `/data/arciin` in container | `ARCIIN_DATA_DIR` on disk directly |
-| **Risk** | Low — rebuild containers without losing media | apt conflicts (“held broken packages”) on some Pis |
+| **Risk** | Low — rebuild containers without losing media | Host apt conflicts on some systems |
 
-**Recommendation:** On Raspberry Pi, or if `install.sh` fails at “System packages”, use **Docker**.
+**Recommendation:** Use **Docker** unless you already run and maintain a native Node/Postgres stack on the host. If native `install.sh` fails at “System packages”, switch to Docker.
 
 ---
 
@@ -39,8 +39,8 @@ Arciin avoids that with a **bind mount**:
 | Host | Use case |
 |------|----------|
 | `./data/arciin` | Quick test in the git clone |
-| `/mnt/ssd/arciin-data` | NVMe/USB SSD on a Pi or server |
-| `/media/pi/MyPassport/arciin` | External USB drive (recommended on Pi for large libraries) |
+| `/mnt/ssd/arciin-data` | NVMe or mounted SSD |
+| `/media/user/MyDrive/arciin-data` | External USB drive (good for large libraries) |
 | `/srv/arciin` | Only if `/srv` is writable by your user, or create with `sudo` first |
 
 Create the folder and ensure the container user can write (uid **1000**):
@@ -56,7 +56,7 @@ sudo chown -R 1000:1000 /mnt/ssd/arciin-data
 
 ### 1. Install Docker
 
-**Raspberry Pi OS (64-bit):**
+On Linux (Ubuntu Server, Debian, etc.):
 
 ```bash
 curl -fsSL https://get.docker.com | sh
@@ -64,7 +64,7 @@ sudo usermod -aG docker $USER
 # Log out and back in so the docker group applies
 ```
 
-**Ubuntu / Debian server:** same script, or your distro’s `docker.io` + `docker-compose-plugin` packages.
+See [Docker Engine install docs](https://docs.docker.com/engine/install/) for other platforms.
 
 ### 2. Clone Arciin
 
@@ -76,22 +76,23 @@ cd arciin
 ### 3. Run the Docker setup script
 
 ```bash
-chmod +x scripts/docker-setup.sh
-./scripts/docker-setup.sh
+chmod +x scripts/docker-setup.sh install.sh
+./install.sh --docker
 ```
 
 The script will:
 
-1. Ask where to store files (or use `ARCIIN_HOST_DATA_DIR=/your/path`).
-2. Create `.env` with secrets and storage path.
-3. Run `docker compose up --build -d`.
+1. Show your detected host name (OS or hardware).
+2. Ask where to store files (or use `ARCIIN_HOST_DATA_DIR=/your/path`).
+3. Create `.env` with secrets and storage path.
+4. Run `docker compose up --build -d`.
 
-First build on a Pi can take **20–40 minutes**. Later starts are fast.
+The first image build can take several minutes on slower hardware. Later starts are fast.
 
 ### 4. Open the setup screen
 
 - **This machine:** [http://localhost/setup](http://localhost/setup) (Caddy on port **80**)
-- **Phone on LAN:** `http://<pi-ip>/setup?token=<ARCIIN_SETUP_TOKEN>`
+- **Another device on LAN:** `http://<server-ip>/setup?token=<ARCIIN_SETUP_TOKEN>`
 
 Token is in `.env` as `ARCIIN_SETUP_TOKEN`.
 
@@ -104,11 +105,10 @@ export ARCIIN_HOST_DATA_DIR=/mnt/ssd/arciin-data
 ./scripts/docker-setup.sh
 ```
 
-Or from `install.sh`:
+Or:
 
 ```bash
 ./install.sh --docker
-# or
 ARCIIN_INSTALL_MODE=docker ./install.sh
 ```
 
@@ -126,17 +126,16 @@ docker compose up --build -d
 
 ---
 
-## Raspberry Pi notes
+## Host requirements
 
-- Use **Raspberry Pi OS 64-bit** (aarch64). 32-bit armhf is not supported for the Node 20 stack.
-- **RAM:** 2 GB minimum; **4 GB+** recommended for transcoding and many uploads.
-- Put **`ARCIIN_HOST_DATA_DIR`** on a **USB SSD** if the SD card is small; keep Postgres on the faster disk when possible.
-- **Port 80** must be free (Caddy). Stop other web servers or change the compose port mapping.
-- **LAN access:** set `ARCIIN_PUBLIC_URL=http://192.168.x.x` in `.env`, then `docker compose up -d` again.
+- **RAM:** 2 GB minimum; 4 GB+ recommended for heavy uploads and media jobs.
+- **Port 80** must be free for Caddy (or change `docker-compose.yml` port mapping).
+- **LAN access:** set `ARCIIN_PUBLIC_URL=http://<server-ip>` in `.env`, then `docker compose up -d` again.
+- **64-bit Linux** recommended for the Node 20 images.
 
-### “Held broken packages” on `./install.sh`
+### Native install: “held broken packages”
 
-If apt reports:
+If `./install.sh` (without Docker) reports:
 
 ```text
 E: Unable to correct problems, you have held broken packages.
@@ -144,9 +143,13 @@ E: Unable to correct problems, you have held broken packages.
 
 That is a **host package conflict**, not an Arciin bug. Options:
 
-1. **Use Docker** (recommended on Pi): `./scripts/docker-setup.sh`
-2. Fix apt: `sudo apt --fix-broken install && sudo dpkg --configure -a`, then retry
-3. Skip heavy apt step for a partial native install: `ARCIIN_SKIP_SYSTEM_PACKAGES=1 ./install.sh` (you must install Node, Postgres, Redis, FFmpeg yourself)
+1. **Use Docker:** `./install.sh --docker`
+2. Fix apt: `sudo apt --fix-broken install && sudo dpkg --configure -a`, then retry native install
+3. Skip apt deps if you already have them: `ARCIIN_SKIP_SYSTEM_PACKAGES=1 ./install.sh`
+
+### Raspberry Pi (optional)
+
+Works on **64-bit** Raspberry Pi OS with the same steps as above. Prefer a USB SSD for `ARCIIN_HOST_DATA_DIR` if the SD card is small. First build may take longer on Pi-class hardware.
 
 ---
 
@@ -193,6 +196,7 @@ See also [`DEPLOYMENT.md`](./DEPLOYMENT.md) and [`../docker/caddy/Caddyfile`](..
 |---------|------------|
 | Upload permission denied | `sudo chown -R 1000:1000 "$ARCIIN_HOST_DATA_DIR"` |
 | Port 80 in use | Stop nginx/apache or edit `docker-compose.yml` `caddy.ports` |
-| Build fails on Pi | Ensure 64-bit OS, enough disk space (`docker system df`) |
+| Build fails | Check disk space (`docker system df`) and 64-bit OS |
 | Phone cannot connect | Set `ARCIIN_PUBLIC_URL` to `http://<lan-ip>`, open firewall for port 80 |
-| Data “missing” after rebuild | Check `ARCIIN_HOST_DATA_DIR` in `.env` — files are only there if the bind mount path is correct |
+| Data “missing” after rebuild | Check `ARCIIN_HOST_DATA_DIR` in `.env` — files live only on that host path |
+| Cannot create storage path | Pick a writable folder or: `sudo mkdir -p <path> && sudo chown -R $USER:$USER <path>` |
