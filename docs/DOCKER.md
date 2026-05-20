@@ -153,6 +153,16 @@ Works on **64-bit** Raspberry Pi OS with the same steps as above. Prefer a USB S
 
 ---
 
+## Cloudflare quick tunnel (public URL)
+
+The **api** container includes **cloudflared** so **Settings → Domain → Generate public URL** works in Docker.
+
+Compose sets `ARCIIN_TUNNEL_TARGET=http://caddy:80` so the tunnel forwards to Caddy (web + API + WebSockets), not `127.0.0.1` inside the container.
+
+After upgrading images, open the app on port **80**, sign in, then generate a new URL from Domain settings.
+
+---
+
 ## Everyday commands
 
 ```bash
@@ -160,7 +170,12 @@ docker compose ps
 docker compose logs -f api
 docker compose restart api worker
 docker compose down
-docker compose pull && docker compose up -d    # update
+docker compose pull && docker compose up -d    # update (if using published images)
+
+# After git pull — rebuild api (includes cloudflared):
+git pull
+docker compose up --build -d api
+docker compose exec api cloudflared --version
 ```
 
 Database shell:

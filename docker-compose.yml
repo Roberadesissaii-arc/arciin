@@ -44,6 +44,8 @@ services:
       ARCIIN_API_URL: http://api:4000
       NEXT_PUBLIC_API_BASE_URL: /api
       NEXT_PUBLIC_SOCKET_URL: http://localhost
+      # cloudflared runs in the api container; forward to Caddy (not 127.0.0.1)
+      ARCIIN_TUNNEL_TARGET: http://caddy:80
     depends_on:
       postgres:
         condition: service_healthy

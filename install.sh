@@ -740,6 +740,17 @@ else
   if _apt_install_system_deps; then
     done_ "curl, git, ffmpeg, lsof, PostgreSQL, Redis ready"
   fi
+
+  if command -v cloudflared >/dev/null 2>&1; then
+    ok "cloudflared $(cloudflared --version 2>/dev/null | head -1 || true)"
+  elif [[ -x "${ROOT_DIR}/scripts/install-cloudflared.sh" ]]; then
+    if bash "${ROOT_DIR}/scripts/install-cloudflared.sh" >/dev/null 2>&1 \
+      || sudo bash "${ROOT_DIR}/scripts/install-cloudflared.sh" >/dev/null 2>&1; then
+      ok "cloudflared installed (quick public URL / tunnel)"
+    else
+      warn "cloudflared not installed — Settings → Domain quick tunnel will not work until you install it"
+    fi
+  fi
 fi
 
 # ── 2. Node.js ────────────────────────────────────────────────────────────────
