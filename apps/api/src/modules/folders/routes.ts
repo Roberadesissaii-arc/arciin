@@ -1,4 +1,4 @@
-import type { FastifyInstance } from "fastify"
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify"
 import { z } from "zod"
 
 import { recordAndBroadcastActivity } from "@/services/activity/record-and-broadcast-activity"
@@ -210,55 +210,56 @@ export async function registerFolderRoutes(fastify: FastifyInstance) {
     }
   )
 
-  fastify.delete(
-    "/folders/:folderId",
-    {
-      preHandler: requireSessionRolesOrApiKeyScopes(
-        ["OWNER", "ADMIN", "MEMBER"],
-        ["libraries:write"],
-      ),
-    },
-    async (request, reply) => {
-      const params = z.object({ folderId: z.string() }).parse(request.params)
-
-      const existing = await fastify.prisma.folder.findUnique({
-        where: {
-          id: params.folderId,
-        },
-      })
-
-      if (!existing) {
-        reply.status(404).send({
-          error: {
-            code: "FOLDER_NOT_FOUND",
-            message: "Folder not found.",
-          },
-        })
-        return
-      }
-
-      await fastify.prisma.folder.updateMany({
-        where: {
-          OR: [
-            { id: existing.id },
-            {
-              libraryId: existing.libraryId,
-              pathCache: {
-                startsWith: `${existing.pathCache}/`,
-              },
-            },
-          ],
-        },
-        data: {
-          deletedAt: new Date(),
-        },
-      })
-
-      reply.send({
-        data: {
-          success: true,
-        },
-      })
-    }
+  const deleteFolderAuth = requireSessionRolesOrApiKeyScopes(
+    ["OWNER", "ADMIN", "MEMBER"],
+    ["libraries:write"],
   )
+
+  async function handleDeleteFolder(request: FastifyRequest, reply: FastifyReply) {
+    const params = z.object({ folderId: z.string() }).parse(request.params)
+
+    const existing = await fastify.prisma.folder.findUnique({
+      where: {
+        id: params.folderId,
+      },
+    })
+
+    if (!existing) {
+      reply.status(404).send({
+        error: {
+          code: "FOLDER_NOT_FOUND",
+          message: "Folder not found.",
+        },
+      })
+      return
+    }
+
+    await fastify.prisma.folder.updateMany({
+      where: {
+        OR: [
+          { id: existing.id },
+          {
+            libraryId: existing.libraryId,
+            pathCache: {
+              startsWith: `${existing.pathCache}/`,
+            },
+          },
+        ],
+      },
+      data: {
+        deletedAt: new Date(),
+      },
+    })
+
+    reply.send({
+      data: {
+        success: true,
+      },
+    })
+  }
+
+  fastify.delete("/folders/:folderId", { preHandler: deleteFolderAuth }, handleDeleteFolder)
+
+  /** POST alias — iOS PWA often fails CORS preflight on DELETE. */
+  fastify.post("/folders/:folderId/delete", { preHandler: deleteFolderAuth }, handleDeleteFolder)
 }

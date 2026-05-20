@@ -140,15 +140,26 @@ export async function resolveSession(request: FastifyRequest) {
   return session
 }
 
-/** Mobile PWA / API clients: `Authorization: Bearer <session_token>` (not API keys). */
-async function resolveBearerSession(request: FastifyRequest) {
+/** Session token from `Authorization: Bearer` or `?access_token=` (media `<audio>` / `<video>` cannot send headers). */
+function extractMobileSessionToken(request: FastifyRequest): string | null {
   const authHeader = request.headers.authorization
-  if (!authHeader?.toLowerCase().startsWith("bearer ")) {
-    return null
+  if (authHeader?.toLowerCase().startsWith("bearer ")) {
+    const token = authHeader.slice(7).trim()
+    if (token && !token.startsWith("arc_")) return token
   }
 
-  const token = authHeader.slice(7).trim()
-  if (!token || token.startsWith("arc_")) {
+  const query = request.query as { access_token?: string }
+  const fromQuery =
+    typeof query.access_token === "string" ? query.access_token.trim() : ""
+  if (fromQuery && !fromQuery.startsWith("arc_")) return fromQuery
+
+  return null
+}
+
+/** Mobile PWA / API clients: `Authorization: Bearer <session_token>` (not API keys). */
+async function resolveBearerSession(request: FastifyRequest) {
+  const token = extractMobileSessionToken(request)
+  if (!token) {
     return null
   }
 

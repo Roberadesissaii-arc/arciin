@@ -52,6 +52,23 @@ sudo chown -R 1000:1000 /mnt/ssd/arciin-data
 
 ---
 
+## Database migrations (fresh install & upgrades)
+
+The API container runs `scripts/arciin-init.sh` on every start, which executes **`prisma migrate deploy`**. That applies every migration under `prisma/migrations/` (bootstrap schema, chat, password vault, user avatars, mobile pairing, session vault unlock, and indexes). You do **not** need a manual SQL step for a new machine.
+
+After pulling a newer Arciin image or git tag:
+
+```bash
+docker compose pull
+docker compose up -d
+# API logs should show [arciin-init] Applying database migrations
+docker compose logs api | tail -30
+```
+
+If migrations fail, check Postgres is healthy (`docker compose ps`) and run once from the repo: `docker compose exec api pnpm exec prisma migrate deploy`.
+
+---
+
 ## Quick start
 
 ### 1. Install Docker

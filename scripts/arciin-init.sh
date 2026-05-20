@@ -101,6 +101,9 @@ recover_chat_migration_failure() {
 run_migrations() {
   log "Applying database migrations (prisma migrate deploy)"
   recover_chat_migration_failure
+  local count
+  count="$(find "${ROOT_DIR}/prisma/migrations" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')"
+  log "Migration folders on disk: ${count} (includes bootstrap, chat, password vault, mobile pairing, session vault unlock, etc.)"
 }
 
 run_seed() {
