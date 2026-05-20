@@ -10,7 +10,6 @@ import {
   parseAiConfig,
   parseAiSecurityConfig,
   sanitizeOutboundChatText,
-  isSelfHostedLanOrigin,
 } from "@arciin/shared"
 import {
   isCloudChatProvider,
@@ -34,28 +33,7 @@ import {
 } from "@/services/chat/vision-library"
 import { requireRole } from "@/services/security/auth"
 
-const SSE_DEV_ORIGINS = new Set([
-  "http://localhost:3000",
-  "http://127.0.0.1:3000",
-  "http://localhost",
-])
-
-/** @fastify/cors does not attach to `reply.raw` — set these on SSE responses for cross-origin dev. */
-function corsHeadersForSse(request: FastifyRequest): Record<string, string> {
-  const origin = request.headers.origin
-  if (!origin) return {}
-  const allowed =
-    !apiConfig.isProduction ||
-    origin === apiConfig.ARCIIN_PUBLIC_URL ||
-    SSE_DEV_ORIGINS.has(origin) ||
-    isSelfHostedLanOrigin(origin)
-  if (!allowed) return {}
-  return {
-    "Access-Control-Allow-Origin": origin,
-    "Access-Control-Allow-Credentials": "true",
-    "Vary": "Origin",
-  }
-}
+import { corsHeadersForRequestOrigin } from "@/plugins/cors-origins"
 
 const messageSchema = z.object({
   role:    z.enum(["user", "assistant", "system"]),
@@ -839,7 +817,7 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
         "Cache-Control": "no-cache",
         "Connection": "keep-alive",
         "X-Accel-Buffering": "no",
-        ...corsHeadersForSse(request),
+        ...corsHeadersForRequestOrigin(request.headers.origin),
       })
 
       try {
