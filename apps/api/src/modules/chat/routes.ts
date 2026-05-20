@@ -16,10 +16,9 @@ import {
   resolveLocalOllamaProfile,
 } from "@/services/chat/resolve-local-ollama-profile"
 import { getPasswordVaultAiSnapshot } from "@/services/password-vault/vault-for-ai"
-import type { FastifyInstance, FastifyRequest } from "fastify"
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify"
 import { z } from "zod"
 
-import { apiConfig } from "@/config"
 import { assertOllamaCloudApiKey } from "@/services/chat/ollama-http"
 import { streamOllamaWithArciinTools } from "@/services/chat/ollama-chat-with-tools"
 import { organizeImagesLibrary } from "@/services/chat/organize-images-library"
@@ -708,17 +707,33 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
   )
 
   // ── Delete conversation ──────────────────────────────────────────────────────
+  const deleteConversationPreHandler = requireRole(["OWNER", "ADMIN", "MEMBER"])
+
+  async function handleDeleteConversation(request: FastifyRequest, reply: FastifyReply) {
+    const user = request.auth!.user
+    const { id } = request.params as { id: string }
+    const convo = await fastify.prisma.chatConversation.findFirst({
+      where: { id, userId: user.id },
+    })
+    if (!convo) {
+      reply.status(404).send({ error: { code: "NOT_FOUND", message: "Not found." } })
+      return
+    }
+    await fastify.prisma.chatConversation.delete({ where: { id } })
+    reply.send({ data: { success: true } })
+  }
+
   fastify.delete(
     "/chat/conversations/:id",
-    { preHandler: requireRole(["OWNER", "ADMIN", "MEMBER"]) },
-    async (request, reply) => {
-      const user  = request.auth!.user
-      const { id } = request.params as { id: string }
-      const convo = await fastify.prisma.chatConversation.findFirst({ where: { id, userId: user.id } })
-      if (!convo) { reply.status(404).send({ error: { code: "NOT_FOUND", message: "Not found." } }); return }
-      await fastify.prisma.chatConversation.delete({ where: { id } })
-      reply.send({ data: { success: true } })
-    },
+    { preHandler: deleteConversationPreHandler },
+    async (request, reply) => handleDeleteConversation(request, reply),
+  )
+
+  /** POST alias — mobile PWA often fails CORS preflight on DELETE. */
+  fastify.post(
+    "/chat/conversations/:id/delete",
+    { preHandler: deleteConversationPreHandler },
+    async (request, reply) => handleDeleteConversation(request, reply),
   )
 
   // ── Rename conversation ──────────────────────────────────────────────────────
