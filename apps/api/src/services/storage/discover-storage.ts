@@ -140,17 +140,57 @@ function volumeLabel(kind: StorageVolumeOption["kind"], mountPoint: string, file
   return `${mountPoint}${filesystem ? ` (${filesystem})` : ""}`
 }
 
+export type StorageVolumeContext = {
+  effectiveRoot: string
+  displayRoot: string
+  discovery: StorageDiscovery
+}
+
+/** True when this volume option is already the active Arciin storage location. */
+export function isVolumeCurrentStorage(
+  volume: Pick<StorageVolumeOption, "arciinPath">,
+  ctx: StorageVolumeContext,
+): boolean {
+  const resolved = path.resolve(volume.arciinPath)
+  const effective = path.resolve(ctx.effectiveRoot)
+  const display = path.resolve(ctx.displayRoot)
+
+  if (resolved === effective || resolved === display) return true
+
+  const host = ctx.discovery.hostDataDir ? path.resolve(ctx.discovery.hostDataDir) : null
+  if (host && resolved === host) return true
+
+  const recommended = path.resolve(ctx.discovery.recommendedArciinPath)
+  if (resolved === recommended && host && effective === path.resolve(ctx.discovery.runtimeDataDir)) {
+    return true
+  }
+
+  if (ctx.discovery.isDockerRuntime) {
+    const runtime = path.resolve(ctx.discovery.runtimeDataDir)
+    if (effective === runtime && host && resolved === host) return true
+    if (effective === runtime && resolved === runtime) return true
+  }
+
+  return false
+}
+
+export function annotateStorageVolumes(
+  discovery: StorageDiscovery,
+  ctx: Omit<StorageVolumeContext, "discovery">,
+): Array<StorageVolumeOption & { isCurrent: boolean }> {
+  const fullCtx: StorageVolumeContext = { ...ctx, discovery }
+  return discovery.volumes.map((v) => ({
+    ...v,
+    isCurrent: isVolumeCurrentStorage(v, fullCtx),
+  }))
+}
+
 export function filterMigrationTargets(
   discovery: StorageDiscovery,
-  currentEffectiveRoot: string,
+  ctx: StorageVolumeContext,
 ): StorageVolumeOption[] {
-  const current = path.resolve(currentEffectiveRoot)
   return discovery.volumes.filter((v) => {
-    const resolved = path.resolve(v.arciinPath)
-    if (resolved === current) return false
-    if (discovery.isDockerRuntime && resolved === path.resolve(discovery.runtimeDataDir)) {
-      return false
-    }
+    if (isVolumeCurrentStorage(v, ctx)) return false
     return v.writable || v.availableBytes != null
   })
 }

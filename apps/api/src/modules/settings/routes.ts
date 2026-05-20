@@ -34,6 +34,7 @@ import {
   resolveEffectiveStorageRoot,
 } from "@/services/storage/effective-storage-root"
 import {
+  annotateStorageVolumes,
   discoverStorageVolumes,
   filterMigrationTargets,
 } from "@/services/storage/discover-storage"
@@ -306,13 +307,23 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
       const displayRoot = resolveDisplayStorageRoot(
         (await fastify.prisma.instanceConfig.findFirst())?.storageRoot,
       )
+      const volumeCtx = {
+        effectiveRoot: effective,
+        displayRoot,
+        discovery,
+      }
+      const volumes = annotateStorageVolumes(discovery, {
+        effectiveRoot: effective,
+        displayRoot,
+      })
 
       reply.send({
         data: {
           ...discovery,
+          volumes,
           currentStorageRoot: displayRoot,
           currentEffectiveRoot: effective,
-          migrationTargets: filterMigrationTargets(discovery, effective),
+          migrationTargets: filterMigrationTargets(discovery, volumeCtx),
         },
       })
     },

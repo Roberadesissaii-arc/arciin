@@ -53,14 +53,13 @@ export function StorageSettingsForm() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl space-y-8">
-      {/* Usage + path hero */}
-      <div className="overflow-hidden rounded-2xl border border-border bg-gradient-to-br from-zinc-900 via-card to-card">
-        <div className="border-b border-border/60 px-5 py-4">
+    <div className="space-y-6">
+      <div className="overflow-hidden rounded-2xl border border-border bg-card">
+        <div className="border-b border-border px-4 py-4 sm:px-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-3">
-              <div className="flex size-10 items-center justify-center rounded-xl bg-primary/15">
-                <HardDrive className="size-5 text-primary" />
+              <div className="flex size-10 items-center justify-center rounded-xl border border-border bg-muted/30">
+                <HardDrive className="size-5 text-muted-foreground" />
               </div>
               <div>
                 <h2 className="text-base font-semibold text-foreground">Active storage</h2>
@@ -70,12 +69,12 @@ export function StorageSettingsForm() {
               </div>
             </div>
             {usagePct != null ? (
-              <span className="text-2xl font-semibold tabular-nums text-primary">{usagePct}%</span>
+              <span className="text-2xl font-semibold tabular-nums text-foreground">{usagePct}%</span>
             ) : null}
           </div>
         </div>
 
-        <div className="space-y-4 px-5 py-4">
+        <div className="space-y-4 px-4 py-4 sm:px-5">
           {d?.totalBytes != null && d.totalBytes > 0 ? (
             <div>
               <div className="mb-1.5 flex justify-between text-[11px] text-muted-foreground">
@@ -87,7 +86,7 @@ export function StorageSettingsForm() {
           ) : null}
 
           <div className="grid gap-3 sm:grid-cols-2">
-            <div className="rounded-xl border border-border/60 bg-black/20 px-3 py-2.5">
+            <div className="rounded-xl border border-border bg-muted/15 px-3 py-2.5">
               <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
                 Root path
               </p>
@@ -95,7 +94,7 @@ export function StorageSettingsForm() {
                 {d?.storageRoot ?? "—"}
               </p>
             </div>
-            <div className="rounded-xl border border-border/60 bg-black/20 px-3 py-2.5">
+            <div className="rounded-xl border border-border bg-muted/15 px-3 py-2.5">
               <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
                 Inventory
               </p>
@@ -107,18 +106,18 @@ export function StorageSettingsForm() {
           </div>
 
           {d?.isDockerRuntime && d.hostStorageRoot && d.runtimeStorageRoot ? (
-            <p className="rounded-lg border border-border/50 bg-muted/20 px-3 py-2 text-[11px] leading-relaxed text-muted-foreground">
-              Docker maps <span className="font-mono text-foreground/90">{d.hostStorageRoot}</span> on the
-              host to <span className="font-mono text-foreground/90">{d.runtimeStorageRoot}</span> in the
-              container. Use the transfer tool below or update <span className="font-mono">ARCIIN_HOST_DATA_DIR</span>{" "}
-              and re-run <span className="font-mono">docker-setup.sh</span>.
+            <p className="rounded-lg border border-border bg-muted/15 px-3 py-2 text-[11px] leading-relaxed text-muted-foreground">
+              Docker maps <span className="font-mono text-foreground">{d.hostStorageRoot}</span> on the
+              host to <span className="font-mono text-foreground">{d.runtimeStorageRoot}</span> in the
+              container. Use the transfer tool below or update{" "}
+              <span className="font-mono">ARCIIN_HOST_DATA_DIR</span> and re-run{" "}
+              <span className="font-mono">docker-setup.sh</span>.
             </p>
           ) : null}
         </div>
       </div>
 
-      {/* Folder layout — compact */}
-      <div className="rounded-2xl border border-border bg-card/60 px-5 py-4">
+      <div className="rounded-2xl border border-border bg-card px-4 py-4 sm:px-5">
         <div className="mb-3 flex items-center gap-2">
           <FolderOpen className="size-4 text-muted-foreground" />
           <h3 className="text-sm font-semibold text-foreground">Folder layout</h3>
@@ -127,7 +126,7 @@ export function StorageSettingsForm() {
           {FOLDERS.map((name) => (
             <code
               key={name}
-              className="rounded-lg border border-border/80 bg-muted/30 px-2.5 py-1 font-mono text-[11px] text-foreground/90"
+              className="rounded-lg border border-border bg-muted/20 px-2.5 py-1 font-mono text-[11px] text-foreground/90"
             >
               {name}/
             </code>
@@ -135,15 +134,13 @@ export function StorageSettingsForm() {
         </div>
       </div>
 
-      {/* Migration */}
       <StorageMigratePanel usageBytes={d?.usageBytes ?? 0} />
 
-      {/* Advanced: manual path (collapsed visually) */}
-      <details className="group rounded-2xl border border-border bg-card/40">
-        <summary className="cursor-pointer list-none px-5 py-3.5 text-sm font-medium text-muted-foreground marker:content-none [&::-webkit-details-marker]:hidden">
+      <details className="group rounded-2xl border border-border bg-card">
+        <summary className="cursor-pointer list-none px-4 py-3.5 text-sm font-medium text-muted-foreground marker:content-none sm:px-5 [&::-webkit-details-marker]:hidden">
           <span className="group-open:text-foreground">Advanced — edit path manually</span>
         </summary>
-        <div className="space-y-3 border-t border-border/80 px-5 pb-4 pt-3">
+        <div className="space-y-3 border-t border-border px-4 pb-4 pt-3 sm:px-5">
           <p className="text-[11px] leading-relaxed text-muted-foreground">
             Only changes the configured path. Does not copy files. Prefer &quot;Move storage&quot; above.
           </p>

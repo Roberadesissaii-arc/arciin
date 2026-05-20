@@ -90,6 +90,8 @@ export type StorageVolumeOption = {
   writable: boolean
   recommended: boolean
   largeExternal: boolean
+  /** Present on /settings/storage/volumes — true when Arciin already stores files here. */
+  isCurrent?: boolean
 }
 
 export type StorageDiscovery = {

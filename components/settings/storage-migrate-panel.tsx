@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { ArrowRightLeft, HardDrive, Loader2, RefreshCw } from "lucide-react"
+import { ArrowRightLeft, BadgeCheck, HardDrive, Loader2, RefreshCw } from "lucide-react"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
@@ -52,8 +52,9 @@ export function StorageMigratePanel({ usageBytes }: { usageBytes: number }) {
 
   const active = migrateStatusQuery.data?.active ?? false
   const job = migrateStatusQuery.data?.job
-  const targets = volumesQuery.data?.migrationTargets ?? []
-  const current = volumesQuery.data?.currentStorageRoot
+  const volumes = volumesQuery.data?.volumes ?? []
+  const migrationTargets = volumesQuery.data?.migrationTargets ?? []
+  const currentVolume = volumes.find((v) => v.isCurrent)
 
   useEffect(() => {
     if (!active && job?.status === "COMPLETED") {
@@ -62,16 +63,20 @@ export function StorageMigratePanel({ usageBytes }: { usageBytes: number }) {
     }
   }, [active, job?.status, queryClient])
 
+  useEffect(() => {
+    if (selected?.isCurrent) setSelected(null)
+  }, [selected?.isCurrent, selected?.id])
+
   return (
-    <section className="rounded-2xl border border-border bg-card/80 overflow-hidden">
-      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border/80 bg-muted/20 px-5 py-4">
+    <section className="overflow-hidden rounded-2xl border border-border bg-card">
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border px-4 py-4 sm:px-5">
         <div>
           <h3 className="flex items-center gap-2 text-sm font-semibold text-foreground">
-            <ArrowRightLeft className="size-4 text-primary" />
+            <ArrowRightLeft className="size-4 text-muted-foreground" />
             Move storage to another disk
           </h3>
           <p className="mt-1 max-w-xl text-[12px] leading-relaxed text-muted-foreground">
-            Attached an SSD or USB drive? Copy everything to the new location in one step. Your old
+            Attached an SSD or USB drive? Copy everything to a new location in one step. Your old
             folder stays untouched until you delete it yourself.
           </p>
         </div>
@@ -88,26 +93,25 @@ export function StorageMigratePanel({ usageBytes }: { usageBytes: number }) {
         </Button>
       </div>
 
-      <div className="space-y-4 p-5">
-        {current ? (
-          <div className="rounded-xl border border-border/80 bg-zinc-950/40 px-4 py-3">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-              Current location
-            </p>
-            <p className="mt-1 truncate font-mono text-[13px] text-foreground">{current}</p>
-            <p className="mt-1 text-[11px] text-muted-foreground">
-              About {formatBytes(usageBytes)} tracked in libraries
-            </p>
-          </div>
+      <div className="space-y-4 px-4 py-4 sm:px-5">
+        {currentVolume ? (
+          <p className="text-[11px] text-muted-foreground">
+            <span className="font-medium text-foreground">In use:</span>{" "}
+            <span className="font-mono">{currentVolume.arciinPath}</span>
+            <span className="text-muted-foreground">
+              {" "}
+              · about {formatBytes(usageBytes)} in libraries
+            </span>
+          </p>
         ) : null}
 
         {active && job ? (
-          <div className="space-y-2 rounded-xl border border-primary/25 bg-primary/[0.06] px-4 py-3">
+          <div className="space-y-2 rounded-xl border border-border bg-muted/20 px-4 py-3">
             <div className="flex items-center justify-between gap-2 text-[12px]">
               <span className="font-medium text-foreground">Transfer in progress</span>
-              <span className="tabular-nums text-primary">{job.progress}%</span>
+              <span className="tabular-nums text-foreground">{job.progress}%</span>
             </div>
-            <Progress value={job.progress} className="h-2" />
+            <Progress value={job.progress} className="h-2 bg-muted" />
             <p className="text-[11px] text-muted-foreground">
               Do not stop the API or worker until this completes.
             </p>
@@ -125,45 +129,57 @@ export function StorageMigratePanel({ usageBytes }: { usageBytes: number }) {
             <Loader2 className="size-4 animate-spin" />
             Scanning volumes…
           </div>
-        ) : targets.length === 0 ? (
+        ) : volumes.length === 0 ? (
           <p className="py-4 text-[12px] text-muted-foreground">
-            No other writable volumes detected. Mount your drive on the server, then rescan.
+            No volumes detected. Mount your drive on the server, then rescan.
           </p>
         ) : (
           <ul className="grid gap-2 sm:grid-cols-2">
-            {targets.map((option) => {
-              const isSelected = selected?.id === option.id
+            {volumes.map((option) => {
+              const isCurrent = Boolean(option.isCurrent)
+              const isSelected = !isCurrent && selected?.id === option.id
               return (
                 <li key={option.id}>
                   <button
                     type="button"
-                    disabled={active || migrateMutation.isPending}
-                    onClick={() => setSelected(option)}
+                    disabled={active || migrateMutation.isPending || isCurrent}
+                    onClick={() => !isCurrent && setSelected(option)}
                     className={cn(
-                      "flex h-full w-full flex-col gap-2 rounded-xl border px-3.5 py-3 text-left transition-all",
-                      isSelected
-                        ? "border-primary/50 bg-primary/[0.08] ring-1 ring-primary/20"
-                        : "border-border bg-muted/15 hover:border-border hover:bg-muted/30",
-                      (active || migrateMutation.isPending) && "opacity-60",
+                      "flex h-full w-full flex-col gap-2 rounded-xl border px-3.5 py-3 text-left transition-colors",
+                      isCurrent
+                        ? "cursor-default border-border bg-muted/25"
+                        : isSelected
+                          ? "border-primary/40 bg-muted/30 ring-1 ring-primary/25"
+                          : "border-border bg-card hover:bg-muted/20",
+                      (active || migrateMutation.isPending) && !isCurrent && "opacity-60",
                     )}
                   >
                     <div className="flex items-start gap-2">
-                      <HardDrive
-                        className={cn(
-                          "mt-0.5 size-4 shrink-0",
-                          option.largeExternal ? "text-primary" : "text-muted-foreground",
-                        )}
-                      />
+                      {isCurrent ? (
+                        <BadgeCheck
+                          className="mt-0.5 size-4 shrink-0 text-primary"
+                          aria-hidden
+                        />
+                      ) : (
+                        <HardDrive className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                      )}
                       <div className="min-w-0 flex-1">
-                        <p className="text-[12px] font-medium text-foreground">{option.label}</p>
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <p className="text-[12px] font-medium text-foreground">{option.label}</p>
+                          {isCurrent ? (
+                            <span className="rounded-md border border-border bg-muted/40 px-1.5 py-0.5 text-[10px] font-semibold text-foreground">
+                              In use
+                            </span>
+                          ) : null}
+                        </div>
                         <p className="truncate font-mono text-[11px] text-muted-foreground">
                           {option.arciinPath}
                         </p>
                         <p className="mt-0.5 text-[10px] text-muted-foreground">{formatFree(option)}</p>
                       </div>
                     </div>
-                    {option.largeExternal ? (
-                      <span className="w-fit rounded-md bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-600">
+                    {option.largeExternal && !isCurrent ? (
+                      <span className="w-fit rounded-md border border-border bg-muted/30 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
                         More space than OS disk
                       </span>
                     ) : null}
@@ -174,12 +190,24 @@ export function StorageMigratePanel({ usageBytes }: { usageBytes: number }) {
           </ul>
         )}
 
+        {migrationTargets.length === 0 && !volumesQuery.isLoading && volumes.length > 0 ? (
+          <p className="text-[12px] text-muted-foreground">
+            No other writable volumes found. Mount another drive and rescan to transfer here.
+          </p>
+        ) : null}
+
         <Button
           type="button"
-          className="w-full gap-2 bg-primary text-white hover:bg-primary/90 sm:w-auto"
-          disabled={!selected || active || migrateMutation.isPending || !selected.writable}
+          className="w-full gap-2 sm:w-auto"
+          disabled={
+            !selected ||
+            selected.isCurrent ||
+            active ||
+            migrateMutation.isPending ||
+            !selected.writable
+          }
           onClick={() => {
-            if (!selected) return
+            if (!selected || selected.isCurrent) return
             migrateMutation.mutate(selected.arciinPath)
           }}
         >
