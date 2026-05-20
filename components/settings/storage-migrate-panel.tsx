@@ -63,9 +63,8 @@ export function StorageMigratePanel({ usageBytes }: { usageBytes: number }) {
     }
   }, [active, job?.status, queryClient])
 
-  useEffect(() => {
-    if (selected?.isCurrent) setSelected(null)
-  }, [selected?.isCurrent, selected?.id])
+  const transferTarget =
+    selected && !selected.isCurrent ? selected : null
 
   return (
     <section className="overflow-hidden rounded-2xl border border-border bg-card">
@@ -137,7 +136,7 @@ export function StorageMigratePanel({ usageBytes }: { usageBytes: number }) {
           <ul className="grid gap-2 sm:grid-cols-2">
             {volumes.map((option) => {
               const isCurrent = Boolean(option.isCurrent)
-              const isSelected = !isCurrent && selected?.id === option.id
+              const isSelected = !isCurrent && transferTarget?.id === option.id
               return (
                 <li key={option.id}>
                   <button
@@ -200,15 +199,14 @@ export function StorageMigratePanel({ usageBytes }: { usageBytes: number }) {
           type="button"
           className="w-full gap-2 sm:w-auto"
           disabled={
-            !selected ||
-            selected.isCurrent ||
+            !transferTarget ||
             active ||
             migrateMutation.isPending ||
-            !selected.writable
+            !transferTarget.writable
           }
           onClick={() => {
-            if (!selected || selected.isCurrent) return
-            migrateMutation.mutate(selected.arciinPath)
+            if (!transferTarget) return
+            migrateMutation.mutate(transferTarget.arciinPath)
           }}
         >
           {migrateMutation.isPending || active ? (

@@ -1,9 +1,42 @@
+# Dependencies & build output
 node_modules
 .next
 dist
+.turbo
+coverage
+
+# Git & editor
 .git
 .cursor
-coverage
-data
-*.log
+.vscode
+
+# Secrets (never bake into images)
 .env
+.env.*
+!.env.example
+!.env.docker.example
+
+# Logs
+*.log
+logs
+
+# ── Arciin runtime storage (NEVER copy into Docker build context) ─────────────
+# If ARCIIN_HOST_DATA_DIR points inside this repo, these folders can be gigabytes
+# of media and will cause "no space left on device" during `docker compose build`.
+objects
+libraries
+thumbnails
+temp
+avatars
+**/objects/**
+**/libraries/**
+**/thumbnails/**
+**/temp/**
+**/avatars/**
+
+# Dev-only in-repo storage
+data
+data/**
+
+# Local PM2 / runtime
+.pm2

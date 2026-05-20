@@ -406,6 +406,19 @@ _arciin_setup_host_storage() {
     return 1
   }
 
+  if [[ -n "$repo_root" ]]; then
+    local repo_abs resolved_abs
+    repo_abs="$(cd "$repo_root" && pwd)" || repo_abs="$repo_root"
+    resolved_abs="$(cd "$resolved" && pwd)" || resolved_abs="$resolved"
+    if [[ "$resolved_abs" == "$repo_abs" ]]; then
+      _arciin_storage_msg "WARNING: Storage is the same folder as the Arciin git clone."
+      _arciin_storage_msg "Docker builds will fail or fill the disk unless you use /srv/arciin-storage/arciin (recommended)."
+    elif [[ "$resolved_abs" == "${repo_abs}/"* ]]; then
+      _arciin_storage_msg "WARNING: Storage is inside the git clone (${resolved_abs})."
+      _arciin_storage_msg "Prefer ${ARCIIN_DEFAULT_STORAGE} so updates and docker compose build stay small."
+    fi
+  fi
+
   _arciin_migrate_legacy_storage "$resolved" "$repo_root" "$env_file"
   _arciin_prepare_storage_subdirs "$resolved"
   if [[ "$for_docker" == "1" ]]; then

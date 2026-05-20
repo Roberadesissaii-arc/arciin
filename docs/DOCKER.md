@@ -249,7 +249,8 @@ See also [`DEPLOYMENT.md`](./DEPLOYMENT.md) and [`../docker/caddy/Caddyfile`](..
 |---------|------------|
 | Upload permission denied | `sudo chown -R 1000:1000 "$ARCIIN_HOST_DATA_DIR"` |
 | Port 80 in use | Stop nginx/apache or edit `docker-compose.yml` `caddy.ports` |
-| Build fails | Check disk space (`docker system df`) and 64-bit OS |
+| Build fails / **no space left on device** during `COPY . .` | Your media is inside the git folder (e.g. `~/arciin/objects`). Set `ARCIIN_HOST_DATA_DIR=/srv/arciin-storage/arciin`, move data out, then `docker builder prune -f` and rebuild. Never store files in the same directory as the Arciin source clone. |
+| Build fails (other) | Check disk space (`docker system df`) and 64-bit OS |
 | Phone cannot connect | Set `ARCIIN_PUBLIC_URL` to `http://<lan-ip>`, open firewall for port 80 |
 | Data “missing” after rebuild | Check `ARCIIN_HOST_DATA_DIR` in `.env` — files live only on that host path |
 | Cannot create storage path | Pick a writable folder or: `sudo mkdir -p <path> && sudo chown -R $USER:$USER <path>` |
