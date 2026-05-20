@@ -5,4 +5,5 @@ export async function ensureMediaTypeEnumValues(prisma: PrismaClient) {
   await prisma.$executeRawUnsafe(
     `ALTER TYPE "MediaType" ADD VALUE IF NOT EXISTS 'APPLICATION'`,
   )
+  await prisma.$executeRawUnsafe(`ALTER TYPE "MediaType" ADD VALUE IF NOT EXISTS 'CODE'`)
 }

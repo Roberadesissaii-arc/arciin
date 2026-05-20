@@ -314,7 +314,8 @@ Exact paths (use these as clickable links, e.g. [Settings → General](/settings
 - Be concise and precise. Avoid vague directions like "go to Settings" without the link.
 - The instance context block below is live data — use it for file counts, storage, library contents, **folder names and folder ids (snapshot)**, **Arciin App data logical databases (JSON stores; same as /database/app-data)**, **saved password vault metadata** (entry names and usernames when listed—never invent passwords), **and REST API examples** (each library's **id** and **slug**, plus the **REST API base URL** for this tab). Never invent library, folder, or app-database ids.
 - **Password vault:** If the context includes a **Password vault** section, answer count / name / username / **URL** questions from that list. Plaintext names, usernames, and urls may be stated directly (including "send me the url" follow-ups). Password fields marked \`[VAULT_ENCRYPTED]\` are not readable—send the user to [Passwords](/passwords) to copy the real password. Never claim you cannot provide URLs when a vault line shows a plaintext url.
-- You do not have pixels, audio waveforms, or document text unless **this request** includes attached image bytes (vision). Otherwise you only have aggregate counts, filenames, and sizes from the context block — not the file contents themselves.
+- You do not have pixels, audio waveforms, or PDF/document bodies unless **this request** includes attached image bytes (vision). Otherwise you only have aggregate counts, filenames, and sizes from the context block — not binary file contents.
+- **Source code (.py, .js, .ts, etc.):** The context block lists **Code files** (often in [Inbox](/files?library=inbox)). They are **not** the same as [Documents](/documents) (PDFs, Office files). For "do I have Python files?", "list my .py files", or "what does main.py do?" — use the **Code files** snapshot and [[ASSET_LIST:code]]; use **read_text_asset** to read and explain script contents. Never answer "no Python files" when Code files are listed.
 - When a **[Vision]** note appears in the system context for this turn, image pixels are attached to the user's message — describe what you see. Do not say you cannot view images in that case.
 
 ## Answer only what was asked
@@ -364,7 +365,8 @@ Let me know if you need a different one or want to see all of them."
 ## Listing filenames (plain text in chat)
 When the user asks to **list**, **name**, or **enumerate** files (e.g. "list my documents", "list them", "list them here", "what are they called") — you MUST include a filename list tag on its own line. The UI renders the real filenames from their library; do not invent names.
 
-- [[ASSET_LIST:documents]] — bullet list of document filenames
+- [[ASSET_LIST:documents]] — bullet list of document filenames (PDFs, Office — **not** .py scripts)
+- [[ASSET_LIST:code]] / [[ASSET_LIST:python]] — bullet list of source-code filenames (.py, .js, .ts, …)
 - [[ASSET_LIST:images]] / [[ASSET_LIST:videos]] / [[ASSET_LIST:music]] / [[ASSET_LIST:all]]
 
 Rules:
@@ -375,7 +377,8 @@ Rules:
 - Only one [[ASSETS:…]] tag per response when previewing. Never use asset tags on greetings.
 
 ## Library actions (server tools)
-Arciin runs **vision_search_library**, **organize_images_library**, **create_library_folder**, and **delete_library_folder** on the server when the model invokes **native tool calls** (Ollama \`tool_calls\`). The server may also run **folder delete/create** directly from a clear user request without waiting for the model.
+Arciin runs **vision_search_library**, **organize_images_library**, **read_text_asset**, **create_library_folder**, and **delete_library_folder** on the server when the model invokes **native tool calls** (Ollama \`tool_calls\`). The server may also run **folder delete/create** directly from a clear user request without waiting for the model.
+When the user asks what a **script** or **code file** does, or wants you to read \`main.py\` (etc.), call **read_text_asset** with \`filename\` or \`asset_id\` from the Code files snapshot — then summarize in plain language.
 **Never** type fake invocations like \`[delete_library_folder: ...]\` or \`[create_library_folder: ...]\` in your reply — that text is **not** executed and confuses users. Use the provider’s tool mechanism only, then summarize the real **tool result** you received.
 When the user asks you to **create** or **delete** a specific folder by name, **use create_library_folder / delete_library_folder** — do not refuse with "I can only organize or search" unless agent tools are disabled in settings.
 When tool results appear in the conversation, summarize them — never tell the user to create or delete folders only manually in the UI if they asked you to do it via chat and the tool ran or should run.
@@ -1360,6 +1363,19 @@ function buildContextBlock(ctx: ChatInstanceContext): string {
     appDbLines,
     "Listing these MUST NOT use [[ASSET_LIST:documents]] or Documents library filenames.",
   ].join("\n")
+
+  const codeFiles = ctx.codeFiles ?? []
+  const codeBlock =
+    codeFiles.length === 0
+      ? "Code files (source scripts — .py, .js, .ts, etc.; often in Inbox): none in snapshot"
+      : [
+          `Code files (${codeFiles.length} recent — use read_text_asset to read contents; list with [[ASSET_LIST:code]]):`,
+          ...codeFiles.map(
+            (f) =>
+              `  - ${f.filename} id=${f.id} type=${f.mediaType} library=${f.librarySlug} size=${f.sizeBytes}B`,
+          ),
+        ].join("\n")
+
   return [
     "--- Current Instance Data ---",
     `REST API base (use this exact prefix in examples): ${restBase}`,
@@ -1369,6 +1385,7 @@ function buildContextBlock(ctx: ChatInstanceContext): string {
     `Libraries (summary): ${libs || "none"}`,
     folderBlock,
     appDbBlock,
+    codeBlock,
     `Total assets: ${total} (${byType || "none"})`,
     `Storage used: ${storageStr}`,
     lastUpload,
@@ -1382,7 +1399,7 @@ function buildContextBlock(ctx: ChatInstanceContext): string {
 /** Recent chat turn mentioned a library type (for follow-ups like "show me"). */
 function conversationMentionsMediaType(
   priorMessages: Message[],
-  kind: "images" | "videos" | "music" | "documents" | "files",
+  kind: "images" | "videos" | "music" | "documents" | "code" | "files",
 ): boolean {
   const recent = priorMessages.slice(-8)
   const pattern =
@@ -1394,7 +1411,9 @@ function conversationMentionsMediaType(
           ? /\bmusic|audio\b/i
           : kind === "documents"
             ? /\bdocuments?\b/i
-            : /\bfiles?\b/i
+            : kind === "code"
+              ? /\b(python|py\s+files?|\.py\b|scripts?|source\s*code|code\s+files?)\b/i
+              : /\bfiles?\b/i
 
   return recent.some((m) => pattern.test(m.content))
 }
@@ -1535,7 +1554,9 @@ function userWantsFilenameList(userText: string, priorMessages: Message[]): bool
   if (!listIntent) return false
 
   if (
-    /\b(documents?|files?|images?|pictures?|photos?|videos?|music|assets?|them|those|these)\b/.test(t)
+    /\b(documents?|files?|images?|pictures?|photos?|videos?|music|python|scripts?|code|\.py|assets?|them|those|these)\b/.test(
+      t,
+    )
   ) {
     return true
   }
@@ -1549,15 +1570,20 @@ function userWantsFilenameList(userText: string, priorMessages: Message[]): bool
 
 function resolveAssetListMediaType(userText: string, priorMessages: Message[]): string {
   const t = userText.toLowerCase()
-  if (/\bdocuments?\b/.test(t)) return "documents"
+  if (/\b(python|py\s+files?|\.py|scripts?|source\s*code|code\s+files?)\b/.test(t)) return "code"
+  if (/\bdocuments?\b/.test(t) && !/\b(python|\.py|scripts?)\b/.test(t)) return "documents"
   if (/\bimages?|pictures?|photos?\b/.test(t)) return "images"
   if (/\bvideos?\b/.test(t)) return "videos"
   if (/\bmusic|audio\b/.test(t)) return "music"
   if (/\ball\s+files?\b/.test(t)) return "all"
 
   const lastAssistant = [...priorMessages].reverse().find((m) => m.role === "assistant")
-  const tag = lastAssistant?.content.match(/\[\[ASSETS:([a-z]+)/i)?.[1]
+  const tag = lastAssistant?.content.match(/\[\[ASSET_LIST:([a-z]+)/i)?.[1]
   if (tag) return tag
+  const assetTag = lastAssistant?.content.match(/\[\[ASSETS:([a-z]+)/i)?.[1]
+  if (assetTag) return assetTag
+
+  if (conversationMentionsMediaType(priorMessages, "code")) return "code"
 
   return "documents"
 }
@@ -1662,8 +1688,24 @@ function fmtBytes(bytes: number): string {
 const MEDIA_TYPE_MAP: Record<string, string> = {
   images: "IMAGE",
   videos: "VIDEO",
-  music:  "AUDIO",
+  music: "AUDIO",
   documents: "DOCUMENT",
+  code: "CODE",
+  python: "CODE",
+  py: "CODE",
+  applications: "APPLICATION",
+  apps: "APPLICATION",
+}
+
+function chatListAssetFilters(mediaType: string): { mediaType?: string; category?: "code" | "applications" } {
+  if (mediaType === "code" || mediaType === "python" || mediaType === "py") {
+    return { category: "code" }
+  }
+  if (mediaType === "applications" || mediaType === "apps") {
+    return { category: "applications" }
+  }
+  const mapped = MEDIA_TYPE_MAP[mediaType]
+  return mapped ? { mediaType: mapped } : {}
 }
 
 /** How many file rows / cards to show before "Show more" in chat previews. */
@@ -1757,7 +1799,7 @@ function InlineAssetBlockByIds({ assetIds }: { assetIds: string[] }) {
 
 function InlineAssetFilenameList({ mediaType }: { mediaType: string }) {
   const [expanded, setExpanded] = useState(false)
-  const filter = MEDIA_TYPE_MAP[mediaType] ? { mediaType: MEDIA_TYPE_MAP[mediaType] } : {}
+  const filter = chatListAssetFilters(mediaType)
   const query = useQuery({
     queryKey: queryKeys.assets({ ...filter, _chatList: mediaType }),
     queryFn: ({ signal }) => getAssets(filter, signal),
@@ -1815,7 +1857,7 @@ function InlineAssetFilenameList({ mediaType }: { mediaType: string }) {
 
 function InlineAssetBlock({ mediaType, limit = 9 }: { mediaType: string; limit?: number }) {
   const [extraPages, setExtraPages] = useState(0)
-  const filter = MEDIA_TYPE_MAP[mediaType] ? { mediaType: MEDIA_TYPE_MAP[mediaType] } : {}
+  const filter = chatListAssetFilters(mediaType)
   const query = useQuery({
     queryKey: queryKeys.assets({ ...filter, _chatBlock: mediaType }),
     queryFn: ({ signal }) => getAssets(filter, signal),

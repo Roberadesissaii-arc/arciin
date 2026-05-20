@@ -26,6 +26,15 @@ export interface ChatInstanceContext {
     createdAt: string
   }[]
   byMediaType: { type: string; count: number }[]
+  /** Recent source-code / script files (.py, .js, etc.) — filenames only, not file bodies. */
+  codeFiles?: {
+    id: string
+    filename: string
+    mediaType: string
+    sizeBytes: number
+    librarySlug: string
+    libraryName: string
+  }[]
   storageGb: number
   lastUploadAt: string | null
   /** Count-only vault hint for AI — never contains secrets. */

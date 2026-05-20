@@ -5,7 +5,7 @@ import path from "node:path"
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify"
 import { z } from "zod"
 
-import { resolveArciinStorageRoot } from "@arciin/shared"
+import { isCodeFilename, resolveArciinStorageRoot } from "@arciin/shared"
 
 import { apiConfig } from "@/config"
 import { buildRealtimeEvent } from "@/services/events/publish-event"
@@ -122,6 +122,7 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
           libraryId: z.string().optional(),
           folderId: z.string().optional(),
           mediaType: z.string().optional(),
+          category: z.enum(["code", "applications"]).optional(),
           search: z.string().optional(),
           ids: z.string().optional(),
         })
@@ -164,11 +165,22 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
         orderBy: {
           createdAt: "desc",
         },
-        take: 200,
+        take: query.category ? 500 : 200,
       })
 
+      const resultAssets =
+        query.category === "code"
+          ? assets
+              .filter(
+                (a) => a.mediaType === "CODE" || isCodeFilename(a.originalFilename),
+              )
+              .slice(0, 200)
+          : query.category === "applications"
+            ? assets.filter((a) => a.mediaType === "APPLICATION").slice(0, 200)
+            : assets
+
       reply.send({
-        data: assets.map(serializeAsset),
+        data: resultAssets.map(serializeAsset),
       })
     }
   )

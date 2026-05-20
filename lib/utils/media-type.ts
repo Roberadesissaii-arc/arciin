@@ -1,4 +1,4 @@
-import { inferMediaType, isApplicationFile } from "@arciin/shared"
+import { inferMediaType, isApplicationFile, isCodeFilename } from "@arciin/shared"
 
 import type { LibraryKind, MediaType } from "@/lib/types/models"
 
@@ -7,12 +7,13 @@ export function resolveDisplayMediaType(
   options?: { filename?: string | null; mimeType?: string | null; extension?: string | null },
 ): MediaType {
   if (mediaType === "APPLICATION") return "APPLICATION"
+  if (mediaType === "CODE") return "CODE"
   if (isApplicationFile(options?.filename, options?.extension)) return "APPLICATION"
-  if (
-    options?.filename &&
-    inferMediaType(options.mimeType, options.filename) === "APPLICATION"
-  ) {
-    return "APPLICATION"
+  if (isCodeFilename(options?.filename)) return "CODE"
+  if (options?.filename) {
+    const inferred = inferMediaType(options.mimeType, options.filename)
+    if (inferred === "APPLICATION") return "APPLICATION"
+    if (inferred === "CODE") return "CODE"
   }
   return mediaType
 }
@@ -23,6 +24,7 @@ export function formatMediaTypeLabel(
 ): string {
   const resolved = resolveDisplayMediaType(mediaType, options)
   if (resolved === "APPLICATION") return "APP"
+  if (resolved === "CODE") return "CODE"
   return resolved
 }
 
@@ -61,6 +63,8 @@ export function inferDestinationLabel(mimeType?: string | null, filename?: strin
       return "Documents"
     case "APPLICATION":
       return "Applications"
+    case "CODE":
+      return "Code"
     default:
       return "Inbox"
   }

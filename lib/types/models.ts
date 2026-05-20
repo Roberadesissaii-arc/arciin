@@ -19,6 +19,7 @@ export type MediaType =
   | "DOCUMENT"
   | "ARCHIVE"
   | "APPLICATION"
+  | "CODE"
   | "OTHER"
 
 export type AssetStatus = "UPLOADING" | "PROCESSING" | "READY" | "FAILED" | "DELETED"

@@ -3,6 +3,7 @@ import {
   AppWindow,
   Archive,
   FileAudio2,
+  FileCode2,
   FileImage,
   FileText,
   Film,
@@ -19,6 +20,7 @@ export const mediaTypeIcons: Record<MediaType | "DEFAULT", LucideIcon> = {
   DOCUMENT: FileText,
   ARCHIVE: Archive,
   APPLICATION: AppWindow,
+  CODE: FileCode2,
   OTHER: Inbox,
   DEFAULT: Inbox,
 }

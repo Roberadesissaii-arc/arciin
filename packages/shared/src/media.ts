@@ -68,6 +68,85 @@ const videoExtensions = new Set([
 
 const audioExtensions = new Set(["mp3", "wav", "flac", "aac", "m4a", "ogg", "opus", "wma"])
 
+/** Source code and plain-text scripts (.py, .js, .ts, etc.). */
+export const codeExtensions = new Set([
+  "py",
+  "pyw",
+  "pyi",
+  "ipynb",
+  "js",
+  "mjs",
+  "cjs",
+  "ts",
+  "tsx",
+  "jsx",
+  "json",
+  "html",
+  "htm",
+  "css",
+  "scss",
+  "sass",
+  "less",
+  "vue",
+  "svelte",
+  "go",
+  "rs",
+  "java",
+  "kt",
+  "kts",
+  "c",
+  "cc",
+  "cpp",
+  "cxx",
+  "h",
+  "hpp",
+  "cs",
+  "php",
+  "rb",
+  "sh",
+  "bash",
+  "zsh",
+  "fish",
+  "ps1",
+  "sql",
+  "yaml",
+  "yml",
+  "toml",
+  "xml",
+  "swift",
+  "r",
+  "lua",
+  "pl",
+  "scala",
+  "zig",
+  "dart",
+  "ex",
+  "exs",
+  "erl",
+  "hs",
+  "clj",
+  "cljs",
+  "dockerfile",
+  "makefile",
+  "cmake",
+  "gradle",
+  "env",
+  "ini",
+  "cfg",
+  "conf",
+])
+
+const codeMimePrefixes = ["text/x-", "text/plain", "application/javascript", "application/typescript", "application/json", "application/xml"]
+
+export function isCodeFilename(filename?: string | null): boolean {
+  if (!filename) return false
+  const ext = getFileExtension(filename)
+  if (codeExtensions.has(ext)) return true
+  const base = filename.split(/[/\\]/).pop()?.toLowerCase() ?? ""
+  if (base === "dockerfile" || base === "makefile" || base.startsWith(".env")) return true
+  return false
+}
+
 /** Installers, executables, disk images, and setup scripts. */
 export const applicationExtensions = new Set([
   "exe",
@@ -164,6 +243,16 @@ export function inferMediaType(mimeType?: string | null, filename?: string | nul
 
   if (audioExtensions.has(extension)) {
     return "AUDIO"
+  }
+
+  if (
+    codeExtensions.has(extension) ||
+    isCodeFilename(filename) ||
+    codeMimePrefixes.some((p) => (mimeType ?? "").startsWith(p)) ||
+    mimeType === "text/plain" ||
+    mimeType === "application/x-python-code"
+  ) {
+    return "CODE"
   }
 
   return "OTHER"

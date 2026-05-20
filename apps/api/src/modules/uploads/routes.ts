@@ -39,6 +39,8 @@ function libraryKindForMediaType(mediaType: string) {
       return "DOCUMENT"
     case "APPLICATION":
       return "CUSTOM"
+    case "CODE":
+      return "INBOX"
     default:
       return "INBOX"
   }

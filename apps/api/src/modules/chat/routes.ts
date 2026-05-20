@@ -4,6 +4,7 @@ import {
   applyPrivacyToChatContext,
   buildAiSecuritySystemAppend,
   buildAiSystemAppend,
+  isCodeFilename,
   isPasswordRelatedConversation,
   isVaultListingQuery,
   recentUserVaultContextText,
@@ -131,7 +132,8 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
     "/chat/context",
     { preHandler: requireRole(["OWNER", "ADMIN", "MEMBER"]) },
     async (_request, reply) => {
-      const [libraries, assetCounts, storageAgg, recentUpload, appDbRows] = await Promise.all([
+      const [libraries, assetCounts, storageAgg, recentUpload, appDbRows, codeAssetRows] =
+        await Promise.all([
         fastify.prisma.library.findMany({
           orderBy: { name: "asc" },
           select: {
@@ -167,6 +169,18 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
                 folders: { where: { deletedAt: null } },
               },
             },
+          },
+        }),
+        fastify.prisma.asset.findMany({
+          where: { deletedAt: null, status: "READY" },
+          orderBy: { createdAt: "desc" },
+          take: 400,
+          select: {
+            id: true,
+            originalFilename: true,
+            mediaType: true,
+            sizeBytes: true,
+            library: { select: { slug: true, name: true } },
           },
         }),
       ])
@@ -215,6 +229,18 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
       const cfg = (instance?.aiConfig as Record<string, unknown> | null) ?? {}
       const security = parseAiSecurityConfig(cfg.security)
 
+      const codeFiles = codeAssetRows
+        .filter((a) => a.mediaType === "CODE" || isCodeFilename(a.originalFilename))
+        .slice(0, 80)
+        .map((a) => ({
+          id: a.id,
+          filename: a.originalFilename,
+          mediaType: a.mediaType,
+          sizeBytes: Number(a.sizeBytes),
+          librarySlug: a.library.slug,
+          libraryName: a.library.name,
+        }))
+
       const rawContext = {
         libraries: libraries.map((l) => ({
           id: l.id,
@@ -225,6 +251,7 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
         })),
         folders,
         appDatabases,
+        codeFiles,
         byMediaType: assetCounts.map((r) => ({ type: r.mediaType, count: r._count._all })),
         storageGb: Math.round(gb * 10) / 10,
         lastUploadAt: recentUpload?.createdAt ?? null,

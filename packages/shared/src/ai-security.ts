@@ -235,11 +235,22 @@ export type ChatAppDatabaseContextRow = {
   createdAt: string
 }
 
+export type ChatCodeFileContextRow = {
+  id: string
+  filename: string
+  mediaType: string
+  sizeBytes: number
+  librarySlug: string
+  libraryName: string
+}
+
 export type ChatInstanceContextPayload = {
   libraries: { id: string; slug: string; name: string; kind: string; count: number }[]
   folders: ChatFolderContextRow[]
   /** Arciin-registered logical databases only (same as GET /app-databases). */
   appDatabases: ChatAppDatabaseContextRow[]
+  /** Recent source-code filenames for AI (not file bodies). */
+  codeFiles?: ChatCodeFileContextRow[]
   byMediaType: { type: string; count: number }[]
   storageGb: number
   lastUploadAt: Date | string | null
@@ -290,6 +301,12 @@ export function applyPrivacyToChatContext(
       assetCount: settings.hideAssetCounts ? 0 : f.assetCount,
     })),
     appDatabases,
+    codeFiles: (data.codeFiles ?? []).map((f, i) => ({
+      ...f,
+      filename: settings.hideLibraryNames ? `code-file-${i + 1}` : f.filename,
+      libraryName: settings.hideLibraryNames ? "(hidden)" : f.libraryName,
+      sizeBytes: settings.hideAssetCounts ? 0 : f.sizeBytes,
+    })),
     storageGb: settings.hideStorageSize ? 0 : data.storageGb,
     lastUploadAt: settings.hideUploadDates ? null : data.lastUploadAt,
   }

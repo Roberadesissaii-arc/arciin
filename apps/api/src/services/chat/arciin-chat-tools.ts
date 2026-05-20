@@ -9,6 +9,7 @@ import {
   normalizeVisionSearchQuery,
   visionSearchLibraryImages,
 } from "@/services/chat/vision-library"
+import { readTextAssetContent } from "@/services/chat/read-text-asset"
 import { slugify } from "@/services/slug"
 
 export type ArciinChatToolContext = {
@@ -83,6 +84,28 @@ export const ARCIIN_CHAT_TOOLS = [
           },
         },
         required: ["library_slug", "name"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "read_text_asset",
+      description:
+        "Read the text content of a source-code or plain-text file from the user's library (e.g. .py, .js, .ts, .sh). Use when they ask what a script does, to summarize code, or to answer questions about file contents.",
+      parameters: {
+        type: "object",
+        properties: {
+          asset_id: { type: "string", description: "Asset id from chat context code file list" },
+          filename: {
+            type: "string",
+            description: "Exact filename such as main.py when asset_id is unknown",
+          },
+          max_chars: {
+            type: "number",
+            description: "Max characters to return (default 12000)",
+          },
+        },
       },
     },
   },
@@ -269,6 +292,15 @@ export async function executeArciinChatTool(
       const msg = e instanceof Error ? e.message : "create_failed"
       return { error: "create_failed", message: msg }
     }
+  }
+
+  if (name === "read_text_asset") {
+    const r = args as Record<string, unknown>
+    return readTextAssetContent(ctx.prisma, {
+      assetId: pickArgString(r, ["asset_id", "assetId"]),
+      filename: pickArgString(r, ["filename", "name"]),
+      maxChars: Number(r.max_chars ?? r.maxChars) || undefined,
+    })
   }
 
   if (name === "delete_library_folder") {

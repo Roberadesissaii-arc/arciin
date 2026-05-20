@@ -2,6 +2,7 @@ import {
   AppWindow,
   Archive,
   FileAudio2,
+  FileCode2,
   FileImage,
   FileText,
   Film,
@@ -43,6 +44,8 @@ export function MediaTypeIcon({
       return <Archive className={iconClass} aria-hidden />
     case "APPLICATION":
       return <AppWindow className={iconClass} aria-hidden />
+    case "CODE":
+      return <FileCode2 className={iconClass} aria-hidden />
     default:
       return <Inbox className={iconClass} aria-hidden />
   }

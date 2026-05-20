@@ -5,6 +5,8 @@ export type AssetFilters = {
   libraryId?: string
   folderId?: string
   mediaType?: string
+  /** Server-side filter: code (scripts) or applications (installers). */
+  category?: "code" | "applications"
   search?: string
 }
 
