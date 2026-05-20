@@ -40,7 +40,7 @@ function libraryKindForMediaType(mediaType: string) {
     case "DOCUMENT":
       return "DOCUMENT"
     case "APPLICATION":
-      return "CUSTOM"
+      return "INBOX"
     case "CODE":
       return "INBOX"
     default:
@@ -55,13 +55,6 @@ async function resolveUploadTargetLibrary(
 ) {
   if (targetLibraryId) {
     return prisma.library.findUnique({ where: { id: targetLibraryId } })
-  }
-
-  if (mediaType === "APPLICATION") {
-    const applications = await prisma.library.findFirst({
-      where: { slug: "applications" },
-    })
-    if (applications) return applications
   }
 
   return (

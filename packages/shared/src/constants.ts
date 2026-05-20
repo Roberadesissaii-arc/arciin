@@ -5,7 +5,6 @@ export const DEFAULT_LIBRARY_DEFINITIONS = [
   { name: "Images", slug: "images", kind: "IMAGE", icon: "image" },
   { name: "Music", slug: "music", kind: "AUDIO", icon: "audio" },
   { name: "Documents", slug: "documents", kind: "DOCUMENT", icon: "document" },
-  { name: "Applications", slug: "applications", kind: "CUSTOM", icon: "app" },
   { name: "Inbox", slug: "inbox", kind: "INBOX", icon: "inbox" },
 ] as const
 

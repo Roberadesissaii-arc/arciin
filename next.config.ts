@@ -52,6 +52,20 @@ const nextConfig: NextConfig = {
     // Must match API MAX_UPLOAD_SIZE_MB — uploads via /api rewrite buffer in Next.
     proxyClientMaxBodySize: proxyMaxBodyBytes,
   },
+  async redirects() {
+    return [
+      {
+        source: "/applications",
+        destination: "/inbox",
+        permanent: true,
+      },
+      {
+        source: "/applications/:path*",
+        destination: "/inbox",
+        permanent: true,
+      },
+    ]
+  },
   async rewrites() {
     return [
       {

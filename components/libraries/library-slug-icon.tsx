@@ -1,5 +1,4 @@
 import {
-  AppWindow,
   FileAudio2,
   FileImage,
   FileText,
@@ -21,7 +20,6 @@ export function LibrarySlugIcon({
 }) {
   const iconClass = cn(className)
 
-  if (slug === "applications") return <AppWindow className={iconClass} aria-hidden />
   if (slug === "inbox") return <Inbox className={iconClass} aria-hidden />
   if (slug === "videos" || kind === "VIDEO") return <Film className={iconClass} aria-hidden />
   if (slug === "images" || kind === "IMAGE") return <FileImage className={iconClass} aria-hidden />

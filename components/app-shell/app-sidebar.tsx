@@ -81,10 +81,9 @@ const LIBRARY_ROUTES: Record<string, string> = {
   images:         "/images",
   music:          "/music",
   documents:      "/documents",
-  applications:   "/applications",
 }
 
-const LIBRARY_ORDER = ["inbox", "videos", "images", "music", "documents", "applications"]
+const LIBRARY_ORDER = ["inbox", "videos", "images", "music", "documents"]
 
 function isActive(pathname: string, href: string) {
   if (href === "/dashboard") return pathname === href

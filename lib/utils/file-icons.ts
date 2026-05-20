@@ -64,7 +64,6 @@ export function getAssetMediaTypeIcon(asset: {
 }
 
 export function getLibraryIcon(library: { kind: LibraryKind; slug: string }): LucideIcon {
-  if (library.slug === "applications") return AppWindow
   if (library.slug === "inbox") return Inbox
   return libraryKindIcons[library.kind] ?? libraryKindIcons.DEFAULT
 }
