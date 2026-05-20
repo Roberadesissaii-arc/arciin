@@ -25,6 +25,7 @@ import {
   clearVaultUnlockCookie,
   isVaultUnlockValid,
   issueVaultUnlockCookie,
+  vaultUnlockExpiresAt,
 } from "@/services/password-vault/unlock-cookie"
 
 const displayPatchSchema = z.object({
@@ -167,7 +168,7 @@ export async function registerPasswordVaultRoutes(fastify: FastifyInstance) {
       const total = rows.length
       const lockRequired = display.lockSidebarVault && total > 0
       const secretsVisible =
-        !lockRequired || isVaultUnlockValid(request, userId)
+        !lockRequired || isVaultUnlockValid(request, userId, request.auth?.session)
 
       const pin = readPasswordVaultPin(instance?.aiConfig)
 
@@ -218,6 +219,13 @@ export async function registerPasswordVaultRoutes(fastify: FastifyInstance) {
       }
 
       issueVaultUnlockCookie(reply, userId)
+      const sessionId = request.auth?.session?.id
+      if (sessionId) {
+        await fastify.prisma.session.update({
+          where: { id: sessionId },
+          data: { vaultUnlockedUntil: vaultUnlockExpiresAt() },
+        })
+      }
       reply.send({ data: { unlocked: true, expiresInMinutes: 15 } })
     },
   )
@@ -342,8 +350,15 @@ export async function registerPasswordVaultRoutes(fastify: FastifyInstance) {
   fastify.post(
     "/settings/password-vault/lock",
     { preHandler: requireRole(["OWNER", "ADMIN"]) },
-    async (_request, reply) => {
+    async (request, reply) => {
       clearVaultUnlockCookie(reply)
+      const sessionId = request.auth?.session?.id
+      if (sessionId) {
+        await fastify.prisma.session.update({
+          where: { id: sessionId },
+          data: { vaultUnlockedUntil: null },
+        })
+      }
       reply.send({ data: { locked: true } })
     },
   )
@@ -531,7 +546,7 @@ export async function registerPasswordVaultRoutes(fastify: FastifyInstance) {
       const instance = await fastify.prisma.instanceConfig.findFirst({ select: { aiConfig: true } })
       const display = readPasswordVaultDisplay(instance?.aiConfig)
       const secretsVisible =
-        !display.lockSidebarVault || isVaultUnlockValid(request, userId)
+        !display.lockSidebarVault || isVaultUnlockValid(request, userId, request.auth?.session)
 
       reply.send({ data: redactSecrets(serializeEntry(row), secretsVisible) })
     },

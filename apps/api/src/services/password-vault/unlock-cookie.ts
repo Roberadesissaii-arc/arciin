@@ -6,14 +6,27 @@ import { apiConfig } from "@/config"
 import { isSecureCookie } from "@/services/security/auth"
 
 export const VAULT_UNLOCK_COOKIE = "arciin_vault_unlock"
-const UNLOCK_TTL_MS = 15 * 60 * 1000
+export const VAULT_UNLOCK_TTL_MS = 15 * 60 * 1000
+
+export function vaultUnlockExpiresAt(from = Date.now()) {
+  return new Date(from + VAULT_UNLOCK_TTL_MS)
+}
+
+export function isVaultUnlockSessionValid(
+  session: { userId: string; vaultUnlockedUntil: Date | null } | null | undefined,
+  userId: string,
+): boolean {
+  if (!session || session.userId !== userId) return false
+  if (!session.vaultUnlockedUntil) return false
+  return session.vaultUnlockedUntil.getTime() > Date.now()
+}
 
 function sign(payload: string): string {
   return createHmac("sha256", apiConfig.SESSION_SECRET).update(payload).digest("base64url")
 }
 
 export function issueVaultUnlockCookie(reply: FastifyReply, userId: string) {
-  const exp = Date.now() + UNLOCK_TTL_MS
+  const exp = Date.now() + VAULT_UNLOCK_TTL_MS
   const body = `${userId}.${exp}`
   const token = `${body}.${sign(body)}`
   reply.setCookie(VAULT_UNLOCK_COOKIE, token, {
@@ -21,7 +34,7 @@ export function issueVaultUnlockCookie(reply: FastifyReply, userId: string) {
     sameSite: "lax",
     path: "/",
     secure: isSecureCookie(),
-    maxAge: Math.floor(UNLOCK_TTL_MS / 1000),
+    maxAge: Math.floor(VAULT_UNLOCK_TTL_MS / 1000),
   })
 }
 
@@ -33,7 +46,7 @@ export function clearVaultUnlockCookie(reply: FastifyReply) {
   })
 }
 
-export function isVaultUnlockValid(request: FastifyRequest, userId: string): boolean {
+export function isVaultUnlockCookieValid(request: FastifyRequest, userId: string): boolean {
   const token = request.cookies[VAULT_UNLOCK_COOKIE]
   if (!token) return false
 
@@ -57,4 +70,14 @@ export function isVaultUnlockValid(request: FastifyRequest, userId: string): boo
   } catch {
     return false
   }
+}
+
+/** Cookie (browser) or session row (mobile Bearer). */
+export function isVaultUnlockValid(
+  request: FastifyRequest,
+  userId: string,
+  session?: { userId: string; vaultUnlockedUntil: Date | null } | null,
+): boolean {
+  if (isVaultUnlockCookieValid(request, userId)) return true
+  return isVaultUnlockSessionValid(session, userId)
 }
