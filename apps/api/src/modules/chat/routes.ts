@@ -21,7 +21,9 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify"
 import { z } from "zod"
 
 import { assertOllamaCloudApiKey } from "@/services/chat/ollama-http"
+import { executeArciinChatTool } from "@/services/chat/arciin-chat-tools"
 import { streamOllamaWithArciinTools } from "@/services/chat/ollama-chat-with-tools"
+import { buildSyntheticReadTextAssetArgsFromUser } from "@/services/chat/read-text-asset-synthetic"
 import { organizeImagesLibrary } from "@/services/chat/organize-images-library"
 import {
   DEFAULT_SCAN_LIMIT,
@@ -51,15 +53,19 @@ const chatSchema = z.object({
 type ChatMessageIn = z.infer<typeof messageSchema>
 
 function messagesTextOnly(messages: ChatMessageIn[]): { role: string; content: string }[] {
-  return messages.map(({ role, content }) => ({ role, content }))
+  return messages
+    .map(({ role, content }) => ({ role, content }))
+    .filter((m) => m.role !== "assistant" || m.content.trim().length > 0)
 }
 
 function messagesForOllama(messages: ChatMessageIn[]): Array<{ role: string; content: string; images?: string[] }> {
-  return messages.map((m) => {
-    if (m.role === "system") return { role: m.role, content: m.content }
-    if (m.images?.length) return { role: m.role, content: m.content, images: m.images }
-    return { role: m.role, content: m.content }
-  })
+  return messages
+    .filter((m) => m.role !== "assistant" || m.content.trim().length > 0)
+    .map((m) => {
+      if (m.role === "system") return { role: m.role, content: m.content }
+      if (m.images?.length) return { role: m.role, content: m.content, images: m.images }
+      return { role: m.role, content: m.content }
+    })
 }
 
 const OLLAMA_PROVIDERS = new Set(["ollama", "ollama-local", "ollama-cloud"])
@@ -915,7 +921,39 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
             },
           })
         } else {
-          const compatMessages = appendSystemInstructions(safeText, systemAppend)
+          let compatAppend = systemAppend
+          if (aiSettings.agent) {
+            const priorUserTexts = messages.filter((m) => m.role === "user").map((m) => m.content)
+            const readArgs = buildSyntheticReadTextAssetArgsFromUser(lastUserText, priorUserTexts)
+            if (readArgs) {
+              const readResult = await executeArciinChatTool(
+                { function: { name: "read_text_asset", arguments: readArgs } },
+                {
+                  prisma: fastify.prisma,
+                  storageRoot: instance?.storageRoot ?? null,
+                  baseUrl,
+                  model,
+                  apiKey: profile.apiKey,
+                  userId: request.auth!.user.id,
+                  libraryToolAccess: security.libraryToolAccess,
+                  publishRealtimeEvent: fastify.publishRealtimeEvent,
+                },
+              )
+              if (typeof readResult.content === "string" && readResult.filename) {
+                compatAppend += `\n\n--- File: ${readResult.filename} (user asked you to read/explain it) ---\n\`\`\`\n${readResult.content}\n\`\`\``
+                if (readResult.truncated) {
+                  compatAppend += "\n(Preview truncated — mention that if relevant.)"
+                }
+              } else if (readResult.error) {
+                const msg =
+                  typeof readResult.message === "string"
+                    ? readResult.message
+                    : JSON.stringify(readResult)
+                compatAppend += `\n\n(File read failed: ${msg})`
+              }
+            }
+          }
+          const compatMessages = appendSystemInstructions(safeText, compatAppend)
           await streamOpenAICompat({ raw, baseUrl, apiKey: profile.apiKey ?? "", model, messages: compatMessages })
         }
       } catch (err) {

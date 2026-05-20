@@ -17,6 +17,7 @@ import {
   extractBracketPseudoToolCalls,
   extractProseLibraryFolderMutations,
 } from "@/services/chat/folder-tool-synthetic"
+import { buildSyntheticReadTextAssetArgsFromUser } from "@/services/chat/read-text-asset-synthetic"
 import { normalizeOllamaCloudModelId } from "@/services/chat/ollama-cloud-models"
 import { formatOllamaProviderError, ollamaAuthHeaders } from "@/services/chat/ollama-http"
 
@@ -74,6 +75,49 @@ type OllamaMessage = {
 }
 
 const MAX_TOOL_ROUNDS = 4
+
+/** Ollama final answer pass uses tools:false — collapse tool history into plain messages. */
+function flattenToolMessagesForFinalAnswer(messages: ChatMsg[]): ChatMsg[] {
+  const out: ChatMsg[] = []
+
+  for (let i = 0; i < messages.length; i++) {
+    const m = messages[i]!
+    if (m.role === "assistant" && m.tool_calls?.length) {
+      const calls = m.tool_calls as Array<{ function?: { name?: string } }>
+      const names = calls
+        .map((c) => c.function?.name)
+        .filter((n): n is string => Boolean(n))
+      const toolPayloads: string[] = []
+      let j = i + 1
+      while (j < messages.length && messages[j]?.role === "tool") {
+        toolPayloads.push(messages[j]!.content)
+        j++
+      }
+      const lead = (m.content ?? "").trim()
+      out.push({
+        role: "assistant",
+        content:
+          lead ||
+          (names.length > 0 ? `[Used tools: ${names.join(", ")}]` : "(tool call)"),
+      })
+      if (toolPayloads.length > 0) {
+        out.push({
+          role: "user",
+          content: `Tool results (use these to answer the user):\n\n${toolPayloads
+            .map((p, idx) => `--- Result ${idx + 1} ---\n${p}`)
+            .join("\n\n")}`,
+        })
+      }
+      i = j - 1
+      continue
+    }
+    if (m.role === "tool") continue
+    const content = (m.content ?? "").trim()
+    out.push({ ...m, content: content || " " })
+  }
+
+  return out
+}
 
 function thinkOption(model: string, isCloud: boolean): boolean | string {
   if (/gpt-oss/i.test(model)) return isCloud ? "low" : "medium"
@@ -213,7 +257,7 @@ async function streamFinalAnswer(
   totalOut: number,
   apiKey?: string | null,
 ): Promise<void> {
-  const answerRes = await ollamaChatOnce(baseUrl, model, messages, {
+  const answerRes = await ollamaChatOnce(baseUrl, model, flattenToolMessagesForFinalAnswer(messages), {
     stream: true,
     tools: false,
     apiKey,
@@ -266,6 +310,22 @@ export async function streamOllamaWithArciinTools(opts: {
   let totalOut = 0
 
   const lastUser = [...messages].reverse().find((m) => m.role === "user")
+  const priorUserTexts = messages.filter((m) => m.role === "user").map((m) => m.content)
+
+  if (lastUser && agentEnabled && !requireApproval) {
+    const readArgs = buildSyntheticReadTextAssetArgsFromUser(lastUser.content, priorUserTexts)
+    if (readArgs) {
+      raw.write(`data: ${JSON.stringify({ libraryAction: "read_text_asset" })}\n\n`)
+      const syntheticCall = {
+        function: { name: "read_text_asset" as const, arguments: readArgs },
+      }
+      const result = await executeArciinChatTool(syntheticCall, toolCtx)
+      messages.push({ role: "assistant", content: " ", tool_calls: [syntheticCall] })
+      messages.push({ role: "tool", content: JSON.stringify(result) })
+      await streamFinalAnswer(raw, baseUrl, model, messages, totalIn, totalOut, apiKey)
+      return
+    }
+  }
 
   if (lastUser && agentEnabled && folderMutationsOk && !requireApproval) {
     const delArgs = buildSyntheticDeleteLibraryFolderArgsFromUser(lastUser.content)
@@ -275,7 +335,7 @@ export async function streamOllamaWithArciinTools(opts: {
         function: { name: "delete_library_folder" as const, arguments: delArgs },
       }
       const result = await executeArciinChatTool(syntheticCall, toolCtx)
-      messages.push({ role: "assistant", content: "", tool_calls: [syntheticCall] })
+      messages.push({ role: "assistant", content: " ", tool_calls: [syntheticCall] })
       messages.push({ role: "tool", content: JSON.stringify(result) })
       await streamFinalAnswer(raw, baseUrl, model, messages, totalIn, totalOut, apiKey)
       return
@@ -287,7 +347,7 @@ export async function streamOllamaWithArciinTools(opts: {
         function: { name: "create_library_folder" as const, arguments: createArgs },
       }
       const result = await executeArciinChatTool(syntheticCall, toolCtx)
-      messages.push({ role: "assistant", content: "", tool_calls: [syntheticCall] })
+      messages.push({ role: "assistant", content: " ", tool_calls: [syntheticCall] })
       messages.push({ role: "tool", content: JSON.stringify(result) })
       await streamFinalAnswer(raw, baseUrl, model, messages, totalIn, totalOut, apiKey)
       return
@@ -310,7 +370,7 @@ export async function streamOllamaWithArciinTools(opts: {
 
     messages.push({
       role: "assistant",
-      content: "",
+      content: " ",
       tool_calls: [syntheticCall],
     })
     messages.push({
@@ -385,7 +445,7 @@ export async function streamOllamaWithArciinTools(opts: {
 
     messages.push({
       role: "assistant",
-      content: collected.content ?? "",
+      content: (collected.content ?? "").trim() || " ",
       tool_calls: toolCalls,
     })
 
