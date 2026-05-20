@@ -33,7 +33,8 @@ export function UploadOverlay() {
                 Drop files to upload
               </p>
               <p className="text-[13px] leading-relaxed text-zinc-600">
-                Arciin will detect the type and place them in the right library.
+                Drop files or a whole folder. Arciin sorts by type and recreates folder
+                structure in the right library (.venv and node_modules are skipped).
               </p>
             </div>
           </motion.div>

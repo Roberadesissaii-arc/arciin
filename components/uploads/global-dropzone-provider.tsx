@@ -10,6 +10,7 @@ import { useUploadOrchestrator } from "@/hooks/use-upload-orchestrator"
 import { checkDuplicates, deleteAsset } from "@/lib/api/assets"
 import { installUploadBatchSubscriber } from "@/lib/uploads/install-upload-batch-subscriber"
 import { nextAvailableFilename, renameFile } from "@/lib/uploads/duplicate-filename"
+import { isLikelyDirectoryPlaceholder } from "@/lib/uploads/skip-upload-path"
 import { useUploadStore } from "@/lib/stores/upload-store"
 import type { DuplicateConflict } from "@/lib/stores/upload-store"
 
@@ -34,12 +35,18 @@ export function GlobalDropzoneProvider({
 
   const handleFiles = useCallback(
     async (files: File[]) => {
-      if (files.length === 0) return
+      const uploadable = files.filter((f) => !isLikelyDirectoryPlaceholder(f))
+      if (uploadable.length === 0) {
+        toast.error(
+          "No files to upload. Drop a folder with files inside, or use Upload folder — empty folders cannot be uploaded.",
+        )
+        return
+      }
       const ctx = contextRef.current
 
       try {
         const result = await checkDuplicates(
-          files.map((f) => f.name),
+          uploadable.map((f) => f.name),
           { libraryId: ctx?.libraryId, folderId: ctx?.folderId ?? null },
         )
         const dupeMap = new Map(result.duplicates.map((d) => [d.filename, d.assetId]))
@@ -47,7 +54,7 @@ export function GlobalDropzoneProvider({
         const clean: File[] = []
         const conflicts: DuplicateConflict[] = []
 
-        for (const file of files) {
+        for (const file of uploadable) {
           const existingId = dupeMap.get(file.name)
           if (existingId) {
             conflicts.push({ file, existingAssetId: existingId, resolution: null })
@@ -70,7 +77,7 @@ export function GlobalDropzoneProvider({
           setPendingConflicts(conflicts)
         }
       } catch {
-        void uploadFiles(files)
+        void uploadFiles(uploadable)
       }
     },
     [uploadFiles, setPendingConflicts],

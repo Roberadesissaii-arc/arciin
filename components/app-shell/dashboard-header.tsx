@@ -29,6 +29,7 @@ export function DashboardHeader() {
   const isMobile = useIsMobile()
   const pathname = usePathname()
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const folderInputRef = useRef<HTMLInputElement>(null)
   const commandOpen = useUiStore((state) => state.commandOpen)
   const setCommandOpen = useUiStore((state) => state.setCommandOpen)
   const connected = useSocketStore((state) => state.connected)
@@ -158,13 +159,43 @@ export function DashboardHeader() {
                   event.currentTarget.value = ""
                 }}
               />
+              <input
+                ref={folderInputRef}
+                type="file"
+                className="hidden"
+                multiple
+                // @ts-expect-error — non-standard directory picker attributes
+                webkitdirectory=""
+                directory=""
+                onChange={(event) => {
+                  const files = Array.from(event.target.files || [])
+                  if (!files.length) {
+                    return
+                  }
+                  window.dispatchEvent(
+                    new CustomEvent("arciin:files-selected", {
+                      detail: files,
+                    })
+                  )
+                  event.currentTarget.value = ""
+                }}
+              />
               <Button
                 size="default"
-                className="h-9 shrink-0 px-4 shadow-none"
+                className="h-9 shrink-0 px-3 shadow-none"
                 onClick={() => fileInputRef.current?.click()}
               >
                 <Upload className="size-4 shrink-0" />
                 <span className="hidden sm:inline">Upload</span>
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="default"
+                className="hidden h-9 shrink-0 px-3 shadow-none sm:inline-flex"
+                onClick={() => folderInputRef.current?.click()}
+              >
+                <span className="text-sm">Folder</span>
               </Button>
             </div>
             <DropdownMenuContent

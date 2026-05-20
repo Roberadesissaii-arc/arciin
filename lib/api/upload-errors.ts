@@ -13,7 +13,9 @@ export function formatUploadFailure(error: unknown): string {
       parts.push("(Server rate limit — Arciin will retry automatically; wait or upload in smaller batches.)")
     }
     if (error.code === "NETWORK_ERROR") {
-      parts.push("(Connection dropped — often too many files at once; retrying may help.)")
+      parts.push(
+        "(Connection dropped — retry, upload fewer files at once, or use Upload folder so Arciin expands the directory.)",
+      )
     }
     if (error.status === 413) {
       parts.push("(File exceeds the server upload size limit.)")

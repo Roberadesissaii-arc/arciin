@@ -2,6 +2,7 @@
 
 import { useEffect } from "react"
 
+import { collectFilesFromDataTransfer } from "@/lib/uploads/collect-drop-files"
 import { useUploadStore } from "@/lib/stores/upload-store"
 
 function hasFileItems(event: DragEvent) {
@@ -12,7 +13,7 @@ function hasFileItems(event: DragEvent) {
  * Global file drag/drop. Uses dragover + drop + dragend so we do not rely on
  * dragenter/dragleave depth (which breaks across nested DOM / portal layers).
  */
-export function useGlobalDropzone(onFiles: (files: File[]) => void) {
+export function useGlobalDropzone(onFiles: (files: File[]) => void | Promise<void>) {
   useEffect(() => {
     const showIfFiles = (event: DragEvent) => {
       if (!hasFileItems(event)) {
@@ -44,11 +45,12 @@ export function useGlobalDropzone(onFiles: (files: File[]) => void) {
       event.preventDefault()
       hideOverlay()
 
-      const files = Array.from(event.dataTransfer?.files || [])
-
-      if (files.length) {
-        onFiles(files)
-      }
+      void (async () => {
+        const files = await collectFilesFromDataTransfer(event.dataTransfer)
+        if (files.length) {
+          await onFiles(files)
+        }
+      })()
     }
 
     const onKeyDown = (event: KeyboardEvent) => {

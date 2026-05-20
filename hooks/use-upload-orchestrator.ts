@@ -2,14 +2,30 @@
 
 import { useCallback } from "react"
 import { useQueryClient } from "@tanstack/react-query"
+import { toast } from "sonner"
+
 import { formatUploadFailure } from "@/lib/api/upload-errors"
+import { getLibraries } from "@/lib/api/libraries"
+import type { LibrarySummary } from "@/lib/types/models"
+import type { PreparedUploadTarget } from "@/lib/uploads/ensure-upload-folder-tree"
 import { uploadFile } from "@/lib/api/uploads"
-import { runWithConcurrency } from "@/lib/uploads/run-with-concurrency"
 import { queryKeys } from "@/lib/api/query-keys"
+import {
+  countFolderUploadRoots,
+  prepareUploadTargets,
+} from "@/lib/uploads/ensure-upload-folder-tree"
+import { runWithConcurrency } from "@/lib/uploads/run-with-concurrency"
+import { resolveUploadTargetForFile } from "@/lib/uploads/resolve-upload-target"
 import { useUploadStore } from "@/lib/stores/upload-store"
 import { createId } from "@/lib/utils/create-id"
-import { resolveUploadTargetForFile } from "@/lib/uploads/resolve-upload-target"
 import { inferDestinationLabel } from "@/lib/utils/media-type"
+
+function uploadConcurrency(fileCount: number): number {
+  if (fileCount > 120) return 1
+  if (fileCount > 50) return 2
+  if (fileCount > 20) return 3
+  return 4
+}
 
 export function useUploadOrchestrator() {
   const queryClient = useQueryClient()
@@ -24,54 +40,85 @@ export function useUploadOrchestrator() {
       if (files.length === 0) return
 
       const batchId = beginUploadBatch(files.length)
-      const concurrency = files.length > 50 ? 2 : files.length > 20 ? 3 : 4
+      const concurrency = uploadConcurrency(files.length)
 
-      await runWithConcurrency(files, concurrency, async (file) => {
-          const id = createId()
+      let libraries: LibrarySummary[] = []
+      try {
+        libraries = await getLibraries()
+      } catch {
+        libraries = []
+      }
+
+      const folderRoots = countFolderUploadRoots(files)
+      if (folderRoots > 0) {
+        toast.info(
+          files.length === 1
+            ? "Preparing folder upload…"
+            : `Preparing folder upload (${files.length} files)…`,
+          { duration: 2500 },
+        )
+      }
+
+      let prepared: PreparedUploadTarget[]
+      try {
+        prepared = await prepareUploadTargets(files, {
+          libraries,
+          contextLibraryId: uploadContext?.libraryId,
+          contextFolderId: uploadContext?.folderId,
+        })
+      } catch {
+        prepared = files.map((file) => ({ file }))
+      }
+
+      await runWithConcurrency(prepared, concurrency, async ({ file, targetLibraryId, targetFolderId }) => {
+        const id = createId()
+        const contextTarget = resolveUploadTargetForFile(file, uploadContext)
+        const libraryId = targetLibraryId ?? contextTarget.targetLibraryId
+        const folderId = targetFolderId ?? contextTarget.targetFolderId
+
+        addOrUpdate({
+          id,
+          fileName: file.name,
+          mimeType: file.type,
+          sizeBytes: file.size,
+          progress: 0,
+          status: "QUEUED",
+          destination: inferDestinationLabel(file.type, file.name),
+          batchId,
+        })
+
+        try {
+          updateStatus(id, "UPLOADING")
+          const result = await uploadFile(file, {
+            onProgress: (progress) => {
+              updateProgress(id, progress)
+            },
+            targetLibraryId: libraryId,
+            targetFolderId: folderId,
+          })
+
+          updateProgress(id, result.progress ?? 100)
+
           addOrUpdate({
             id,
             fileName: file.name,
             mimeType: file.type,
             sizeBytes: file.size,
-            progress: 0,
-            status: "QUEUED",
-            destination: inferDestinationLabel(file.type, file.name),
+            progress: result.progress ?? 100,
+            status: result.status,
+            destination: result.targetLibrary?.name || inferDestinationLabel(file.type, file.name),
+            uploadId: result.id,
             batchId,
           })
 
-          try {
-            updateStatus(id, "UPLOADING")
-            const target = resolveUploadTargetForFile(file, uploadContext)
-            const result = await uploadFile(file, {
-              onProgress: (progress) => {
-                updateProgress(id, progress)
-              },
-              targetLibraryId: target.targetLibraryId,
-              targetFolderId: target.targetFolderId,
-            })
-
-            updateProgress(id, result.progress ?? 100)
-
-            addOrUpdate({
-              id,
-              fileName: file.name,
-              mimeType: file.type,
-              sizeBytes: file.size,
-              progress: result.progress ?? 100,
-              status: result.status,
-              destination: result.targetLibrary?.name || inferDestinationLabel(file.type, file.name),
-              uploadId: result.id,
-              batchId,
-            })
-
-            if (result.status === "READY") {
-              updateStatus(id, "READY")
-            } else if (result.status === "PROCESSING") {
-              updateStatus(id, "PROCESSING")
-            }
-          } catch (error) {
-            updateStatus(id, "FAILED", formatUploadFailure(error))
+          if (result.status === "READY") {
+            updateStatus(id, "READY")
+          } else if (result.status === "PROCESSING") {
+            updateStatus(id, "PROCESSING")
           }
+        } catch (error) {
+          updateStatus(id, "FAILED", formatUploadFailure(error))
+        }
       })
 
       await Promise.all([
@@ -79,8 +126,9 @@ export function useUploadOrchestrator() {
         queryClient.invalidateQueries({ queryKey: queryKeys.assets() }),
         queryClient.invalidateQueries({ queryKey: queryKeys.activity() }),
         queryClient.invalidateQueries({ queryKey: queryKeys.libraries }),
+        queryClient.invalidateQueries({ queryKey: ["folders"] }),
       ])
     },
-    [addOrUpdate, beginUploadBatch, queryClient, updateProgress, updateStatus, uploadContext]
+    [addOrUpdate, beginUploadBatch, queryClient, updateProgress, updateStatus, uploadContext],
   )
 }
