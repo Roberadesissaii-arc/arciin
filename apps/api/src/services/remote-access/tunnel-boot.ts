@@ -57,6 +57,17 @@ async function tryStartTunnel(fastify: FastifyInstance, reason: string): Promise
 
   const existing = getCloudflareTunnelState()
   if (existing.running && existing.url && !existing.stale) {
+    const instance = await fastify.prisma.instanceConfig.findFirst({
+      select: { id: true, publicUrl: true, remoteAccessConfig: true },
+    })
+    const config = readRemoteAccessConfig(instance?.remoteAccessConfig)
+    const stored =
+      (typeof config.mobilePublicUrl === "string" ? config.mobilePublicUrl : null) ??
+      instance?.publicUrl ??
+      null
+    if (stored?.replace(/\/+$/, "") !== existing.url.replace(/\/+$/, "")) {
+      await persistTunnelPublicUrl(fastify, existing.url)
+    }
     fastify.log.info({ url: existing.url }, "Cloudflare tunnel already running")
     return true
   }

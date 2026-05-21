@@ -20,11 +20,13 @@ export function notifyPublicUrlChanged(
   input: { newUrl: string; previousUrl?: string | null },
   queryClient?: QueryClient,
 ) {
-  const newHost = publicUrlHostLabel(input.newUrl)
+  const previous = input.previousUrl?.trim().replace(/\/+$/, "") ?? ""
+  const next = input.newUrl.trim().replace(/\/+$/, "")
+  if (!previous || !next || previous === next) return
+
+  const newHost = publicUrlHostLabel(next)
   const title = "Public URL changed"
-  const message = input.previousUrl
-    ? `Your free Cloudflare tunnel restarted. New address: ${newHost}. Update bookmarks and reopen the mobile app if you are away from home Wi‑Fi.`
-    : `Your public address is now ${newHost}.`
+  const message = `Your free Cloudflare tunnel restarted. New address: ${newHost}. Update bookmarks and reopen the mobile app if you are away from home Wi‑Fi.`
 
   recordInboxNotification({
     title,
@@ -39,4 +41,5 @@ export function notifyPublicUrlChanged(
 
   queryClient?.invalidateQueries({ queryKey: queryKeys.remoteAccessSettings })
   queryClient?.invalidateQueries({ queryKey: queryKeys.cloudflareTunnel })
+  queryClient?.invalidateQueries({ queryKey: queryKeys.activity() })
 }
