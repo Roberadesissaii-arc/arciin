@@ -75,8 +75,9 @@ export function StorageMigratePanel({ usageBytes }: { usageBytes: number }) {
             Move storage to another disk
           </h3>
           <p className="mt-1 max-w-xl text-[12px] leading-relaxed text-muted-foreground">
-            Attached an SSD or USB drive? Copy everything to a new location in one step. Your old
-            folder stays untouched until you delete it yourself.
+            Attached another SSD or USB drive? Pick a volume with different free space than your
+            current disk. To only move out of the app folder on the same disk, use the
+            &quot;Same disk&quot; option below.
           </p>
         </div>
         <Button
@@ -177,9 +178,13 @@ export function StorageMigratePanel({ usageBytes }: { usageBytes: number }) {
                         <p className="mt-0.5 text-[10px] text-muted-foreground">{formatFree(option)}</p>
                       </div>
                     </div>
-                    {option.largeExternal && !isCurrent ? (
+                    {option.sameDiskAsCurrent && !isCurrent ? (
                       <span className="w-fit rounded-md border border-border bg-muted/30 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-                        More space than OS disk
+                        Same disk — different folder
+                      </span>
+                    ) : option.largeExternal && !isCurrent ? (
+                      <span className="w-fit rounded-md border border-border bg-muted/30 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                        Separate drive
                       </span>
                     ) : null}
                   </button>

@@ -8,7 +8,9 @@ import { resolveEffectiveStorageRoot } from "@/services/storage/effective-storag
 import { serializeAuth } from "@/services/serializers"
 import { createSession, hashPassword, requireRole, setSessionCookie } from "@/services/security/auth"
 import {
+  consolidateStorageVolumes,
   discoverStorageVolumes,
+  parseLinuxMounts,
   prepareStoragePathForSetup,
 } from "@/services/storage/discover-storage"
 import {
@@ -85,7 +87,14 @@ export async function registerInstanceRoutes(fastify: FastifyInstance) {
       return
     }
 
-    reply.send({ data: await discoverStorageVolumes() })
+    const discovery = await discoverStorageVolumes()
+    const mounts = await parseLinuxMounts()
+    const volumes = consolidateStorageVolumes(
+      discovery.volumes,
+      mounts,
+      discovery.runtimeDataDir,
+    )
+    reply.send({ data: { ...discovery, volumes } })
   })
 
   fastify.post("/instance/storage-prepare", async (request, reply) => {

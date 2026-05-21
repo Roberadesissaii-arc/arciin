@@ -54,6 +54,11 @@ function emitRealtimeEvent(io: Server, event: RealtimeEvent) {
     emitted = true
   }
 
+  if (event.instanceId) {
+    io.to(`instance:${event.instanceId}`).emit(event.type, event)
+    emitted = true
+  }
+
   if (!emitted) {
     io.emit(event.type, event)
   }

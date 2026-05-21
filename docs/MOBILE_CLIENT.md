@@ -6,7 +6,8 @@ Build a **standalone mobile PWA** that connects to an existing **Arciin server**
 
 | Endpoint | Auth | Purpose |
 |----------|------|---------|
-| `GET /api/mobile/discover` | None | Instance metadata + URLs |
+| `GET /api/mobile/discover` | None | Instance metadata + URLs (incl. `instanceId`, `canonicalPublicUrl`, `lanUrls`) |
+| `GET /api/mobile/server` | Bearer session | Current canonical URLs after tunnel/domain changes |
 | `POST /api/mobile/pair/verify` | None | Validate 6-digit code before login |
 | `POST /api/mobile/pair` | None | Code + email + password → session |
 | `GET /api/settings/mobile-connection` | Admin session | (Web UI only) |
@@ -61,15 +62,25 @@ Use `credentials: "include"` only when same-origin; for cross-origin mobile PWA 
     "service": "arciin",
     "initialized": true,
     "instanceName": "My Homelab",
+    "instanceId": "clx…",
     "version": "0.1.0",
     "webUrl": "http://192.168.4.22:3000",
     "apiBaseUrl": "http://192.168.4.22:4000/api",
     "socketUrl": "http://192.168.4.22:4000",
     "requestOrigin": "http://192.168.4.22:3000",
+    "canonicalPublicUrl": "https://abc.trycloudflare.com",
+    "canonicalApiBaseUrl": "https://abc.trycloudflare.com/api",
+    "lanUrls": ["http://192.168.4.22:3000"],
     "pairingSupported": true
   }
 }
 ```
+
+`canonicalPublicUrl` is the HTTPS tunnel or fixed domain stored on the server (stable across LAN discover calls). Mobile saves `instanceId` + `lanUrls` at pair time and can re-resolve the server after a quick-tunnel URL rotates.
+
+Socket event `instance.urls.updated` is emitted to room `instance:{id}` when a new Cloudflare quick tunnel URL is saved.
+
+When **Cloudflare tunnel mode** is enabled, the API can **auto-start** `cloudflared` on boot (`cloudflareTunnelAutoStart` in remote access settings, default on). Set `ARCIIN_TUNNEL_AUTOSTART=false` in the environment to disable globally.
 
 If `webUrl` is `localhost` but `requestOrigin` is a LAN IP, prefer rewriting URLs to the LAN host for the phone.
 

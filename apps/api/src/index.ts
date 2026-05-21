@@ -2,6 +2,7 @@ import os from "node:os"
 
 import { createServer } from "@/server"
 import { apiConfig } from "@/config"
+import { scheduleCloudflareTunnelBoot } from "@/services/remote-access/tunnel-boot"
 
 function getLanIps(): string[] {
   const interfaces = os.networkInterfaces()
@@ -34,6 +35,7 @@ async function start() {
     }
     server.log.info(`  Public:   ${apiConfig.ARCIIN_PUBLIC_URL}`)
     server.log.info("─────────────────────────────────────────")
+    scheduleCloudflareTunnelBoot(server)
   } catch (error) {
     server.log.error(error)
     process.exit(1)

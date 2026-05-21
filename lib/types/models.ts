@@ -92,6 +92,8 @@ export type StorageVolumeOption = {
   largeExternal: boolean
   /** Present on /settings/storage/volumes — true when Arciin already stores files here. */
   isCurrent?: boolean
+  /** Same block device / mount as the active storage root (different folder only). */
+  sameDiskAsCurrent?: boolean
 }
 
 export type StorageDiscovery = {
@@ -396,6 +398,8 @@ export type RemoteAccessSettings = {
   mode: "local" | "reverse-proxy" | "cloudflare-tunnel"
   reverseProxyEnabled: boolean
   cloudflareTunnelEnabled: boolean
+  /** When true (default), API starts cloudflared on boot if tunnel mode is enabled. */
+  cloudflareTunnelAutoStart?: boolean
 }
 
 export type CloudflareTunnelStatus = {

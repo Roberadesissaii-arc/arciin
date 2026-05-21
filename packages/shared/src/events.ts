@@ -20,6 +20,7 @@ export const SOCKET_EVENT_TYPES = [
   "job.completed",
   "job.failed",
   "activity.created",
+  "instance.urls.updated",
   "plex.connected",
   "plex.sync.started",
   "plex.sync.completed",
@@ -32,6 +33,7 @@ export type RealtimeEvent = {
   id: string
   type: SocketEventType
   userId?: string
+  instanceId?: string
   libraryId?: string
   uploadId?: string
   assetId?: string

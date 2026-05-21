@@ -21,6 +21,8 @@ export type StorageVolumeOption = {
   recommended: boolean
   /** Larger than OS root and good candidate for media */
   largeExternal: boolean
+  isCurrent?: boolean
+  sameDiskAsCurrent?: boolean
 }
 
 export type StorageDiscovery = {
@@ -102,13 +104,13 @@ async function probeMount(mountPoint: string): Promise<{
   }
 }
 
-type ParsedMount = {
+export type ParsedMount = {
   device: string
   mountPoint: string
   filesystem: string
 }
 
-async function parseLinuxMounts(): Promise<ParsedMount[]> {
+export async function parseLinuxMounts(): Promise<ParsedMount[]> {
   try {
     const raw = await readFile("/proc/mounts", "utf8")
     const mounts: ParsedMount[] = []
@@ -127,6 +129,109 @@ async function parseLinuxMounts(): Promise<ParsedMount[]> {
   } catch {
     return []
   }
+}
+
+function mountIdentityKey(mount: ParsedMount): string {
+  return `${mount.device}::${mount.mountPoint}`
+}
+
+/** Longest matching mount from /proc/mounts for a path (real filesystem, not each folder). */
+export function findContainingMount(mounts: ParsedMount[], filePath: string): ParsedMount | null {
+  const resolved = path.resolve(filePath)
+  let best: ParsedMount | null = null
+  let bestLen = -1
+
+  for (const m of mounts) {
+    const mp = m.mountPoint
+    const matches =
+      resolved === mp ||
+      (mp !== "/" && resolved.startsWith(`${mp}/`)) ||
+      (mp === "/" && resolved.startsWith("/"))
+    if (matches && mp.length > bestLen) {
+      best = m
+      bestLen = mp.length
+    }
+  }
+
+  return best
+}
+
+function pickBestRelocateTarget(options: StorageVolumeOption[]): StorageVolumeOption {
+  return [...options].sort((a, b) => {
+    if (a.recommended !== b.recommended) return a.recommended ? -1 : 1
+    if (a.kind === "recommended") return -1
+    if (b.kind === "recommended") return 1
+    if (a.largeExternal !== b.largeExternal) return a.largeExternal ? -1 : 1
+    return (b.availableBytes ?? 0) - (a.availableBytes ?? 0)
+  })[0]!
+}
+
+/**
+ * One entry per physical volume. Keeps the active path plus at most one alternate
+ * folder on the same disk (e.g. repo path vs /srv/arciin-storage/arciin on /).
+ */
+export function consolidateStorageVolumes(
+  volumes: StorageVolumeOption[],
+  mounts: ParsedMount[],
+  effectiveRoot: string,
+): StorageVolumeOption[] {
+  const currentResolved = path.resolve(effectiveRoot)
+  const currentMount = findContainingMount(mounts, currentResolved)
+  const currentMountKey = currentMount
+    ? mountIdentityKey(currentMount)
+    : `path:${currentResolved}`
+
+  const groups = new Map<string, StorageVolumeOption[]>()
+  for (const volume of volumes) {
+    const mount = findContainingMount(mounts, volume.arciinPath)
+    const key = mount ? mountIdentityKey(mount) : `path:${path.resolve(volume.arciinPath)}`
+    const list = groups.get(key) ?? []
+    list.push(volume)
+    groups.set(key, list)
+  }
+
+  const consolidated: StorageVolumeOption[] = []
+
+  for (const [key, group] of groups) {
+    const currentVol =
+      group.find((v) => path.resolve(v.arciinPath) === currentResolved) ?? null
+
+    const others = group.filter((v) => v !== currentVol)
+    if (currentVol) {
+      consolidated.push(currentVol)
+    }
+
+    if (others.length === 0) continue
+
+    const best = pickBestRelocateTarget(others)
+    if (currentVol && path.resolve(best.arciinPath) === path.resolve(currentVol.arciinPath)) {
+      continue
+    }
+
+    const sameDisk = key === currentMountKey
+    consolidated.push({
+      ...best,
+      mountPoint: findContainingMount(mounts, best.arciinPath)?.mountPoint ?? best.mountPoint,
+      device: findContainingMount(mounts, best.arciinPath)?.device ?? best.device,
+      sameDiskAsCurrent: sameDisk,
+      largeExternal: sameDisk ? false : best.largeExternal,
+      label: sameDisk
+        ? best.kind === "recommended"
+          ? "Same disk — recommended folder outside the app"
+          : `Same disk — ${best.arciinPath}`
+        : best.label,
+    })
+  }
+
+  consolidated.sort((a, b) => {
+    if (a.isCurrent) return -1
+    if (b.isCurrent) return 1
+    if (a.recommended !== b.recommended) return a.recommended ? -1 : 1
+    if (a.largeExternal !== b.largeExternal) return a.largeExternal ? -1 : 1
+    return (b.availableBytes ?? 0) - (a.availableBytes ?? 0)
+  })
+
+  return consolidated
 }
 
 function volumeLabel(kind: StorageVolumeOption["kind"], mountPoint: string, filesystem: string | null): string {
@@ -329,7 +434,14 @@ export async function discoverStorageVolumes(): Promise<StorageDiscovery> {
     )
   }
 
-  const largest = volumes.find((v) => v.largeExternal)
+  const mountsForNotes = await parseLinuxMounts()
+  const currentMountForNotes = findContainingMount(mountsForNotes, runtimeDataDir)
+  const largest = volumes.find((v) => {
+    if (!v.largeExternal) return false
+    const m = findContainingMount(mountsForNotes, v.arciinPath)
+    if (!m || !currentMountForNotes) return true
+    return mountIdentityKey(m) !== mountIdentityKey(currentMountForNotes)
+  })
   if (largest && largest.arciinPath !== recommended) {
     installNotes.push(
       `Detected more space on ${largest.mountPoint ?? largest.arciinPath} (${formatBytesShort(largest.availableBytes)} free) — consider using ${largest.arciinPath}.`,

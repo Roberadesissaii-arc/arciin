@@ -35,6 +35,7 @@ import { registerRedis } from "@/plugins/redis"
 import { registerSocket } from "@/plugins/socket"
 import { registerHealthRoutes } from "@/routes/health.routes"
 import { trimOversizedLogFiles } from "@/services/logs/log-files"
+import { registerCloudflareTunnelPersistence } from "@/services/remote-access/tunnel-boot"
 import { repairInstanceStorageRootsIfNeeded } from "@/services/storage/effective-storage-root"
 import { ensureStorageDirectories } from "@/services/storage/local-storage"
 
@@ -66,6 +67,7 @@ export async function createServer() {
   await registerRedis(fastify)
   await registerApiProtection(fastify)
   await registerSocket(fastify)
+  registerCloudflareTunnelPersistence(fastify)
   await ensureStorageDirectories()
 
   const storageRepair = await repairInstanceStorageRootsIfNeeded(fastify.prisma)

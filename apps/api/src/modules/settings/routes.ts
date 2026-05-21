@@ -35,9 +35,13 @@ import {
 } from "@/services/storage/effective-storage-root"
 import {
   annotateStorageVolumes,
+  consolidateStorageVolumes,
   discoverStorageVolumes,
   filterMigrationTargets,
+  parseLinuxMounts,
 } from "@/services/storage/discover-storage"
+import { requestCloudflareTunnelStart } from "@/services/remote-access/tunnel-boot"
+import { readRemoteAccessConfig } from "@/services/remote-access/tunnel-persistence"
 import {
   loadEffectiveStorageRoot,
 } from "@/services/storage/effective-storage-root"
@@ -78,6 +82,7 @@ const remoteAccessSchema = z.object({
   mode: z.enum(["local", "reverse-proxy", "cloudflare-tunnel"]).optional(),
   reverseProxyEnabled: z.boolean().optional(),
   cloudflareTunnelEnabled: z.boolean().optional(),
+  cloudflareTunnelAutoStart: z.boolean().optional(),
 })
 
 const aiSchema = z.object({
@@ -303,27 +308,34 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
     { preHandler: requireRole(["OWNER", "ADMIN"]) },
     async (_request, reply) => {
       const effective = await loadEffectiveStorageRoot(fastify.prisma)
-      const discovery = await discoverStorageVolumes()
       const displayRoot = resolveDisplayStorageRoot(
         (await fastify.prisma.instanceConfig.findFirst())?.storageRoot,
       )
+      const discovery = await discoverStorageVolumes()
+      const mounts = await parseLinuxMounts()
+      const consolidatedVolumes = consolidateStorageVolumes(
+        discovery.volumes,
+        mounts,
+        displayRoot || effective,
+      )
+      const discoveryForClient = { ...discovery, volumes: consolidatedVolumes }
       const volumeCtx = {
         effectiveRoot: effective,
         displayRoot,
-        discovery,
+        discovery: discoveryForClient,
       }
-      const volumes = annotateStorageVolumes(discovery, {
+      const volumes = annotateStorageVolumes(discoveryForClient, {
         effectiveRoot: effective,
         displayRoot,
       })
 
       reply.send({
         data: {
-          ...discovery,
+          ...discoveryForClient,
           volumes,
           currentStorageRoot: displayRoot,
           currentEffectiveRoot: effective,
-          migrationTargets: filterMigrationTargets(discovery, volumeCtx),
+          migrationTargets: filterMigrationTargets(discoveryForClient, volumeCtx),
         },
       })
     },
@@ -446,6 +458,7 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
           mode: (instance?.remoteAccessMode as string) || "local",
           reverseProxyEnabled: Boolean(config.reverseProxyEnabled),
           cloudflareTunnelEnabled: Boolean(config.cloudflareTunnelEnabled),
+          cloudflareTunnelAutoStart: config.cloudflareTunnelAutoStart !== false,
         },
       })
     }
@@ -493,6 +506,10 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
           parsed.data.cloudflareTunnelEnabled !== undefined
             ? parsed.data.cloudflareTunnelEnabled
             : Boolean(prevConfig.cloudflareTunnelEnabled),
+        cloudflareTunnelAutoStart:
+          parsed.data.cloudflareTunnelAutoStart !== undefined
+            ? parsed.data.cloudflareTunnelAutoStart
+            : prevConfig.cloudflareTunnelAutoStart !== false,
       }
       const nextMode =
         parsed.data.mode !== undefined
@@ -534,8 +551,13 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
           mode: updated.remoteAccessMode || "local",
           reverseProxyEnabled: Boolean(nextConfig.reverseProxyEnabled),
           cloudflareTunnelEnabled: Boolean(nextConfig.cloudflareTunnelEnabled),
+          cloudflareTunnelAutoStart: nextConfig.cloudflareTunnelAutoStart !== false,
         },
       })
+
+      if (nextConfig.cloudflareTunnelEnabled && nextConfig.cloudflareTunnelAutoStart !== false) {
+        requestCloudflareTunnelStart(fastify)
+      }
     }
   )
 
@@ -577,19 +599,6 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
 
       try {
         const url = await startCloudflareQuickTunnel(localTarget)
-        const prevConfig = (instance.remoteAccessConfig as Record<string, unknown> | null) || {}
-        await fastify.prisma.instanceConfig.update({
-          where: { id: instance.id },
-          data: {
-            publicUrl: url,
-            remoteAccessMode: "cloudflare-tunnel",
-            remoteAccessConfig: {
-              ...prevConfig,
-              cloudflareTunnelEnabled: true,
-              reverseProxyEnabled: false,
-            },
-          },
-        })
 
         if (request.auth) {
           await fastify.prisma.activityEvent.create({
@@ -639,20 +648,6 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
 
       try {
         const url = await startCloudflareQuickTunnel(localTarget)
-        const prevConfig = (instance.remoteAccessConfig as Record<string, unknown> | null) || {}
-        await fastify.prisma.instanceConfig.update({
-          where: { id: instance.id },
-          data: {
-            publicUrl: url,
-            remoteAccessMode: "cloudflare-tunnel",
-            remoteAccessConfig: {
-              ...prevConfig,
-              mobilePublicUrl: url,
-              cloudflareTunnelEnabled: true,
-              reverseProxyEnabled: false,
-            },
-          },
-        })
 
         reply.send({
           data: {

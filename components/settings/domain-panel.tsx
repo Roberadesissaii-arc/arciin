@@ -32,16 +32,13 @@ export function DomainPanel() {
   })
 
   const updateMutation = useMutation({
-    mutationFn: (publicUrl: string | null) =>
-      updateRemoteAccessSettings({
-        publicUrl,
-      }),
+    mutationFn: (input: Parameters<typeof updateRemoteAccessSettings>[0]) =>
+      updateRemoteAccessSettings(input),
     onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: queryKeys.remoteAccessSettings }),
         queryClient.invalidateQueries({ queryKey: queryKeys.cloudflareTunnel }),
       ])
-      toast.success("Public URL updated.")
     },
     onError: (e: Error) => toast.error(e.message || "Could not save domain."),
   })
@@ -72,6 +69,7 @@ export function DomainPanel() {
   })
 
   const [draft, setDraft] = useState("")
+  const [autoStartTunnel, setAutoStartTunnel] = useState<boolean | null>(null)
   const [initializingUrl, setInitializingUrl] = useState<string | null>(null)
   const initPollRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -81,6 +79,13 @@ export function DomainPanel() {
   const publicHref = /^https?:\/\//i.test(effective) ? effective : null
   const tunnelBusy = startTunnelMutation.isPending || stopTunnelMutation.isPending
   const isInitializing = Boolean(initializingUrl && initializingUrl === publicHref)
+  const effectiveAutoStart = autoStartTunnel ?? data?.cloudflareTunnelAutoStart ?? true
+
+  useEffect(() => {
+    if (data?.cloudflareTunnelAutoStart !== undefined) {
+      setAutoStartTunnel(data.cloudflareTunnelAutoStart)
+    }
+  }, [data?.cloudflareTunnelAutoStart])
 
   useEffect(() => {
     if (!initializingUrl) return
@@ -230,8 +235,11 @@ export function DomainPanel() {
               onClick={async () => {
                 const trimmed = effective
                 try {
-                  await updateMutation.mutateAsync(trimmed === "" ? null : trimmed)
+                  await updateMutation.mutateAsync({
+                    publicUrl: trimmed === "" ? null : trimmed,
+                  })
                   setDraft("")
+                  toast.success("Public URL updated.")
                 } catch (err) {
                   toast.error(err instanceof Error ? err.message : "Could not save domain.")
                 }
@@ -301,7 +309,61 @@ export function DomainPanel() {
             )}
           </p>
 
+          <button
+            type="button"
+            onClick={() => setAutoStartTunnel(!effectiveAutoStart)}
+            className="flex w-full cursor-pointer items-start gap-4 rounded-xl border border-border px-4 py-3.5 text-left transition-colors hover:bg-muted/20"
+          >
+            <div
+              className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-md border-2 transition-colors"
+              style={{
+                borderColor: effectiveAutoStart ? "#FF4F12" : "#d4d4d8",
+                background: effectiveAutoStart ? "#FF4F12" : "transparent",
+              }}
+              aria-hidden
+            >
+              {effectiveAutoStart ? (
+                <svg viewBox="0 0 10 8" className="size-2.5" xmlns="http://www.w3.org/2000/svg">
+                  <path
+                    d="M1 4l2.5 2.5L9 1"
+                    stroke="white"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    fill="none"
+                  />
+                </svg>
+              ) : null}
+            </div>
+            <div>
+              <p className="text-[13px] font-semibold text-foreground">Start tunnel when Arciin starts</p>
+              <p className="mt-0.5 text-[12px] text-muted-foreground">
+                After a reboot, the API brings up a new quick tunnel, saves the URL for the mobile app, and notifies
+                paired phones. Requires Cloudflare tunnel mode under Developer → WebSockets.
+              </p>
+            </div>
+          </button>
+
           <div className="flex flex-wrap gap-2">
+            <Button
+              variant="outline"
+              className="border-border"
+              disabled={updateMutation.isPending || settingsQuery.isLoading}
+              onClick={async () => {
+                try {
+                  await updateMutation.mutateAsync({
+                    cloudflareTunnelEnabled: true,
+                    cloudflareTunnelAutoStart: effectiveAutoStart,
+                    mode: "cloudflare-tunnel",
+                  })
+                  toast.success("Tunnel auto-start preference saved.")
+                } catch (e) {
+                  toast.error(e instanceof Error ? e.message : "Could not save.")
+                }
+              }}
+            >
+              Save auto-start
+            </Button>
             <Button
               className="bg-primary text-white hover:bg-primary/90"
               disabled={tunnelBusy || settingsQuery.isLoading}

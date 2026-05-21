@@ -20,6 +20,19 @@ let tunnelState: CloudflareTunnelState = {
   stale: false,
 }
 
+let suppressAutoRestart = false
+
+type TunnelLifecycleHooks = {
+  onPublicUrl?: (publicUrl: string) => Promise<void>
+  onProcessExit?: () => void
+}
+
+let lifecycleHooks: TunnelLifecycleHooks = {}
+
+export function setTunnelLifecycleHooks(hooks: TunnelLifecycleHooks) {
+  lifecycleHooks = hooks
+}
+
 function isProcessAlive(child: ChildProcess | null): boolean {
   if (!child) return false
   return child.exitCode === null && !child.killed
@@ -46,6 +59,7 @@ export function getCloudflareTunnelState(): CloudflareTunnelState {
 }
 
 export function stopCloudflareQuickTunnel() {
+  suppressAutoRestart = true
   if (tunnelProcess) {
     tunnelProcess.kill("SIGTERM")
     tunnelProcess = null
@@ -136,6 +150,14 @@ async function finalizeTunnelStart(publicUrl: string, localTarget: string): Prom
     stale: false,
   }
 
+  if (lifecycleHooks.onPublicUrl) {
+    try {
+      await lifecycleHooks.onPublicUrl(publicUrl)
+    } catch {
+      /* logged by persistence layer */
+    }
+  }
+
   schedulePublicTunnelProbe(publicUrl)
   return publicUrl
 }
@@ -154,6 +176,7 @@ export function startCloudflareQuickTunnel(localTarget: string): Promise<string>
 
   return new Promise((resolve, reject) => {
     stopCloudflareQuickTunnel()
+    suppressAutoRestart = false
 
     let settled = false
     const finish = (fn: () => void) => {
@@ -228,6 +251,7 @@ export function startCloudflareQuickTunnel(localTarget: string): Promise<string>
           ? `cloudflared exited (code ${code}). Cloudflare unregistered this tunnel (530). Generate a new public URL.`
           : "cloudflared stopped. The previous trycloudflare.com URL no longer works — generate a new one.",
       )
+      lifecycleHooks.onProcessExit?.()
     })
   })
 }

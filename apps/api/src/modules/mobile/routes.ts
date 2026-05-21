@@ -18,7 +18,12 @@ import {
   findValidMobilePairingCode,
   mobilePairingSessionOptions,
 } from "@/services/mobile/mobile-pairing"
-import { resolveMobileServerUrls } from "@/services/mobile/mobile-server-urls"
+import {
+  buildMobileDiscoverPayload,
+  resolveCanonicalPublicServerUrls,
+  resolveMobileServerUrls,
+} from "@/services/mobile/mobile-server-urls"
+import { authenticate } from "@/services/security/auth"
 
 const pairSchema = z.object({
   code: z.string().min(4).max(12),
@@ -40,7 +45,7 @@ async function issueMobileSession(
   deviceLabel: string,
 ) {
   const { session, rawToken } = await createSession(request, user.id, mobilePairingSessionOptions())
-  const urls = await resolveMobileServerUrls(fastify.prisma, request)
+  const payload = await buildMobileDiscoverPayload(fastify.prisma, request)
 
   await fastify.prisma.session.update({
     where: { id: session.id },
@@ -51,26 +56,58 @@ async function issueMobileSession(
     sessionToken: rawToken,
     sessionExpiresAt: session.expiresAt.toISOString(),
     user: serializeUser(user),
-    server: urls,
+    server: payload,
   }
 }
 
 export async function registerMobileRoutes(fastify: FastifyInstance) {
   fastify.get("/mobile/discover", async (request, reply) => {
     const instance = await fastify.prisma.instanceConfig.findFirst()
-    const urls = await resolveMobileServerUrls(fastify.prisma, request)
+    const payload = await buildMobileDiscoverPayload(fastify.prisma, request)
 
     reply.send({
       data: {
         service: MOBILE_DISCOVER_SERVICE_ID,
         initialized: Boolean(instance),
-        instanceName: urls.instanceName,
-        version: urls.version,
-        webUrl: urls.webUrl,
-        apiBaseUrl: urls.apiBaseUrl,
-        socketUrl: urls.socketUrl,
-        requestOrigin: urls.requestOrigin,
+        instanceName: payload.instanceName,
+        version: payload.version,
+        webUrl: payload.webUrl,
+        apiBaseUrl: payload.apiBaseUrl,
+        socketUrl: payload.socketUrl,
+        requestOrigin: payload.requestOrigin,
+        instanceId: payload.instanceId,
+        canonicalPublicUrl: payload.canonicalPublicUrl,
+        canonicalApiBaseUrl: payload.canonicalApiBaseUrl,
+        canonicalSocketUrl: payload.canonicalSocketUrl,
+        lanUrls: payload.lanUrls,
         pairingSupported: true,
+      },
+    })
+  })
+
+  /** Current canonical URLs for an already-paired phone (session Bearer). */
+  fastify.get("/mobile/server", { preHandler: authenticate }, async (request, reply) => {
+    const payload = await buildMobileDiscoverPayload(fastify.prisma, request)
+    const canonical =
+      (await resolveCanonicalPublicServerUrls(fastify.prisma)) ?? {
+        webUrl: payload.webUrl,
+        apiBaseUrl: payload.apiBaseUrl,
+        socketUrl: payload.socketUrl,
+        instanceName: payload.instanceName,
+        version: payload.version,
+        requestOrigin: payload.requestOrigin,
+      }
+
+    reply.send({
+      data: {
+        instanceId: payload.instanceId,
+        instanceName: payload.instanceName,
+        version: payload.version,
+        webUrl: canonical.webUrl,
+        apiBaseUrl: canonical.apiBaseUrl,
+        socketUrl: canonical.socketUrl,
+        lanUrls: payload.lanUrls,
+        requestOrigin: payload.requestOrigin,
       },
     })
   })
