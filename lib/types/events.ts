@@ -34,6 +34,7 @@ export const socketEventTypes = [
   "job.completed",
   "job.failed",
   "activity.created",
+  "instance.urls.updated",
   "plex.connected",
   "plex.sync.started",
   "plex.sync.completed",

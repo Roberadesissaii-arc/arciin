@@ -28,6 +28,7 @@ export async function recordAndBroadcastActivity(
         activityId: row.id,
         entityType: input.entityType,
         entityId: input.entityId,
+        ...(input.metadata ?? {}),
       },
     }),
   )

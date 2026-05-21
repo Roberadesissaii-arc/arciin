@@ -115,6 +115,7 @@ export async function buildMobileDiscoverPayload(
 export async function broadcastInstanceUrlsUpdated(
   fastify: FastifyInstance,
   instanceId: string,
+  options?: { previousPublicUrl?: string | null },
 ) {
   const canonical = await resolveCanonicalPublicServerUrls(fastify.prisma)
   if (!canonical) return
@@ -130,6 +131,7 @@ export async function broadcastInstanceUrlsUpdated(
       socketUrl: canonical.socketUrl,
       instanceName: canonical.instanceName,
       version: canonical.version,
+      previousPublicUrl: options?.previousPublicUrl ?? null,
     },
   }
 

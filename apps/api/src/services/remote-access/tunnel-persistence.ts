@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify"
 
+import { recordAndBroadcastActivity } from "@/services/activity/record-and-broadcast-activity"
 import { broadcastInstanceUrlsUpdated } from "@/services/mobile/mobile-server-urls"
 
 export type RemoteAccessConfigJson = Record<string, unknown>
@@ -31,6 +32,15 @@ export async function persistTunnelPublicUrl(
   if (!instance) return
 
   const prevConfig = readRemoteAccessConfig(instance.remoteAccessConfig)
+  const previousPublicUrl =
+    (typeof prevConfig.mobilePublicUrl === "string"
+      ? prevConfig.mobilePublicUrl
+      : null) ??
+    (instance.publicUrl ? instance.publicUrl : null)
+  const normalizedPrevious = previousPublicUrl?.replace(/\/+$/, "") ?? null
+  const normalizedNew = publicUrl.replace(/\/+$/, "")
+  const urlChanged = Boolean(normalizedPrevious && normalizedPrevious !== normalizedNew)
+
   await fastify.prisma.instanceConfig.update({
     where: { id: instance.id },
     data: {
@@ -46,6 +56,36 @@ export async function persistTunnelPublicUrl(
     },
   })
 
-  await broadcastInstanceUrlsUpdated(fastify, instance.id)
+  if (urlChanged) {
+    const previousHost = (() => {
+      try {
+        return new URL(normalizedPrevious!).hostname
+      } catch {
+        return normalizedPrevious
+      }
+    })()
+    const newHost = (() => {
+      try {
+        return new URL(normalizedNew).hostname
+      } catch {
+        return normalizedNew
+      }
+    })()
+
+    await recordAndBroadcastActivity(fastify, {
+      type: "remote.public_url_changed",
+      title: "Public URL changed",
+      message: `Cloudflare quick tunnel restarted (${previousHost} → ${newHost}). Paired phones reconnect on Wi‑Fi; away from home, open the app to refresh.`,
+      entityType: "remote",
+      metadata: {
+        previousPublicUrl: normalizedPrevious,
+        publicUrl: normalizedNew,
+      },
+    })
+  }
+
+  await broadcastInstanceUrlsUpdated(fastify, instance.id, {
+    previousPublicUrl: urlChanged ? normalizedPrevious : null,
+  })
   fastify.log.info({ publicUrl }, "Cloudflare tunnel URL saved for mobile and remote access")
 }

@@ -8,6 +8,7 @@ import type { Socket } from "socket.io-client"
 import { queryKeys } from "@/lib/api/query-keys"
 import { useSocketStore } from "@/lib/stores/socket-store"
 import { useUploadStore } from "@/lib/stores/upload-store"
+import { notifyPublicUrlChanged } from "@/lib/notifications/notify-public-url-changed"
 import { recordInboxNotification } from "@/lib/notifications/record-inbox-notification"
 import {
   notifyUploadCompleted,
@@ -96,6 +97,20 @@ export function useSocketEvents(socket: Socket | null) {
         })
       }
 
+      if (type === "instance.urls.updated") {
+        const webUrl = String(payload.data?.webUrl || "")
+        const previousPublicUrl =
+          typeof payload.data?.previousPublicUrl === "string"
+            ? payload.data.previousPublicUrl
+            : null
+        if (webUrl) {
+          notifyPublicUrlChanged(
+            { newUrl: webUrl, previousUrl: previousPublicUrl },
+            queryClient,
+          )
+        }
+      }
+
       if (type === "activity.created") {
         const eventType = String(payload.data?.type || "")
         const title = String(
@@ -112,6 +127,8 @@ export function useSocketEvents(socket: Socket | null) {
         // upload.completed / upload.failed are handled on dedicated socket events (with batch suppression).
         if (eventType === "upload.completed" || eventType === "upload.failed") {
           /* no activity toast */
+        } else if (eventType === "remote.public_url_changed") {
+          /* Toast + inbox handled on instance.urls.updated to avoid duplicates */
         } else if (isSecurity && shouldShowSecurityEventsToast()) {
           recordInboxNotification({
             title,
@@ -136,7 +153,8 @@ export function useSocketEvents(socket: Socket | null) {
         type.startsWith("asset.") ||
         type.startsWith("activity.") ||
         type.startsWith("job.") ||
-        type === "thumbnail.created"
+        type === "thumbnail.created" ||
+        type === "instance.urls.updated"
       ) {
         queryClient.invalidateQueries({ queryKey: queryKeys.uploads })
         queryClient.invalidateQueries({ queryKey: queryKeys.activity() })
