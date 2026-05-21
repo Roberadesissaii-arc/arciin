@@ -1,15 +1,15 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState, type ReactNode } from "react"
 import Link from "next/link"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { ArrowRight, Cloud, ExternalLink, Link2, Loader2 } from "lucide-react"
+import { Check, Cloud, Copy, ExternalLink, Globe, Link2, Loader2 } from "lucide-react"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Field, FieldDescription, FieldLabel } from "@/components/ui/field"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
+import { Skeleton } from "@/components/ui/skeleton"
 import {
   getCloudflareTunnelStatus,
   getRemoteAccessSettings,
@@ -18,6 +18,58 @@ import {
   updateRemoteAccessSettings,
 } from "@/lib/api/settings"
 import { queryKeys } from "@/lib/api/query-keys"
+import { cn } from "@/lib/utils"
+
+function copyText(value: string, label: string) {
+  void navigator.clipboard.writeText(value).then(
+    () => toast.success(`${label} copied.`),
+    () => toast.error("Could not copy."),
+  )
+}
+
+function UrlChip({
+  label,
+  value,
+  onCopy,
+}: {
+  label: string
+  value: string
+  onCopy: () => void
+}) {
+  return (
+    <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/15 px-3 py-2">
+      <div className="min-w-0 flex-1">
+        <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">{label}</p>
+        <p className="truncate font-mono text-[12px] text-foreground">{value}</p>
+      </div>
+      <Button type="button" variant="ghost" size="icon-sm" className="shrink-0" onClick={onCopy}>
+        <Copy className="size-3.5" />
+        <span className="sr-only">Copy {label}</span>
+      </Button>
+    </div>
+  )
+}
+
+function StatusPill({
+  tone,
+  children,
+}: {
+  tone: "ok" | "warn" | "off"
+  children: ReactNode
+}) {
+  return (
+    <span
+      className={cn(
+        "rounded-md px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
+        tone === "ok" && "bg-emerald-500/10 text-emerald-600",
+        tone === "warn" && "bg-amber-500/10 text-amber-700",
+        tone === "off" && "bg-muted text-muted-foreground",
+      )}
+    >
+      {children}
+    </span>
+  )
+}
 
 export function DomainPanel() {
   const queryClient = useQueryClient()
@@ -40,7 +92,7 @@ export function DomainPanel() {
         queryClient.invalidateQueries({ queryKey: queryKeys.cloudflareTunnel }),
       ])
     },
-    onError: (e: Error) => toast.error(e.message || "Could not save domain."),
+    onError: (e: Error) => toast.error(e.message || "Could not save."),
   })
 
   const startTunnelMutation = useMutation({
@@ -53,17 +105,17 @@ export function DomainPanel() {
       if (data.url) {
         setDraft(data.url)
         setInitializingUrl(data.url)
-        toast.success("Tunnel started — open the public URL in a new tab to sign in there if needed.")
+        toast.success("Public URL ready.")
       }
     },
-    onError: (e: Error) => toast.error(e.message || "Could not start Cloudflare tunnel."),
+    onError: (e: Error) => toast.error(e.message || "Could not start tunnel."),
   })
 
   const stopTunnelMutation = useMutation({
     mutationFn: stopCloudflareTunnel,
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: queryKeys.cloudflareTunnel })
-      toast.success("Cloudflare tunnel stopped.")
+      toast.success("Tunnel stopped.")
     },
     onError: (e: Error) => toast.error(e.message || "Could not stop tunnel."),
   })
@@ -80,6 +132,19 @@ export function DomainPanel() {
   const tunnelBusy = startTunnelMutation.isPending || stopTunnelMutation.isPending
   const isInitializing = Boolean(initializingUrl && initializingUrl === publicHref)
   const effectiveAutoStart = autoStartTunnel ?? data?.cloudflareTunnelAutoStart ?? true
+
+  const lanUrls =
+    data?.lanUrls?.length
+      ? data.lanUrls
+      : [data?.primaryLanUrl, data?.localUrl].filter((u): u is string => Boolean(u))
+
+  const tunnelTone: "ok" | "warn" | "off" = tunnel?.running
+    ? tunnel.stale
+      ? "warn"
+      : "ok"
+    : tunnel?.stale
+      ? "warn"
+      : "off"
 
   useEffect(() => {
     if (data?.cloudflareTunnelAutoStart !== undefined) {
@@ -99,300 +164,205 @@ export function DomainPanel() {
         return
       }
       try {
-        const tunnel = await getCloudflareTunnelStatus()
-        if (tunnel.running && tunnel.url === initializingUrl) {
+        const t = await getCloudflareTunnelStatus()
+        if (t.running && t.url === initializingUrl) {
           if (!cancelled) setInitializingUrl(null)
           return
         }
       } catch {
-        // keep polling
+        /* retry */
       }
       if (!cancelled) initPollRef.current = setTimeout(poll, 5000)
     }
 
     initPollRef.current = setTimeout(poll, 4000)
-
     return () => {
       cancelled = true
       if (initPollRef.current) clearTimeout(initPollRef.current)
     }
   }, [initializingUrl])
 
+  async function saveAutoStart(enabled: boolean) {
+    setAutoStartTunnel(enabled)
+    await updateMutation.mutateAsync({
+      cloudflareTunnelEnabled: true,
+      cloudflareTunnelAutoStart: enabled,
+      mode: "cloudflare-tunnel",
+    })
+    toast.success(enabled ? "Tunnel will start with Arciin." : "Boot auto-start off.")
+  }
+
+  if (settingsQuery.isLoading) {
+    return (
+      <div className="space-y-4">
+        <Skeleton className="h-48 w-full rounded-2xl" />
+        <Skeleton className="h-40 w-full rounded-2xl" />
+      </div>
+    )
+  }
+
   return (
-    <div className="space-y-6">
-      <Card className="border-border bg-card">
-        <CardHeader className="space-y-0 text-left">
-          <div className="flex items-start gap-3 pr-2">
-            <Link2 className="mt-0.5 size-5 shrink-0 text-primary" aria-hidden />
-            <div className="min-w-0 flex-1 space-y-1.5">
-              <CardTitle className="text-left text-foreground">Domain</CardTitle>
-              <CardDescription className="text-left text-zinc-600">
-                <strong className="text-foreground">Local</strong> is this machine or LAN only.{" "}
-                <strong className="text-foreground">Public</strong> is the HTTPS URL Arciin uses for links and
-                callbacks—your own hostname or a Cloudflare quick tunnel (
-                <code className="text-foreground">trycloudflare.com</code>). While browsing on a LAN IP, keep using
-                that address in the browser; use the public URL in a separate tab when testing from outside.
-              </CardDescription>
-            </div>
+    <div className="space-y-4">
+      <section className="overflow-hidden rounded-2xl border border-border bg-card">
+        <div className="flex items-start gap-3 border-b border-border px-4 py-4 sm:px-5">
+          <div className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-border bg-muted/25">
+            <Globe className="size-5 text-primary" />
           </div>
-        </CardHeader>
-        <CardContent className="space-y-5">
-          {data && (
-            <div className="space-y-4">
-              <Field>
-                <FieldLabel htmlFor="domain-loopback-url">On this machine (loopback)</FieldLabel>
-                <FieldDescription>Open Arciin in a browser on the server itself.</FieldDescription>
-                <Input
-                  id="domain-loopback-url"
-                  readOnly
-                  value={data.loopbackUrl ?? "http://127.0.0.1:3000"}
-                  className="font-mono text-muted-foreground"
-                  tabIndex={-1}
-                />
-              </Field>
-              {(
-                data.lanUrls?.length
-                  ? data.lanUrls
-                  : [data.primaryLanUrl, data.localUrl].filter((u): u is string => Boolean(u))
-              ).map((lanUrl, index, list) => (
-                  <Field key={lanUrl}>
-                    <FieldLabel htmlFor={`domain-lan-url-${index}`}>
-                      On your network (LAN){list.length > 1 ? ` — ${index + 1}` : ""}
-                    </FieldLabel>
-                    <FieldDescription>
-                      {index === 0
-                        ? "Use from phones and other devices on the same Wi‑Fi."
-                        : "Additional address on this server (if listed)."}
-                    </FieldDescription>
-                    <Input
-                      id={`domain-lan-url-${index}`}
-                      readOnly
-                      value={lanUrl}
-                      className="font-mono text-muted-foreground"
-                      tabIndex={-1}
-                    />
-                  </Field>
-                ),
-              )}
-            </div>
-          )}
-
-          <Field>
-            <FieldLabel htmlFor="domain-public-url">Public base URL</FieldLabel>
-            <FieldDescription>
-              Paste a URL manually or generate one with Cloudflare below. WebSocket ingress options are in{" "}
-              <Link href="/developer/web-sockets" className="font-medium text-primary hover:underline">
-                Developer → WebSockets
-              </Link>
-              .
-            </FieldDescription>
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-              <Input
-                id="domain-public-url"
-                value={effective}
-                placeholder="https://xxxx.trycloudflare.com or https://arciin.example.com"
-                onChange={(e) => setDraft(e.target.value)}
-                disabled={settingsQuery.isLoading}
-                className="min-w-0 flex-1 font-mono"
-              />
-              {publicHref ? (
-                isInitializing ? (
-                  <Button variant="outline" disabled className="shrink-0 border-border">
-                    <Loader2 className="mr-2 size-3.5 animate-spin" aria-hidden />
-                    Initializing…
-                  </Button>
-                ) : (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="shrink-0 border-border"
-                    onClick={() => {
-                      window.open(publicHref, "_blank", "noopener,noreferrer")
-                    }}
-                  >
-                    Open
-                    <ExternalLink className="ml-2 size-3.5 opacity-80" aria-hidden />
-                  </Button>
-                )
-              ) : null}
-            </div>
-            {isInitializing && (
-              <p className="text-[12px] text-amber-600">
-                Tunnel is starting — this takes about 30–60 seconds. The Open button will activate once the URL is reachable.
-              </p>
-            )}
-            {publicHref && !isInitializing ? (
-              <p className="text-[12px] text-muted-foreground">
-                Opens your public Arciin URL in a new tab. You may need to sign in again on that address — sessions are tied to the hostname.
-              </p>
-            ) : null}
-          </Field>
-
-          <div className="flex flex-wrap gap-2">
-            <Button
-              className="bg-primary text-white hover:bg-primary/90"
-              disabled={updateMutation.isPending || settingsQuery.isLoading}
-              onClick={async () => {
-                const trimmed = effective
-                try {
-                  await updateMutation.mutateAsync({
-                    publicUrl: trimmed === "" ? null : trimmed,
-                  })
-                  setDraft("")
-                  toast.success("Public URL updated.")
-                } catch (err) {
-                  toast.error(err instanceof Error ? err.message : "Could not save domain.")
-                }
-              }}
-            >
-              {updateMutation.isPending ? "Saving…" : "Save public URL"}
-            </Button>
-            <Button variant="outline" asChild className="border-border">
-              <Link href="/developer/web-sockets" className="gap-1">
-                WebSockets playbook
-                <ArrowRight className="size-3.5" aria-hidden />
-              </Link>
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card className="border-border bg-card">
-        <CardHeader className="space-y-0 text-left">
-          <div className="flex items-start gap-3 pr-2">
-            <Cloud className="mt-0.5 size-5 shrink-0 text-primary" aria-hidden />
-            <div className="min-w-0 flex-1 space-y-1.5">
-              <CardTitle className="text-left text-foreground">Cloudflare quick tunnel</CardTitle>
-              <CardDescription className="text-left text-zinc-600">
-                Runs <code className="text-foreground">cloudflared</code> on this server and publishes a random{" "}
-                <code className="text-foreground">trycloudflare.com</code> URL. Quick tunnels are{" "}
-                <strong className="text-foreground">temporary</strong> (often a few hours) — when they expire,
-                Cloudflare shows <strong className="text-foreground">530</strong> (“origin unregistered”). Generate a
-                new URL or use your own domain for something permanent.
-              </CardDescription>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {tunnel?.stale || tunnel?.error ? (
-            <p
-              className={
-                tunnel.running && !tunnel.stale
-                  ? "rounded-xl border border-sky-500/30 bg-sky-500/10 px-4 py-3 text-[13px] leading-relaxed text-sky-900"
-                  : "rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-[13px] leading-relaxed text-amber-900"
-              }
-              role="status"
-            >
-              {tunnel.error ??
-                "This quick tunnel is no longer active. The saved public URL will fail with Cloudflare 530 until you generate a new one."}
+          <div className="min-w-0 flex-1">
+            <h2 className="text-base font-semibold text-foreground">Addresses</h2>
+            <p className="mt-0.5 text-[12px] text-muted-foreground">
+              LAN for devices on your network · public URL for phones away from home
             </p>
-          ) : null}
-          <p className="text-sm text-muted-foreground">
-            {tunnel?.running ? (
-              <>
-                <span className="font-medium text-emerald-700">Tunnel running.</span> The URL is in{" "}
-                <span className="font-medium text-foreground">Public base URL</span> above—use Open to visit it.
-                {tunnel.localTarget ? (
-                  <>
-                    {" "}
-                    Forwards to{" "}
-                    <code className="text-foreground">{tunnel.localTarget}</code> (web UI).
-                  </>
-                ) : null}
-              </>
-            ) : (
-              <>
-                Generate a temporary public URL without opening firewall ports. The URL is written into{" "}
-                <span className="font-medium text-foreground">Public base URL</span> and changes each time you start a
-                new quick tunnel.
-              </>
-            )}
-          </p>
+          </div>
+        </div>
 
-          <button
-            type="button"
-            onClick={() => setAutoStartTunnel(!effectiveAutoStart)}
-            className="flex w-full cursor-pointer items-start gap-4 rounded-xl border border-border px-4 py-3.5 text-left transition-colors hover:bg-muted/20"
-          >
-            <div
-              className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-md border-2 transition-colors"
-              style={{
-                borderColor: effectiveAutoStart ? "#FF4F12" : "#d4d4d8",
-                background: effectiveAutoStart ? "#FF4F12" : "transparent",
+        <div className="space-y-2 px-4 py-4 sm:px-5">
+          {data?.loopbackUrl ? (
+            <UrlChip
+              label="This machine"
+              value={data.loopbackUrl}
+              onCopy={() => copyText(data.loopbackUrl!, "Loopback URL")}
+            />
+          ) : null}
+          {lanUrls.map((url, i) => (
+            <UrlChip
+              key={url}
+              label={lanUrls.length > 1 ? `LAN ${i + 1}` : "LAN"}
+              value={url}
+              onCopy={() => copyText(url, "LAN URL")}
+            />
+          ))}
+        </div>
+
+        <div className="border-t border-border px-4 py-4 sm:px-5">
+          <label htmlFor="domain-public-url" className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+            Public URL
+          </label>
+          <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+            <Input
+              id="domain-public-url"
+              value={effective}
+              placeholder="https://….trycloudflare.com"
+              onChange={(e) => setDraft(e.target.value)}
+              className="min-w-0 flex-1 font-mono text-[13px]"
+            />
+            {publicHref && !isInitializing ? (
+              <Button
+                type="button"
+                variant="outline"
+                className="shrink-0"
+                onClick={() => window.open(publicHref, "_blank", "noopener,noreferrer")}
+              >
+                Open
+                <ExternalLink className="size-3.5 opacity-70" />
+              </Button>
+            ) : null}
+            {isInitializing ? (
+              <Button variant="outline" disabled className="shrink-0">
+                <Loader2 className="size-3.5 animate-spin" />
+                Starting…
+              </Button>
+            ) : null}
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button
+              size="sm"
+              className="bg-primary text-primary-foreground hover:bg-primary/90"
+              disabled={updateMutation.isPending}
+              onClick={async () => {
+                await updateMutation.mutateAsync({
+                  publicUrl: effective === "" ? null : effective,
+                })
+                setDraft("")
+                toast.success("Saved.")
               }}
-              aria-hidden
             >
-              {effectiveAutoStart ? (
-                <svg viewBox="0 0 10 8" className="size-2.5" xmlns="http://www.w3.org/2000/svg">
-                  <path
-                    d="M1 4l2.5 2.5L9 1"
-                    stroke="white"
-                    strokeWidth="1.5"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    fill="none"
-                  />
-                </svg>
-              ) : null}
+              {updateMutation.isPending ? "Saving…" : "Save"}
+            </Button>
+            <Button size="sm" variant="outline" asChild>
+              <Link href="/developer/web-sockets">WebSockets</Link>
+            </Button>
+          </div>
+        </div>
+      </section>
+
+      <section className="overflow-hidden rounded-2xl border border-border bg-card">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-4 sm:px-5">
+          <div className="flex items-center gap-3">
+            <div className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-border bg-muted/25">
+              <Cloud className="size-5 text-muted-foreground" />
             </div>
             <div>
-              <p className="text-[13px] font-semibold text-foreground">Start tunnel when Arciin starts</p>
-              <p className="mt-0.5 text-[12px] text-muted-foreground">
-                After a reboot, the API brings up a new quick tunnel, saves the URL for the mobile app, and notifies
-                paired phones. Requires Cloudflare tunnel mode under Developer → WebSockets.
-              </p>
+              <h2 className="text-base font-semibold text-foreground">Quick tunnel</h2>
+              <p className="text-[12px] text-muted-foreground">trycloudflare.com · new URL each start</p>
             </div>
-          </button>
+          </div>
+          <StatusPill tone={tunnelTone}>
+            {tunnel?.running ? (tunnel.stale ? "Starting" : "Live") : tunnel?.stale ? "Expired" : "Off"}
+          </StatusPill>
+        </div>
+
+        <div className="space-y-4 px-4 py-4 sm:px-5">
+          {tunnel?.error && (tunnel.stale || !tunnel.running) ? (
+            <p className="rounded-lg border border-amber-500/25 bg-amber-500/5 px-3 py-2 text-[12px] text-amber-800 dark:text-amber-200">
+              {tunnel.error}
+            </p>
+          ) : null}
+
+          <label className="flex cursor-pointer items-center gap-3 rounded-lg border border-border px-3 py-2.5 hover:bg-muted/15">
+            <Checkbox
+              checked={effectiveAutoStart}
+              onCheckedChange={(v) => void saveAutoStart(v === true)}
+              disabled={updateMutation.isPending}
+            />
+            <span className="text-[13px] text-foreground">Start tunnel when Arciin starts</span>
+          </label>
 
           <div className="flex flex-wrap gap-2">
             <Button
-              variant="outline"
-              className="border-border"
-              disabled={updateMutation.isPending || settingsQuery.isLoading}
-              onClick={async () => {
-                try {
-                  await updateMutation.mutateAsync({
-                    cloudflareTunnelEnabled: true,
-                    cloudflareTunnelAutoStart: effectiveAutoStart,
-                    mode: "cloudflare-tunnel",
-                  })
-                  toast.success("Tunnel auto-start preference saved.")
-                } catch (e) {
-                  toast.error(e instanceof Error ? e.message : "Could not save.")
-                }
-              }}
-            >
-              Save auto-start
-            </Button>
-            <Button
-              className="bg-primary text-white hover:bg-primary/90"
-              disabled={tunnelBusy || settingsQuery.isLoading}
+              size="sm"
+              className="bg-primary text-primary-foreground hover:bg-primary/90"
+              disabled={tunnelBusy}
               onClick={() => startTunnelMutation.mutate()}
             >
               {startTunnelMutation.isPending ? (
                 <>
-                  <Loader2 className="mr-2 size-4 animate-spin" />
-                  Starting tunnel…
+                  <Loader2 className="size-3.5 animate-spin" />
+                  Starting…
                 </>
               ) : (
-                "Generate public URL"
+                <>
+                  <Link2 className="size-3.5" />
+                  Generate URL
+                </>
               )}
             </Button>
             <Button
+              size="sm"
               variant="outline"
-              className="border-border"
               disabled={tunnelBusy || !tunnel?.running}
               onClick={() => stopTunnelMutation.mutate()}
             >
-              {stopTunnelMutation.isPending ? "Stopping…" : "Stop tunnel"}
+              Stop
             </Button>
           </div>
 
           {data?.cloudflareTunnelEnabled ? (
-            <p className="text-xs text-muted-foreground">Cloudflare tunnel mode is enabled for this instance.</p>
-          ) : null}
-        </CardContent>
-      </Card>
+            <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+              <Check className="size-3 text-emerald-600" />
+              Tunnel mode on · paired phones get URL updates automatically
+            </p>
+          ) : (
+            <p className="text-[11px] text-muted-foreground">
+              Enable{" "}
+              <Link href="/developer/web-sockets" className="text-primary hover:underline">
+                Cloudflare tunnel mode
+              </Link>{" "}
+              under WebSockets.
+            </p>
+          )}
+        </div>
+      </section>
     </div>
   )
 }
