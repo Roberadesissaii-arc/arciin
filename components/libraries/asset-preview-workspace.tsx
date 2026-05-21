@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useSyncExternalStore, useState } from "react"
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react"
 import { createPortal } from "react-dom"
 import {
   ChevronLeft,
@@ -22,6 +22,7 @@ import { formatBytes } from "@/lib/utils/format-bytes"
 import type { AssetSummary } from "@/lib/types/models"
 
 const INLINE_DOWNLOAD = "?inline=1"
+const WORKSPACE_HOST_ID = "arciin-dashboard-workspace-host"
 
 function isPdfAsset(asset: AssetSummary) {
   return assetSupportsDocumentThumbnail(
@@ -127,6 +128,7 @@ export function AssetPreviewWorkspace({
 }: AssetPreviewWorkspaceProps) {
   const [pdfPage, setPdfPage] = useState(1)
   const [pdfTotal, setPdfTotal] = useState(0)
+
   const mounted = useSyncExternalStore(
     () => () => {},
     () => true,
@@ -150,15 +152,18 @@ export function AssetPreviewWorkspace({
     [assets.length, onNavigate],
   )
 
+  const portalHost =
+    embedded && mounted
+      ? document.getElementById(WORKSPACE_HOST_ID)
+      : null
+
   useEffect(() => {
-    if (!embedded) {
-      const prev = document.documentElement.style.overflow
-      document.documentElement.style.overflow = "hidden"
-      return () => {
-        document.documentElement.style.overflow = prev
-      }
+    const prev = document.documentElement.style.overflow
+    document.documentElement.style.overflow = "hidden"
+    return () => {
+      document.documentElement.style.overflow = prev
     }
-  }, [embedded])
+  }, [])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -177,42 +182,43 @@ export function AssetPreviewWorkspace({
   const shell = (
     <div
       className={cn(
-        "flex flex-col overflow-hidden bg-background",
-        embedded
-          ? "mb-4 min-h-[min(58vh,560px)] w-full rounded-2xl border border-border shadow-lg ring-1 ring-zinc-200/50"
-          : "fixed inset-0 z-[200]",
+        "pointer-events-auto flex flex-col overflow-hidden bg-zinc-950",
+        embedded ? "absolute inset-0 z-[60]" : "fixed inset-0 z-[200]",
       )}
       role="region"
       aria-label="File preview"
     >
-      <header className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2 sm:px-4">
+      <header className="flex shrink-0 items-center gap-2 border-b border-zinc-800 bg-zinc-950 px-3 py-2.5 text-white sm:px-4">
         <Button
           type="button"
           variant="ghost"
           size="icon"
-          className="shrink-0"
+          className="shrink-0 text-zinc-300 hover:bg-zinc-800 hover:text-white"
           onClick={onClose}
           aria-label="Close preview"
         >
           <X className="size-5" />
         </Button>
         <div className="min-w-0 flex-1 text-center">
-          <p className="truncate text-sm font-semibold text-foreground">{title}</p>
-          <p className="text-xs text-muted-foreground">
+          <p className="truncate text-sm font-semibold text-white">{title}</p>
+          <p className="text-xs text-zinc-400">
             {formatBytes(asset.sizeBytes)}
-            {assets.length > 1 ? ` · ${index + 1} / ${assets.length}` : ""}
+            {isPdf && pdfTotal > 0 ? ` · Page ${pdfPage} / ${pdfTotal}` : null}
+            {assets.length > 1 ? ` · File ${index + 1} / ${assets.length}` : null}
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-1">
           {canAskAi ? (
             <Button
               type="button"
-              variant={aiOpen ? "default" : "outline"}
               size="sm"
               className={cn(
-                "hidden gap-1.5 sm:flex",
-                aiOpen && "bg-[#ff4f12] text-white hover:bg-[#ff6a33]",
+                "hidden gap-1.5 sm:inline-flex",
+                aiOpen
+                  ? "bg-[#ff4f12] text-white hover:bg-[#ff6a33]"
+                  : "border-zinc-700 bg-zinc-900 text-zinc-200 hover:bg-zinc-800",
               )}
+              variant={aiOpen ? "default" : "outline"}
               onClick={() => onAiOpenChange(!aiOpen)}
             >
               <Sparkles className="size-3.5" />
@@ -224,6 +230,7 @@ export function AssetPreviewWorkspace({
               type="button"
               variant="outline"
               size="icon"
+              className="border-zinc-700 bg-zinc-900 text-zinc-200 hover:bg-zinc-800"
               onClick={onExpand}
               aria-label="Expand to full screen"
             >
@@ -234,13 +241,19 @@ export function AssetPreviewWorkspace({
               type="button"
               variant="outline"
               size="icon"
+              className="border-zinc-700 bg-zinc-900 text-zinc-200 hover:bg-zinc-800"
               onClick={onShrink}
-              aria-label="Dock in page"
+              aria-label="Dock in dashboard"
             >
               <Minimize2 className="size-4" />
             </Button>
           )}
-          <Button asChild variant="outline" size="icon">
+          <Button
+            asChild
+            variant="outline"
+            size="icon"
+            className="border-zinc-700 bg-zinc-900 text-zinc-200 hover:bg-zinc-800"
+          >
             <a href={`/api/assets/${asset.id}/download`} download aria-label="Download file">
               <Download className="size-4" />
             </a>
@@ -289,18 +302,18 @@ export function AssetPreviewWorkspace({
             asset={asset}
             pdfPage={isPdf ? pdfPage : undefined}
             onClose={() => onAiOpenChange(false)}
-            className="hidden w-[min(100%,380px)] md:flex"
+            className="hidden h-full w-[min(100%,420px)] shrink-0 lg:flex"
           />
         ) : null}
       </div>
 
       {aiOpen && canAskAi ? (
-        <div className="flex max-h-[45vh] min-h-[240px] border-t border-zinc-800 md:hidden">
+        <div className="flex max-h-[42vh] min-h-[220px] border-t border-zinc-800 lg:hidden">
           <AssetAiSidePanel
             asset={asset}
             pdfPage={isPdf ? pdfPage : undefined}
             onClose={() => onAiOpenChange(false)}
-            className="max-w-none flex-1"
+            className="h-full max-w-none flex-1"
           />
         </div>
       ) : null}
@@ -308,6 +321,7 @@ export function AssetPreviewWorkspace({
   )
 
   if (!mounted) return null
-  if (embedded) return shell
-  return createPortal(shell, document.body)
+  if (embedded && portalHost) return createPortal(shell, portalHost)
+  if (!embedded) return createPortal(shell, document.body)
+  return null
 }

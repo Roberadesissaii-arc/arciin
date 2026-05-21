@@ -30,7 +30,12 @@ export function DashboardShell({
           <SidebarInset className="relative dashboard-main flex min-h-0 flex-1 flex-col overflow-hidden bg-background text-foreground md:peer-data-[variant=inset]:!border-border md:peer-data-[variant=inset]:!bg-background md:peer-data-[variant=inset]:!text-foreground md:peer-data-[variant=inset]:!shadow-sm md:peer-data-[variant=inset]:!ring-zinc-200/40 md:peer-data-[variant=inset]:!backdrop-blur-none">
             <DashboardMobileSidebarButton />
             <DashboardHeader />
-            <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-zinc-50/80">
+            <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-zinc-50/80">
+              <div
+                id="arciin-dashboard-workspace-host"
+                className="pointer-events-none absolute inset-0 z-[60]"
+                aria-hidden
+              />
               <DashboardContentArea>{children}</DashboardContentArea>
             </div>
             <UploadOverlay />

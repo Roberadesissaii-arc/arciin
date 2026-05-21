@@ -94,9 +94,8 @@ export function AssetViewerProvider({
 
   return (
     <AssetViewerContext.Provider value={value}>
-      {state.layout === "embedded" ? workspace : null}
       {children}
-      {state.layout === "fullscreen" ? workspace : null}
+      {workspace}
     </AssetViewerContext.Provider>
   )
 }
