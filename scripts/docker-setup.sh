@@ -13,6 +13,8 @@ cd "${ROOT_DIR}"
 source "${ROOT_DIR}/scripts/lib/host-platform.sh"
 # shellcheck source=scripts/lib/storage-defaults.sh
 source "${ROOT_DIR}/scripts/lib/storage-defaults.sh"
+# shellcheck source=scripts/lib/docker-build-context.sh
+source "${ROOT_DIR}/scripts/lib/docker-build-context.sh"
 
 BOLD="\033[1m"
 GREEN="\033[32m"
@@ -137,12 +139,21 @@ SETUP_TOKEN="$(grep '^ARCIIN_SETUP_TOKEN=' "$ENV_FILE" | cut -d= -f2-)"
 PUBLIC_URL="$(grep '^ARCIIN_PUBLIC_URL=' "$ENV_FILE" | cut -d= -f2-)"
 
 # ── Build & start ─────────────────────────────────────────────────────────────
+arciin_docker_warn_repo_media "$ROOT_DIR" "$HOST_DATA"
+
 echo ""
 echo -e "  ${BOLD}Starting Docker stack…${RESET}"
 echo -e "  ${DIM}${COMPOSE} up --build -d${RESET}"
 echo ""
 
 export ARCIIN_HOST_DATA_DIR="$HOST_DATA"
+
+_arciin_docker_build_cleanup() {
+  arciin_docker_restore_repo_media "$ROOT_DIR"
+}
+trap _arciin_docker_build_cleanup EXIT
+arciin_docker_stash_repo_media "$ROOT_DIR" || true
+
 ${COMPOSE} --env-file "$ENV_FILE" up --build -d
 
 echo ""

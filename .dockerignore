@@ -21,23 +21,27 @@ coverage
 /logs
 /logs/**
 
-# ── Arciin runtime storage on disk (repo ROOT only) ───────────────────────────
-# Leading `/` is required. Without it, `libraries` would also exclude
-# `components/libraries/` (React UI) and break `next build` in Docker CI.
-/objects
-/objects/**
-/libraries
-/libraries/**
-/thumbnails
-/thumbnails/**
-/temp
-/temp/**
-/avatars
-/avatars/**
+# ── Arciin runtime storage (never ship media in the image) ─────────────────
+# `data` matches only the repo-root folder named data (entire tree is skipped).
+data
 
-# Dev-only in-repo storage
-/data
-/data/**
+# Blobs and caches anywhere under the clone (safe: no `components/objects` UI).
+**/objects/**
+**/thumbnails/**
+**/temp/**
+**/avatars/**
+
+# Root-only dirs — bare `libraries` would also exclude `components/libraries/`.
+objects
+objects/**
+libraries
+libraries/**
+thumbnails
+thumbnails/**
+temp
+temp/**
+avatars
+avatars/**
 
 # Local PM2 / runtime
 .pm2
