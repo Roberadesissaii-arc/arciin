@@ -121,7 +121,7 @@ export function DomainPanel() {
   })
 
   const [draft, setDraft] = useState("")
-  const [autoStartTunnel, setAutoStartTunnel] = useState<boolean | null>(null)
+  const [autoStartOverride, setAutoStartOverride] = useState<boolean | undefined>(undefined)
   const [initializingUrl, setInitializingUrl] = useState<string | null>(null)
   const initPollRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -131,7 +131,7 @@ export function DomainPanel() {
   const publicHref = /^https?:\/\//i.test(effective) ? effective : null
   const tunnelBusy = startTunnelMutation.isPending || stopTunnelMutation.isPending
   const isInitializing = Boolean(initializingUrl && initializingUrl === publicHref)
-  const effectiveAutoStart = autoStartTunnel ?? data?.cloudflareTunnelAutoStart ?? true
+  const effectiveAutoStart = autoStartOverride ?? data?.cloudflareTunnelAutoStart ?? true
 
   const lanUrls =
     data?.lanUrls?.length
@@ -145,12 +145,6 @@ export function DomainPanel() {
     : tunnel?.stale
       ? "warn"
       : "off"
-
-  useEffect(() => {
-    if (data?.cloudflareTunnelAutoStart !== undefined) {
-      setAutoStartTunnel(data.cloudflareTunnelAutoStart)
-    }
-  }, [data?.cloudflareTunnelAutoStart])
 
   useEffect(() => {
     if (!initializingUrl) return
@@ -183,7 +177,7 @@ export function DomainPanel() {
   }, [initializingUrl])
 
   async function saveAutoStart(enabled: boolean) {
-    setAutoStartTunnel(enabled)
+    setAutoStartOverride(enabled)
     await updateMutation.mutateAsync({
       cloudflareTunnelEnabled: true,
       cloudflareTunnelAutoStart: enabled,

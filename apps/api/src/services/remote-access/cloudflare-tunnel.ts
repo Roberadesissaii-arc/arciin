@@ -251,7 +251,9 @@ export function startCloudflareQuickTunnel(localTarget: string): Promise<string>
           ? `cloudflared exited (code ${code}). Cloudflare unregistered this tunnel (530). Generate a new public URL.`
           : "cloudflared stopped. The previous trycloudflare.com URL no longer works — generate a new one.",
       )
-      lifecycleHooks.onProcessExit?.()
+      if (!suppressAutoRestart) {
+        lifecycleHooks.onProcessExit?.()
+      }
     })
   })
 }
