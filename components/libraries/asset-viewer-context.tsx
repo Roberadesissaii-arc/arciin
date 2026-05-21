@@ -9,9 +9,11 @@ import {
   type ReactNode,
 } from "react"
 
-import { AssetViewerOverlay } from "@/components/libraries/asset-viewer-overlay"
+import { AssetPreviewWorkspace } from "@/components/libraries/asset-preview-workspace"
 import { filterViewableAssets } from "@/lib/utils/viewable-asset"
 import type { AssetSummary } from "@/lib/types/models"
+
+type ViewerLayout = "embedded" | "fullscreen"
 
 type AssetViewerContextValue = {
   openViewer: (assetId: string) => void
@@ -28,16 +30,28 @@ export function AssetViewerProvider({
   children: ReactNode
 }) {
   const viewableAssets = useMemo(() => filterViewableAssets(assets), [assets])
-  const [state, setState] = useState<{ open: boolean; index: number }>({
+  const [state, setState] = useState<{
+    open: boolean
+    index: number
+    layout: ViewerLayout
+    aiOpen: boolean
+  }>({
     open: false,
     index: 0,
+    layout: "embedded",
+    aiOpen: true,
   })
 
   const openViewer = useCallback(
     (assetId: string) => {
       const index = viewableAssets.findIndex((a) => a.id === assetId)
       if (index < 0) return
-      setState({ open: true, index })
+      setState({
+        open: true,
+        index,
+        layout: "embedded",
+        aiOpen: true,
+      })
     },
     [viewableAssets],
   )
@@ -49,7 +63,7 @@ export function AssetViewerProvider({
   const goTo = useCallback(
     (index: number) => {
       if (index < 0 || index >= viewableAssets.length) return
-      setState({ open: true, index })
+      setState((s) => ({ ...s, open: true, index }))
     },
     [viewableAssets.length],
   )
@@ -62,18 +76,27 @@ export function AssetViewerProvider({
     [openViewer, viewableAssets],
   )
 
+  const workspace =
+    state.open && viewableAssets.length > 0 ? (
+      <AssetPreviewWorkspace
+        key={`${state.layout}-${viewableAssets[state.index]?.id ?? state.index}`}
+        assets={viewableAssets}
+        index={state.index}
+        embedded={state.layout === "embedded"}
+        aiOpen={state.aiOpen}
+        onAiOpenChange={(aiOpen) => setState((s) => ({ ...s, aiOpen }))}
+        onClose={closeViewer}
+        onExpand={() => setState((s) => ({ ...s, layout: "fullscreen" }))}
+        onShrink={() => setState((s) => ({ ...s, layout: "embedded" }))}
+        onNavigate={goTo}
+      />
+    ) : null
+
   return (
     <AssetViewerContext.Provider value={value}>
+      {state.layout === "embedded" ? workspace : null}
       {children}
-      {state.open && viewableAssets.length > 0 ? (
-        <AssetViewerOverlay
-          key={viewableAssets[state.index]?.id ?? state.index}
-          assets={viewableAssets}
-          initialIndex={state.index}
-          onClose={closeViewer}
-          onNavigate={goTo}
-        />
-      ) : null}
+      {state.layout === "fullscreen" ? workspace : null}
     </AssetViewerContext.Provider>
   )
 }

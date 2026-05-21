@@ -24,6 +24,7 @@ import { assertOllamaCloudApiKey } from "@/services/chat/ollama-http"
 import { executeArciinChatTool } from "@/services/chat/arciin-chat-tools"
 import { streamOllamaWithArciinTools } from "@/services/chat/ollama-chat-with-tools"
 import { flushSseResponse, writeSseEvent } from "@/services/chat/sse-stream"
+import { buildFocusAssetSystemAppend } from "@/services/chat/focus-asset-context"
 import { buildSyntheticReadTextAssetArgsFromUser } from "@/services/chat/read-text-asset-synthetic"
 import { organizeImagesLibrary } from "@/services/chat/organize-images-library"
 import {
@@ -45,10 +46,16 @@ const messageSchema = z.object({
   images: z.array(z.string().min(1)).max(4).optional(),
 })
 
+const focusAssetSchema = z.object({
+  assetId: z.string().min(1),
+  currentPage: z.number().int().min(1).optional(),
+})
+
 const chatSchema = z.object({
   profileId: z.string().optional(),
   model:     z.string().max(200).optional(),
   messages:  z.array(messageSchema).min(1),
+  focusAsset: focusAssetSchema.optional(),
 })
 
 type ChatMessageIn = z.infer<typeof messageSchema>
@@ -807,7 +814,7 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
         return
       }
 
-      const { profileId, model: modelOverride, messages } = parsed.data
+      const { profileId, model: modelOverride, messages, focusAsset } = parsed.data
 
       let profile = profileId
         ? await fastify.prisma.modelProfile.findUnique({ where: { id: profileId } })
@@ -886,6 +893,10 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
           buildAiSystemAppend(aiSettings) + buildAiSecuritySystemAppend(security)
         if (vaultSnapshot.contextLine) {
           systemAppend += `\n\n--- Password vault (redacted for assistant) ---\n${vaultSnapshot.contextLine}\n---`
+        }
+
+        if (focusAsset) {
+          systemAppend += await buildFocusAssetSystemAppend(fastify.prisma, focusAsset)
         }
 
         const safeText = sanitizeMessagesForProvider(messagesTextOnly(messages), security)

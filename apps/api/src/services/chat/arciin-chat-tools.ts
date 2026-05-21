@@ -9,6 +9,7 @@ import {
   normalizeVisionSearchQuery,
   visionSearchLibraryImages,
 } from "@/services/chat/vision-library"
+import { readPdfAssetContent } from "@/services/chat/read-pdf-asset"
 import { readTextAssetContent } from "@/services/chat/read-text-asset"
 import { slugify } from "@/services/slug"
 
@@ -84,6 +85,22 @@ export const ARCIIN_CHAT_TOOLS = [
           },
         },
         required: ["library_slug", "name"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "read_pdf_asset",
+      description:
+        "Extract text from a PDF in the user's library with page markers (--- Page N ---). Use when they ask about document contents, quotes, or which page mentions something.",
+      parameters: {
+        type: "object",
+        properties: {
+          asset_id: { type: "string", description: "PDF asset id" },
+          max_chars: { type: "number", description: "Max characters (default 14000)" },
+        },
+        required: ["asset_id"],
       },
     },
   },
@@ -292,6 +309,18 @@ export async function executeArciinChatTool(
       const msg = e instanceof Error ? e.message : "create_failed"
       return { error: "create_failed", message: msg }
     }
+  }
+
+  if (name === "read_pdf_asset") {
+    const r = args as Record<string, unknown>
+    const assetId = pickArgString(r, ["asset_id", "assetId"])
+    if (!assetId) {
+      return { error: "validation", message: "asset_id is required." }
+    }
+    return readPdfAssetContent(ctx.prisma, {
+      assetId,
+      maxChars: Number(r.max_chars ?? r.maxChars) || undefined,
+    })
   }
 
   if (name === "read_text_asset") {

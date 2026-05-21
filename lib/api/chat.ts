@@ -6,6 +6,12 @@ export function getChatStreamPostUrl(): string {
   return getBrowserApiUrl("chat")
 }
 
+/** Open-file context for inline library preview chat. */
+export type ChatFocusAsset = {
+  assetId: string
+  currentPage?: number
+}
+
 export interface ChatInstanceContext {
   libraries: { id: string; slug: string; name: string; kind: string; count: number }[]
   folders: {
