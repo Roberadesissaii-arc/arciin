@@ -7,16 +7,14 @@ import type { PdfPageLabel } from "@arciin/shared"
 
 export function usePdfNavigationIndex(assetId: string | undefined, enabled: boolean) {
   const [pageIndex, setPageIndex] = useState<PdfPageLabel[] | null>(null)
+  const activeKey = enabled && assetId ? assetId : null
 
   useEffect(() => {
-    if (!enabled || !assetId) {
-      setPageIndex(null)
-      return
-    }
+    if (!activeKey) return
     let cancelled = false
     void (async () => {
       try {
-        const data = await fetchPdfNavigationIndex(assetId)
+        const data = await fetchPdfNavigationIndex(activeKey)
         if (!cancelled) setPageIndex(data.page_index)
       } catch {
         if (!cancelled) setPageIndex(null)
@@ -25,7 +23,7 @@ export function usePdfNavigationIndex(assetId: string | undefined, enabled: bool
     return () => {
       cancelled = true
     }
-  }, [assetId, enabled])
+  }, [activeKey])
 
-  return pageIndex
+  return activeKey ? pageIndex : null
 }

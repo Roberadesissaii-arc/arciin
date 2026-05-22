@@ -21,6 +21,7 @@ Arciin is a self-hosted private file, library, and media management platform. Ru
 ## Table of contents
 
 - [What you get](#what-you-get)
+- [Arciin Mobile (companion PWA)](#arciin-mobile-companion-pwa)
 - [Prerequisites](#prerequisites)
 - [Quick start](#quick-start)
 - [Managing Arciin](#managing-arciin)
@@ -35,15 +36,84 @@ Arciin is a self-hosted private file, library, and media management platform. Ru
 
 ## What you get
 
+### Core platform
+
 | Area | Description |
 |------|-------------|
-| **First-run setup** | One-time instance claim with `ARCIIN_SETUP_TOKEN`, then local admin login |
-| **Libraries** | Videos, Images, Music, Documents, and Inbox — with folders inside each |
-| **Uploads** | Drag-and-drop anywhere in the app, upload queue, and multipart API for scripts |
-| **Realtime** | Socket.IO events for uploads, assets, jobs, and activity |
-| **Notifications** | In-app inbox, sounds, and badges when uploads complete |
-| **Developer tools** | API keys, webhooks, Python examples in `scripts/examples/` |
-| **Ops** | Logs page, jobs monitor, storage settings, optional Plex/Jellyfin guides |
+| **First-run setup** | One-time instance claim with `ARCIIN_SETUP_TOKEN`, then local admin login (no public signup) |
+| **Dashboard** | Storage overview, library counts, recent uploads, live activity, jobs, and quick access |
+| **Libraries** | Videos, Images, Music, Documents, and Inbox — folders inside each library |
+| **All Files** | Cross-library search and browsing |
+| **Global uploads** | Drag-and-drop anywhere in the authenticated app; intelligent routing by file type |
+| **Upload queue** | Progress, retries, and realtime status via Socket.IO |
+| **Activity feed** | Uploads, moves, deletes, and system events with live updates |
+| **Jobs monitor** | Background work: thumbnails, metadata, transcoding helpers |
+| **Notifications** | In-app inbox, optional sounds, and badges when uploads complete |
+
+### Files & media
+
+| Area | Description |
+|------|-------------|
+| **File preview** | Images, video, PDF, and code/text in a full workspace viewer |
+| **PDF preview** | Continuous scroll, zoom (default 75%), bookmarks, page chrome |
+| **Ask AI (preview)** | Side panel on open files — summarize, Q&A, navigate chapters/pages, highlight text on PDFs |
+| **PDF navigation** | Chapter and printed-page index (book page numbers vs PDF page index) |
+| **Music player** | Play audio from the library in a persistent bottom bar while you browse |
+| **Thumbnails** | Generated in the worker for images, video posters, and PDF pages |
+
+### AI & automation
+
+| Area | Description |
+|------|-------------|
+| **AI Chat** | Local (Ollama) and cloud model profiles; streaming replies; tool use on the library |
+| **Models** | Configure providers, defaults, and vision-capable profiles |
+| **Library tools** | Vision search, image organization, read text assets, folder create/delete (when enabled) |
+| **Password vault (AI)** | Encrypted vault context for local-model password questions (security settings) |
+
+### Security & admin
+
+| Area | Description |
+|------|-------------|
+| **Roles** | Owner, Admin, Member, Viewer |
+| **API keys** | Scoped keys with hashed storage; prefix display; revoke |
+| **Webhooks & events** | Developer integrations and live event monitor |
+| **Sessions** | Active devices; sign out remotely |
+| **Password vault** | Encrypted saved logins (desktop UI) |
+| **Settings** | Storage root, domain/tunnel, remote access, security, users |
+| **Database browser** | Inspect app tables and app-data records (admin) |
+| **Logs** | Server log tail for operators |
+
+### Integrations
+
+| Area | Description |
+|------|-------------|
+| **Plex / Jellyfin** | Folder layout guides and connector placeholders |
+| **Mobile pairing** | Generate 6-digit codes under Settings → Mobile connection for the companion app |
+| **Python examples** | `scripts/examples/` — upload, folders, health, Socket.IO |
+
+### Realtime & ops
+
+| Area | Description |
+|------|-------------|
+| **Socket.IO** | Upload progress, assets, jobs, activity |
+| **Docker** | Compose stack with Caddy, Postgres, Redis, web, API, worker |
+| **PM2 / native** | `install.sh` and `scripts/start.sh` for bare-metal installs |
+
+---
+
+## Arciin Mobile (companion PWA)
+
+Use **[Arciin Mobile](https://github.com/Roberadesissaii-arc/arciin-app)** on your phone — it connects to **this** server, not a hosted Arciin cloud.
+
+| Step | Where |
+|------|--------|
+| 1. Run Arciin (this repo) on your server | Docker or native install below |
+| 2. Claim instance and sign in on desktop | `http://<server>:3004` |
+| 3. Generate a pairing code | **Settings → Mobile connection** |
+| 4. Install the mobile PWA | Vercel deploy or `pnpm dev:mobile` from `arciin-app` |
+| 5. Pair once, then sign in | Server URL + 6-digit code + email/password |
+
+The mobile app supports home overview, files, uploads, jobs, activity, **AI chat**, models, notifications, profile/settings, password vault, API keys, and offline reconnect when the server is unreachable. See the mobile README for deploy and troubleshooting.
 
 ---
 
@@ -164,9 +234,9 @@ pnpm db:seed       # Seed default libraries
 pnpm db:studio     # Open Prisma Studio
 ```
 
-### After updating (pull, build, restart)
+### Production update (pull, build, restart)
 
-When you change code on the server or pull a new release from git, run this from the project root (same directory as `install.sh`):
+When you change code on the server or pull a new release from git, run this from the project root:
 
 ```bash
 cd /path/to/arciin
@@ -177,27 +247,25 @@ pnpm build
 pm2 restart arciin-api arciin-web arciin-worker
 ```
 
-`pnpm build` compiles the web app, API, and worker. Restart all three PM2 processes so they load the new build.
-
 Shortcut (web rebuild + PM2 restart):
 
 ```bash
 pnpm deploy
 ```
 
-If `arciin-web` shows **errored** and logs say *Could not find a production build in the '.next' directory*, you skipped `pnpm build` — run the full block above, not only `pm2 restart all`.
+If `arciin-web` shows **errored** and logs say *Could not find a production build in the '.next' directory*, run `pnpm build` before restart.
 
-If you only changed environment variables (`.env`), a restart is enough:
+If you only changed environment variables (`.env`):
 
 ```bash
 pm2 restart arciin-api arciin-web arciin-worker
 ```
 
-Check status and logs:
+Quality gate before shipping changes:
 
 ```bash
-pm2 status
-pm2 logs arciin-api --lines 50
+pnpm typecheck
+pnpm build
 ```
 
 ---
@@ -253,8 +321,8 @@ Set `API_BASE` in `scripts/examples/arciin_example_client.py` to the printed WSL
 | `PORT` | Web port (default 3004) |
 | `API_PORT` | API port (default 4001) |
 | `MAX_UPLOAD_SIZE_MB` | Max upload size (web proxy + API; default 10240) |
-| `UPLOAD_RATE_LIMIT_PER_MINUTE` | Per-user upload cap per minute (default 500; was 60) |
-| `LOG_MAX_FILE_BYTES` | Max size per log file before oldest lines are dropped (default 1800000) |
+| `UPLOAD_RATE_LIMIT_PER_MINUTE` | Per-user upload cap per minute (default 500) |
+| `LOG_MAX_FILE_BYTES` | Max size per log file before rotation (default 1800000) |
 
 See `.env.example` for the full list.
 
@@ -304,8 +372,6 @@ docker compose up --build -d
 
 Open **http://localhost** (Caddy on port 80). Your files live on disk at **`ARCIIN_HOST_DATA_DIR`**, not inside the container.
 
-Caddy reverse proxy: `docker/caddy/Caddyfile`. Images: `Dockerfile.web`, `Dockerfile.api`, `Dockerfile.worker`.
-
 ---
 
 ## Project layout
@@ -314,29 +380,29 @@ Caddy reverse proxy: `docker/caddy/Caddyfile`. Images: `Dockerfile.web`, `Docker
 arciin/
 ├── app/                    # Next.js App Router (UI)
 ├── apps/
-│   ├── api/                # Fastify REST + Socket.IO
+│   ├── api/                # Fastify REST + Socket.IO + chat tools
 │   └── worker/             # BullMQ jobs (thumbnails, metadata)
-├── components/             # React UI components
+├── components/             # React UI (dashboard, libraries, chat, preview)
 ├── packages/
 │   ├── database/           # Prisma client wrapper
-│   └── shared/             # shared types and constants
-├── prisma/                 # schema and migrations
+│   └── shared/             # Shared types, PDF navigation helpers
+├── prisma/                 # Schema and migrations
 ├── scripts/
 │   ├── examples/           # Python integration examples
-│   ├── start.sh            # start all PM2 processes
-│   └── stop.sh             # stop all PM2 processes
+│   ├── start.sh            # Start all PM2 processes
+│   └── stop.sh             # Stop all PM2 processes
 ├── docker/                 # Caddy config and helpers
 ├── docker-compose.yml
-└── install.sh              # first-time setup script
+└── install.sh              # First-time setup script
 ```
 
 ---
 
 ## Tech stack
 
-**Frontend:** Next.js 16, React 19, TypeScript, Tailwind CSS v4, shadcn/ui, TanStack Query, Zustand, Socket.IO client
+**Frontend:** Next.js 16, React 19, TypeScript, Tailwind CSS v4, shadcn/ui, TanStack Query, Zustand, Socket.IO client, Framer Motion
 
-**Backend:** Fastify, Prisma, PostgreSQL, Redis, BullMQ, Socket.IO, Sharp, FFmpeg
+**Backend:** Fastify, Prisma, PostgreSQL, Redis, BullMQ, Socket.IO, Sharp, FFmpeg, pdf.js (text extraction)
 
 ---
 
@@ -362,5 +428,6 @@ Private / project-specific — see repository settings for license terms if publ
 ---
 
 <p align="center">
-  <strong>Arciin</strong> — built for the server you own.
+  <strong>Arciin</strong> — built for the server you own.<br />
+  Companion app: <a href="https://github.com/Roberadesissaii-arc/arciin-app">Arciin Mobile</a>
 </p>
