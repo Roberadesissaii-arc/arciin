@@ -188,6 +188,54 @@ export function getFileExtension(filename: string) {
   return parts.length > 1 ? parts.at(-1)?.toLowerCase() ?? "" : ""
 }
 
+const inlineMimeByExt: Record<string, string> = {
+  mp4: "video/mp4",
+  m4v: "video/mp4",
+  webm: "video/webm",
+  mov: "video/quicktime",
+  mkv: "video/x-matroska",
+  avi: "video/x-msvideo",
+  mpg: "video/mpeg",
+  mpeg: "video/mpeg",
+  ogv: "video/ogg",
+  "3gp": "video/3gpp",
+  mp3: "audio/mpeg",
+  wav: "audio/wav",
+  flac: "audio/flac",
+  aac: "audio/aac",
+  m4a: "audio/mp4",
+  ogg: "audio/ogg",
+  opus: "audio/opus",
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  gif: "image/gif",
+  webp: "image/webp",
+  pdf: "application/pdf",
+  py: "text/x-python",
+  js: "text/javascript",
+  mjs: "text/javascript",
+  ts: "text/typescript",
+  json: "application/json",
+  md: "text/markdown",
+  txt: "text/plain",
+  html: "text/html",
+  css: "text/css",
+}
+
+/** Prefer a browser-playable MIME when the stored type is generic. */
+export function resolveInlineContentType(
+  mimeType: string | null | undefined,
+  originalFilename: string,
+): string {
+  const stored = (mimeType ?? "").trim()
+  if (stored && stored !== "application/octet-stream") {
+    return stored
+  }
+  const ext = getFileExtension(originalFilename)
+  return inlineMimeByExt[ext] ?? (stored || "application/octet-stream")
+}
+
 export function isApplicationFile(
   filename?: string | null,
   extension?: string | null,

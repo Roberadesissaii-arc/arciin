@@ -16,6 +16,7 @@ const eslintConfig = defineConfig([
     "Arceclaw/**",
     // PM2 production config (CommonJS require).
     "ecosystem.config.cjs",
+    "public/pdfjs-wasm/**",
   ]),
 ]);
 

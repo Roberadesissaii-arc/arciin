@@ -39,7 +39,7 @@ export function AssetViewerProvider({
     open: false,
     index: 0,
     layout: "embedded",
-    aiOpen: true,
+    aiOpen: false,
   })
 
   const openViewer = useCallback(
@@ -50,7 +50,7 @@ export function AssetViewerProvider({
         open: true,
         index,
         layout: "embedded",
-        aiOpen: true,
+        aiOpen: false,
       })
     },
     [viewableAssets],

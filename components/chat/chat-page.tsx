@@ -4,18 +4,15 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { flushSync } from "react-dom"
 import Link from "next/link"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { prefetchOllamaAvailableModels } from "@/lib/hooks/use-ollama-available-models"
 import {
-  prefetchOllamaAvailableModels,
-  useOllamaAvailableModels,
-} from "@/lib/hooks/use-ollama-available-models"
-import {
-  ArrowUp, ChevronDown, Clock, Cloud, Copy, File, Info, Loader2, MessageSquare,
+  ArrowUp, ChevronDown, Clock, Copy, File, Loader2, MessageSquare,
   Plus, RotateCcw, Sparkles, Square, ThumbsDown, ThumbsUp, Trash2, User, X,
 } from "lucide-react"
 import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
-import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card"
+import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet"
 import { getAssets, getAssetsByIds } from "@/lib/api/assets"
 import { getOllamaModelShow } from "@/lib/api/models"
 import { fetchApi } from "@/lib/api/client"
@@ -27,6 +24,7 @@ import {
   getChatInstanceContext,
   getChatSelection,
   getChatStreamPostUrl,
+  parseChatHttpError,
   getChatVisionRecent,
   saveChatMessages,
   setChatSelection,
@@ -41,18 +39,16 @@ import { queryKeys } from "@/lib/api/query-keys"
 import { ARCIIN_INTEGRATION_CODE_AI_APPEND, DEFAULT_AI_SETTINGS } from "@arciin/shared"
 import { cn } from "@/lib/utils"
 import { createId } from "@/lib/utils/create-id"
+import { ChatModelPicker, type ChatProfilePicker } from "@/components/chat/chat-model-picker"
+import {
+  CHAT_SELECTED_MODEL_KEY,
+  CHAT_SELECTED_PROFILE_ID_KEY,
+} from "@/lib/chat/chat-selection-storage"
 import { isOllamaProvider, ollamaCapabilitiesIncludeVision } from "@/lib/ollama-providers"
-import type { OllamaModelShowData } from "@/lib/types/models"
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
-type ChatProfile = {
-  id: string
-  provider: string
-  displayName: string
-  defaultModel: string | null
-  isDefault: boolean
-}
+type ChatProfile = ChatProfilePicker
 
 type TokenUsage = { inputTokens: number; outputTokens: number; totalTokens: number }
 
@@ -262,24 +258,7 @@ function stripAssetListsWhenQueryingAppDatabases(content: string, userText: stri
   return content.replace(/\n*\[\[ASSET_LIST:[^\]]+\]\]\n*/gi, "\n").replace(/\n{3,}/g, "\n\n").trim()
 }
 
-const PROVIDER_MODELS: Record<string, string[]> = {
-  openai:     ["gpt-4o", "gpt-4o-mini", "o1", "o1-mini", "gpt-4-turbo"],
-  anthropic:  ["claude-opus-4-7", "claude-sonnet-4-6", "claude-haiku-4-5-20251001"],
-  gemini:     ["gemini-2.0-flash", "gemini-1.5-pro", "gemini-1.5-flash"],
-  deepseek:   ["deepseek-v4-flash", "deepseek-v4-pro", "deepseek-chat", "deepseek-reasoner"],
-  grok:       ["grok-2", "grok-2-mini", "grok-3"],
-  meta:       ["meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo", "meta-llama/Llama-4-Scout-17B-16E-Instruct"],
-  qwen:       ["qwen-max", "qwen-plus", "qwen-turbo"],
-  ollama:         [],
-  "ollama-local": [],
-  "ollama-cloud": [],
-  elevenlabs: ["eleven_multilingual_v2", "eleven_turbo_v2_5"],
-}
-
 const SYSTEM_INSTRUCTION_KEY = "arciin:system-instruction"
-/** Persist chat model picker across reloads (profile id + model name). */
-const CHAT_SELECTED_PROFILE_ID_KEY = "arciin:chat:selected-profile-id"
-const CHAT_SELECTED_MODEL_KEY = "arciin:chat:selected-model"
 
 const ASSET_API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "/api"
 
@@ -659,324 +638,6 @@ function MarkdownContent({ content }: { content: string }) {
   flushAll()
 
   return <div className="space-y-[3px]">{nodes}</div>
-}
-
-// ── Ollama dynamic model list (used inside ModelPicker) ───────────────────────
-
-function OllamaProfileSection({
-  profile,
-  selectedProfile,
-  selectedModel,
-  onSelect,
-}: {
-  profile: ChatProfile
-  selectedProfile: ChatProfile | null
-  selectedModel: string
-  onSelect: (model: string) => void
-}) {
-  const isCloud = profile.provider === "ollama-cloud"
-  const q = useOllamaAvailableModels(profile.id)
-
-  const models =
-    q.data?.models ??
-    (profile.defaultModel ? [profile.defaultModel] : [])
-  const fromCache = q.data?.fromCache ?? false
-  const showLoading = q.isPending && models.length === 0
-  const showProbing = q.isFetching && !fromCache && isCloud
-  const errorMessage =
-    q.error instanceof Error ? q.error.message : q.isError ? "Could not load models." : null
-
-  return (
-    <>
-      <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border/60 bg-card px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-        <span className="flex items-center gap-2">
-          {profile.displayName}
-          {showProbing ? (
-            <Loader2 className="size-2.5 animate-spin opacity-60" aria-hidden />
-          ) : null}
-        </span>
-        {profile.isDefault && (
-          <span className="rounded bg-amber-50 px-1.5 py-px text-[9px] font-semibold text-amber-700 ring-1 ring-amber-200">
-            Default
-          </span>
-        )}
-      </div>
-      {errorMessage && models.length > 0 ? (
-        <p className="border-b border-border/40 px-3 py-2 text-[10px] leading-snug text-amber-700/90">
-          {errorMessage}
-        </p>
-      ) : null}
-      {showLoading ? (
-        <div className="flex items-center gap-2 px-3 py-3 text-[11px] text-muted-foreground">
-          <Loader2 className="size-3 animate-spin" />
-          {isCloud && !fromCache ? "First-time cloud model check…" : isCloud ? "Loading cloud models…" : "Fetching models…"}
-        </div>
-      ) : models.length === 0 ? (
-        <div className="px-3 py-2.5 text-[11px] text-muted-foreground">
-          {errorMessage ??
-            (isCloud
-              ? "No working cloud models yet. Check your API key under Models → Ollama Cloud."
-              : "No models found. Run ollama pull or check your Ollama instance.")}
-        </div>
-      ) : (
-        models.map((model) => {
-          const active =
-            selectedProfile?.id === profile.id &&
-            (selectedModel === model || (!selectedModel && model === profile.defaultModel))
-          return (
-            <button
-              key={model}
-              type="button"
-              onClick={() => onSelect(model)}
-              className={cn(
-                "flex w-full items-center gap-2 border-b border-border/40 px-3 py-2.5 text-left font-mono text-[12px] last:border-0 transition-colors",
-                active ? "bg-primary/[0.07] text-primary" : "text-foreground hover:bg-muted/50",
-              )}
-            >
-              <span className="flex-1 truncate">{model}</span>
-              {isCloud && <Cloud className="size-3.5 shrink-0 opacity-45" aria-hidden />}
-              {active && (
-                <span className="shrink-0 text-[9px] font-semibold uppercase tracking-wide text-primary/60">active</span>
-              )}
-            </button>
-          )
-        })
-      )}
-    </>
-  )
-}
-
-function OllamaModelInfoHover({
-  loading,
-  data,
-}: {
-  loading: boolean
-  data: OllamaModelShowData | undefined
-}) {
-  const caps = data?.capabilities ?? []
-  const d = data?.details
-  const paramLines = (data?.parameters ?? "").split("\n").filter(Boolean).slice(0, 8).join("\n")
-
-  return (
-    <HoverCard openDelay={200}>
-      <HoverCardTrigger asChild>
-        <button
-          type="button"
-          className="ml-0.5 rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
-          title="Model details (Ollama)"
-          aria-label="Model details"
-        >
-          {loading ? <Loader2 className="size-3.5 animate-spin" /> : <Info className="size-3.5" />}
-        </button>
-      </HoverCardTrigger>
-      <HoverCardContent className="w-80 space-y-2.5 text-[11px]" align="start" side="top">
-        {loading && !data ? (
-          <p className="text-muted-foreground">Loading model metadata…</p>
-        ) : !data ? (
-          <p className="text-muted-foreground">No metadata yet.</p>
-        ) : (
-          <>
-            {caps.length > 0 && (
-              <div className="flex flex-wrap gap-1">
-                {caps.map((c) => (
-                  <span
-                    key={c}
-                    className="rounded-md bg-muted px-1.5 py-0.5 font-mono text-[10px] uppercase text-muted-foreground"
-                  >
-                    {c}
-                  </span>
-                ))}
-              </div>
-            )}
-            {(d?.parameter_size || d?.quantization_level || d?.format) && (
-              <div className="space-y-0.5 text-muted-foreground">
-                {d.parameter_size && <p><span className="text-foreground/80">Size</span> · {d.parameter_size}</p>}
-                {d.quantization_level && <p><span className="text-foreground/80">Quant</span> · {d.quantization_level}</p>}
-                {d.format && <p><span className="text-foreground/80">Format</span> · {d.format}</p>}
-              </div>
-            )}
-            {data.modified_at && (
-              <p className="text-muted-foreground/80">
-                <span className="text-foreground/80">Modified</span> · {data.modified_at}
-              </p>
-            )}
-            {paramLines && (
-              <pre className="max-h-32 overflow-y-auto whitespace-pre-wrap rounded-md bg-muted/40 p-2 font-mono text-[10px] text-muted-foreground scrollbar-hide">
-                {paramLines}
-              </pre>
-            )}
-          </>
-        )}
-      </HoverCardContent>
-    </HoverCard>
-  )
-}
-
-function ScrollFadeList({
-  children,
-  maxHeightClass = "max-h-80",
-}: {
-  children: React.ReactNode
-  maxHeightClass?: string
-}) {
-  const ref = useRef<HTMLDivElement>(null)
-  const [showMore, setShowMore] = useState(false)
-
-  const checkOverflow = useCallback(() => {
-    const el = ref.current
-    if (!el) return
-    setShowMore(el.scrollHeight > el.clientHeight + 6)
-  }, [])
-
-  useEffect(() => {
-    checkOverflow()
-    const el = ref.current
-    if (!el) return
-    const ro = new ResizeObserver(checkOverflow)
-    ro.observe(el)
-    return () => ro.disconnect()
-  }, [checkOverflow, children])
-
-  return (
-    <div className="relative">
-      <div
-        ref={ref}
-        className={cn(
-          maxHeightClass,
-          "overflow-y-auto overflow-x-hidden scrollbar-hide",
-        )}
-      >
-        {children}
-      </div>
-      {showMore ? (
-        <div
-          className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center bg-gradient-to-t from-card via-card/95 to-transparent pb-1.5 pt-10"
-          aria-hidden
-        >
-          <ChevronDown className="size-4 text-muted-foreground/80" />
-        </div>
-      ) : null}
-    </div>
-  )
-}
-
-// ── Model picker ───────────────────────────────────────────────────────────────
-
-function ModelPicker({
-  profiles,
-  selectedProfile,
-  selectedModel,
-  onChange,
-  ollamaShow,
-  ollamaShowLoading,
-}: {
-  profiles: ChatProfile[]
-  selectedProfile: ChatProfile | null
-  selectedModel: string
-  onChange: (profile: ChatProfile, model: string) => void
-  ollamaShow?: OllamaModelShowData
-  ollamaShowLoading?: boolean
-}) {
-  const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
-    }
-    document.addEventListener("mousedown", handler)
-    return () => document.removeEventListener("mousedown", handler)
-  }, [])
-
-  const displayLabel = selectedModel || selectedProfile?.defaultModel || selectedProfile?.displayName || "Pick a model"
-  const showOllamaInfo =
-    Boolean(selectedProfile && isOllamaProvider(selectedProfile.provider) && (selectedModel || selectedProfile?.defaultModel))
-
-  return (
-    <div className="relative" ref={ref}>
-      <div className="flex items-center">
-        <button
-          type="button"
-          onClick={() => setOpen((v) => !v)}
-          className="flex items-center gap-1.5 rounded-l-2xl px-4 py-2.5 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
-        >
-          <Sparkles className="size-3.5 text-primary" />
-          <span className="max-w-[160px] truncate font-mono">{displayLabel}</span>
-          <ChevronDown className="size-3 text-muted-foreground" />
-        </button>
-        {showOllamaInfo && (
-          <OllamaModelInfoHover loading={Boolean(ollamaShowLoading)} data={ollamaShow} />
-        )}
-      </div>
-
-      {open && (
-        <div className="absolute bottom-full left-0 z-30 mb-2 w-72">
-          <ScrollFadeList maxHeightClass="max-h-80 rounded-xl border border-border bg-card shadow-lg">
-          {profiles.length === 0 ? (
-            <div className="px-3 py-4 text-center text-[12px] text-muted-foreground">
-              No models connected.{" "}
-              <Link href="/models" className="text-primary underline-offset-4 hover:underline">Configure models</Link>
-            </div>
-          ) : (
-            profiles.map((profile) => {
-              if (profile.provider === "ollama" || profile.provider === "ollama-local" || profile.provider === "ollama-cloud") {
-                return (
-                  <div key={profile.id}>
-                    <OllamaProfileSection
-                      profile={profile}
-                      selectedProfile={selectedProfile}
-                      selectedModel={selectedModel}
-                      onSelect={(model) => { onChange(profile, model); setOpen(false) }}
-                    />
-                  </div>
-                )
-              }
-
-              const catalogueModels = PROVIDER_MODELS[profile.provider] ?? []
-              const savedDefault = profile.defaultModel
-              const models = savedDefault && !catalogueModels.includes(savedDefault)
-                ? [savedDefault, ...catalogueModels]
-                : catalogueModels.length > 0
-                  ? catalogueModels
-                  : savedDefault ? [savedDefault] : []
-
-              return (
-                <div key={profile.id}>
-                  <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border/60 bg-card px-3 py-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                    <span>{profile.displayName}</span>
-                    {profile.isDefault && (
-                      <span className="rounded bg-amber-50 px-1.5 py-px text-[9px] font-semibold text-amber-700 ring-1 ring-amber-200">
-                        Default
-                      </span>
-                    )}
-                  </div>
-                  {models.map((model) => {
-                    const active = selectedProfile?.id === profile.id && (selectedModel === model || (!selectedModel && model === savedDefault))
-                    return (
-                      <button
-                        key={model}
-                        type="button"
-                        onClick={() => { onChange(profile, model); setOpen(false) }}
-                        className={cn(
-                          "flex w-full items-center gap-2 border-b border-border/40 px-3 py-2 text-left font-mono text-[12px] last:border-0 transition-colors",
-                          active ? "bg-primary/[0.07] text-primary" : "text-foreground hover:bg-muted/50",
-                        )}
-                      >
-                        <span className={cn("size-1.5 shrink-0 rounded-full", active ? "bg-primary" : "bg-zinc-300")} />
-                        <span className="flex-1 truncate">{model}</span>
-                        {active && <span className="shrink-0 text-[9px] font-semibold uppercase tracking-wide text-primary/60">active</span>}
-                      </button>
-                    )
-                  })}
-                </div>
-              )
-            })
-          )}
-          </ScrollFadeList>
-        </div>
-      )}
-    </div>
-  )
 }
 
 // ── Thinking block ─────────────────────────────────────────────────────────────
@@ -2130,6 +1791,7 @@ export function ChatPage() {
   const [selectedModel, setSelectedModel] = useState<string>("")
   const [conversationId, setConversationId] = useState<string | null>(null)
   const [historyOpen, setHistoryOpen] = useState(false)
+  const [mobileHistoryOpen, setMobileHistoryOpen] = useState(false)
   const aiSettingsQuery = useQuery({
     queryKey: queryKeys.aiSettings,
     queryFn: ({ signal }) => getAiSettings(signal),
@@ -2283,6 +1945,7 @@ export function ChatPage() {
   async function loadConversation(id: string) {
     if (id === conversationId) {
       setHistoryOpen(false)
+      setMobileHistoryOpen(false)
       return
     }
     setLoadingConvoId(id)
@@ -2309,6 +1972,7 @@ export function ChatPage() {
           })),
       )
       setHistoryOpen(false)
+      setMobileHistoryOpen(false)
     } catch {
       toast.error("Could not load conversation.")
     } finally {
@@ -2465,12 +2129,15 @@ export function ChatPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ profileId: profile.id, model: modelToSend, messages: payload }),
+        body: JSON.stringify({
+          profileId: profile.id,
+          ...(modelToSend ? { model: modelToSend } : {}),
+          messages: payload,
+        }),
         signal: abortRef.current.signal,
       })
       if (!res.ok || !res.body) {
-        const err = await res.json().catch(() => ({ error: { message: "Request failed" } }))
-        throw new Error(err?.error?.message ?? "Chat request failed")
+        throw new Error(await parseChatHttpError(res))
       }
 
       const reader = res.body.getReader()
@@ -2703,13 +2370,16 @@ export function ChatPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ profileId: profile.id, model: modelToSend, messages: payload }),
+        body: JSON.stringify({
+          profileId: profile.id,
+          ...(modelToSend ? { model: modelToSend } : {}),
+          messages: payload,
+        }),
         signal: abortRef.current.signal,
       })
 
       if (!res.ok || !res.body) {
-        const err = await res.json().catch(() => ({ error: { message: "Request failed" } }))
-        throw new Error(err?.error?.message ?? "Chat request failed")
+        throw new Error(await parseChatHttpError(res))
       }
 
       const reader  = res.body.getReader()
@@ -2922,7 +2592,16 @@ export function ChatPage() {
         >
           {/* Floating top bar — overlays messages, never pushes layout */}
           <div className="pointer-events-none sticky top-0 z-10 flex items-center justify-between px-4 pt-3 sm:px-6">
-            <div className="pointer-events-auto">
+            <div className="pointer-events-auto flex items-center gap-2">
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); setMobileHistoryOpen(true) }}
+                className="flex items-center gap-1.5 rounded-full border border-border bg-card/90 px-2.5 py-1 text-[11px] text-muted-foreground backdrop-blur-md transition-colors hover:text-foreground sm:hidden"
+                title="Chat history"
+              >
+                <Clock className="size-3" />
+                History
+              </button>
               <button
                 type="button"
                 onClick={(e) => { e.stopPropagation(); setHistoryOpen((v) => !v) }}
@@ -2990,7 +2669,7 @@ export function ChatPage() {
         <div className="shrink-0 px-4 pb-4 pt-2 sm:px-6">
           <div className="mx-auto max-w-3xl">
             <div className="flex min-h-[54px] items-center gap-0 rounded-2xl border border-border bg-card shadow-sm focus-within:ring-2 focus-within:ring-primary/20">
-              <ModelPicker
+              <ChatModelPicker
                 profiles={profiles}
                 selectedProfile={selectedProfile}
                 selectedModel={selectedModel}
@@ -3051,6 +2730,24 @@ export function ChatPage() {
           </div>
         </div>
       </div>
+
+      <Sheet open={mobileHistoryOpen} onOpenChange={setMobileHistoryOpen}>
+        <SheetContent side="left" className="flex w-[min(100%,18rem)] flex-col gap-0 p-0 sm:max-w-xs">
+          <SheetTitle className="sr-only">Chat history</SheetTitle>
+          <HistorySidebar
+            conversations={conversations}
+            activeId={conversationId}
+            loadingId={loadingConvoId}
+            loading={historyQuery.isLoading}
+            onSelect={(id) => void loadConversation(id)}
+            onNew={() => {
+              startNewChat()
+              setMobileHistoryOpen(false)
+            }}
+            onDelete={(id) => deleteMutation.mutate(id)}
+          />
+        </SheetContent>
+      </Sheet>
     </div>
   )
 }

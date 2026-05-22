@@ -91,6 +91,18 @@ type NotificationInboxState = {
   markAllRead: () => void
   clearAll: () => void
   setActivityBackfillDone: () => void
+  /** Import many activity rows in one persist + one React update (avoids inbox flicker). */
+  backfillFromActivity: (
+    entries: Array<{
+      id: string
+      title: string
+      message?: string
+      variant?: InboxNotificationVariant
+      source?: InboxNotification["source"]
+      read?: boolean
+      createdAt?: string
+    }>,
+  ) => void
 }
 
 export const useNotificationInboxStore = create<NotificationInboxState>((set, get) => ({
@@ -146,6 +158,39 @@ export const useNotificationInboxStore = create<NotificationInboxState>((set, ge
   setActivityBackfillDone: () => {
     persistMeta({ activityBackfillDone: true })
     set({ activityBackfillDone: true })
+  },
+  backfillFromActivity: (entries) => {
+    const state = get()
+    if (state.activityBackfillDone) return
+
+    const existingIds = new Set(state.items.map((n) => n.id))
+    const toAdd: InboxNotification[] = []
+
+    for (const entry of entries) {
+      if (existingIds.has(entry.id)) continue
+      existingIds.add(entry.id)
+      toAdd.push({
+        id: entry.id,
+        title: entry.title,
+        message: entry.message,
+        variant: entry.variant ?? "default",
+        source: entry.source ?? "activity",
+        createdAt: entry.createdAt ?? new Date().toISOString(),
+        read: entry.read ?? true,
+      })
+    }
+
+    persistMeta({ activityBackfillDone: true })
+
+    if (toAdd.length === 0) {
+      set({ activityBackfillDone: true, hydrated: true })
+      return
+    }
+
+    const base = state.hydrated ? state.items : loadPersisted()
+    const next = [...toAdd, ...base].slice(0, MAX_ITEMS)
+    persist(next)
+    set({ items: next, activityBackfillDone: true, hydrated: true })
   },
 }))
 

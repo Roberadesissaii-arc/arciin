@@ -5,7 +5,12 @@ import path from "node:path"
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify"
 import { z } from "zod"
 
-import { assetSupportsDocumentThumbnail, isCodeFilename, resolveArciinStorageRoot } from "@arciin/shared"
+import {
+  assetSupportsDocumentThumbnail,
+  isCodeFilename,
+  resolveArciinStorageRoot,
+  resolveInlineContentType,
+} from "@arciin/shared"
 
 import { apiConfig } from "@/config"
 import { buildRealtimeEvent } from "@/services/events/publish-event"
@@ -465,7 +470,12 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
         return
       }
 
-      reply.header("content-type", asset.mimeType)
+      reply.header(
+        "content-type",
+        inlinePreview
+          ? resolveInlineContentType(asset.mimeType, asset.originalFilename)
+          : asset.mimeType,
+      )
       if (inlinePreview) {
         reply.header("content-disposition", "inline")
       } else {

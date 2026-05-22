@@ -24,6 +24,7 @@ export const queryKeys = {
   securityLog: ["settings", "security", "log"] as const,
   modelProfiles: ["models"] as const,
   chatProfiles: ["chat", "profiles"] as const,
+  chatSelection: ["chat", "selection"] as const,
   apiKeys: ["api-keys"] as const,
   integrations: ["integrations"] as const,
   plexStatus: ["integrations", "plex", "status"] as const,

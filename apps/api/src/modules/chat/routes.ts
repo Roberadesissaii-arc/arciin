@@ -25,6 +25,7 @@ import { executeArciinChatTool } from "@/services/chat/arciin-chat-tools"
 import { streamOllamaWithArciinTools } from "@/services/chat/ollama-chat-with-tools"
 import { flushSseResponse, writeSseEvent } from "@/services/chat/sse-stream"
 import { buildFocusAssetSystemAppend } from "@/services/chat/focus-asset-context"
+import { resolveChatModelName } from "@/services/chat/resolve-chat-model"
 import { buildSyntheticReadTextAssetArgsFromUser } from "@/services/chat/read-text-asset-synthetic"
 import { organizeImagesLibrary } from "@/services/chat/organize-images-library"
 import {
@@ -852,8 +853,6 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
         profile = localProfile
       }
 
-      // Use requested model override, then profile default, then empty string
-      const model = modelOverride || profile.defaultModel || ""
       const baseUrl = getBaseUrl(profile.provider, profile.baseUrl)
 
       if (!baseUrl) {
@@ -864,6 +863,32 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
       const cloudKeyError = assertOllamaCloudApiKey(profile.provider, profile.apiKey)
       if (cloudKeyError) {
         reply.status(400).send({ error: cloudKeyError })
+        return
+      }
+
+      let model: string
+      try {
+        model = await resolveChatModelName({
+          provider: profile.provider,
+          baseUrl: profile.baseUrl,
+          apiKey: profile.apiKey,
+          defaultModel: profile.defaultModel,
+          override: modelOverride,
+        })
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "No model configured."
+        reply.status(400).send({ error: { code: "NO_MODEL", message: msg } })
+        return
+      }
+
+      if (!model.trim()) {
+        reply.status(400).send({
+          error: {
+            code: "NO_MODEL",
+            message:
+              "No model selected. Set your chat model in AI Chat or a default model under Models.",
+          },
+        })
         return
       }
 

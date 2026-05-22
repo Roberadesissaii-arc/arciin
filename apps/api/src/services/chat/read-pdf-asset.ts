@@ -12,7 +12,7 @@ function isPdfAsset(filename: string, mimeType?: string | null): boolean {
 
 export async function readPdfAssetContent(
   prisma: PrismaClient,
-  input: { assetId: string; maxChars?: number; maxPages?: number },
+  input: { assetId: string; maxChars?: number; maxPages?: number; page?: number },
 ): Promise<Record<string, unknown>> {
   const assetId = input.assetId.trim()
   if (!assetId) {
@@ -59,10 +59,15 @@ export async function readPdfAssetContent(
     const doc = await pdfjs.getDocument({ data: new Uint8Array(data), useSystemFonts: true }).promise
 
     const totalPages = doc.numPages
-    const pagesToRead = Math.min(totalPages, maxPages)
+    const focusPage =
+      input.page && input.page > 0 ? Math.min(input.page, totalPages) : undefined
+    const pageNumbers = focusPage
+      ? [focusPage, focusPage - 1, focusPage + 1].filter((p) => p >= 1 && p <= totalPages)
+      : Array.from({ length: Math.min(totalPages, maxPages) }, (_, i) => i + 1)
+    const pagesToRead = pageNumbers.length
     const parts: string[] = []
 
-    for (let i = 1; i <= pagesToRead; i++) {
+    for (const i of pageNumbers) {
       const page = await doc.getPage(i)
       const textContent = await page.getTextContent()
       const text = textContent.items
@@ -77,7 +82,10 @@ export async function readPdfAssetContent(
     await doc.destroy()
 
     let content = parts.join("\n\n")
-    const truncated = content.length > maxChars || totalPages > pagesToRead
+    const truncated =
+      content.length > maxChars ||
+      (!focusPage && totalPages > pagesToRead) ||
+      (focusPage !== undefined && totalPages > 1)
     if (content.length > maxChars) {
       content = content.slice(0, maxChars)
     }

@@ -36,7 +36,12 @@ export async function buildFocusAssetSystemAppend(
     (asset.mimeType ?? "").toLowerCase() === "application/pdf"
 
   if (isPdf) {
-    const result = await readPdfAssetContent(prisma, { assetId: asset.id })
+    const result = await readPdfAssetContent(prisma, {
+      assetId: asset.id,
+      ...(focus.currentPage && focus.currentPage > 0
+        ? { page: focus.currentPage, maxPages: 3 }
+        : { maxPages: 24 }),
+    })
     if (typeof result.content === "string") {
       const truncatedNote = result.truncated
         ? "\n(Extract is partial — say so if the answer may be on a missing page.)"

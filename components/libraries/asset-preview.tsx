@@ -10,6 +10,7 @@ import { mediaTypeIcons } from "@/lib/utils/file-icons"
 import { cn } from "@/lib/utils"
 import type { AssetSummary } from "@/lib/types/models"
 import { assetSupportsDocumentThumbnail } from "@arciin/shared"
+import { isCodeOrTextAsset, isVideoLikeAsset } from "@/lib/utils/viewable-asset"
 import { getUserPreferences } from "@/lib/api/user-preferences"
 import { queryKeys } from "@/lib/api/query-keys"
 import {
@@ -141,7 +142,7 @@ function VideoAssetPreview({ asset }: { asset: AssetSummary }) {
   const [hover, setHover] = useState(false)
   const [thumbFailed, setThumbFailed] = useState(false)
   const thumbSrc = `/api/assets/${asset.id}/thumbnail?v=${encodeURIComponent(asset.updatedAt)}`
-  const videoSrc = `/api/assets/${asset.id}/download?inline=1`
+  const videoSrc = `/api/assets/${asset.id}/download?inline=1&v=${encodeURIComponent(asset.updatedAt)}`
 
   useEffect(() => {
     const el = videoRef.current
@@ -337,7 +338,11 @@ function AudioAssetPreview({ asset }: { asset: AssetSummary }) {
 }
 
 export function AssetPreview({ asset }: { asset: AssetSummary }) {
-  if (asset.mediaType === "VIDEO") {
+  if (isCodeOrTextAsset(asset)) {
+    const badgeLabel = thumbnailStatusLabel(asset, false)
+    return <DocumentThumbnailPlaceholder asset={asset} badgeLabel={badgeLabel} />
+  }
+  if (isVideoLikeAsset(asset) || asset.mediaType === "VIDEO") {
     return <VideoAssetPreview asset={asset} />
   }
   if (asset.mediaType === "AUDIO") {

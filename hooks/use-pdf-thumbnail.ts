@@ -79,29 +79,10 @@ function enqueueRender(fn: () => Promise<void>) {
   drainQueue()
 }
 
-let pdfjsInit: Promise<typeof import("pdfjs-dist")> | null = null
-
-function loadPdfJs() {
-  if (!pdfjsInit) {
-    pdfjsInit = import("pdfjs-dist").then((pdfjsLib) => {
-      pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-        "pdfjs-dist/build/pdf.worker.min.mjs",
-        import.meta.url,
-      ).toString()
-      return pdfjsLib
-    })
-  }
-  return pdfjsInit
-}
+import { fetchPdfDocument } from "@/lib/files/fetch-pdf-document"
 
 async function renderPdfThumbDataUrl(fileUrl: string): Promise<string | null> {
-  const pdfjsLib = await loadPdfJs()
-  const pdf = await pdfjsLib.getDocument({
-    url: fileUrl,
-    disableAutoFetch: true,
-    disableStream: true,
-    withCredentials: true,
-  }).promise
+  const pdf = await fetchPdfDocument(fileUrl)
 
   try {
     const page = await pdf.getPage(1)

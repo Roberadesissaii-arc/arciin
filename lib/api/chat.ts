@@ -6,6 +6,18 @@ export function getChatStreamPostUrl(): string {
   return getBrowserApiUrl("chat")
 }
 
+/** Parse Fastify error JSON from a failed chat POST (before SSE starts). */
+export async function parseChatHttpError(res: Response): Promise<string> {
+  const prefix = `Chat failed (${res.status})`
+  try {
+    const body = (await res.json()) as { error?: { message?: string } }
+    const detail = body?.error?.message?.trim()
+    return detail ? `${prefix}: ${detail}` : prefix
+  } catch {
+    return res.status === 500 ? `${prefix}. Check that the API is running.` : prefix
+  }
+}
+
 /** Open-file context for inline library preview chat. */
 export type ChatFocusAsset = {
   assetId: string

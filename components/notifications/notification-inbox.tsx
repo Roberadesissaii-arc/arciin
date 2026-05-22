@@ -15,7 +15,6 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty"
 import { useActivity } from "@/hooks/use-activity"
-import { recordInboxNotification } from "@/lib/notifications/record-inbox-notification"
 import {
   isInboxNotificationUnread,
   unreadNotificationCount,
@@ -96,46 +95,36 @@ export function NotificationInbox() {
   const clearAll = useNotificationInboxStore((s) => s.clearAll)
   const hydrated = useNotificationInboxStore((s) => s.hydrated)
   const activityBackfillDone = useNotificationInboxStore((s) => s.activityBackfillDone)
-  const setActivityBackfillDone = useNotificationInboxStore((s) => s.setActivityBackfillDone)
+  const backfillFromActivity = useNotificationInboxStore((s) => s.backfillFromActivity)
 
-  const activityQuery = useActivity()
-  const visitMarkedRef = useRef(false)
+  const needsActivityBackfill = hydrated && !activityBackfillDone && items.length === 0
+  const activityQuery = useActivity({ enabled: needsActivityBackfill })
+  const backfillStartedRef = useRef(false)
 
   useEffect(() => {
     hydrate()
   }, [hydrate])
 
   useEffect(() => {
-    if (!hydrated || visitMarkedRef.current) return
-    visitMarkedRef.current = true
-    markAllRead()
-  }, [hydrated, markAllRead])
-
-  useEffect(() => {
-    if (!hydrated || activityBackfillDone || items.length > 0 || !activityQuery.data?.length) {
+    if (!needsActivityBackfill || !activityQuery.data?.length || backfillStartedRef.current) {
       return
     }
-    for (const event of activityQuery.data.slice(0, 40)) {
-      const mapped = mapActivityToInbox(event)
-      if (mapped) {
-        recordInboxNotification({
-          id: mapped.id,
-          title: mapped.title,
-          message: mapped.message,
-          variant: mapped.variant,
-          source: mapped.source,
-          read: mapped.read,
-        })
-      }
-    }
-    setActivityBackfillDone()
-  }, [
-    hydrated,
-    activityBackfillDone,
-    items.length,
-    activityQuery.data,
-    setActivityBackfillDone,
-  ])
+    backfillStartedRef.current = true
+    const entries = activityQuery.data
+      .slice(0, 40)
+      .map(mapActivityToInbox)
+      .filter((row): row is InboxNotification => row !== null)
+      .map((row) => ({
+        id: row.id,
+        title: row.title,
+        message: row.message,
+        variant: row.variant,
+        source: row.source,
+        read: row.read,
+        createdAt: row.createdAt,
+      }))
+    backfillFromActivity(entries)
+  }, [needsActivityBackfill, activityQuery.data, backfillFromActivity])
 
   const sorted = useMemo(
     () => [...items].sort((a, b) => b.createdAt.localeCompare(a.createdAt)),

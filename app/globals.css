@@ -370,3 +370,67 @@ html.reduce-motion .dashboard-main [data-slot="card"]:hover {
     opacity: 0.7;
   }
 }
+
+/* PDF workspace loading — stacked pages + shimmer (no book flip) */
+@keyframes arciin-pdf-load-page-1 {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-3px);
+  }
+}
+@keyframes arciin-pdf-load-page-2 {
+  0%,
+  100% {
+    transform: translateY(4px);
+    opacity: 0.55;
+  }
+  50% {
+    transform: translateY(1px);
+    opacity: 0.72;
+  }
+}
+@keyframes arciin-pdf-load-page-3 {
+  0%,
+  100% {
+    transform: translateY(8px);
+    opacity: 0.35;
+  }
+  50% {
+    transform: translateY(5px);
+    opacity: 0.48;
+  }
+}
+@keyframes arciin-pdf-load-shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  55%,
+  100% {
+    transform: translateX(200%);
+  }
+}
+
+.arciin-pdf-load-page-1 {
+  animation: arciin-pdf-load-page-1 2.4s ease-in-out infinite;
+}
+.arciin-pdf-load-page-2 {
+  animation: arciin-pdf-load-page-2 2.4s ease-in-out infinite;
+}
+.arciin-pdf-load-page-3 {
+  animation: arciin-pdf-load-page-3 2.4s ease-in-out infinite;
+}
+.arciin-pdf-load-shimmer {
+  animation: arciin-pdf-load-shimmer 2.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .arciin-pdf-load-page-1,
+  .arciin-pdf-load-page-2,
+  .arciin-pdf-load-page-3,
+  .arciin-pdf-load-shimmer {
+    animation: none;
+  }
+}

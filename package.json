@@ -28,7 +28,9 @@
     "db:deploy": "prisma migrate deploy",
     "db:init": "bash scripts/arciin-init.sh",
     "db:seed": "prisma db seed",
-    "db:studio": "prisma studio"
+    "db:studio": "prisma studio",
+    "pdfjs:copy-wasm": "mkdir -p public/pdfjs-wasm && cp -r node_modules/pdfjs-dist/wasm/. public/pdfjs-wasm/",
+    "postinstall": "pnpm pdfjs:copy-wasm"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
