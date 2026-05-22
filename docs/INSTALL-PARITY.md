@@ -22,6 +22,8 @@ Arciin supports two production install paths. Both run the **same application** 
 bash scripts/verify-install-parity.sh
 ```
 
+If the UI loads but `/api/*` returns **502**, the API process is down (Docker: `bash scripts/docker-doctor.sh`; see `docs/DOCKER.md` troubleshooting).
+
 ## Environment files
 
 - **Native:** copy `.env.example` → `.env` (or let `install.sh` create it).
