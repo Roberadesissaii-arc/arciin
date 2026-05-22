@@ -28,7 +28,7 @@ export async function buildFocusAssetSystemAppend(
 
   const pageNote =
     focus.currentPage && focus.currentPage > 0
-      ? ` The user is viewing page ${focus.currentPage} in the preview. Prefer that page when answering page-specific questions.`
+      ? ` The user is viewing **PDF page ${focus.currentPage}** in the preview (viewer "Page X / total" uses PDF pages, not printed book pages). Prefer that page when answering page-specific questions; use the page index to map printed pages and chapters.`
       : ""
 
   const isPdf =

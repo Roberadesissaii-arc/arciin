@@ -93,7 +93,7 @@ export const ARCIIN_CHAT_TOOLS = [
     function: {
       name: "read_pdf_asset",
       description:
-        "Extract text from a PDF in the user's library with page markers (--- Page N ---). Use when they ask about document contents, quotes, or which page mentions something.",
+        "Extract text from a PDF with a PDF page index (printed page vs PDF page vs chapter). Markers look like --- PDF page 66 · printed page 43 · Chapter 4 ---. Use [goto-page:N] with PDF page N from the index when navigating. Use when they ask about contents, chapters, or which page mentions something.",
       parameters: {
         type: "object",
         properties: {
