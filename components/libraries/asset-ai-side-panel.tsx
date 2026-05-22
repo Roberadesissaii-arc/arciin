@@ -101,7 +101,13 @@ export function AssetAiSidePanel({
     /\.pdf$/i.test(asset.originalFilename) || asset.mimeType === "application/pdf"
   const pdfPageIndex = usePdfNavigationIndex(asset.id, isPdfAsset)
 
-  const [pickedModel, setPickedModel] = useState<string | null>(null)
+  const [pickedModel, setPickedModel] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem(CHAT_SELECTED_MODEL_KEY)
+    } catch {
+      return null
+    }
+  })
   const [pickedProfileId, setPickedProfileId] = useState<string | null>(() => {
     try {
       return localStorage.getItem(CHAT_SELECTED_PROFILE_ID_KEY)
@@ -110,9 +116,19 @@ export function AssetAiSidePanel({
     }
   })
   const [imageModelUserPicked, setImageModelUserPicked] = useState(false)
+  const [prevAssetId, setPrevAssetId] = useState(asset.id)
+
+  if (asset.id !== prevAssetId) {
+    setPrevAssetId(asset.id)
+    setImageModelUserPicked(false)
+    if (isImageAsset) setPickedModel(null)
+  }
 
   const chatModel = useAssetChatModel(asset, {
-    preferredModel: pickedModel ?? undefined,
+    preferredModel:
+      isImageAsset && !imageModelUserPicked
+        ? undefined
+        : pickedModel ?? undefined,
     preferredProfileId: pickedProfileId ?? undefined,
   })
   const {
@@ -126,6 +142,15 @@ export function AssetAiSidePanel({
     ollamaShow,
     ollamaShowLoading,
   } = chatModel
+
+  const effectivePickedModel = useMemo(() => {
+    if (isImageAsset) {
+      if (imageModelUserPicked) return pickedModel?.trim() || null
+      if (!loading && activeModel) return activeModel
+      return null
+    }
+    return pickedModel?.trim() || null
+  }, [activeModel, imageModelUserPicked, isImageAsset, loading, pickedModel])
 
   const [messages, setMessages] = useState<PanelMessage[]>([])
   const [input, setInput] = useState("")
@@ -189,20 +214,6 @@ export function AssetAiSidePanel({
     : null
 
   useEffect(() => {
-    if (isImageAsset) {
-      setPickedModel(null)
-      setImageModelUserPicked(false)
-      return
-    }
-    try {
-      const stored = localStorage.getItem(CHAT_SELECTED_MODEL_KEY)
-      if (stored && !pickedModel) setPickedModel(stored)
-    } catch {
-      /* private mode */
-    }
-  }, [asset.id, isImageAsset])
-
-  useEffect(() => {
     if (isImageAsset) return
     if (pickedModel && pickedProfileId) return
     void getChatSelection()
@@ -221,11 +232,6 @@ export function AssetAiSidePanel({
         /* local fallback */
       })
   }, [isImageAsset, pickedModel, pickedProfileId])
-
-  useEffect(() => {
-    if (!isImageAsset || imageModelUserPicked || loading || !activeModel) return
-    setPickedModel(activeModel)
-  }, [activeModel, imageModelUserPicked, isImageAsset, loading])
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" })
@@ -258,7 +264,7 @@ export function AssetAiSidePanel({
 
   const runChatStream = useCallback(
     async (historyMessages: PanelMessage[], assistantId: string) => {
-      const modelToSend = pickedModel?.trim() || activeModel
+      const modelToSend = effectivePickedModel || activeModel
       if (!profile || !modelToSend) return
       if (setupHint) return
       if (need === "vision" && !visionCapable) return
@@ -390,7 +396,7 @@ export function AssetAiSidePanel({
     },
     [
       activeModel,
-      pickedModel,
+      effectivePickedModel,
       asset.id,
       asset.updatedAt,
       focus,
@@ -453,7 +459,7 @@ export function AssetAiSidePanel({
     return null
   }, [messages])
 
-  const displayModel = pickedModel?.trim() || activeModel
+  const displayModel = effectivePickedModel || activeModel
 
   const canSend =
     Boolean(profile && displayModel) &&

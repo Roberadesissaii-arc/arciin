@@ -14,18 +14,22 @@ export function SyntaxHighlightedCode({
   language: string
   className?: string
 }) {
-  const [html, setHtml] = useState<string | null>(null)
+  const cacheKey = `${language}\0${code}`
+  const [highlight, setHighlight] = useState<{ key: string; html: string } | null>(
+    null,
+  )
 
   useEffect(() => {
     let cancelled = false
-    setHtml(null)
     void highlightCodeToHtml(code, language).then((result) => {
-      if (!cancelled) setHtml(result)
+      if (!cancelled) setHighlight({ key: cacheKey, html: result })
     })
     return () => {
       cancelled = true
     }
-  }, [code, language])
+  }, [cacheKey, code, language])
+
+  const html = highlight?.key === cacheKey ? highlight.html : null
 
   if (!html) {
     return (

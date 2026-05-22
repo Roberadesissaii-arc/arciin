@@ -147,6 +147,25 @@ export function SetupStoragePicker({
             })}
           </ul>
 
+          {discovery.unmountedDevices?.length ? (
+            <div className="rounded-xl border border-amber-500/25 bg-amber-500/5 px-3 py-2 text-[11px] leading-relaxed text-zinc-400">
+              <p className="font-medium text-amber-200/90">Unmounted drive(s) on this server</p>
+              <p className="mt-1">
+                Mount on the host first (SSH), then rescan setup or pick the folder below. Example:{" "}
+                <span className="font-mono text-zinc-300">
+                  {discovery.unmountedDevices[0]!.suggestedArciinPath}
+                </span>
+              </p>
+              <ul className="mt-1.5 space-y-0.5 font-mono text-[10px] text-zinc-500">
+                {discovery.unmountedDevices.map((d) => (
+                  <li key={d.id}>
+                    {d.device} ({d.sizeLabel}) → {d.suggestedMountPoint}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
           {discovery.installNotes.length > 0 ? (
             <ul className="space-y-1 rounded-xl border border-white/8 bg-white/[0.02] px-3 py-2 text-[11px] leading-relaxed text-zinc-500">
               {discovery.installNotes.map((note) => (

@@ -54,7 +54,6 @@ export function MusicPlayerBar() {
           "bg-card/95 px-3 py-2.5 shadow-lg shadow-black/10 ring-1 ring-black/[0.06] backdrop-blur-xl",
         )}
       >
-        {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
         <audio ref={audioRef} src={audioSrc ?? undefined} preload="metadata" className="hidden" />
 
         <Button

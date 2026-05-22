@@ -15,7 +15,7 @@ import {
 import { queryKeys } from "@/lib/api/query-keys"
 import { formatBytes } from "@/lib/utils/format-bytes"
 import { cn } from "@/lib/utils"
-import type { StorageVolumeOption } from "@/lib/types/models"
+import type { StorageVolumeOption, UnmountedBlockDevice } from "@/lib/types/models"
 
 function formatFree(option: StorageVolumeOption) {
   if (option.availableBytes == null) return "Unknown free space"
@@ -54,6 +54,8 @@ export function StorageMigratePanel({ usageBytes }: { usageBytes: number }) {
   const job = migrateStatusQuery.data?.job
   const volumes = volumesQuery.data?.volumes ?? []
   const migrationTargets = volumesQuery.data?.migrationTargets ?? []
+  const unmountedDevices = volumesQuery.data?.unmountedDevices ?? []
+  const isDocker = volumesQuery.data?.isDockerRuntime ?? false
   const currentVolume = volumes.find((v) => v.isCurrent)
 
   useEffect(() => {
@@ -75,9 +77,9 @@ export function StorageMigratePanel({ usageBytes }: { usageBytes: number }) {
             Move storage to another disk
           </h3>
           <p className="mt-1 max-w-xl text-[12px] leading-relaxed text-muted-foreground">
-            Attached another SSD or USB drive? Pick a volume with different free space than your
-            current disk. To only move out of the app folder on the same disk, use the
-            &quot;Same disk&quot; option below.
+            {isDocker
+              ? "Files live on the host folder shown below (not inside the git clone). Mount a larger SSD on the server, rescan, then transfer."
+              : "Attached another SSD or USB drive? Pick a volume with more free space. To only change folder on the same disk, use a Same disk option."}
           </p>
         </div>
         <Button
@@ -194,9 +196,17 @@ export function StorageMigratePanel({ usageBytes }: { usageBytes: number }) {
           </ul>
         )}
 
-        {migrationTargets.length === 0 && !volumesQuery.isLoading && volumes.length > 0 ? (
+        {unmountedDevices.length > 0 ? (
+          <UnmountedDrivesPanel devices={unmountedDevices} />
+        ) : null}
+
+        {migrationTargets.length === 0 &&
+        unmountedDevices.length === 0 &&
+        !volumesQuery.isLoading &&
+        volumes.length > 0 ? (
           <p className="text-[12px] text-muted-foreground">
-            No other writable volumes found. Mount another drive and rescan to transfer here.
+            No other mounted volumes with free space. Attach and mount a drive on the host (see{" "}
+            <span className="font-mono">lsblk</span>), then Rescan.
           </p>
         ) : null}
 
@@ -228,5 +238,38 @@ export function StorageMigratePanel({ usageBytes }: { usageBytes: number }) {
         </p>
       </div>
     </section>
+  )
+}
+
+function UnmountedDrivesPanel({ devices }: { devices: UnmountedBlockDevice[] }) {
+  return (
+    <div className="space-y-2 rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-3">
+      <p className="text-[12px] font-medium text-foreground">
+        Unmounted drive{devices.length === 1 ? "" : "s"} detected on this server
+      </p>
+      <p className="text-[11px] leading-relaxed text-muted-foreground">
+        Arciin only lists disks that are mounted. Format and mount on the host (SSH), then Rescan.
+        Example for an empty partition:
+      </p>
+      <ul className="space-y-2">
+        {devices.map((d) => (
+          <li
+            key={d.id}
+            className="rounded-lg border border-border bg-card/80 px-3 py-2 text-[11px] text-muted-foreground"
+          >
+            <p className="font-medium text-foreground">
+              {d.device} · {d.sizeLabel}
+              {d.filesystem ? ` · ${d.filesystem}` : ""}
+            </p>
+            <pre className="mt-1.5 overflow-x-auto whitespace-pre-wrap font-mono text-[10px] leading-relaxed text-foreground/90">{`sudo mkdir -p ${d.suggestedMountPoint}
+sudo mkfs.ext4 -L arciin-data ${d.device}   # only if the disk is empty
+echo '${d.device} ${d.suggestedMountPoint} ext4 defaults,nofail 0 2' | sudo tee -a /etc/fstab
+sudo mount -a
+sudo chown -R $(id -u):$(id -g) ${d.suggestedMountPoint}
+# Then set storage to ${d.suggestedArciinPath} and transfer`}</pre>
+          </li>
+        ))}
+      </ul>
+    </div>
   )
 }

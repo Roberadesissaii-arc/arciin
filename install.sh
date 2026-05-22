@@ -614,6 +614,11 @@ ensure_arciin_storage_path() {
   if [[ "$preset" == "./data/arciin" ]] || [[ "$preset" == "${ROOT_DIR}/data/arciin" ]]; then
     preset=""
   fi
+  # Docker container path — not valid for native PM2 installs.
+  if [[ "$preset" == "/data/arciin" ]]; then
+    warn "ARCIIN_DATA_DIR=/data/arciin is for Docker only; choosing a host folder instead."
+    preset=""
+  fi
 
   local resolved
   resolved="$(_arciin_setup_host_storage "${ROOT_DIR}" "$preset" "${env_file}" 0)" \

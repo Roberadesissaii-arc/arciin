@@ -142,10 +142,10 @@ function PdfPageCanvas({
   }, [dprCap, layoutWidth, onHeight, pageNumber, pdf, ready, renderWidth])
 
   useEffect(() => {
+    const host = hostRef.current
     return () => {
-      const host = hostRef.current
       const c = canvasRef.current
-      if (c?.parentElement === host) c.remove()
+      if (host && c?.parentElement === host) c.remove()
       canvasRef.current = null
       setReady(false)
       lastRenderWidthRef.current = 0

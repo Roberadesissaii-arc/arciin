@@ -1,6 +1,10 @@
+import { execFile } from "node:child_process"
 import fs from "node:fs"
 import { access, mkdir, readFile, statfs } from "node:fs/promises"
 import path from "node:path"
+import { promisify } from "node:util"
+
+const execFileAsync = promisify(execFile)
 
 import { ARCIIN_DEFAULT_STORAGE_ROOT } from "@arciin/shared"
 
@@ -12,7 +16,7 @@ export type StorageVolumeOption = {
   label: string
   arciinPath: string
   mountPoint: string | null
-  kind: "recommended" | "mount" | "runtime" | "os-root" | "custom"
+  kind: "recommended" | "mount" | "runtime" | "os-root" | "custom" | "unmounted"
   filesystem: string | null
   device: string | null
   totalBytes: number | null
@@ -23,6 +27,18 @@ export type StorageVolumeOption = {
   largeExternal: boolean
   isCurrent?: boolean
   sameDiskAsCurrent?: boolean
+}
+
+export type UnmountedBlockDevice = {
+  id: string
+  device: string
+  name: string
+  sizeLabel: string
+  sizeBytes: number | null
+  filesystem: string | null
+  type: "disk" | "part"
+  suggestedMountPoint: string
+  suggestedArciinPath: string
 }
 
 export type StorageDiscovery = {
@@ -36,6 +52,7 @@ export type StorageDiscovery = {
     availableBytes: number | null
   }
   volumes: StorageVolumeOption[]
+  unmountedDevices: UnmountedBlockDevice[]
   installNotes: string[]
 }
 
@@ -234,9 +251,19 @@ export function consolidateStorageVolumes(
   return consolidated
 }
 
-function volumeLabel(kind: StorageVolumeOption["kind"], mountPoint: string, filesystem: string | null): string {
-  if (kind === "recommended") return "Recommended — outside the app folder"
-  if (kind === "runtime") return "Current API data directory"
+function volumeLabel(
+  kind: StorageVolumeOption["kind"],
+  mountPoint: string,
+  filesystem: string | null,
+  docker: boolean,
+): string {
+  if (kind === "recommended") {
+    return docker
+      ? "Host folder on disk (recommended)"
+      : "Recommended — outside the app folder"
+  }
+  if (kind === "runtime") return "Container path (same data as host folder)"
+  if (kind === "unmounted") return "Not mounted yet"
   if (mountPoint === "/") return "OS root filesystem"
   if (mountPoint.startsWith("/media/") || mountPoint.startsWith("/mnt/")) {
     return `Mounted drive — ${mountPoint}`
@@ -272,11 +299,127 @@ export function isVolumeCurrentStorage(
 
   if (ctx.discovery.isDockerRuntime) {
     const runtime = path.resolve(ctx.discovery.runtimeDataDir)
+    if (host && resolved === runtime) return false
     if (effective === runtime && host && resolved === host) return true
-    if (effective === runtime && resolved === runtime) return true
   }
 
   return false
+}
+
+function parseLsblkSizeBytes(raw: string): number | null {
+  const trimmed = raw.trim()
+  if (!trimmed) return null
+  if (/^\d+$/.test(trimmed)) return Number(trimmed)
+  const match = trimmed.match(/^([\d.]+)\s*([KMGTPE])?B?$/i)
+  if (!match) return null
+  const value = Number(match[1])
+  const unit = (match[2] ?? "B").toUpperCase()
+  const mult: Record<string, number> = {
+    B: 1,
+    K: 1024,
+    M: 1024 ** 2,
+    G: 1024 ** 3,
+    T: 1024 ** 4,
+    P: 1024 ** 5,
+    E: 1024 ** 6,
+  }
+  return Math.round(value * (mult[unit] ?? 1))
+}
+
+/** Disks/partitions from lsblk that have no mount point (SSD must be mounted before Arciin can use them). */
+export async function discoverUnmountedBlockDevices(): Promise<UnmountedBlockDevice[]> {
+  try {
+    const { stdout } = await execFileAsync(
+      "lsblk",
+      ["-rno", "NAME,SIZE,TYPE,MOUNTPOINT,FSTYPE"],
+      { timeout: 8000, maxBuffer: 256 * 1024 },
+    )
+    const rows: Array<{
+      name: string
+      sizeLabel: string
+      sizeBytes: number | null
+      type: string
+      mount: string
+      fstype: string
+    }> = []
+
+    for (const line of stdout.split("\n")) {
+      if (!line.trim()) continue
+      const parts = line.trim().split(/\s+/)
+      if (parts.length < 3) continue
+      const name = parts[0]!
+      const sizeLabel = parts[1]!
+      const type = parts[2]!
+      const mount = parts[3] ?? ""
+      const fstype = parts[4] ?? ""
+      if (name.startsWith("loop")) continue
+      if (type !== "disk" && type !== "part") continue
+      if (mount) continue
+      rows.push({
+        name,
+        sizeLabel,
+        sizeBytes: parseLsblkSizeBytes(sizeLabel),
+        type,
+        mount,
+        fstype,
+      })
+    }
+
+    const partNames = new Set(rows.filter((r) => r.type === "part").map((r) => r.name))
+    const filtered = rows.filter((row) => {
+      if (row.type === "disk" && [...partNames].some((p) => p.startsWith(row.name))) {
+        return false
+      }
+      return true
+    })
+
+    return filtered.map((row) => {
+      const mountSlug = row.name.replace(/[^a-zA-Z0-9]+/g, "-")
+      const suggestedMountPoint = `/mnt/arciin-${mountSlug}`
+      return {
+        id: `unmounted-${row.name}`,
+        device: `/dev/${row.name}`,
+        name: row.name,
+        sizeLabel: row.sizeLabel,
+        sizeBytes: row.sizeBytes,
+        filesystem: row.fstype || null,
+        type: row.type as "disk" | "part",
+        suggestedMountPoint,
+        suggestedArciinPath: path.join(suggestedMountPoint, ARCIIN_SUBDIR),
+      }
+    })
+  } catch {
+    return []
+  }
+}
+
+export function filterClientStorageVolumes(
+  volumes: StorageVolumeOption[],
+  discovery: Pick<StorageDiscovery, "isDockerRuntime" | "hostDataDir" | "runtimeDataDir">,
+): StorageVolumeOption[] {
+  const host = discovery.hostDataDir ? path.resolve(discovery.hostDataDir) : null
+  const runtime = path.resolve(discovery.runtimeDataDir)
+
+  return volumes.filter((v) => {
+    if (v.kind === "unmounted") return false
+    if (discovery.isDockerRuntime && v.kind === "runtime") return false
+    if (
+      discovery.isDockerRuntime &&
+      host &&
+      v.kind === "recommended" &&
+      path.resolve(v.arciinPath) === host
+    ) {
+      return true
+    }
+    if (
+      discovery.isDockerRuntime &&
+      host &&
+      path.resolve(v.arciinPath) === runtime
+    ) {
+      return false
+    }
+    return true
+  })
 }
 
 export function annotateStorageVolumes(
@@ -330,7 +473,12 @@ export async function discoverStorageVolumes(): Promise<StorageDiscovery> {
     const probe = await probeMount(parent)
     const option: StorageVolumeOption = {
       id: input.id,
-      label: volumeLabel(input.kind, input.mountPoint ?? resolved, input.filesystem ?? null),
+      label: volumeLabel(
+        input.kind,
+        input.mountPoint ?? resolved,
+        input.filesystem ?? null,
+        docker,
+      ),
       arciinPath: resolved,
       mountPoint: input.mountPoint,
       kind: input.kind,
@@ -353,16 +501,7 @@ export async function discoverStorageVolumes(): Promise<StorageDiscovery> {
     recommended: true,
   })
 
-  if (docker) {
-    await addOption({
-      id: "runtime",
-      arciinPath: runtimeDataDir,
-      mountPoint: runtimeDataDir,
-      kind: "runtime",
-      filesystem: null,
-      device: null,
-    })
-  } else if (resolvedDistinct(runtimeDataDir, recommended)) {
+  if (!docker && resolvedDistinct(runtimeDataDir, recommended)) {
     await addOption({
       id: "runtime",
       arciinPath: runtimeDataDir,
@@ -420,10 +559,15 @@ export async function discoverStorageVolumes(): Promise<StorageDiscovery> {
     return (b.availableBytes ?? 0) - (a.availableBytes ?? 0)
   })
 
+  const unmountedDevices = await discoverUnmountedBlockDevices()
+
   const installNotes: string[] = []
   if (docker) {
     installNotes.push(
-      "Docker stores files at /data/arciin inside containers. Set ARCIIN_HOST_DATA_DIR on the host (default /srv/arciin-storage/arciin) and re-run ./scripts/docker-setup.sh to bind-mount a larger disk.",
+      "Files are stored on the host at ARCIIN_HOST_DATA_DIR (shown below). /data/arciin inside containers is the same folder — not a second disk.",
+    )
+    installNotes.push(
+      "To use a larger SSD: mount it on the host, set ARCIIN_HOST_DATA_DIR to that folder, re-run ./scripts/docker-setup.sh, then transfer below.",
     )
     if (host) {
       installNotes.push(`Host folder from .env: ${host}`)
@@ -448,6 +592,19 @@ export async function discoverStorageVolumes(): Promise<StorageDiscovery> {
     )
   }
 
+  if (unmountedDevices.length > 0) {
+    const names = unmountedDevices.map((d) => `${d.device} (${d.sizeLabel})`).join(", ")
+    installNotes.push(
+      `Unmounted drive(s): ${names}. Mount on the host (e.g. ${unmountedDevices[0]!.suggestedMountPoint}), add to /etc/fstab, then Rescan.`,
+    )
+  }
+
+  const clientVolumes = filterClientStorageVolumes(volumes, {
+    isDockerRuntime: docker,
+    hostDataDir: host,
+    runtimeDataDir,
+  })
+
   return {
     runtimeDataDir,
     hostDataDir: host,
@@ -458,7 +615,8 @@ export async function discoverStorageVolumes(): Promise<StorageDiscovery> {
       totalBytes: osProbe.totalBytes,
       availableBytes: osProbe.availableBytes,
     },
-    volumes,
+    volumes: clientVolumes,
+    unmountedDevices,
     installNotes,
   }
 }

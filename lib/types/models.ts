@@ -82,7 +82,7 @@ export type StorageVolumeOption = {
   label: string
   arciinPath: string
   mountPoint: string | null
-  kind: "recommended" | "mount" | "runtime" | "os-root" | "custom"
+  kind: "recommended" | "mount" | "runtime" | "os-root" | "custom" | "unmounted"
   filesystem: string | null
   device: string | null
   totalBytes: number | null
@@ -96,6 +96,18 @@ export type StorageVolumeOption = {
   sameDiskAsCurrent?: boolean
 }
 
+export type UnmountedBlockDevice = {
+  id: string
+  device: string
+  name: string
+  sizeLabel: string
+  sizeBytes: number | null
+  filesystem: string | null
+  type: "disk" | "part"
+  suggestedMountPoint: string
+  suggestedArciinPath: string
+}
+
 export type StorageDiscovery = {
   runtimeDataDir: string
   hostDataDir: string | null
@@ -107,6 +119,8 @@ export type StorageDiscovery = {
     availableBytes: number | null
   }
   volumes: StorageVolumeOption[]
+  /** Block devices visible to lsblk but not mounted (mount on the host, then Rescan). */
+  unmountedDevices: UnmountedBlockDevice[]
   installNotes: string[]
 }
 

@@ -171,6 +171,7 @@ function PreviewWorkspaceBody({
   const meta = metaParts.join(" · ")
 
   const pageBookmarked = useMemo(() => {
+    void bookmarkRevision
     if (!isPdf || pdfPage < 1) return false
     return isPdfPageBookmarked(asset.id, pdfPage)
   }, [asset.id, isPdf, pdfPage, bookmarkRevision])

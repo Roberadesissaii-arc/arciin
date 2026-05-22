@@ -147,7 +147,7 @@ chmod +x scripts/docker-setup.sh install.sh
 # or: ./scripts/docker-setup.sh
 ```
 
-You will choose (or set) **`ARCIIN_HOST_DATA_DIR`** — the real folder on your SSD/HDD where files are stored. See [`docs/DOCKER.md`](./docs/DOCKER.md).
+You will choose (or set) **`ARCIIN_HOST_DATA_DIR`** — the real folder on your SSD/HDD where files are stored (default `/srv/arciin-storage/arciin`). This is **not** `/data/arciin` (that path only exists inside containers). Mount USB/SATA disks on the host first — Settings → Storage detects unmounted drives. See [`docs/DOCKER.md`](./docs/DOCKER.md).
 
 **Native** (PM2 on the host — Arceserver-style servers):
 
@@ -155,6 +155,8 @@ You will choose (or set) **`ARCIIN_HOST_DATA_DIR`** — the real folder on your 
 chmod +x install.sh
 ./install.sh
 ```
+
+On **Raspberry Pi** (or any machine with a separate SSD), mount the large disk **before** or **during** install. `./install.sh` can list unmounted drives (`lsblk`) and guide you; after mount, use e.g. `/mnt/arciin-sda1/arciin` as `ARCIIN_DATA_DIR`. Settings → Storage also lists unmounted drives and shows mount commands. Do **not** use `/data/arciin` on native — that path is only for files inside Docker containers.
 
 Optional flags:
 
