@@ -16,7 +16,7 @@ export function VideoAssetViewer({
   const [error, setError] = useState<string | null>(null)
 
   return (
-    <div className={cn("relative flex h-full items-center justify-center bg-zinc-950 p-4", className)}>
+    <div className={cn("relative flex h-full items-center justify-center bg-white p-4", className)}>
       {!ready && !error ? (
         <Loader2 className="absolute size-8 animate-spin text-zinc-500" aria-hidden />
       ) : null}
@@ -31,7 +31,7 @@ export function VideoAssetViewer({
           preload="metadata"
           crossOrigin="use-credentials"
           className={cn(
-            "max-h-full max-w-full object-contain shadow-[0_8px_40px_rgba(0,0,0,0.45)]",
+            "max-h-full max-w-full object-contain shadow-[0_4px_24px_rgba(0,0,0,0.12)]",
             !ready && "opacity-0",
           )}
           onLoadedData={() => setReady(true)}

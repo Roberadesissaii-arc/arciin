@@ -483,6 +483,18 @@ export type AiSettings = {
 }
 
 /** Subset of Ollama `POST /api/show` JSON (fields vary by version). */
+export type OllamaModelCapabilityEntry = {
+  model: string
+  capabilities: string[]
+  vision: boolean
+  thinking: boolean
+}
+
+export type OllamaModelCapabilitiesResult = {
+  entries: OllamaModelCapabilityEntry[]
+  fromCache: boolean
+}
+
 export type OllamaModelShowData = {
   parameters?: string
   license?: string

@@ -7,6 +7,7 @@ import { toast } from "sonner"
 
 import { AssetAiSidePanel } from "@/components/libraries/asset-ai-side-panel"
 import { DesktopPdfViewer } from "@/components/libraries/desktop-pdf-viewer"
+import { ImageAssetViewer } from "@/components/libraries/image-asset-viewer"
 import { PreviewAskAiSeam } from "@/components/libraries/preview-ask-ai-seam"
 import { PreviewFloatingChrome } from "@/components/libraries/preview-floating-chrome"
 import { TextAssetViewer } from "@/components/libraries/text-asset-viewer"
@@ -98,8 +99,11 @@ function PreviewBody({
   return (
     <div
       className={cn(
-        "relative min-h-0 min-w-0 flex-1 overflow-hidden bg-zinc-950",
-        isPdf ? "flex flex-col" : "flex items-center justify-center p-4",
+        "relative min-h-0 min-w-0 flex-1 overflow-hidden bg-white",
+        isPdf || isImage || isText
+          ? "flex min-h-0 flex-col"
+          : "flex items-center justify-center p-4",
+        isText && "p-4",
       )}
     >
       {isPdf ? (
@@ -116,23 +120,14 @@ function PreviewBody({
       ) : isVideo ? (
         <VideoAssetViewer src={mediaUrl} />
       ) : isText ? (
-        <TextAssetViewer key={mediaUrl} fileUrl={mediaUrl} filename={title} />
+        <TextAssetViewer
+          key={mediaUrl}
+          fileUrl={mediaUrl}
+          filename={title}
+          className="mx-auto h-full w-full max-w-5xl"
+        />
       ) : isImage ? (
-        <div className="scrollbar-hide flex h-full w-full items-center justify-center overflow-auto p-6">
-          <div
-            className="flex shrink-0 items-center justify-center transition-[width] duration-200 ease-out"
-            style={{ width: `${Math.round(zoom * 100)}%`, maxWidth: "none" }}
-          >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              key={asset.id}
-              src={mediaUrl}
-              alt={title}
-              className="h-auto w-full max-w-none object-contain shadow-[0_8px_40px_rgba(0,0,0,0.45)]"
-              draggable={false}
-            />
-          </div>
-        </div>
+        <ImageAssetViewer src={mediaUrl} alt={title} zoom={zoom} />
       ) : (
         <p className="text-sm text-muted-foreground">Preview unavailable for this file type.</p>
       )}
@@ -249,7 +244,7 @@ function PreviewWorkspaceBody({
   return (
     <div
       className={cn(
-        "pointer-events-auto flex min-h-0 flex-1 flex-col overflow-hidden bg-zinc-950",
+        "pointer-events-auto flex min-h-0 flex-1 flex-col overflow-hidden bg-white",
         embedded ? "absolute inset-0 z-[60]" : "fixed inset-0 z-[200]",
       )}
       role="region"
@@ -347,7 +342,7 @@ function PreviewWorkspaceBody({
       {canAskAi ? (
         <div
           className={cn(
-            "flex shrink-0 overflow-hidden bg-zinc-950 transition-[max-height] duration-200 ease-out lg:hidden",
+            "flex shrink-0 overflow-hidden border-t border-zinc-200 bg-white transition-[max-height] duration-200 ease-out lg:hidden",
             aiOpen ? "max-h-[42vh] min-h-[220px]" : "max-h-0 min-h-0",
           )}
         >

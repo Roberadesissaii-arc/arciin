@@ -5,7 +5,7 @@ import { ChevronRight, Sparkles } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 const TAB =
-  "flex flex-col items-center justify-center gap-1.5 rounded-l-2xl border border-r-0 border-white/10 bg-zinc-950/75 py-3.5 pl-2.5 pr-2 shadow-[0_8px_32px_rgba(0,0,0,0.45)] backdrop-blur-xl transition-colors hover:border-[#ff4f12]/40 hover:bg-zinc-950/90"
+  "flex flex-col items-center justify-center gap-1.5 rounded-l-2xl border border-r-0 border-zinc-200 bg-white py-3.5 pl-2.5 pr-2 transition-colors hover:border-[#ff4f12]/40 hover:bg-zinc-50"
 
 /**
  * Vertical tab on the right edge of the preview pane (seam before Ask AI panel).
@@ -32,12 +32,12 @@ export function PreviewAskAiSeam({
       title={open ? "Collapse Ask AI" : "Ask AI"}
     >
       {open ? (
-        <ChevronRight className="size-4 text-zinc-400" />
+        <ChevronRight className="size-4 text-zinc-500" />
       ) : (
         <>
           <Sparkles className="size-4 text-[#ff4f12]" />
           <span
-            className="text-[10px] font-semibold tracking-wide text-zinc-300 [writing-mode:vertical-rl]"
+            className="text-[10px] font-semibold tracking-wide text-zinc-600 [writing-mode:vertical-rl]"
             style={{ textOrientation: "mixed" }}
           >
             Ask AI

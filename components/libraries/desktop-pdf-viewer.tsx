@@ -499,7 +499,7 @@ export function DesktopPdfViewer({
 
   if (loading) {
     return (
-      <div ref={scrollRef} className="h-full min-h-0 w-full bg-zinc-950">
+      <div ref={scrollRef} className="h-full min-h-0 w-full bg-white">
         <PdfPreviewLoading />
       </div>
     )
@@ -517,7 +517,7 @@ export function DesktopPdfViewer({
     <div
       ref={scrollRef}
       className={cn(
-        "scrollbar-hide h-full min-h-0 w-full overflow-y-auto overflow-x-hidden overscroll-y-contain bg-zinc-950",
+        "scrollbar-hide h-full min-h-0 w-full overflow-y-auto overflow-x-hidden overscroll-y-contain bg-white",
       )}
       style={{ WebkitOverflowScrolling: "touch" }}
     >

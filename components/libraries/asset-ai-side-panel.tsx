@@ -16,7 +16,6 @@ import {
   setChatSelection,
   type ChatFocusAsset,
 } from "@/lib/api/chat"
-import { filterModelsForAssetNeed } from "@/lib/chat/asset-chat-model"
 import {
   CHAT_SELECTED_MODEL_KEY,
   CHAT_SELECTED_PROFILE_ID_KEY,
@@ -95,13 +94,9 @@ export function AssetAiSidePanel({
   const meQuery = useAuth()
   const userName = meQuery.data?.user.name?.split(/\s+/)[0] ?? "there"
 
-  const [pickedModel, setPickedModel] = useState<string | null>(() => {
-    try {
-      return localStorage.getItem(CHAT_SELECTED_MODEL_KEY)
-    } catch {
-      return null
-    }
-  })
+  const isImageAsset = asset.mediaType === "IMAGE"
+
+  const [pickedModel, setPickedModel] = useState<string | null>(null)
   const [pickedProfileId, setPickedProfileId] = useState<string | null>(() => {
     try {
       return localStorage.getItem(CHAT_SELECTED_PROFILE_ID_KEY)
@@ -109,6 +104,7 @@ export function AssetAiSidePanel({
       return null
     }
   })
+  const [imageModelUserPicked, setImageModelUserPicked] = useState(false)
 
   const chatModel = useAssetChatModel(asset, {
     preferredModel: pickedModel ?? undefined,
@@ -188,6 +184,21 @@ export function AssetAiSidePanel({
     : null
 
   useEffect(() => {
+    if (isImageAsset) {
+      setPickedModel(null)
+      setImageModelUserPicked(false)
+      return
+    }
+    try {
+      const stored = localStorage.getItem(CHAT_SELECTED_MODEL_KEY)
+      if (stored && !pickedModel) setPickedModel(stored)
+    } catch {
+      /* private mode */
+    }
+  }, [asset.id, isImageAsset])
+
+  useEffect(() => {
+    if (isImageAsset) return
     if (pickedModel && pickedProfileId) return
     void getChatSelection()
       .then((remote) => {
@@ -204,7 +215,12 @@ export function AssetAiSidePanel({
       .catch(() => {
         /* local fallback */
       })
-  }, [pickedModel, pickedProfileId])
+  }, [isImageAsset, pickedModel, pickedProfileId])
+
+  useEffect(() => {
+    if (!isImageAsset || imageModelUserPicked || loading || !activeModel) return
+    setPickedModel(activeModel)
+  }, [activeModel, imageModelUserPicked, isImageAsset, loading])
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" })
@@ -219,6 +235,7 @@ export function AssetAiSidePanel({
 
   const handleModelSelect = useCallback(
     (p: ChatProfilePicker, model: string) => {
+      if (isImageAsset) setImageModelUserPicked(true)
       setPickedProfileId(p.id)
       setPickedModel(model)
       try {
@@ -231,7 +248,7 @@ export function AssetAiSidePanel({
         queryClient.setQueryData(queryKeys.chatSelection, saved)
       })
     },
-    [queryClient],
+    [isImageAsset, queryClient],
   )
 
   const runChatStream = useCallback(
@@ -490,8 +507,7 @@ export function AssetAiSidePanel({
       <div
         className={cn(
           "flex min-h-0 flex-1 flex-col overflow-hidden",
-          "rounded-tl-xl rounded-bl-xl border border-zinc-200/90 border-r-0 bg-white text-zinc-900",
-          "shadow-[-4px_0_24px_rgba(0,0,0,0.12)]",
+          "rounded-tl-xl rounded-bl-xl border border-zinc-200 border-r-0 bg-white text-zinc-900",
         )}
       >
         <div className="flex shrink-0 items-center justify-end gap-0.5 border-b border-zinc-100 px-3 py-2">
@@ -530,7 +546,7 @@ export function AssetAiSidePanel({
                 </h2>
 
                 <div
-                  className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-[#ff4f12]/25 bg-gradient-to-r from-[#ff4f12]/10 to-zinc-50 px-3 py-1.5 text-[11px] font-medium text-zinc-600 shadow-sm"
+                  className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-[#ff4f12]/25 bg-[#ff4f12]/5 px-3 py-1.5 text-[11px] font-medium text-zinc-600"
                   title={asset.originalFilename}
                 >
                   <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-[#ff4f12]/15">
@@ -550,7 +566,7 @@ export function AssetAiSidePanel({
                       type="button"
                       disabled={!canSend || streaming}
                       onClick={() => void sendMessage(s)}
-                      className="rounded-2xl border border-zinc-200/90 bg-white px-3.5 py-3 text-center text-[12px] leading-snug text-zinc-700 shadow-[0_2px_12px_rgba(0,0,0,0.06)] transition-colors hover:border-[#ff4f12]/30 hover:bg-zinc-50 hover:text-zinc-900 disabled:opacity-45"
+                      className="rounded-2xl border border-zinc-200 bg-zinc-50/50 px-3.5 py-3 text-center text-[12px] leading-snug text-zinc-700 transition-colors hover:border-[#ff4f12]/30 hover:bg-zinc-50 hover:text-zinc-900 disabled:opacity-45"
                     >
                       {s}
                     </button>
@@ -601,7 +617,7 @@ export function AssetAiSidePanel({
             <div className="mb-2 px-0.5">{statusHint}</div>
           ) : null}
           <form
-            className="overflow-visible rounded-2xl border border-zinc-200 bg-white shadow-sm focus-within:ring-2 focus-within:ring-[#ff4f12]/15"
+            className="overflow-visible rounded-2xl border border-zinc-200 bg-zinc-50/30 focus-within:border-[#ff4f12]/35 focus-within:ring-1 focus-within:ring-[#ff4f12]/10"
             onSubmit={(e) => {
               e.preventDefault()
               void sendMessage(input)
@@ -631,7 +647,7 @@ export function AssetAiSidePanel({
                 menuPortal
                 lightSurface
                 menuGap={14}
-                filterOllamaModels={(models) => filterModelsForAssetNeed(models, need)}
+                assetModelNeed={need}
                 ollamaShow={ollamaShow}
                 ollamaShowLoading={ollamaShowLoading}
               />

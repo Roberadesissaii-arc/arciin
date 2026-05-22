@@ -9,6 +9,7 @@ import {
   assetChatModelNeed,
   assetChatModeLabel,
   isOllamaChatProfile,
+  modelNameLooksVision,
   modelSupportsVision,
   pickModelForAssetFocus,
 } from "@/lib/chat/asset-chat-model"
@@ -69,29 +70,41 @@ export function useAssetChatModel(
 
   const availableQuery = useOllamaAvailableModels(profile?.id ?? "", Boolean(profile && ollama))
 
+  const explicitModel = options?.preferredModel?.trim() ?? ""
+
   const preferred =
-    options?.preferredModel?.trim() ||
+    explicitModel ||
     selectionModel ||
     profile?.defaultModel?.trim() ||
     ""
 
-  const explicitModel = options?.preferredModel?.trim() ?? ""
+  /** Image preview: ignore main-chat model picks that are not vision-capable. */
+  const preferredForPick = useMemo(() => {
+    const p = preferred.trim()
+    if (need !== "vision" || !p) return p
+    return modelNameLooksVision(p) ? p : ""
+  }, [need, preferred])
 
   const modelName = useMemo(
     () =>
       profile
         ? pickModelForAssetFocus({
             available: availableQuery.data?.models ?? [],
-            preferred: explicitModel || preferred,
+            preferred: preferredForPick,
             profileDefault: profile.defaultModel,
             need,
           })
         : "",
-    [availableQuery.data?.models, explicitModel, need, preferred, profile],
+    [availableQuery.data?.models, need, preferredForPick, profile],
   )
 
-  /** User pick wins; keep explicit choice even while Ollama tag lists load. */
-  const activeModel = (explicitModel || modelName).trim()
+  /** User pick wins when vision-capable; otherwise use image default (e.g. ministral-3:3b). */
+  const activeModel = useMemo(() => {
+    if (explicitModel && need === "vision" && !modelNameLooksVision(explicitModel)) {
+      return modelName.trim()
+    }
+    return (explicitModel || modelName).trim()
+  }, [explicitModel, modelName, need])
 
   const showQuery = useQuery({
     queryKey: queryKeys.ollamaModelShow(profile?.id ?? "", activeModel),
@@ -122,7 +135,7 @@ export function useAssetChatModel(
     : !activeModel && !modelsLoading
       ? "Pick a model from the list below."
       : need === "vision" && ollama && activeModel && !visionCapable
-        ? `“${activeModel}” may not support images. Choose a vision model (e.g. gemma3, llava).`
+        ? `“${activeModel}” may not support images. Choose a vision model (e.g. ministral-3:3b, gemma3).`
         : null
 
   return {

@@ -4,6 +4,7 @@ import type {
   ModelProfile,
   OllamaAvailableModelsResult,
   OllamaCloudModelsResult,
+  OllamaModelCapabilitiesResult,
   OllamaModelShowData,
   UpdateModelProfileInput,
 } from "@/lib/types/models"
@@ -56,4 +57,17 @@ export function getOllamaModelShow(
   signal?: AbortSignal,
 ) {
   return fetchApi<OllamaModelShowData>(`/models/${profileId}/show`, { method: "POST", body, signal })
+}
+
+/** Batch Ollama /api/show — vision / thinking per model tag (cached server-side). */
+export function getOllamaModelCapabilities(
+  profileId: string,
+  body: { models: string[] },
+  signal?: AbortSignal,
+) {
+  return fetchApi<OllamaModelCapabilitiesResult>(`/models/${profileId}/model-capabilities`, {
+    method: "POST",
+    body,
+    signal,
+  })
 }

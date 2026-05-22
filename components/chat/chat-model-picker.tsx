@@ -3,10 +3,18 @@
 import Link from "next/link"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { createPortal } from "react-dom"
-import { ChevronDown, Cloud, Info, Loader2, Sparkles } from "lucide-react"
+import { Brain, ChevronDown, Cloud, Eye, Info, Loader2, Sparkles } from "lucide-react"
 
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card"
+import {
+  filterModelsForAssetNeed,
+  type AssetChatModelNeed,
+} from "@/lib/chat/asset-chat-model"
 import { PROVIDER_MODELS } from "@/lib/chat/provider-models"
+import {
+  ollamaCapabilityMap,
+  useOllamaModelCapabilities,
+} from "@/lib/hooks/use-ollama-model-capabilities"
 import { useOllamaAvailableModels } from "@/lib/hooks/use-ollama-available-models"
 import { isOllamaProvider } from "@/lib/ollama-providers"
 import { cn } from "@/lib/utils"
@@ -21,8 +29,47 @@ export type ChatProfilePicker = {
   isEnabled?: boolean
 }
 
-const LIGHT_MENU =
-  "border-zinc-200 bg-white text-zinc-900 shadow-[0_12px_40px_rgba(15,23,42,0.12)]"
+const LIGHT_MENU = "border-zinc-200 bg-white text-zinc-900"
+
+/** Cloud → vision eye → thinking — icons only (capabilities from Ollama /api/show). */
+function ModelRowTrailingIcons({
+  isCloud,
+  vision,
+  thinking,
+  lightSurface,
+}: {
+  isCloud: boolean
+  vision: boolean
+  thinking: boolean
+  lightSurface?: boolean
+}) {
+  if (!isCloud && !vision && !thinking) return null
+  return (
+    <span className="flex shrink-0 items-center gap-1.5">
+      {isCloud ? (
+        <Cloud className="size-3.5 shrink-0 opacity-45" aria-label="Ollama Cloud" />
+      ) : null}
+      {vision ? (
+        <Eye
+          className={cn(
+            "size-3.5 shrink-0",
+            lightSurface ? "text-violet-600" : "text-violet-400",
+          )}
+          aria-label="Vision — supports images"
+        />
+      ) : null}
+      {thinking ? (
+        <Brain
+          className={cn(
+            "size-3.5 shrink-0 opacity-70",
+            lightSurface ? "text-sky-600" : "text-sky-400",
+          )}
+          aria-label="Thinking — reasoning traces"
+        />
+      ) : null}
+    </span>
+  )
+}
 
 function OllamaProfileSection({
   profile,
@@ -30,6 +77,8 @@ function OllamaProfileSection({
   selectedModel,
   onSelect,
   filterModels,
+  assetModelNeed,
+  capabilitiesEnabled,
   lightSurface,
 }: {
   profile: ChatProfilePicker
@@ -37,6 +86,9 @@ function OllamaProfileSection({
   selectedModel: string
   onSelect: (model: string) => void
   filterModels?: (models: string[]) => string[]
+  assetModelNeed?: AssetChatModelNeed
+  /** When true, batch-fetch Ollama /api/show per model tag */
+  capabilitiesEnabled?: boolean
   lightSurface?: boolean
 }) {
   const isCloud = profile.provider === "ollama-cloud"
@@ -44,7 +96,21 @@ function OllamaProfileSection({
 
   const raw =
     q.data?.models ?? (profile.defaultModel ? [profile.defaultModel] : [])
-  const models = filterModels ? filterModels(raw) : raw
+
+  const capQuery = useOllamaModelCapabilities(
+    profile.id,
+    raw,
+    Boolean(capabilitiesEnabled && raw.length > 0),
+  )
+  const capMap = ollamaCapabilityMap(capQuery.data?.entries)
+  const capsProbing = capQuery.isFetching && capMap.size === 0
+
+  const models =
+    assetModelNeed != null
+      ? filterModelsForAssetNeed(raw, assetModelNeed, capMap)
+      : filterModels
+        ? filterModels(raw)
+        : raw
   const fromCache = q.data?.fromCache ?? false
   const showLoading = q.isPending && models.length === 0
   const showProbing = q.isFetching && !fromCache && isCloud
@@ -65,6 +131,11 @@ function OllamaProfileSection({
           {profile.displayName}
           {showProbing ? (
             <Loader2 className="size-2.5 animate-spin opacity-60" aria-hidden />
+          ) : null}
+          {capsProbing ? (
+            <span className="normal-case tracking-normal text-[9px] font-medium text-muted-foreground/80">
+              checking vision…
+            </span>
           ) : null}
         </span>
         {profile.isDefault ? (
@@ -133,7 +204,12 @@ function OllamaProfileSection({
               )}
             >
               <span className="flex-1 truncate">{model}</span>
-              {isCloud ? <Cloud className="size-3.5 shrink-0 opacity-45" aria-hidden /> : null}
+              <ModelRowTrailingIcons
+                isCloud={isCloud}
+                vision={capMap.get(model)?.vision ?? false}
+                thinking={capMap.get(model)?.thinking ?? false}
+                lightSurface={lightSurface}
+              />
               {active ? (
                 <span
                   className={cn(
@@ -301,6 +377,8 @@ function ModelPickerMenu({
   onChange,
   onPick,
   filterOllamaModels,
+  assetModelNeed,
+  capabilitiesEnabled,
   lightSurface,
 }: {
   enabledProfiles: ChatProfilePicker[]
@@ -309,6 +387,8 @@ function ModelPickerMenu({
   onChange: (profile: ChatProfilePicker, model: string) => void
   onPick: () => void
   filterOllamaModels?: (models: string[]) => string[]
+  assetModelNeed?: AssetChatModelNeed
+  capabilitiesEnabled?: boolean
   lightSurface?: boolean
 }) {
   if (enabledProfiles.length === 0) {
@@ -344,6 +424,8 @@ function ModelPickerMenu({
                 selectedProfile={selectedProfile}
                 selectedModel={selectedModel}
                 filterModels={filterOllamaModels}
+                assetModelNeed={assetModelNeed}
+                capabilitiesEnabled={capabilitiesEnabled}
                 lightSurface={lightSurface}
                 onSelect={(model) => {
                   onChange(profile, model)
@@ -445,6 +527,7 @@ export function ChatModelPicker({
   ollamaShow,
   ollamaShowLoading,
   filterOllamaModels,
+  assetModelNeed,
   compact,
   menuPortal,
   lightSurface,
@@ -458,6 +541,8 @@ export function ChatModelPicker({
   ollamaShowLoading?: boolean
   /** e.g. vision-only list for image preview */
   filterOllamaModels?: (models: string[]) => string[]
+  /** Uses Ollama /api/show capabilities when the menu is open */
+  assetModelNeed?: AssetChatModelNeed
   /** Tighter padding for narrow side panels */
   compact?: boolean
   /** Render menu in a portal (avoids overflow clipping in side panels) */
@@ -468,6 +553,7 @@ export function ChatModelPicker({
   menuGap?: number
 }) {
   const [open, setOpen] = useState(false)
+  const [prefetchCaps, setPrefetchCaps] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
@@ -512,13 +598,13 @@ export function ChatModelPicker({
       isOllamaProvider(selectedProfile.provider) &&
       (selectedModel || selectedProfile?.defaultModel),
   )
-
   const enabledProfiles = profiles.filter((p) => p.isEnabled !== false)
+  const capabilitiesEnabled = open || prefetchCaps
 
   const menuPanel = open ? (
     <ScrollFadeList
-      maxHeightClass="max-h-80 rounded-xl border shadow-lg"
-      className={lightSurface ? LIGHT_MENU : "border-border bg-card"}
+      maxHeightClass="max-h-80 rounded-xl border"
+      className={lightSurface ? LIGHT_MENU : "border-border bg-card shadow-md"}
     >
       <ModelPickerMenu
         enabledProfiles={enabledProfiles}
@@ -527,6 +613,8 @@ export function ChatModelPicker({
         onChange={onChange}
         onPick={() => setOpen(false)}
         filterOllamaModels={filterOllamaModels}
+        assetModelNeed={assetModelNeed}
+        capabilitiesEnabled={capabilitiesEnabled}
         lightSurface={lightSurface}
       />
     </ScrollFadeList>
@@ -552,9 +640,12 @@ export function ChatModelPicker({
         <button
           ref={triggerRef}
           type="button"
+          onMouseEnter={() => setPrefetchCaps(true)}
+          onFocus={() => setPrefetchCaps(true)}
           onClick={() => {
             setOpen((v) => {
               const next = !v
+              if (next) setPrefetchCaps(true)
               if (next && usePortal) updateMenuPos()
               return next
             })

@@ -21,10 +21,10 @@ import {
 import { cn } from "@/lib/utils"
 
 const GLASS =
-  "border border-white/10 bg-zinc-950/70 text-zinc-100 shadow-[0_8px_32px_rgba(0,0,0,0.5)] backdrop-blur-xl"
+  "border border-zinc-200/90 bg-white/90 text-zinc-800 shadow-[0_4px_24px_rgba(0,0,0,0.08)] backdrop-blur-xl"
 
 const ICON_BTN =
-  "size-9 shrink-0 rounded-lg border border-transparent bg-transparent text-zinc-200 shadow-none transition-colors hover:!border-[#ff4f12]/40 hover:!bg-zinc-950/90 hover:!text-zinc-100"
+  "size-9 shrink-0 rounded-lg border border-transparent bg-transparent text-zinc-600 shadow-none transition-colors hover:!border-[#ff4f12]/40 hover:!bg-zinc-50 hover:!text-zinc-900"
 
 export function PreviewFloatingChrome({
   onClose,
@@ -91,7 +91,7 @@ export function PreviewFloatingChrome({
               <ZoomOut className="size-4" />
             </Button>
             <span
-              className="min-w-[3rem] px-1 text-center text-[11px] font-semibold tabular-nums text-zinc-300"
+              className="min-w-[3rem] px-1 text-center text-[11px] font-semibold tabular-nums text-zinc-600"
               aria-live="polite"
             >
               {zoomPct}%
@@ -107,7 +107,7 @@ export function PreviewFloatingChrome({
             >
               <ZoomIn className="size-4" />
             </Button>
-            <span className="mx-0.5 h-5 w-px bg-white/10" aria-hidden />
+            <span className="mx-0.5 h-5 w-px bg-zinc-200" aria-hidden />
           </>
         ) : null}
 
@@ -159,7 +159,7 @@ export function PreviewFloatingChrome({
           </Button>
         ) : null}
 
-        <span className="mx-0.5 h-5 w-px bg-white/10" aria-hidden />
+        <span className="mx-0.5 h-5 w-px bg-zinc-200" aria-hidden />
 
         <Button asChild variant="ghost" size="icon" className={ICON_BTN}>
           <a href={downloadHref} download aria-label="Download file">
@@ -172,7 +172,7 @@ export function PreviewFloatingChrome({
         <p
           className={cn(
             GLASS,
-            "pointer-events-none absolute bottom-5 left-1/2 z-20 max-w-[min(92vw,36rem)] -translate-x-1/2 truncate rounded-full px-4 py-1.5 text-center text-[11px] tabular-nums text-zinc-400",
+            "pointer-events-none absolute bottom-5 left-1/2 z-20 max-w-[min(92vw,36rem)] -translate-x-1/2 truncate rounded-full px-4 py-1.5 text-center text-[11px] tabular-nums text-zinc-500",
           )}
         >
           {meta}

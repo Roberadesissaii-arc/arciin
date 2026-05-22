@@ -434,3 +434,21 @@ html.reduce-motion .dashboard-main [data-slot="card"]:hover {
     animation: none;
   }
 }
+
+/* In-app code file preview (Shiki / github-light) */
+.syntax-highlighted-code pre.shiki {
+  margin: 0;
+  padding: 1rem 1.25rem;
+  background: transparent !important;
+  overflow-x: auto;
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 13px;
+  line-height: 1.65;
+  tab-size: 2;
+}
+
+.syntax-highlighted-code code {
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+}

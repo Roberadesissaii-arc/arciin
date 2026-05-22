@@ -7,6 +7,7 @@ import {
   invalidateOllamaCloudProbeCache,
   probeOllamaCloudModels,
 } from "@/services/chat/ollama-cloud-models"
+import { resolveOllamaModelCapabilities } from "@/services/models/ollama-model-capabilities"
 import { requireRole } from "@/services/security/auth"
 
 const OLLAMA_PROVIDERS = new Set(["ollama", "ollama-local", "ollama-cloud"])
@@ -283,6 +284,58 @@ export async function registerModelRoutes(fastify: FastifyInstance) {
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Could not probe Ollama Cloud"
         reply.status(502).send({ error: { code: "OLLAMA_PROBE_FAILED", message: msg } })
+      }
+    },
+  )
+
+  /** Batch Ollama /api/show — vision / thinking flags per model (cached). */
+  fastify.post(
+    "/models/:id/model-capabilities",
+    { preHandler: requireRole(["OWNER", "ADMIN", "MEMBER"]) },
+    async (request, reply) => {
+      const { id } = request.params as { id: string }
+      const parsed = z
+        .object({
+          models: z.array(z.string().min(1).max(200)).max(80),
+        })
+        .safeParse(request.body)
+      if (!parsed.success) {
+        reply.status(400).send({
+          error: { code: "VALIDATION_ERROR", message: "Invalid payload.", details: parsed.error.flatten() },
+        })
+        return
+      }
+
+      const profile = await fastify.prisma.modelProfile.findUnique({ where: { id } })
+      if (!profile) {
+        reply.status(404).send({ error: { code: "NOT_FOUND", message: "Not found." } })
+        return
+      }
+      if (!OLLAMA_PROVIDERS.has(profile.provider)) {
+        reply.status(400).send({
+          error: { code: "NOT_SUPPORTED", message: "Capabilities lookup is only for Ollama profiles." },
+        })
+        return
+      }
+
+      const cloudKeyError = assertOllamaCloudApiKey(profile.provider, profile.apiKey)
+      if (cloudKeyError) {
+        reply.status(400).send({ error: cloudKeyError })
+        return
+      }
+
+      try {
+        const { entries, fromCache } = await resolveOllamaModelCapabilities({
+          profileId: profile.id,
+          baseUrl: ollamaNativeBase(profile.provider, profile.baseUrl),
+          apiKey: profile.apiKey,
+          models: parsed.data.models,
+          redis: fastify.redis,
+        })
+        reply.send({ data: { entries, fromCache } })
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Could not reach Ollama"
+        reply.status(502).send({ error: { code: "OLLAMA_UNREACHABLE", message: msg } })
       }
     },
   )

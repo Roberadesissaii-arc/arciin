@@ -43,6 +43,8 @@ export const queryKeys = {
   chatContext: ["chat", "context"] as const,
   availableModels: (profileId: string) => ["models", profileId, "available"] as const,
   ollamaModelShow: (profileId: string, model: string) => ["models", profileId, "show", model] as const,
+  ollamaModelCapabilities: (profileId: string, modelsKey: string) =>
+    ["models", profileId, "capabilities", modelsKey] as const,
   aiSettings: ["settings", "ai"] as const,
   aiSecuritySettings: ["settings", "ai-security"] as const,
   passwordVault: ["settings", "password-vault"] as const,
