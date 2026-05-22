@@ -18,7 +18,7 @@ export function DashboardPageIntro({
   statsGridClassName,
 }: {
   title: string
-  subtitle?: string
+  subtitle?: ReactNode
   description: ReactNode
   stats?: DashboardIntroStat[]
   /** Rich content below description (e.g. detailed stat cards). Renders instead of `stats` when set. */
@@ -54,7 +54,9 @@ export function DashboardPageIntro({
               {title}
               <span className="text-primary">.</span>
             </h2>
-            {subtitle ? <p className="text-sm font-medium text-zinc-600">{subtitle}</p> : null}
+            {subtitle ? (
+              <div className="text-sm font-medium text-zinc-600">{subtitle}</div>
+            ) : null}
           </div>
           {(badge || actions) ? (
             <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">

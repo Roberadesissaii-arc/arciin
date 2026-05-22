@@ -9,6 +9,7 @@ import {
   ChatModelPicker,
   type ChatProfilePicker,
 } from "@/components/chat/chat-model-picker"
+import { Skeleton } from "@/components/ui/skeleton"
 import {
   getChatSelection,
   getChatStreamPostUrl,
@@ -25,6 +26,7 @@ import { useAssetChatModel } from "@/hooks/use-asset-chat-model"
 import { useSpeechToText } from "@/hooks/use-speech-to-text"
 import { queryKeys } from "@/lib/api/query-keys"
 import { useAuth } from "@/hooks/use-auth"
+import { heyTherePhrase, resolveUserGreeting } from "@/lib/user/greeting"
 import { parseAssistantHighlights } from "@/lib/files/parse-pdf-highlight-request"
 import type { PdfHighlightTarget } from "@/lib/files/pdf-highlight-types"
 import { stripAssistantStreamMarkup } from "@/lib/chat/strip-stream-markup"
@@ -94,7 +96,12 @@ export function AssetAiSidePanel({
 }) {
   const queryClient = useQueryClient()
   const meQuery = useAuth()
-  const userName = meQuery.data?.user.name?.split(/\s+/)[0] ?? "there"
+  const greeting = resolveUserGreeting({
+    isLoading: meQuery.isLoading,
+    isOffline: meQuery.isError || !meQuery.data?.user,
+    fullName: meQuery.data?.user.name,
+  })
+  const heyName = heyTherePhrase(greeting)
 
   const isImageAsset = asset.mediaType === "IMAGE"
   const isPdfAsset =
@@ -554,12 +561,19 @@ export function AssetAiSidePanel({
           {messages.length === 0 ? (
             <div className="flex min-h-0 flex-1 flex-col">
               <div className="shrink-0 space-y-3 pt-4">
-                <h2
-                  className="text-[22px] font-semibold leading-[1.25] tracking-tight text-zinc-900"
-                  style={{ fontFamily: "var(--font-space-grotesk, sans-serif)" }}
-                >
-                  Hey {userName}, what do you want to know about this file?
-                </h2>
+                {heyName ? (
+                  <h2
+                    className="text-[22px] font-semibold leading-[1.25] tracking-tight text-zinc-900"
+                    style={{ fontFamily: "var(--font-space-grotesk, sans-serif)" }}
+                  >
+                    Hey {heyName}, what do you want to know about this file?
+                  </h2>
+                ) : (
+                  <Skeleton
+                    className="h-7 w-[min(100%,18rem)] rounded-lg"
+                    style={{ fontFamily: "var(--font-space-grotesk, sans-serif)" }}
+                  />
+                )}
 
                 <div
                   className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-[#ff4f12]/25 bg-[#ff4f12]/5 px-3 py-1.5 text-[11px] font-medium text-zinc-600"

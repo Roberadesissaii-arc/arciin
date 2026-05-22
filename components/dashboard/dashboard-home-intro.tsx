@@ -7,6 +7,7 @@ import { ArrowUpRight, Upload } from "lucide-react"
 
 import { DashboardPageIntro } from "@/components/app-shell/dashboard-page-intro"
 import { Button } from "@/components/ui/button"
+import { Skeleton } from "@/components/ui/skeleton"
 import { useAuth } from "@/hooks/use-auth"
 import { useLibraries } from "@/hooks/use-libraries"
 import { useUploads } from "@/hooks/use-uploads"
@@ -17,6 +18,7 @@ import { queryKeys } from "@/lib/api/query-keys"
 import { formatBytes } from "@/lib/utils/format-bytes"
 import { formatRelativeDate } from "@/lib/utils/format-date"
 import { resolveStorageUsagePercent } from "@/lib/utils/storage-usage"
+import { resolveUserGreeting, welcomeBackPhrase } from "@/lib/user/greeting"
 import type { HealthStatus } from "@/lib/types/models"
 
 const HEALTH_KEYS: Array<keyof Omit<HealthStatus, "version" | "timestamp">> = [
@@ -82,11 +84,29 @@ export function DashboardHomeIntro() {
     storageQuery.isLoading ||
     healthQuery.isLoading
 
-  const userName = authQuery.data?.user.name?.split(" ")[0] ?? "there"
+  const identityLoading = authQuery.isLoading
+  const serverUnreachable = healthQuery.isError || authQuery.isError
+
+  const greeting = resolveUserGreeting({
+    isLoading: identityLoading,
+    isOffline: serverUnreachable || authQuery.isError || !authQuery.data?.user,
+    fullName: authQuery.data?.user.name,
+  })
+  const welcomeName = welcomeBackPhrase(greeting)
+
   const instanceName =
     generalQuery.data?.instanceName ??
     storage?.instanceName ??
     "Your instance"
+
+  const subtitle =
+    identityLoading ? (
+      <Skeleton className="h-4 w-56 max-w-full rounded-md" />
+    ) : welcomeName ? (
+      `${instanceName} · welcome back, ${welcomeName}`
+    ) : (
+      `${instanceName} · welcome back`
+    )
 
   const healthLabel =
     healthOnline == null
@@ -98,7 +118,7 @@ export function DashboardHomeIntro() {
   return (
     <DashboardPageIntro
       title="Overview"
-      subtitle={`${instanceName} · welcome back, ${userName}`}
+      subtitle={subtitle}
       description={
         <>
           Your private command center for files, libraries, and background work on this server.
