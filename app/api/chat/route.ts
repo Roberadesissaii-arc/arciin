@@ -13,6 +13,8 @@ export async function POST(request: Request) {
   const auth = request.headers.get("authorization") ?? ""
   const contentType = request.headers.get("content-type") ?? "application/json"
 
+  const bodyBuffer = await request.arrayBuffer().catch(() => new ArrayBuffer(0))
+
   const upstream = await fetch(`${apiOrigin}/api/chat`, {
     method: "POST",
     headers: {
@@ -20,12 +22,10 @@ export async function POST(request: Request) {
       ...(cookie ? { Cookie: cookie } : {}),
       ...(auth ? { Authorization: auth } : {}),
     },
-    body: request.body,
-    // @ts-expect-error — required for streaming request bodies in Node fetch
-    duplex: "half",
+    body: bodyBuffer.byteLength > 0 ? bodyBuffer : undefined,
   })
 
-  if (!upstream.ok && !upstream.body) {
+  if (!upstream.ok) {
     const text = await upstream.text().catch(() => "")
     return new Response(text || upstream.statusText, {
       status: upstream.status,

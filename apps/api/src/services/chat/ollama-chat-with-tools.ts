@@ -203,6 +203,9 @@ async function collectStreamedOllama(
   let buffer = ""
   let prevThinking = ""
   let prevContent = ""
+  // Ollama sends per-chunk deltas; accumulate so writeSseDelta's diff logic preserves spaces
+  let accumulatedThinking = ""
+  let accumulatedContent = ""
   let finalMessage: OllamaMessage["message"] = {}
   let usage = { inputTokens: 0, outputTokens: 0 }
 
@@ -222,16 +225,19 @@ async function collectStreamedOllama(
         const m = json.message ?? {}
         finalMessage = m
 
-        const thinkingFull =
+        const thinkingDelta =
           (typeof m.thinking === "string" ? m.thinking : "") ||
           (typeof m.thought === "string" ? m.thought : "")
-        const contentFull = typeof m.content === "string" ? m.content : ""
+        const contentDelta = typeof m.content === "string" ? m.content : ""
+
+        accumulatedThinking += thinkingDelta
+        accumulatedContent += contentDelta
 
         if (forward.thinking) {
-          prevThinking = writeSseDelta(raw, "thinking", thinkingFull, prevThinking)
+          prevThinking = writeSseDelta(raw, "thinking", accumulatedThinking, prevThinking)
         }
         if (forward.text) {
-          prevContent = writeSseDelta(raw, "text", contentFull, prevContent)
+          prevContent = writeSseDelta(raw, "text", accumulatedContent, prevContent)
         }
 
         if (json.done) {
@@ -247,7 +253,7 @@ async function collectStreamedOllama(
     if (done) break
   }
 
-  return { ...finalMessage, usage }
+  return { ...finalMessage, content: accumulatedContent || finalMessage.content, usage }
 }
 
 /**
