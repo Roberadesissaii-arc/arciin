@@ -29,6 +29,8 @@
     "db:init": "bash scripts/arciin-init.sh",
     "db:seed": "prisma db seed",
     "db:studio": "prisma studio",
+    "icons:generate": "node scripts/generate-pwa-icons.mjs ./public && node scripts/generate-pwa-icons.mjs ../arciin-app/public",
+    "install:verify": "bash scripts/verify-install-parity.sh",
     "pdfjs:copy-wasm": "mkdir -p public/pdfjs-wasm && cp -r node_modules/pdfjs-dist/wasm/. public/pdfjs-wasm/",
     "postinstall": "pnpm pdfjs:copy-wasm"
   },

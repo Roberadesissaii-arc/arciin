@@ -350,6 +350,14 @@ Create API keys in the app: **Developer → API Keys**.
 
 ---
 
+## Docker vs native
+
+Both paths run the same stack (web, API, worker, Postgres, Redis, migrations, storage). See **[`docs/INSTALL-PARITY.md`](./docs/INSTALL-PARITY.md)**.
+
+```bash
+bash scripts/verify-install-parity.sh   # quick parity check
+```
+
 ## Docker
 
 Full guide: **[`docs/DOCKER.md`](./docs/DOCKER.md)** (storage bind mounts, any Linux host, troubleshooting).
