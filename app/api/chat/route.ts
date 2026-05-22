@@ -10,6 +10,7 @@ export const dynamic = "force-dynamic"
 export async function POST(request: Request) {
   const apiOrigin = getServerApiOrigin()
   const cookie = request.headers.get("cookie") ?? ""
+  const auth = request.headers.get("authorization") ?? ""
   const contentType = request.headers.get("content-type") ?? "application/json"
 
   const upstream = await fetch(`${apiOrigin}/api/chat`, {
@@ -17,6 +18,7 @@ export async function POST(request: Request) {
     headers: {
       "Content-Type": contentType,
       ...(cookie ? { Cookie: cookie } : {}),
+      ...(auth ? { Authorization: auth } : {}),
     },
     body: request.body,
     // @ts-expect-error — required for streaming request bodies in Node fetch
