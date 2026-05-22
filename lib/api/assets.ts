@@ -1,5 +1,6 @@
 import { fetchApi } from "@/lib/api/client"
 import type { AssetSummary } from "@/lib/types/models"
+import type { PdfPageLabel } from "@arciin/shared"
 
 export type AssetFilters = {
   libraryId?: string
@@ -56,6 +57,13 @@ export function updateAsset(
   input: { title?: string; description?: string; originalFilename?: string },
 ) {
   return fetchApi<AssetSummary>(`/assets/${assetId}`, { method: "PATCH", body: input })
+}
+
+export function fetchPdfNavigationIndex(assetId: string, signal?: AbortSignal) {
+  return fetchApi<{ asset_id: string; num_pages: number; page_index: PdfPageLabel[] }>(
+    `/assets/${assetId}/pdf-navigation-index`,
+    { method: "GET", signal },
+  )
 }
 
 export function getAssetsByIds(ids: string[], signal?: AbortSignal) {

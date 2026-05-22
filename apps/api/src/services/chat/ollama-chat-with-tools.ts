@@ -20,6 +20,7 @@ import {
 import { buildSyntheticReadTextAssetArgsFromUser } from "@/services/chat/read-text-asset-synthetic"
 import { normalizeOllamaCloudModelId } from "@/services/chat/ollama-cloud-models"
 import { formatOllamaProviderError, ollamaAuthHeaders } from "@/services/chat/ollama-http"
+import { stripAssistantStreamMarkup } from "@arciin/shared"
 import { writeSseEvent } from "@/services/chat/sse-stream"
 
 export function detectLibraryToolIntent(
@@ -134,11 +135,15 @@ function writeSseDelta(
   prevFull: string,
 ): string {
   if (!full || full === prevFull) return prevFull
-  const delta = full.startsWith(prevFull) ? full.slice(prevFull.length) : full
+  const cleaned = kind === "text" ? stripAssistantStreamMarkup(full) : full
+  const cleanedPrev = kind === "text" ? stripAssistantStreamMarkup(prevFull) : prevFull
+  const delta = cleaned.startsWith(cleanedPrev)
+    ? cleaned.slice(cleanedPrev.length)
+    : cleaned
   if (delta) {
     writeSseEvent(raw, { [kind]: delta })
   }
-  return full
+  return cleaned
 }
 
 type ToolMode = false | "all" | "read-only" | "sandbox"
@@ -287,9 +292,11 @@ export async function streamOllamaWithArciinTools(opts: {
   toolCtx: ArciinChatToolContext
   ai?: AiChatToolBehavior
   security?: Pick<AiSecuritySettingsResolved, "libraryToolAccess" | "readOnlyTools" | "requireToolApproval">
+  /** Focused file preview already has PDF/text in context — skip tool rounds. */
+  disableTools?: boolean
 }): Promise<void> {
   const { raw, baseUrl, model, toolCtx, apiKey } = opts
-  const agentEnabled = opts.ai?.agent ?? true
+  const agentEnabled = (opts.ai?.agent ?? true) && !opts.disableTools
   const autonomyEnabled = opts.ai?.autonomy ?? false
   const requireApproval = opts.security?.requireToolApproval ?? false
   const libraryToolAccess: AiLibraryToolAccess =
@@ -307,6 +314,11 @@ export async function streamOllamaWithArciinTools(opts: {
   const messages = [...opts.messages]
   let totalIn = 0
   let totalOut = 0
+
+  if (opts.disableTools) {
+    await streamFinalAnswer(raw, baseUrl, model, messages, totalIn, totalOut, apiKey)
+    return
+  }
 
   const lastUser = [...messages].reverse().find((m) => m.role === "user")
   const priorUserTexts = messages.filter((m) => m.role === "user").map((m) => m.content)

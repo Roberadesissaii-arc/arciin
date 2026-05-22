@@ -36,6 +36,7 @@ import {
 } from "@/services/integrations/plex"
 import { PLEX_CONNECTOR_DEF, JELLYFIN_CONNECTOR_DEF } from "@/services/integrations/library-media-connector"
 import { requireSessionRolesOrApiKeyScopes } from "@/services/security/auth"
+import { getPdfNavigationIndex } from "@/services/chat/read-pdf-asset"
 import { serializeAsset } from "@/services/serializers"
 import { loadUserPreferences } from "@/services/user/preferences"
 
@@ -429,6 +430,27 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
         data: serializeAsset(asset),
       })
     }
+  )
+
+  fastify.get(
+    "/assets/:assetId/pdf-navigation-index",
+    {
+      preHandler: requireSessionRolesOrApiKeyScopes(
+        ["OWNER", "ADMIN", "MEMBER", "VIEWER"],
+        ["assets:read"],
+      ),
+    },
+    async (request, reply) => {
+      const params = assetIdParamsSchema.parse(request.params)
+      const result = await getPdfNavigationIndex(fastify.prisma, params.assetId)
+      if ("error" in result) {
+        reply.status(400).send({
+          error: { code: result.error, message: result.message },
+        })
+        return
+      }
+      reply.send({ data: result })
+    },
   )
 
   fastify.get(

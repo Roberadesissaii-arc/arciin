@@ -27,11 +27,13 @@ import { queryKeys } from "@/lib/api/query-keys"
 import { useAuth } from "@/hooks/use-auth"
 import { parseAssistantHighlights } from "@/lib/files/parse-pdf-highlight-request"
 import type { PdfHighlightTarget } from "@/lib/files/pdf-highlight-types"
+import { stripAssistantStreamMarkup } from "@/lib/chat/strip-stream-markup"
 import {
-  parseAssistantGotoPage,
+  resolvePdfGotoPage,
   stripGotoPageTags,
 } from "@/lib/files/parse-pdf-page-request"
 import { ASSET_PREVIEW_CHAT_SYSTEM } from "@/lib/chat/asset-preview-system"
+import { usePdfNavigationIndex } from "@/lib/hooks/use-pdf-navigation-index"
 import { PreviewChatMessage } from "@/components/libraries/preview-chat-message"
 import { cn } from "@/lib/utils"
 import type { AssetSummary } from "@/lib/types/models"
@@ -95,6 +97,9 @@ export function AssetAiSidePanel({
   const userName = meQuery.data?.user.name?.split(/\s+/)[0] ?? "there"
 
   const isImageAsset = asset.mediaType === "IMAGE"
+  const isPdfAsset =
+    /\.pdf$/i.test(asset.originalFilename) || asset.mimeType === "application/pdf"
+  const pdfPageIndex = usePdfNavigationIndex(asset.id, isPdfAsset)
 
   const [pickedModel, setPickedModel] = useState<string | null>(null)
   const [pickedProfileId, setPickedProfileId] = useState<string | null>(() => {
@@ -335,7 +340,11 @@ export function AssetAiSidePanel({
               if (json.error) throw new Error(json.error)
               if (json.text) {
                 accumulated += json.text
-                const goto = parseAssistantGotoPage(accumulated, pdfPageCount)
+                const cleanedAccum = stripAssistantStreamMarkup(accumulated)
+                const goto = resolvePdfGotoPage(cleanedAccum, {
+                  maxPage: pdfPageCount,
+                  pageIndex: pdfPageIndex ?? undefined,
+                })
                 if (
                   goto &&
                   onNavigateToPage &&
@@ -344,7 +353,7 @@ export function AssetAiSidePanel({
                   lastGotoRef.current = goto
                   onNavigateToPage(goto)
                 }
-                const highlights = parseAssistantHighlights(accumulated, pdfPageCount)
+                const highlights = parseAssistantHighlights(cleanedAccum, pdfPageCount)
                 if (onHighlightPdf && highlights.length > 0) {
                   const sig = highlights.map((h) => `${h.page}:${h.quote}`).join("|")
                   if (sig !== lastHighlightSigRef.current) {
@@ -352,7 +361,7 @@ export function AssetAiSidePanel({
                     onHighlightPdf(highlights)
                   }
                 }
-                const display = stripGotoPageTags(accumulated)
+                const display = stripGotoPageTags(cleanedAccum)
                 setMessages((m) =>
                   m.map((msg) =>
                     msg.id === assistantId ? { ...msg, content: display } : msg,
@@ -390,6 +399,7 @@ export function AssetAiSidePanel({
       setupHint,
       visionCapable,
       pdfPageCount,
+      pdfPageIndex,
       onNavigateToPage,
       onHighlightPdf,
     ],

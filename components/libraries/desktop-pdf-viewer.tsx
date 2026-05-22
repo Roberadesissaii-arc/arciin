@@ -211,8 +211,8 @@ export function DesktopPdfViewer({
   const prevLayoutWidthRef = useRef(0)
   const scrollRestoreRef = useRef(false)
   const pendingScrollRatioRef = useRef<number | null>(null)
-  /** Only run programmatic scroll once per scrollToPageAt — not on every page height update. */
-  const lastHandledScrollAtRef = useRef<number | undefined>(undefined)
+  /** Dedupe scroll runs per target + measured height (re-scroll when page height is measured). */
+  const lastScrollKeyRef = useRef("")
   const anchorPageRef = useRef(1)
   const programmaticScrollUntilRef = useRef(0)
   const updateWindowFromScrollRef = useRef<() => void>(() => {})
@@ -470,10 +470,13 @@ export function DesktopPdfViewer({
 
   useEffect(() => {
     if (!scrollToPage || scrollToPage < 1 || numPages < 1 || scrollToPageAt == null) return
-    if (lastHandledScrollAtRef.current === scrollToPageAt) return
-    lastHandledScrollAtRef.current = scrollToPageAt
 
     const page = Math.min(scrollToPage, numPages)
+    const measured = pageHeights.get(page)
+    const scrollKey = `${scrollToPageAt}:${page}:${measured ?? "est"}`
+    if (lastScrollKeyRef.current === scrollKey) return
+    lastScrollKeyRef.current = scrollKey
+
     const root = scrollRef.current
     if (!root) return
 
@@ -482,9 +485,9 @@ export function DesktopPdfViewer({
       top += pageHeights.get(p) ?? defaultPageHeight(layoutWidth)
     }
 
-    programmaticScrollUntilRef.current = Date.now() + 900
+    programmaticScrollUntilRef.current = Date.now() + 1400
     anchorPageRef.current = page
-    root.scrollTo({ top, behavior: "smooth" })
+    root.scrollTo({ top, behavior: "auto" })
     onPageChangeRef.current?.(page, numPages)
     const start = Math.max(1, page - WINDOW_BEFORE)
     const end = Math.min(numPages, page + WINDOW_AFTER)

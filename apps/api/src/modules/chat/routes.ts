@@ -940,6 +940,7 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
             baseUrl: nativeBase,
             model,
             apiKey: profile.apiKey,
+            disableTools: Boolean(focusAsset),
             messages: ollamaMessages,
             toolCtx: {
               prisma: fastify.prisma,

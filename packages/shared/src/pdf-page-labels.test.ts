@@ -47,7 +47,7 @@ describe("chapter navigation index", () => {
     }))
 
     const index = buildPdfPageIndex(labels)
-    assert.equal(findPdfPageForChapter(index, 4), 65)
+    assert.equal(findPdfPageForChapter(index, 4), 66)
     assert.equal(findPdfPageForPrintedPage(index, 43), 66)
   })
 

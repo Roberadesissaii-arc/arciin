@@ -2,6 +2,7 @@ import type { PrismaClient } from "@prisma/client"
 import {
   buildPdfPageIndex,
   extractPageLabels,
+  formatChapterNavigationHints,
   formatPdfPageIndexForPrompt,
   formatPdfPageMarker,
   type PdfPageLabel,
@@ -124,7 +125,10 @@ export async function readPdfAssetContent(
     const pageIndex = buildIndexFromTexts(
       new Map(indexPageNumbers.map((n) => [n, texts.get(n) ?? ""])),
     )
-    const indexPrompt = formatPdfPageIndexForPrompt(pageIndex)
+    const chapterHints = formatChapterNavigationHints(pageIndex)
+    const indexPrompt = [chapterHints, formatPdfPageIndexForPrompt(pageIndex)]
+      .filter(Boolean)
+      .join("\n\n")
 
     const parts: string[] = []
     for (const i of contentPageNumbers) {
@@ -162,5 +166,30 @@ export async function readPdfAssetContent(
     }
   } catch {
     return { error: "read_failed", message: "Could not extract text from this PDF." }
+  }
+}
+
+/** Lightweight chapter / printed-page index for client-side goto resolution. */
+export async function getPdfNavigationIndex(
+  prisma: PrismaClient,
+  assetId: string,
+): Promise<
+  | { error: string; message: string }
+  | { asset_id: string; num_pages: number; page_index: PdfPageLabel[] }
+> {
+  const result = await readPdfAssetContent(prisma, {
+    assetId,
+    maxPages: 1,
+    maxChars: 500,
+  })
+  if (typeof result.page_index !== "object" || !Array.isArray(result.page_index)) {
+    const msg =
+      typeof result.message === "string" ? result.message : "Could not build PDF page index."
+    return { error: "read_failed", message: msg }
+  }
+  return {
+    asset_id: String(result.asset_id ?? assetId),
+    num_pages: Number(result.num_pages) || 0,
+    page_index: result.page_index as PdfPageLabel[],
   }
 }
