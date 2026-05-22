@@ -79,6 +79,14 @@ export function verifyPasswordVault(input: VaultUnlockInput) {
   })
 }
 
+/** Verify credentials and return one entry with password — does not unlock the whole vault. */
+export function revealPasswordVaultEntry(id: string, input: VaultUnlockInput) {
+  return fetchApi<PasswordVaultEntry>(`/settings/password-vault/${id}/reveal`, {
+    method: "POST",
+    body: input,
+  })
+}
+
 export function setPasswordVaultPin(input: {
   pin: string
   confirmPin: string

@@ -245,7 +245,7 @@ export function PasswordsPanel() {
               </SettingRow>
               <SettingRow
                 label="Reveal passwords by default"
-                hint="Passwords stay masked, but the eye icon reveals them without PIN or password. Requires account password to enable."
+                hint="While the vault is unlocked on the Passwords page, the eye shows passwords without asking again. Requires account password to enable."
               >
                 <PillSwitch
                   on={display.revealByDefault}

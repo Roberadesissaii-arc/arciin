@@ -26,8 +26,8 @@ export function PasswordVaultPageIntro({
       : pinConfigured
         ? "Saved credentials stay encrypted on disk. Unlock with your 6-digit PIN to view or copy secrets."
         : lockRequired && !secretsVisible
-          ? "Unlock the vault to view credentials. Set a PIN under Settings → Passwords for quicker access."
-          : "Import from Settings, then manage logins here. Passwords stay masked until you reveal them."
+          ? "Unlock the vault once to browse every entry with the eye icon, or tap the eye on a single row to view that password only."
+          : "Vault is unlocked — use the eye on each row to show or hide that password. Lock the vault when you are done."
 
   return (
     <DashboardPageIntro

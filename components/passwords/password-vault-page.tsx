@@ -14,9 +14,10 @@ import {
   Trash2,
 } from "lucide-react"
 import Link from "next/link"
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { toast } from "sonner"
 
+import { PasswordVaultEntryDetail } from "@/components/passwords/password-vault-entry-detail"
 import { PasswordVaultPageIntro } from "@/components/passwords/password-vault-page-intro"
 import {
   VaultEntryEditDialog,
@@ -39,6 +40,7 @@ import {
   deletePasswordVaultEntry,
   getPasswordVault,
   lockPasswordVault,
+  revealPasswordVaultEntry,
   unlockPasswordVault,
   updatePasswordVaultEntry,
   verifyPasswordVault,
@@ -84,17 +86,29 @@ function unlockPayload(value: string, pinConfigured: boolean): VaultUnlockInput 
   return pinConfigured ? { pin: value } : { password: value }
 }
 
+function entryPlainPassword(
+  entry: PasswordVaultEntry,
+  ephemeralPasswords: Record<string, string>,
+): string | null {
+  if (ephemeralPasswords[entry.id]) return ephemeralPasswords[entry.id]!
+  return entry.password ?? null
+}
+
 export function PasswordVaultPage() {
   const queryClient = useQueryClient()
   const [unlockOpen, setUnlockOpen] = useState(false)
+  const [pendingVaultUnlock, setPendingVaultUnlock] = useState(false)
   const [pendingRevealId, setPendingRevealId] = useState<string | null>(null)
   const [pendingCopy, setPendingCopy] = useState<{ label: string; entryId: string } | null>(null)
   const [revealed, setRevealed] = useState<Record<string, boolean>>({})
+  const [ephemeralPasswords, setEphemeralPasswords] = useState<Record<string, string>>({})
   const [editEntry, setEditEntry] = useState<PasswordVaultEntry | null>(null)
   const [editRevealedPassword, setEditRevealedPassword] = useState<string | null>(null)
   const [pendingEditPasswordReveal, setPendingEditPasswordReveal] = useState(false)
   const [deleteEntry, setDeleteEntry] = useState<PasswordVaultEntry | null>(null)
   const [autoPrompted, setAutoPrompted] = useState(false)
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [detailCollapsed, setDetailCollapsed] = useState(false)
 
   const vaultQuery = useQuery({
     queryKey: queryKeys.passwordVault,
@@ -105,7 +119,61 @@ export function PasswordVaultPage() {
   const secretsVisible = vaultQuery.data?.secretsVisible ?? !display.lockSidebarVault
   const lockRequired = vaultQuery.data?.lockRequired ?? display.lockSidebarVault
   const pinConfigured = vaultQuery.data?.pinConfigured ?? false
-  const entries = vaultQuery.data?.entries ?? []
+  const entries = useMemo(
+    () => vaultQuery.data?.entries ?? [],
+    [vaultQuery.data?.entries],
+  )
+
+  const effectiveSelectedId = useMemo(() => {
+    if (entries.length === 0) return null
+    if (selectedId && entries.some((e) => e.id === selectedId)) return selectedId
+    return entries[0]!.id
+  }, [entries, selectedId])
+
+  const selectedIndex = useMemo(() => {
+    if (!effectiveSelectedId || entries.length === 0) return -1
+    return entries.findIndex((e) => e.id === effectiveSelectedId)
+  }, [entries, effectiveSelectedId])
+
+  const selectedEntry = selectedIndex >= 0 ? entries[selectedIndex]! : null
+
+  const goToEntry = useCallback(
+    (index: number) => {
+      const next = entries[index]
+      if (next) {
+        setSelectedId(next.id)
+        setDetailCollapsed(false)
+      }
+    },
+    [entries],
+  )
+
+  const selectEntry = useCallback((id: string) => {
+    setSelectedId(id)
+    setDetailCollapsed(false)
+  }, [])
+
+  useEffect(() => {
+    if (!selectedEntry || entries.length < 2) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return
+      const target = e.target as HTMLElement | null
+      if (
+        target?.tagName === "INPUT" ||
+        target?.tagName === "TEXTAREA" ||
+        target?.isContentEditable
+      ) {
+        return
+      }
+      e.preventDefault()
+      if (e.key === "ArrowLeft" && selectedIndex > 0) goToEntry(selectedIndex - 1)
+      if (e.key === "ArrowRight" && selectedIndex < entries.length - 1) {
+        goToEntry(selectedIndex + 1)
+      }
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [entries.length, goToEntry, selectedEntry, selectedIndex])
 
   const unlockMutation = useMutation({
     mutationFn: unlockPasswordVault,
@@ -119,9 +187,18 @@ export function PasswordVaultPage() {
     onSuccess: () => {
       toast.success("Vault locked")
       setRevealed({})
+      setEphemeralPasswords({})
       void queryClient.invalidateQueries({ queryKey: queryKeys.passwordVault })
     },
     onError: () => toast.error("Could not lock vault"),
+  })
+
+  const revealEntryMutation = useMutation({
+    mutationFn: ({ id, input }: { id: string; input: VaultUnlockInput }) =>
+      revealPasswordVaultEntry(id, input),
+    onError: (err: Error) => {
+      toast.error(err.message || "Could not view password")
+    },
   })
 
   const deleteMutation = useMutation({
@@ -152,34 +229,53 @@ export function PasswordVaultPage() {
     onError: (err: Error) => toast.error(err.message || "Could not update credential"),
   })
 
+  const openVaultUnlock = useCallback(() => {
+    setPendingVaultUnlock(true)
+    setPendingRevealId(null)
+    setPendingCopy(null)
+    setPendingEditPasswordReveal(false)
+    setUnlockOpen(true)
+  }, [])
+
   useEffect(() => {
     if (vaultQuery.isLoading || autoPrompted) return
     if (entries.length === 0) return
     if (!lockRequired || secretsVisible) return
     queueMicrotask(() => {
       setAutoPrompted(true)
-      setUnlockOpen(true)
+      openVaultUnlock()
     })
-  }, [vaultQuery.isLoading, entries.length, lockRequired, secretsVisible, autoPrompted])
+  }, [vaultQuery.isLoading, entries.length, lockRequired, secretsVisible, autoPrompted, openVaultUnlock])
 
-  const requestUnlockForReveal = (entryId: string) => {
-    setPendingCopy(null)
+  const requestRevealForEntry = (entryId: string, copy?: { label: string; entryId: string }) => {
+    setPendingVaultUnlock(false)
     setPendingRevealId(entryId)
+    setPendingCopy(copy ?? null)
+    setPendingEditPasswordReveal(false)
     setUnlockOpen(true)
   }
 
-  const requestUnlockForCopy = (entryId: string, label: string) => {
-    setPendingRevealId(entryId)
-    setPendingCopy({ label, entryId })
-    setUnlockOpen(true)
-  }
+  const revealOnlyEntry = useCallback(
+    (entryId: string) => {
+      setRevealed({ [entryId]: true })
+      setEphemeralPasswords((prev) => {
+        const next: Record<string, string> = {}
+        if (prev[entryId]) next[entryId] = prev[entryId]!
+        return next
+      })
+    },
+    [],
+  )
 
-  const isPasswordVisible = (entry: PasswordVaultEntry) =>
-    Boolean(secretsVisible && entry.password && revealed[entry.id])
+  const isPasswordVisible = (entry: PasswordVaultEntry) => {
+    const plain = entryPlainPassword(entry, ephemeralPasswords)
+    return Boolean(plain && revealed[entry.id])
+  }
 
   const formatPassword = (entry: PasswordVaultEntry) => {
     if (!vaultEntryHasPassword(entry)) return "—"
-    if (isPasswordVisible(entry) && entry.password) return entry.password
+    const plain = entryPlainPassword(entry, ephemeralPasswords)
+    if (isPasswordVisible(entry) && plain) return plain
     return maskVaultPassword(maskLengthForEntry(entry), display.maskStyle)
   }
 
@@ -188,15 +284,20 @@ export function PasswordVaultPage() {
 
     if (isPasswordVisible(entry)) {
       setRevealed((p) => ({ ...p, [entry.id]: false }))
+      setEphemeralPasswords((p) => {
+        const next = { ...p }
+        delete next[entry.id]
+        return next
+      })
       return
     }
 
-    if (display.revealByDefault && secretsVisible) {
-      setRevealed((p) => ({ ...p, [entry.id]: true }))
+    if (secretsVisible) {
+      revealOnlyEntry(entry.id)
       return
     }
 
-    requestUnlockForReveal(entry.id)
+    requestRevealForEntry(entry.id)
   }
 
   const openEditEntry = (entry: PasswordVaultEntry) => {
@@ -206,74 +307,104 @@ export function PasswordVaultPage() {
 
   const onCopyPassword = (entry: PasswordVaultEntry) => {
     if (!vaultEntryHasPassword(entry)) return
-    const canCopyPlain =
-      secretsVisible &&
-      entry.password &&
-      (display.revealByDefault || revealed[entry.id])
-
-    if (canCopyPlain) {
-      void copyToClipboard(entry.password!, "Password")
+    const plain = entryPlainPassword(entry, ephemeralPasswords)
+    if (plain && revealed[entry.id]) {
+      void copyToClipboard(plain, "Password")
       return
     }
-    requestUnlockForCopy(entry.id, "Password")
+    if (secretsVisible && entry.password) {
+      revealOnlyEntry(entry.id)
+      void copyToClipboard(entry.password, "Password")
+      return
+    }
+    requestRevealForEntry(entry.id, { label: "Password", entryId: entry.id })
   }
 
   const handleVaultUnlock = async (value: string) => {
     try {
       const payload = unlockPayload(value, pinConfigured)
-      const wasLocked = !secretsVisible
-
-      if (wasLocked) {
-        await unlockMutation.mutateAsync(payload)
-        await queryClient.refetchQueries({ queryKey: queryKeys.passwordVault })
-      } else {
-        await verifyPasswordVault(payload)
-        if (pendingEditPasswordReveal) {
-          await queryClient.refetchQueries({ queryKey: queryKeys.passwordVault })
-        }
-      }
-
-      const fresh = queryClient.getQueryData<Awaited<ReturnType<typeof getPasswordVault>>>(
-        queryKeys.passwordVault,
-      )
       const revealId = pendingRevealId ?? pendingCopy?.entryId ?? null
 
-      if (revealId) {
-        setRevealed((p) => ({ ...p, [revealId]: true }))
-      }
-
-      if (pendingCopy) {
-        const entry = fresh?.entries.find((e) => e.id === pendingCopy.entryId)
-        if (entry?.password) {
+      if (pendingVaultUnlock) {
+        await unlockMutation.mutateAsync(payload)
+        setEphemeralPasswords({})
+        setRevealed({})
+        await queryClient.refetchQueries({ queryKey: queryKeys.passwordVault })
+        toast.success(pinConfigured ? "Vault unlocked with PIN" : "Vault unlocked")
+      } else if (pendingEditPasswordReveal && editEntry) {
+        if (secretsVisible) {
+          await verifyPasswordVault(payload)
+          await queryClient.refetchQueries({ queryKey: queryKeys.passwordVault })
+          const fresh = queryClient.getQueryData<Awaited<ReturnType<typeof getPasswordVault>>>(
+            queryKeys.passwordVault,
+          )
+          const entry = fresh?.entries.find((e) => e.id === editEntry.id)
+          if (entry?.password) {
+            setEditRevealedPassword(entry.password)
+          } else {
+            toast.error("Could not load password for this entry.")
+          }
+        } else {
+          const entry = await revealEntryMutation.mutateAsync({
+            id: editEntry.id,
+            input: payload,
+          })
+          if (entry.password) {
+            setEditRevealedPassword(entry.password)
+          } else {
+            toast.error("Could not load password for this entry.")
+          }
+        }
+      } else if (revealId) {
+        const entry = await revealEntryMutation.mutateAsync({ id: revealId, input: payload })
+        if (entry.password) {
+          setEphemeralPasswords((p) => ({ ...p, [revealId]: entry.password! }))
+          revealOnlyEntry(revealId)
+        }
+        if (pendingCopy && entry.password) {
           await copyToClipboard(entry.password, pendingCopy.label)
         }
-      } else if (wasLocked) {
-        toast.success(pinConfigured ? "Vault unlocked with PIN" : "Vault unlocked")
-      } else if (revealId) {
-        toast.success("Password revealed")
-      }
-
-      if (pendingEditPasswordReveal && editEntry) {
-        const entry = fresh?.entries.find((e) => e.id === editEntry.id)
-        if (entry?.password) {
-          setEditRevealedPassword(entry.password)
-        } else {
-          toast.error("Could not load password for this entry.")
-        }
-        setPendingEditPasswordReveal(false)
-        setUnlockOpen(false)
-        setPendingRevealId(null)
-        setPendingCopy(null)
-        return
+      } else if (secretsVisible) {
+        await verifyPasswordVault(payload)
       }
 
       setUnlockOpen(false)
+      setPendingVaultUnlock(false)
       setPendingRevealId(null)
       setPendingCopy(null)
+      setPendingEditPasswordReveal(false)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Incorrect credentials")
     }
   }
+
+  const unlockDialogTitle = pendingVaultUnlock
+    ? pinConfigured
+      ? "Unlock password vault"
+      : "Unlock password vault"
+    : pendingRevealId && !secretsVisible
+      ? "View this password"
+      : pendingEditPasswordReveal
+        ? "Confirm your identity"
+        : undefined
+
+  const unlockDialogDescription = pendingVaultUnlock
+    ? pinConfigured
+      ? "Unlock once to view any credential with the eye icon. Stays unlocked for 15 minutes or until you lock the vault."
+      : "Unlock once to view any credential with the eye icon. Stays unlocked for 15 minutes or until you lock the vault."
+    : pendingRevealId && !secretsVisible
+      ? pinConfigured
+        ? "Enter your vault PIN to view this password only. The vault stays locked for other entries."
+        : "Enter your account password to view this password only. The vault stays locked for other entries."
+      : pendingEditPasswordReveal
+        ? "Enter your credentials to load this password in the editor."
+        : undefined
+
+  const unlockDialogSubmit = pendingVaultUnlock
+    ? "Unlock vault"
+    : pendingRevealId
+      ? "View password"
+      : undefined
 
   const statusLabel =
     entries.length === 0
@@ -299,6 +430,12 @@ export function PasswordVaultPage() {
         secretsVisible={secretsVisible}
         actions={
           <div className="flex flex-wrap items-center gap-2">
+            {lockRequired && !secretsVisible ? (
+              <Button type="button" size="sm" disabled={busyUnlock} onClick={openVaultUnlock}>
+                <Lock className="mr-1.5 size-4" />
+                Unlock vault
+              </Button>
+            ) : null}
             {lockRequired && secretsVisible ? (
               <Button
                 type="button"
@@ -321,7 +458,15 @@ export function PasswordVaultPage() {
         }
       />
 
-      <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm ring-1 ring-black/[0.03]">
+      <div
+        className={cn(
+          "grid gap-4",
+          entries.length > 0 && !vaultQuery.isLoading
+            ? "lg:grid-cols-[minmax(0,1fr)_minmax(300px,400px)] xl:grid-cols-[minmax(0,1fr)_minmax(340px,440px)]"
+            : "grid-cols-1",
+        )}
+      >
+        <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm ring-1 ring-black/[0.03]">
         {vaultQuery.isLoading ? (
           <div className="space-y-3 p-6">
             <Skeleton className="h-10 w-full" />
@@ -384,8 +529,18 @@ export function PasswordVaultPage() {
                   return (
                     <tr
                       key={entry.id}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => selectEntry(entry.id)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault()
+                          selectEntry(entry.id)
+                        }
+                      }}
                       className={cn(
-                        "border-b border-border transition-colors last:border-b-0 hover:bg-muted/50",
+                        "cursor-pointer border-b border-border transition-colors last:border-b-0 hover:bg-muted/50",
+                        effectiveSelectedId === entry.id && "bg-primary/[0.06]",
                       )}
                     >
                       <td className="px-4 py-2.5 align-middle font-medium text-zinc-900">
@@ -402,7 +557,10 @@ export function PasswordVaultPage() {
                                 size="icon"
                                 className={vaultRowIconBtn}
                                 aria-label="Copy username"
-                                onClick={() => void copyToClipboard(entry.username!, "Username")}
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  void copyToClipboard(entry.username!, "Username")
+                                }}
                               >
                                 <Copy className="size-3.5" />
                               </Button>
@@ -424,7 +582,10 @@ export function PasswordVaultPage() {
                                   size="icon"
                                   className={vaultRowIconBtn}
                                   aria-label={pwdVisible ? "Hide password" : "Show password"}
-                                  onClick={() => onEyeClick(entry)}
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    onEyeClick(entry)
+                                  }}
                                 >
                                   {pwdVisible ? (
                                     <EyeOff className="size-3.5" />
@@ -438,7 +599,10 @@ export function PasswordVaultPage() {
                                   size="icon"
                                   className={vaultRowIconBtn}
                                   aria-label="Copy password"
-                                  onClick={() => onCopyPassword(entry)}
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    onCopyPassword(entry)
+                                  }}
                                 >
                                   <Copy className="size-3.5" />
                                 </Button>
@@ -479,7 +643,10 @@ export function PasswordVaultPage() {
                             size="icon"
                             className={vaultRowIconBtn}
                             aria-label="Edit credential"
-                            onClick={() => openEditEntry(entry)}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              openEditEntry(entry)
+                            }}
                           >
                             <Pencil className="size-3.5" />
                           </Button>
@@ -493,7 +660,10 @@ export function PasswordVaultPage() {
                             )}
                             aria-label="Open URL"
                             disabled={!entry.url}
-                            onClick={() => entry.url && openUrl(entry.url)}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              if (entry.url) openUrl(entry.url)
+                            }}
                           >
                             <ExternalLink className="size-3.5" />
                           </Button>
@@ -503,7 +673,10 @@ export function PasswordVaultPage() {
                             size="icon"
                             className={vaultRowIconBtnDanger}
                             aria-label="Delete credential"
-                            onClick={() => setDeleteEntry(entry)}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setDeleteEntry(entry)
+                            }}
                           >
                             <Trash2 className="size-3.5" />
                           </Button>
@@ -516,15 +689,52 @@ export function PasswordVaultPage() {
             </table>
           </div>
         )}
+        </div>
+
+        {selectedEntry &&
+        selectedIndex >= 0 &&
+        entries.length > 0 &&
+        !vaultQuery.isLoading &&
+        !detailCollapsed ? (
+          <PasswordVaultEntryDetail
+            entry={{
+              ...selectedEntry,
+              password:
+                entryPlainPassword(selectedEntry, ephemeralPasswords) ?? selectedEntry.password,
+            }}
+            index={selectedIndex}
+            total={entries.length}
+            display={display}
+            secretsVisible={secretsVisible || Boolean(ephemeralPasswords[selectedEntry.id])}
+            passwordVisible={isPasswordVisible(selectedEntry)}
+            onClose={() => setDetailCollapsed(true)}
+            onPrevious={() => goToEntry(selectedIndex - 1)}
+            onNext={() => goToEntry(selectedIndex + 1)}
+            onRevealPassword={() => onEyeClick(selectedEntry)}
+            onCopyPassword={() => onCopyPassword(selectedEntry)}
+            onCopyUsername={() =>
+              selectedEntry.username &&
+              void copyToClipboard(selectedEntry.username, "Username")
+            }
+            onEdit={() => openEditEntry(selectedEntry)}
+            onDelete={() => setDeleteEntry(selectedEntry)}
+            onOpenUrl={() => selectedEntry.url && openUrl(selectedEntry.url)}
+          />
+        ) : null}
       </div>
 
       <VaultUnlockDialog
         open={unlockOpen}
-        busy={busyUnlock}
+        busy={busyUnlock || revealEntryMutation.isPending}
         mode={pinConfigured ? "pin" : "password"}
+        title={unlockDialogTitle}
+        description={unlockDialogDescription}
+        submitLabel={unlockDialogSubmit}
+        passwordLabel={pendingRevealId && !secretsVisible ? "Account password" : undefined}
         onOpenChange={(open) => {
           setUnlockOpen(open)
           if (!open) {
+            setPendingVaultUnlock(false)
             setPendingRevealId(null)
             setPendingCopy(null)
             setPendingEditPasswordReveal(false)
@@ -547,6 +757,7 @@ export function PasswordVaultPage() {
         }}
         onRequestPasswordReveal={() => {
           if (!editEntry) return
+          setPendingVaultUnlock(false)
           setPendingEditPasswordReveal(true)
           setPendingRevealId(null)
           setPendingCopy(null)

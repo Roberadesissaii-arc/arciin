@@ -267,6 +267,51 @@ export async function registerPasswordVaultRoutes(fastify: FastifyInstance) {
   )
 
   fastify.post(
+    "/settings/password-vault/:id/reveal",
+    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    async (request, reply) => {
+      const { id } = request.params as { id: string }
+      const parsed = unlockSchema.safeParse(request.body)
+      if (!parsed.success) {
+        reply.status(400).send({
+          error: { code: "VALIDATION_ERROR", message: "Password or PIN required." },
+        })
+        return
+      }
+
+      const row = await fastify.prisma.passwordVaultEntry.findUnique({ where: { id } })
+      if (!row) {
+        reply.status(404).send({ error: { code: "NOT_FOUND", message: "Entry not found." } })
+        return
+      }
+
+      const instance = await fastify.prisma.instanceConfig.findFirst({
+        select: { aiConfig: true },
+      })
+      const result = await unlockVaultWithCredential(
+        fastify,
+        request.auth!.user.id,
+        parsed.data,
+        instance?.aiConfig,
+      )
+      if (!result.ok) {
+        reply.status(401).send({
+          error: {
+            code: result.code,
+            message:
+              result.code === "INVALID_PIN"
+                ? "Incorrect vault PIN."
+                : "Incorrect account password.",
+          },
+        })
+        return
+      }
+
+      reply.send({ data: serializeEntry(row) })
+    },
+  )
+
+  fastify.post(
     "/settings/password-vault/pin",
     { preHandler: requireRole(["OWNER", "ADMIN"]) },
     async (request, reply) => {
