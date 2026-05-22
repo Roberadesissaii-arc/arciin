@@ -95,7 +95,7 @@
 .dashboard-main {
   --background: #ffffff;
   --foreground: #09090b;
-  --card: #fafafa;
+  --card: #ffffff;
   --card-foreground: #09090b;
   --popover: #ffffff;
   --popover-foreground: #09090b;
@@ -111,6 +111,28 @@
   --border: #e4e4e7;
   --input: #e4e4e7;
   --ring: rgba(24, 24, 27, 0.12);
+  background-color: #ffffff;
+  color: #09090b;
+}
+
+.dashboard-main .bg-background {
+  background-color: #ffffff;
+}
+
+/* Dashboard canvas: white behind inset sidebar padding (gutters), sidebar panel stays dark. */
+.dashboard-shell-canvas [data-slot="sidebar-wrapper"] {
+  background-color: #ffffff !important;
+}
+
+/* Main pane only: force white over sidebar-inset dark glass defaults. */
+main.dashboard-main[data-slot="sidebar-inset"] {
+  background-color: #ffffff !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  color: #09090b !important;
+  border-color: #e4e4e7 !important;
+  --card-foreground: #09090b;
+  --foreground: #09090b;
 }
 
 .dashboard-main ::selection {

@@ -51,11 +51,11 @@ export function isAudioLikeAsset(asset: AssetSummary): boolean {
   return AUDIO_EXTENSIONS.has(ext)
 }
 
-/** Assets that can open in the in-app viewer (images, PDFs, video, audio, code/text). */
+/** Assets that open in the full-page preview workspace (not music — use the bottom player). */
 export function isViewableAsset(asset: AssetSummary): boolean {
+  if (isAudioLikeAsset(asset)) return false
   if (asset.mediaType === "IMAGE") return true
   if (isVideoLikeAsset(asset)) return true
-  if (isAudioLikeAsset(asset)) return true
   if (isCodeOrTextAsset(asset)) return true
   return assetSupportsDocumentThumbnail(
     asset.mediaType,

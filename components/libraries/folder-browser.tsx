@@ -84,9 +84,8 @@ export function FolderBrowser({
     assetsQuery.isLoading
 
   const folderName = folder?.name ?? folderSlug
-
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-10">
       <PageHeader
         title={folderName}
         description={`Contents of the ${folderName} folder.`}

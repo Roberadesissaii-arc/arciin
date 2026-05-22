@@ -231,9 +231,11 @@ function OllamaProfileSection({
 function OllamaModelInfoHover({
   loading,
   data,
+  lightSurface,
 }: {
   loading: boolean
   data: OllamaModelShowData | undefined
+  lightSurface?: boolean
 }) {
   const caps = data?.capabilities ?? []
   const d = data?.details
@@ -259,7 +261,14 @@ function OllamaModelInfoHover({
           )}
         </button>
       </HoverCardTrigger>
-      <HoverCardContent className="w-80 space-y-2.5 text-[11px]" align="start" side="top">
+      <HoverCardContent
+        className={cn(
+          "w-80 space-y-2.5 text-[11px]",
+          lightSurface && "dashboard-main border-zinc-200 bg-white text-zinc-900",
+        )}
+        align="start"
+        side="top"
+      >
         {loading && !data ? (
           <p className="text-muted-foreground">Loading model metadata…</p>
         ) : !data ? (
@@ -530,7 +539,7 @@ export function ChatModelPicker({
   assetModelNeed,
   compact,
   menuPortal,
-  lightSurface,
+  lightSurface = true,
   menuGap = 10,
 }: {
   profiles: ChatProfilePicker[]
@@ -604,7 +613,10 @@ export function ChatModelPicker({
   const menuPanel = open ? (
     <ScrollFadeList
       maxHeightClass="max-h-80 rounded-xl border"
-      className={lightSurface ? LIGHT_MENU : "border-border bg-card shadow-md"}
+      className={cn(
+        "shadow-sm",
+        lightSurface ? LIGHT_MENU : "border-border bg-card shadow-md",
+      )}
     >
       <ModelPickerMenu
         enabledProfiles={enabledProfiles}
@@ -625,7 +637,7 @@ export function ChatModelPicker({
       ? createPortal(
           <div
             ref={menuRef}
-            className="fixed z-[300] w-72"
+            className={cn("dashboard-main fixed z-[300] w-72", lightSurface && "text-zinc-900")}
             style={{ left: menuPos.left, bottom: menuPos.bottom }}
           >
             {menuPanel}
@@ -665,6 +677,7 @@ export function ChatModelPicker({
           <OllamaModelInfoHover
             loading={Boolean(ollamaShowLoading)}
             data={ollamaShow}
+            lightSurface={lightSurface}
           />
         ) : null}
       </div>

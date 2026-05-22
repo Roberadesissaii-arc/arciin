@@ -18,6 +18,7 @@ import {
 import { toast } from "sonner"
 
 import { UserIdentityAvatar } from "@/components/app-shell/user-identity-avatar"
+import { ArciinIcon, ArciinSidebarWordmarkText } from "@/components/ui/arciin-icon"
 import { getMe } from "@/lib/api/auth"
 import { queryKeys } from "@/lib/api/query-keys"
 import { resolveUserAvatarUrl } from "@/lib/utils/user-avatar-url"
@@ -123,7 +124,8 @@ function FlatLink({
       <TooltipContent
         side="right"
         sideOffset={10}
-        className="border-white/10 bg-[#111118] px-2.5 py-1.5 text-xs font-medium text-white [&>svg]:hidden"
+        showArrow={false}
+        className="border border-white/10 bg-[#111118] px-2.5 py-1.5 text-xs font-medium text-white shadow-md"
       >
         {label}
       </TooltipContent>
@@ -179,11 +181,9 @@ function AppSidebarInner({ auth }: { auth: AuthSession }) {
         style={{ borderBottom: `1px solid ${DIVIDER}` }}
       >
         {collapsed ? (
-          <span className="font-heading text-base font-bold leading-none text-[var(--arciin-accent)]">A</span>
+          <ArciinIcon size="lg" />
         ) : (
-          <p className="font-heading text-[17px] font-bold leading-none tracking-tight" style={{ color: TEXT_ON }}>
-            Arciin<span className="text-[var(--arciin-accent)]">.</span>
-          </p>
+          <ArciinSidebarWordmarkText />
         )}
       </div>
 

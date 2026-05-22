@@ -57,14 +57,14 @@ function CodeBlock({ code, lang }: { code: string; lang?: string }) {
   const trimmed = code.replace(/\n+$/, "")
   if (!trimmed) return null
   return (
-    <div className="my-2.5 w-full min-w-0 max-w-full overflow-hidden rounded-xl border border-zinc-700/40 bg-zinc-950 shadow-sm">
+    <div className="my-2.5 w-full min-w-0 max-w-full overflow-hidden rounded-xl border border-border bg-muted shadow-sm">
       {lang ? (
-        <div className="border-b border-zinc-800 px-3 py-1.5 font-mono text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+        <div className="border-b border-border px-3 py-1.5 font-mono text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
           {lang}
         </div>
       ) : null}
       <pre className="scrollbar-hide max-h-[min(40vh,320px)] overflow-x-auto overflow-y-auto px-3 py-2.5">
-        <code className="block font-mono text-[11px] leading-relaxed whitespace-pre text-zinc-100">
+        <code className="block font-mono text-[11px] leading-relaxed whitespace-pre text-foreground">
           {trimmed}
         </code>
       </pre>

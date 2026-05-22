@@ -68,9 +68,8 @@ export function LibraryBrowser({
     : (assetsQuery.data ?? [])
 
   const loading = librariesQuery.isLoading || (librarySlug ? foldersQuery.isLoading : false) || assetsQuery.isLoading
-
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-10">
       <PageHeader
         title={title}
         description={description}
@@ -117,7 +116,7 @@ export function LibraryBrowser({
       ) : (
         <>
           {librarySlug && folders.length ? (
-            <section className="space-y-3">
+            <section className="space-y-2 pb-2">
               <BrowserSectionHeading>Folders</BrowserSectionHeading>
               <FolderGrid folders={folders} librarySlug={librarySlug ?? ""} />
             </section>
@@ -125,8 +124,8 @@ export function LibraryBrowser({
 
           <section
             className={cn(
-              "space-y-3",
-              librarySlug && folders.length > 0 && "border-t border-zinc-200/90 pt-8"
+              "space-y-3 pb-4",
+              librarySlug && folders.length > 0 && "border-t border-zinc-200/90 pt-6"
             )}
           >
             <BrowserSectionHeading>Assets</BrowserSectionHeading>

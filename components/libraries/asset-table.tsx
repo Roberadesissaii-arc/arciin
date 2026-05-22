@@ -19,7 +19,9 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { useDeleteAsset } from "@/hooks/use-assets"
+import { toggleMusicAsset } from "@/lib/audio/music-player"
 import { formatBytes } from "@/lib/utils/format-bytes"
+import { isAudioLikeAsset } from "@/lib/utils/viewable-asset"
 import { formatMediaTypeLabel } from "@/lib/utils/media-type"
 import { formatRelativeDate } from "@/lib/utils/format-date"
 import { cn } from "@/lib/utils"
@@ -80,6 +82,10 @@ function AssetTableRow({ asset }: { asset: AssetSummary }) {
 
     const additive = event.metaKey || event.ctrlKey
     const range = event.shiftKey
+    if (!additive && !range && isAudioLikeAsset(asset)) {
+      toggleMusicAsset(asset)
+      return
+    }
     if (range || additive) {
       selection.toggle(asset.id, { additive: additive || range, range })
     } else {

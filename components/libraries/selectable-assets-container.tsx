@@ -171,7 +171,7 @@ function SelectableAssetsContainerInner({
         className={cn(
           "relative",
           marquee && "cursor-crosshair select-none",
-          hasSelection && "pb-24",
+          hasSelection ? "pb-24" : "pb-6",
         )}
         onMouseDown={onMouseDown}
       >

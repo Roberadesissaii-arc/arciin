@@ -3,7 +3,7 @@
 import Link from "next/link"
 import { useEffect, useMemo, useRef } from "react"
 import { usePathname } from "next/navigation"
-import { Command, Search, Upload } from "lucide-react"
+import { CloudUpload, Command, Search } from "lucide-react"
 
 import { CommandPalettePanel } from "@/components/app-shell/command-palette-panel"
 import {
@@ -23,16 +23,20 @@ import {
 import { useIsMobile } from "@/hooks/use-mobile"
 import { cn } from "@/lib/utils"
 import { useUiStore } from "@/lib/stores/ui-store"
-import { useSocketStore } from "@/lib/stores/socket-store"
+
+/** Per-control floating chip — no full-width header bar. */
+const floatChip =
+  "pointer-events-auto rounded-xl border border-border bg-card shadow-sm ring-1 ring-black/[0.04] backdrop-blur-xl"
+
+/** Shared height for header chips (breadcrumb, search, upload) */
+const headerControlH = "h-10"
 
 export function DashboardHeader() {
   const isMobile = useIsMobile()
   const pathname = usePathname()
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const folderInputRef = useRef<HTMLInputElement>(null)
   const commandOpen = useUiStore((state) => state.commandOpen)
   const setCommandOpen = useUiStore((state) => state.setCommandOpen)
-  const connected = useSocketStore((state) => state.connected)
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -63,16 +67,27 @@ export function DashboardHeader() {
   const leafCrumb = crumbs.length > 0 ? crumbs[crumbs.length - 1] : null
 
   return (
-    <header className="shrink-0 border-b border-border bg-background/90 backdrop-blur-xl">
+    <header
+      className={cn(
+        "sticky top-0 z-30 shrink-0 bg-transparent",
+        "pointer-events-none",
+        isMobile && "pt-12",
+      )}
+    >
       <div
         className={cn(
-          "flex flex-col gap-3 px-3 py-3 md:flex-row md:items-center md:justify-between md:gap-4 md:pt-3 lg:px-5",
-          isMobile && "pt-12",
+          "flex flex-col gap-2 px-3 py-3 md:flex-row md:items-center md:justify-between md:gap-3 lg:px-5",
         )}
       >
         {!isMobile ? (
-        <div className="flex min-w-0 flex-1 items-center md:flex-initial">
-          <div className="min-w-0 rounded-xl border border-border bg-card px-3 py-2 shadow-sm ring-1 ring-black/[0.04]">
+          <div
+            className={cn(
+              "flex min-w-0 flex-1 items-center md:flex-initial",
+              floatChip,
+              headerControlH,
+              "px-3",
+            )}
+          >
             <Breadcrumb className="min-w-0">
               <BreadcrumbList className="flex-nowrap text-muted-foreground">
                 <BreadcrumbItem>
@@ -113,91 +128,32 @@ export function DashboardHeader() {
               </BreadcrumbList>
             </Breadcrumb>
           </div>
-        </div>
         ) : null}
 
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2 md:min-w-0 md:justify-end">
           <DropdownMenu open={commandOpen} onOpenChange={setCommandOpen}>
-            <div className="flex min-w-0 w-full max-w-2xl flex-1 items-center gap-2 rounded-xl border border-border bg-card p-2 shadow-sm ring-1 ring-black/[0.04] backdrop-blur-xl md:gap-2">
-              <div className="hidden min-w-0 shrink-0 items-center gap-2 rounded-lg border border-border bg-muted/60 px-2.5 py-1.5 text-xs text-muted-foreground backdrop-blur-md md:flex">
-                <span
-                  className={`size-2 shrink-0 rounded-full ${
-                    connected ? "bg-emerald-500" : "bg-zinc-300"
-                  }`}
-                />
-                <span className="truncate">{connected ? "Realtime live" : "Realtime idle"}</span>
-              </div>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="default"
-                  className="h-9 min-w-0 flex-1 justify-start gap-2 border-border bg-background px-3 text-sm text-foreground shadow-none hover:bg-muted sm:min-w-[10rem]"
-                >
-                  <Search className="size-4 shrink-0 text-muted-foreground" />
-                  <span className="hidden min-w-0 truncate sm:inline">Search</span>
-                  <span className="ml-auto hidden shrink-0 items-center gap-1 rounded-md border border-border bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground lg:inline-flex">
-                    <Command className="size-3" />
-                    K
-                  </span>
-                </Button>
-              </DropdownMenuTrigger>
-              <input
-                ref={fileInputRef}
-                type="file"
-                className="hidden"
-                multiple
-                onChange={(event) => {
-                  const files = Array.from(event.target.files || [])
-                  if (!files.length) {
-                    return
-                  }
-                  window.dispatchEvent(
-                    new CustomEvent("arciin:files-selected", {
-                      detail: files,
-                    })
-                  )
-                  event.currentTarget.value = ""
-                }}
-              />
-              <input
-                ref={folderInputRef}
-                type="file"
-                className="hidden"
-                multiple
-                // @ts-expect-error — non-standard directory picker attributes
-                webkitdirectory=""
-                directory=""
-                onChange={(event) => {
-                  const files = Array.from(event.target.files || [])
-                  if (!files.length) {
-                    return
-                  }
-                  window.dispatchEvent(
-                    new CustomEvent("arciin:files-selected", {
-                      detail: files,
-                    })
-                  )
-                  event.currentTarget.value = ""
-                }}
-              />
-              <Button
-                size="default"
-                className="h-9 shrink-0 px-3 shadow-none"
-                onClick={() => fileInputRef.current?.click()}
-              >
-                <Upload className="size-4 shrink-0" />
-                <span className="hidden sm:inline">Upload</span>
-              </Button>
-              <Button
+            <DropdownMenuTrigger asChild>
+              <button
                 type="button"
-                variant="outline"
-                size="default"
-                className="hidden h-9 shrink-0 px-3 shadow-none sm:inline-flex"
-                onClick={() => folderInputRef.current?.click()}
+                className={cn(
+                  floatChip,
+                  headerControlH,
+                  "flex w-full min-w-[12rem] items-center gap-2.5 px-3.5 text-left text-sm transition-colors hover:bg-zinc-50/90 sm:min-w-[18rem] md:min-w-[24rem] lg:min-w-[32rem] lg:max-w-[42rem]",
+                )}
               >
-                <span className="text-sm">Folder</span>
-              </Button>
-            </div>
+                <Search className="size-4 shrink-0 text-zinc-400" />
+                <span className="min-w-0 flex-1 truncate font-normal text-zinc-400 sm:hidden">
+                  Search
+                </span>
+                <span className="hidden min-w-0 flex-1 truncate font-normal text-zinc-400 sm:inline">
+                  Search files, folders, and metadata
+                </span>
+                <span className="ml-auto hidden shrink-0 items-center gap-1 rounded-md border border-zinc-200/80 bg-zinc-100/80 px-1.5 py-0.5 text-[11px] font-medium text-zinc-500 lg:inline-flex">
+                  <Command className="size-3" />
+                  K
+                </span>
+              </button>
+            </DropdownMenuTrigger>
             <DropdownMenuContent
               align="start"
               side="bottom"
@@ -208,6 +164,37 @@ export function DashboardHeader() {
               <CommandPalettePanel onClose={() => setCommandOpen(false)} />
             </DropdownMenuContent>
           </DropdownMenu>
+
+          <input
+            ref={fileInputRef}
+            type="file"
+            className="hidden"
+            multiple
+            onChange={(event) => {
+              const files = Array.from(event.target.files || [])
+              if (!files.length) {
+                return
+              }
+              window.dispatchEvent(
+                new CustomEvent("arciin:files-selected", {
+                  detail: files,
+                })
+              )
+              event.currentTarget.value = ""
+            }}
+          />
+
+          <Button
+            size="default"
+            className={cn(
+              "pointer-events-auto shrink-0 gap-2 rounded-xl border-0 bg-[#ff4f12] px-4 text-white shadow-sm hover:bg-[#ff6a33] focus-visible:ring-[#ff4f12]/40",
+              headerControlH,
+            )}
+            onClick={() => fileInputRef.current?.click()}
+          >
+            <CloudUpload className="size-4 shrink-0" />
+            <span className="hidden sm:inline">Upload</span>
+          </Button>
         </div>
       </div>
     </header>

@@ -2559,7 +2559,7 @@ export function ChatPage() {
   const canStop = streaming && profiles.length > 0
 
   return (
-    <div className="flex min-h-0 flex-1 overflow-hidden">
+    <div className="flex min-h-0 flex-1 overflow-hidden bg-background">
       {/* ── History sidebar ──────────────────────────────────────────────── */}
       <div
         className={cn(
@@ -2673,6 +2673,7 @@ export function ChatPage() {
                 profiles={profiles}
                 selectedProfile={selectedProfile}
                 selectedModel={selectedModel}
+                lightSurface
                 onChange={(profile, model) => {
                   setSelectedProfile(profile)
                   setSelectedModel(model)

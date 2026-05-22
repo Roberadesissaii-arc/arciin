@@ -10,7 +10,9 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { useDeleteAsset } from "@/hooks/use-assets"
+import { toggleMusicAsset } from "@/lib/audio/music-player"
 import { formatBytes } from "@/lib/utils/format-bytes"
+import { isAudioLikeAsset } from "@/lib/utils/viewable-asset"
 import { formatMediaTypeLabel } from "@/lib/utils/media-type"
 import { cn } from "@/lib/utils"
 import type { AssetSummary } from "@/lib/types/models"
@@ -29,6 +31,10 @@ export function AssetCard({ asset }: { asset: AssetSummary }) {
     event.preventDefault()
     const additive = event.metaKey || event.ctrlKey
     const range = event.shiftKey
+    if (!additive && !range && isAudioLikeAsset(asset)) {
+      toggleMusicAsset(asset)
+      return
+    }
     if (range || additive) {
       selection.toggle(asset.id, { additive: additive || range, range })
     } else {

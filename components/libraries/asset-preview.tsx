@@ -8,6 +8,12 @@ import { MediaTypeIcon } from "@/components/libraries/media-type-icon"
 import { thumbnailStatusLabel } from "@/components/libraries/thumbnail-status-badge"
 import { mediaTypeIcons } from "@/lib/utils/file-icons"
 import { cn } from "@/lib/utils"
+import {
+  toggleMusicAsset,
+  useIsMusicAssetActive,
+  useIsMusicAssetPlaying,
+} from "@/lib/audio/music-player"
+import { isAudioLikeAsset } from "@/lib/utils/viewable-asset"
 import type { AssetSummary } from "@/lib/types/models"
 import { assetSupportsDocumentThumbnail } from "@arciin/shared"
 import { isCodeOrTextAsset, isVideoLikeAsset } from "@/lib/utils/viewable-asset"
@@ -208,131 +214,75 @@ function VideoAssetPreview({ asset }: { asset: AssetSummary }) {
   )
 }
 
-/** Inline `Content-Disposition` so `<audio>` / `<video>` can play in the page (attachment is for file downloads). */
-const INLINE_DOWNLOAD = "?inline=1"
-
-type AudioPlayMode = "idle" | "hover_preview" | "sound"
-
-/** Hover = muted loop preview; click = play with sound (user gesture). Centered hero icon like the login panel. */
+/** Click plays in the bottom music bar — no full-page preview. */
 function AudioAssetPreview({ asset }: { asset: AssetSummary }) {
   const Icon = mediaTypeIcons.AUDIO
-  const audioRef = useRef<HTMLAudioElement>(null)
-  const hoverRef = useRef(false)
-  const [playMode, setPlayMode] = useState<AudioPlayMode>("idle")
+  const isPlaying = useIsMusicAssetPlaying(asset.id)
+  const isActive = useIsMusicAssetActive(asset.id)
   const [thumbFailed, setThumbFailed] = useState(false)
   const thumbSrc = `/api/assets/${asset.id}/thumbnail?v=${encodeURIComponent(asset.updatedAt)}`
-  const audioSrc = `/api/assets/${asset.id}/download${INLINE_DOWNLOAD}`
-
-  useEffect(() => {
-    const el = audioRef.current
-    if (!el) return
-    if (playMode === "sound") {
-      el.muted = false
-      void el.play().catch(() => {})
-      return
-    }
-    if (playMode === "hover_preview") {
-      el.muted = true
-      void el.play().catch(() => {})
-      return
-    }
-    el.pause()
-    el.currentTime = 0
-    el.muted = true
-  }, [playMode])
 
   const badgeLabel = thumbnailStatusLabel(asset, false)
 
   return (
     <AssetPreviewFrame asset={asset} badgeLabel={badgeLabel}>
-    <div
-      role="button"
-      tabIndex={0}
-      aria-label="Audio preview: hover for muted preview, click to play with sound"
-      className="relative aspect-[4/3] cursor-pointer overflow-hidden rounded-xl border border-border bg-gradient-to-b from-[var(--arciin-accent-soft,#fff7ed)] via-zinc-50 to-zinc-100/90 shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-      onMouseEnter={() => {
-        hoverRef.current = true
-        setPlayMode((m) => (m === "sound" ? "sound" : "hover_preview"))
-      }}
-      onMouseLeave={() => {
-        hoverRef.current = false
-        setPlayMode("idle")
-      }}
-      onClick={(e) => {
-        e.preventDefault()
-        e.stopPropagation()
-        setPlayMode((m) => {
-          if (m === "sound") {
-            return hoverRef.current ? "hover_preview" : "idle"
-          }
-          return "sound"
-        })
-      }}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
+      <div
+        role="button"
+        tabIndex={0}
+        aria-label={isPlaying ? `Pause ${asset.originalFilename}` : `Play ${asset.originalFilename}`}
+        className={cn(
+          "relative aspect-[4/3] cursor-pointer overflow-hidden rounded-xl border bg-gradient-to-b from-[var(--arciin-accent-soft,#fff7ed)] via-zinc-50 to-zinc-100/90 shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+          isActive ? "border-primary/50 ring-2 ring-primary/30" : "border-border",
+        )}
+        onClick={(e) => {
           e.preventDefault()
-          setPlayMode((m) => {
-            if (m === "sound") {
-              return hoverRef.current ? "hover_preview" : "idle"
-            }
-            return "sound"
-          })
-        }
-      }}
-    >
-      <div
-        className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(255,79,18,0.12)_0%,transparent_55%)]"
-        aria-hidden
-      />
-      <div
-        className="pointer-events-none absolute -top-[18%] left-1/2 aspect-[1.35] w-[min(100%,420px)] -translate-x-1/2 bg-[radial-gradient(ellipse_at_50%_38%,rgba(255,79,18,0.22)_0%,transparent_72%)] blur-[48px]"
-        aria-hidden
-      />
-
-      <audio
-        ref={audioRef}
-        className="pointer-events-none absolute inset-0 h-px w-px opacity-0"
-        src={audioSrc}
-        playsInline
-        loop
-        preload="metadata"
-      />
-
-      {!thumbFailed ? (
+          e.stopPropagation()
+          toggleMusicAsset(asset)
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault()
+            e.stopPropagation()
+            toggleMusicAsset(asset)
+          }
+        }}
+      >
         <div
-          className={cn(
-            "pointer-events-none absolute inset-0 z-10 transition-opacity duration-200",
-            playMode === "hover_preview" || playMode === "sound" ? "opacity-[0.12]" : "opacity-100",
-          )}
-        >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={thumbSrc}
-            alt=""
-            className="size-full object-cover"
-            loading="lazy"
-            onError={() => setThumbFailed(true)}
-          />
-        </div>
-      ) : null}
-
-      <div className="pointer-events-none absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 px-4 text-center">
-        <Icon
-          className={cn(
-            "size-20 shrink-0 text-primary/90 transition-transform duration-300 sm:size-28",
-            (playMode === "hover_preview" || playMode === "sound") && "scale-[1.03]",
-          )}
+          className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(255,79,18,0.12)_0%,transparent_55%)]"
           aria-hidden
         />
-        <p className="text-[11px] font-medium leading-snug text-zinc-600 sm:text-xs">
-          {playMode === "sound" ? "Click again to stop" : "Hover: muted preview · Click: play with sound"}
-        </p>
-      </div>
 
-      <span className="sr-only">
-        Audio — hover for muted preview, click to play with sound, click again to stop
-      </span>
-    </div>
+        {!thumbFailed ? (
+          <div
+            className={cn(
+              "pointer-events-none absolute inset-0 z-10 transition-opacity duration-200",
+              isActive && "opacity-[0.15]",
+            )}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={thumbSrc}
+              alt=""
+              className="size-full object-cover"
+              loading="lazy"
+              onError={() => setThumbFailed(true)}
+            />
+          </div>
+        ) : null}
+
+        <div className="pointer-events-none absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 px-4 text-center">
+          <Icon
+            className={cn(
+              "size-16 shrink-0 text-primary/90 transition-transform duration-300 sm:size-20",
+              isActive && "scale-[1.04]",
+            )}
+            aria-hidden
+          />
+          <p className="text-[11px] font-medium leading-snug text-zinc-600 sm:text-xs">
+            {isPlaying ? "Playing · click to pause" : "Click to play"}
+          </p>
+        </div>
+      </div>
     </AssetPreviewFrame>
   )
 }
@@ -345,7 +295,7 @@ export function AssetPreview({ asset }: { asset: AssetSummary }) {
   if (isVideoLikeAsset(asset) || asset.mediaType === "VIDEO") {
     return <VideoAssetPreview asset={asset} />
   }
-  if (asset.mediaType === "AUDIO") {
+  if (isAudioLikeAsset(asset)) {
     return <AudioAssetPreview asset={asset} />
   }
 

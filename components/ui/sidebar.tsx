@@ -233,7 +233,7 @@ function Sidebar({
           data-sidebar="sidebar"
           data-slot="sidebar"
           data-mobile="true"
-          className="w-(--sidebar-width) border-r border-white/[0.07] bg-[rgba(9,9,11,0.55)] p-0 text-sidebar-foreground shadow-none ring-0 backdrop-blur-xl [&>button]:hidden"
+          className="w-(--sidebar-width) border-r border-sidebar-border bg-sidebar p-0 text-sidebar-foreground shadow-none ring-0 [&>button]:hidden"
           style={
             {
               "--sidebar-width": SIDEBAR_WIDTH_MOBILE,
@@ -289,8 +289,9 @@ function Sidebar({
           data-sidebar="sidebar"
           data-slot="sidebar-inner"
           className={cn(
-            "flex size-full flex-col rounded-xl border border-white/[0.07] bg-[rgba(9,9,11,0.55)] shadow-none ring-0 backdrop-blur-xl",
-            "group-data-[variant=floating]:ring-1 group-data-[variant=floating]:ring-white/[0.08]"
+            "flex size-full flex-col rounded-xl border border-sidebar-border bg-sidebar text-sidebar-foreground shadow-none ring-0",
+            "group-data-[variant=floating]:border-white/[0.07] group-data-[variant=floating]:bg-[rgba(9,9,11,0.55)] group-data-[variant=floating]:backdrop-blur-xl",
+            "group-data-[variant=floating]:ring-1 group-data-[variant=floating]:ring-white/[0.08]",
           )}
         >
           {children}
@@ -580,6 +581,7 @@ function SidebarMenuButton({
       <TooltipContent
         side="right"
         align="center"
+        showArrow={false}
         hidden={state !== "collapsed" || isMobile}
         {...tooltip}
       />

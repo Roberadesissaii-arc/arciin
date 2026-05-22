@@ -629,7 +629,7 @@ function ConnectSheet({
                   <p className="text-[11px] text-amber-700">{scanError}</p>
                 )}
                 {cloudProbes.length > 0 && (
-                  <div className="rounded-xl border border-border bg-zinc-950/40">
+                  <div className="rounded-xl border border-border bg-muted/50">
                     {cloudProbes.map((probe) => {
                       const active = model === probe.name
                       const canSelect = probe.access === "available"
