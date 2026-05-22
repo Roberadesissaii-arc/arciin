@@ -68,7 +68,13 @@ export function serializeLibrary(
   }
 }
 
-export function serializeFolder(folder: Folder, assetCount = 0) {
+export function serializeFolder(
+  folder: Folder,
+  assetCount = 0,
+  access?: { isLocked: boolean; accessGranted: boolean },
+) {
+  const isLocked = access?.isLocked ?? Boolean(folder.lockedAt)
+  const accessGranted = access?.accessGranted ?? !isLocked
   return {
     id: folder.id,
     libraryId: folder.libraryId,
@@ -77,6 +83,8 @@ export function serializeFolder(folder: Folder, assetCount = 0) {
     slug: folder.slug,
     pathCache: folder.pathCache,
     assetCount,
+    isLocked,
+    accessGranted,
     createdAt: folder.createdAt.toISOString(),
     updatedAt: folder.updatedAt.toISOString(),
     deletedAt: folder.deletedAt?.toISOString() ?? null,

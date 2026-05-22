@@ -1,5 +1,9 @@
 import { fetchApi } from "@/lib/api/client"
-import type { CreateFolderInput, FolderSummary, LibrarySummary } from "@/lib/types/models"
+import type {
+  CreateFolderInput,
+  FolderSummary,
+  LibrarySummary,
+} from "@/lib/types/models"
 
 export function getLibraries(signal?: AbortSignal) {
   return fetchApi<LibrarySummary[]>("/libraries", {
@@ -40,5 +44,28 @@ export function updateFolder(folderId: string, body: { name: string }) {
 export function deleteFolder(folderId: string) {
   return fetchApi<{ success: boolean }>(`/folders/${folderId}`, {
     method: "DELETE",
+  })
+}
+
+export type FolderCredentialInput = { password?: string; pin?: string }
+
+export function lockFolder(folderId: string, input: FolderCredentialInput) {
+  return fetchApi<FolderSummary>(`/folders/${folderId}/lock`, {
+    method: "POST",
+    body: input,
+  })
+}
+
+export function unlockFolder(folderId: string, input: FolderCredentialInput) {
+  return fetchApi<FolderSummary>(`/folders/${folderId}/unlock`, {
+    method: "POST",
+    body: input,
+  })
+}
+
+export function removeFolderLock(folderId: string, input: FolderCredentialInput) {
+  return fetchApi<FolderSummary>(`/folders/${folderId}/remove-lock`, {
+    method: "POST",
+    body: input,
   })
 }

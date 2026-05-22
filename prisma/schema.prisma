@@ -189,6 +189,8 @@ model Session {
   expiresAt          DateTime
   /// Mobile Bearer sessions: vault unlock without relying on cross-origin cookies.
   vaultUnlockedUntil DateTime?
+  /// Map of folderId → ISO expiry for temporary folder access while folder stays locked.
+  folderUnlocks      Json?
   createdAt          DateTime  @default(now())
   user               User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -263,6 +265,8 @@ model Folder {
   name           String
   slug           String
   pathCache      String
+  lockedAt       DateTime?
+  lockedByUserId String?
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
   deletedAt      DateTime?

@@ -9,6 +9,7 @@ import { AssetGrid } from "@/components/libraries/asset-grid"
 import { AssetTable } from "@/components/libraries/asset-table"
 import { SelectableAssetsContainer } from "@/components/libraries/selectable-assets-container"
 import { CreateFolderDialog } from "@/components/libraries/create-folder-dialog"
+import { FolderAccessGate } from "@/components/libraries/folder-access-gate"
 import { FolderGrid } from "@/components/libraries/folder-grid"
 import { Button } from "@/components/ui/button"
 import {
@@ -84,7 +85,8 @@ export function FolderBrowser({
     assetsQuery.isLoading
 
   const folderName = folder?.name ?? folderSlug
-  return (
+
+  const browserBody = (
     <div className="space-y-6 pb-10">
       <PageHeader
         title={folderName}
@@ -181,4 +183,14 @@ export function FolderBrowser({
       )}
     </div>
   )
+
+  if (folder) {
+    return (
+      <FolderAccessGate folder={folder} librarySlug={librarySlug}>
+        {browserBody}
+      </FolderAccessGate>
+    )
+  }
+
+  return browserBody
 }

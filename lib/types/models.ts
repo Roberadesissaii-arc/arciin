@@ -172,6 +172,8 @@ export type FolderSummary = {
   slug: string
   pathCache: string
   assetCount: number
+  isLocked?: boolean
+  accessGranted?: boolean
   createdAt: string
   updatedAt: string
   deletedAt?: string | null

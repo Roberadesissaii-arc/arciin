@@ -2,7 +2,19 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 
-import { createFolder, deleteFolder, getFolders, getLibraries, getLibrary, updateFolder } from "@/lib/api/libraries"
+import {
+  createFolder,
+  deleteFolder,
+  getFolders,
+  getLibraries,
+  getLibrary,
+  lockFolder,
+  removeFolderLock,
+  unlockFolder,
+  updateFolder,
+  type FolderCredentialInput,
+} from "@/lib/api/libraries"
+import type { FolderSummary } from "@/lib/types/models"
 import { queryKeys } from "@/lib/api/query-keys"
 import type { CreateFolderInput } from "@/lib/types/models"
 
@@ -56,8 +68,12 @@ function invalidateLibraryFolderTree(queryClient: ReturnType<typeof useQueryClie
 export function useUpdateFolder() {
   const queryClient = useQueryClient()
 
-  return useMutation({
-    mutationFn: (variables: { folderId: string; libraryId: string; name: string }) =>
+  return useMutation<
+    FolderSummary,
+    Error,
+    { folderId: string; libraryId: string; name: string }
+  >({
+    mutationFn: (variables) =>
       updateFolder(variables.folderId, { name: variables.name }),
     onSuccess: (_, variables) => {
       invalidateLibraryFolderTree(queryClient, variables.libraryId)
@@ -70,6 +86,43 @@ export function useDeleteFolder() {
 
   return useMutation({
     mutationFn: (variables: { folderId: string; libraryId: string }) => deleteFolder(variables.folderId),
+    onSuccess: (_, variables) => {
+      invalidateLibraryFolderTree(queryClient, variables.libraryId)
+    },
+  })
+}
+
+export function useLockFolder() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (variables: { folderId: string; libraryId: string; input: FolderCredentialInput }) =>
+      lockFolder(variables.folderId, variables.input),
+    onSuccess: (_, variables) => {
+      invalidateLibraryFolderTree(queryClient, variables.libraryId)
+    },
+  })
+}
+
+export function useUnlockFolder() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (variables: { folderId: string; libraryId: string; input: FolderCredentialInput }) =>
+      unlockFolder(variables.folderId, variables.input),
+    onSuccess: (_, variables) => {
+      invalidateLibraryFolderTree(queryClient, variables.libraryId)
+      void queryClient.invalidateQueries({ queryKey: ["assets"] })
+    },
+  })
+}
+
+export function useRemoveFolderLock() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (variables: { folderId: string; libraryId: string; input: FolderCredentialInput }) =>
+      removeFolderLock(variables.folderId, variables.input),
     onSuccess: (_, variables) => {
       invalidateLibraryFolderTree(queryClient, variables.libraryId)
     },

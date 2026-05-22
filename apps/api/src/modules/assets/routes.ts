@@ -15,6 +15,7 @@ import {
 import { apiConfig } from "@/config"
 import { buildRealtimeEvent } from "@/services/events/publish-event"
 import { recordAndBroadcastActivity } from "@/services/activity/record-and-broadcast-activity"
+import { assertFolderAccess } from "@/services/folders/folder-lock"
 import {
   ensureThumbnailWritten,
   renderImageWebpThumbnailBuffer,
@@ -134,6 +135,11 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
           ids: z.string().optional(),
         })
         .parse(request.query)
+
+      if (query.folderId) {
+        const allowed = await assertFolderAccess(fastify, request, reply, query.folderId)
+        if (!allowed) return
+      }
 
       const idList = query.ids
         ? query.ids.split(",").map((s) => s.trim()).filter(Boolean).slice(0, 20)

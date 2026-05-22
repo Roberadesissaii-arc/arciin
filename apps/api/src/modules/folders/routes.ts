@@ -2,9 +2,24 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify"
 import { z } from "zod"
 
 import { recordAndBroadcastActivity } from "@/services/activity/record-and-broadcast-activity"
+import {
+  folderAccessGranted,
+  folderIsLocked,
+  grantFolderSessionAccess,
+  verifyFolderAccessCredential,
+} from "@/services/folders/folder-lock"
 import { requireSessionRolesOrApiKeyScopes } from "@/services/security/auth"
 import { serializeFolder } from "@/services/serializers"
 import { slugify } from "@/services/slug"
+
+const folderCredentialSchema = z
+  .object({
+    password: z.string().min(1).max(512).optional(),
+    pin: z.string().regex(/^\d{6}$/).optional(),
+  })
+  .refine((body) => Boolean(body.password) !== Boolean(body.pin), {
+    message: "Provide account password or 6-digit PIN.",
+  })
 
 const createFolderSchema = z.object({
   name: z.string().min(1).max(100),
@@ -75,8 +90,16 @@ export async function registerFolderRoutes(fastify: FastifyInstance) {
         take: 500,
       })
 
+      const userId = request.auth!.user.id
+      const session = request.auth?.session ?? null
+
       reply.send({
-        data: folders.map((f) => serializeFolder(f, f._count.assets)),
+        data: folders.map((f) =>
+          serializeFolder(f, f._count.assets, {
+            isLocked: folderIsLocked(f),
+            accessGranted: folderAccessGranted(request, userId, f, session),
+          }),
+        ),
       })
     }
   )
@@ -262,4 +285,194 @@ export async function registerFolderRoutes(fastify: FastifyInstance) {
 
   /** POST alias — iOS PWA often fails CORS preflight on DELETE. */
   fastify.post("/folders/:folderId/delete", { preHandler: deleteFolderAuth }, handleDeleteFolder)
+
+  const folderLockAuth = requireSessionRolesOrApiKeyScopes(
+    ["OWNER", "ADMIN", "MEMBER"],
+    ["libraries:write"],
+  )
+
+  fastify.post(
+    "/folders/:folderId/lock",
+    { preHandler: folderLockAuth },
+    async (request, reply) => {
+      const params = z.object({ folderId: z.string() }).parse(request.params)
+      const parsed = folderCredentialSchema.safeParse(request.body)
+      if (!parsed.success) {
+        reply.status(400).send({
+          error: { code: "VALIDATION_ERROR", message: "Password or PIN required to lock folder." },
+        })
+        return
+      }
+
+      const existing = await fastify.prisma.folder.findUnique({
+        where: { id: params.folderId },
+      })
+      if (!existing || existing.deletedAt) {
+        reply.status(404).send({ error: { code: "FOLDER_NOT_FOUND", message: "Folder not found." } })
+        return
+      }
+
+      const instance = await fastify.prisma.instanceConfig.findFirst({
+        select: { aiConfig: true },
+      })
+      const userId = request.auth!.user.id
+      const verified = await verifyFolderAccessCredential(
+        fastify,
+        userId,
+        parsed.data,
+        instance?.aiConfig,
+      )
+      if (!verified.ok) {
+        reply.status(401).send({
+          error: {
+            code: verified.code,
+            message:
+              verified.code === "INVALID_PIN"
+                ? "Incorrect vault PIN."
+                : "Incorrect account password.",
+          },
+        })
+        return
+      }
+
+      const updated = await fastify.prisma.folder.update({
+        where: { id: existing.id },
+        data: {
+          lockedAt: new Date(),
+          lockedByUserId: userId,
+        },
+      })
+
+      if (request.auth) {
+        await recordAndBroadcastActivity(fastify, {
+          userId,
+          type: "folder.locked",
+          title: "Folder locked",
+          message: `${updated.name} is now password protected.`,
+          entityType: "folder",
+          entityId: updated.id,
+        })
+      }
+
+      reply.send({
+        data: serializeFolder(updated, 0, {
+          isLocked: true,
+          accessGranted: folderAccessGranted(request, userId, updated, request.auth?.session ?? null),
+        }),
+      })
+    },
+  )
+
+  fastify.post(
+    "/folders/:folderId/unlock",
+    { preHandler: folderLockAuth },
+    async (request, reply) => {
+      const params = z.object({ folderId: z.string() }).parse(request.params)
+      const parsed = folderCredentialSchema.safeParse(request.body)
+      if (!parsed.success) {
+        reply.status(400).send({
+          error: { code: "VALIDATION_ERROR", message: "Password or PIN required." },
+        })
+        return
+      }
+
+      const existing = await fastify.prisma.folder.findUnique({
+        where: { id: params.folderId },
+      })
+      if (!existing || existing.deletedAt) {
+        reply.status(404).send({ error: { code: "FOLDER_NOT_FOUND", message: "Folder not found." } })
+        return
+      }
+
+      const instance = await fastify.prisma.instanceConfig.findFirst({
+        select: { aiConfig: true },
+      })
+      const userId = request.auth!.user.id
+      const verified = await verifyFolderAccessCredential(
+        fastify,
+        userId,
+        parsed.data,
+        instance?.aiConfig,
+      )
+      if (!verified.ok) {
+        reply.status(401).send({
+          error: {
+            code: verified.code,
+            message:
+              verified.code === "INVALID_PIN"
+                ? "Incorrect vault PIN."
+                : "Incorrect account password.",
+          },
+        })
+        return
+      }
+
+      await grantFolderSessionAccess(fastify, request, reply, userId, existing.id)
+
+      reply.send({
+        data: serializeFolder(existing, 0, {
+          isLocked: folderIsLocked(existing),
+          accessGranted: true,
+        }),
+      })
+    },
+  )
+
+  fastify.post(
+    "/folders/:folderId/remove-lock",
+    { preHandler: folderLockAuth },
+    async (request, reply) => {
+      const params = z.object({ folderId: z.string() }).parse(request.params)
+      const parsed = folderCredentialSchema.safeParse(request.body)
+      if (!parsed.success) {
+        reply.status(400).send({
+          error: { code: "VALIDATION_ERROR", message: "Password or PIN required." },
+        })
+        return
+      }
+
+      const existing = await fastify.prisma.folder.findUnique({
+        where: { id: params.folderId },
+      })
+      if (!existing || existing.deletedAt) {
+        reply.status(404).send({ error: { code: "FOLDER_NOT_FOUND", message: "Folder not found." } })
+        return
+      }
+
+      const instance = await fastify.prisma.instanceConfig.findFirst({
+        select: { aiConfig: true },
+      })
+      const userId = request.auth!.user.id
+      const verified = await verifyFolderAccessCredential(
+        fastify,
+        userId,
+        parsed.data,
+        instance?.aiConfig,
+      )
+      if (!verified.ok) {
+        reply.status(401).send({
+          error: {
+            code: verified.code,
+            message:
+              verified.code === "INVALID_PIN"
+                ? "Incorrect vault PIN."
+                : "Incorrect account password.",
+          },
+        })
+        return
+      }
+
+      const updated = await fastify.prisma.folder.update({
+        where: { id: existing.id },
+        data: {
+          lockedAt: null,
+          lockedByUserId: null,
+        },
+      })
+
+      reply.send({
+        data: serializeFolder(updated, 0, { isLocked: false, accessGranted: true }),
+      })
+    },
+  )
 }
