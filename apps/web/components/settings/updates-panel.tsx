@@ -1,22 +1,39 @@
 "use client"
 
-import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { CheckCircle2, ExternalLink, RefreshCw, Sparkles } from "lucide-react"
+import { toast } from "@/lib/notifications/arciin-toast"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
+  PillSwitch,
   SectionHeader,
+  SettingRow,
   SettingsCard,
   SettingsFieldLabel,
   SettingsHint,
 } from "@/components/settings/settings-panel-primitives"
 import { SettingsPanelError } from "@/components/settings/settings-panel-error"
-import { getUpdateCheck, type UpdateCheckResult } from "@/lib/api/instance"
+import {
+  applyStagedUpdate,
+  getAutoUpdateSettings,
+  getUpdateCheck,
+  updateAutoUpdateSettings,
+  type AutoUpdateConfig,
+  type UpdateCheckResult,
+} from "@/lib/api/instance"
 import { queryKeys } from "@/lib/api/query-keys"
 import { formatRelativeDate } from "@/lib/utils/format-date"
 import { cn } from "@/lib/utils"
+
+function hourLabel(hour: number): string {
+  const period = hour < 12 ? "AM" : "PM"
+  const twelve = hour % 12 === 0 ? 12 : hour % 12
+  return `${twelve}:00 ${period}`
+}
 
 export function UpdatesPanel() {
   const queryClient = useQueryClient()
@@ -25,6 +42,13 @@ export function UpdatesPanel() {
     queryKey: queryKeys.updateCheck,
     queryFn: ({ signal }) => getUpdateCheck({ signal }),
     staleTime: 5 * 60 * 1000,
+  })
+
+  const autoUpdateQuery = useQuery({
+    queryKey: queryKeys.autoUpdateSettings,
+    queryFn: ({ signal }) => getAutoUpdateSettings(signal),
+    staleTime: 60 * 1000,
+    refetchInterval: 60 * 1000,
   })
 
   async function refresh() {
@@ -52,7 +76,101 @@ export function UpdatesPanel() {
       ) : query.data ? (
         <UpdateStatusCard data={query.data} onRefresh={refresh} refreshing={query.isFetching} />
       ) : null}
+
+      {autoUpdateQuery.data ? <AutoUpdateCard data={autoUpdateQuery.data} /> : null}
     </div>
+  )
+}
+
+function AutoUpdateCard({ data }: { data: AutoUpdateConfig }) {
+  const queryClient = useQueryClient()
+  const hour = data.hour ?? 2
+
+  const saveMutation = useMutation({
+    mutationFn: (input: { enabled: boolean; hour: number | null }) => updateAutoUpdateSettings(input),
+    onSuccess: (result) => {
+      queryClient.setQueryData(queryKeys.autoUpdateSettings, result)
+      toast.success(result.enabled ? "Automatic updates on" : "Automatic updates off")
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Could not save automatic update settings."),
+  })
+
+  const applyMutation = useMutation({
+    mutationFn: () => applyStagedUpdate(),
+    onSuccess: () => {
+      toast.success("Applying update — services are restarting now.")
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Could not apply the staged update."),
+  })
+
+  return (
+    <SettingsCard className="space-y-3">
+      <SettingRow
+        label="Automatic updates"
+        hint="At your chosen hour, Arciin downloads and builds a new version in the background — nothing is applied until you click Apply."
+      >
+        <PillSwitch
+          on={data.enabled}
+          disabled={saveMutation.isPending}
+          onChange={() => saveMutation.mutate({ enabled: !data.enabled, hour: data.enabled ? null : hour })}
+        />
+      </SettingRow>
+
+      {data.enabled ? (
+        <SettingRow label="Stage updates around" hint="Local server time — pick an hour you're usually asleep">
+          <Select
+            value={String(hour)}
+            disabled={saveMutation.isPending}
+            onValueChange={(value) => saveMutation.mutate({ enabled: true, hour: Number(value) })}
+          >
+            <SelectTrigger className="w-full sm:w-40">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {Array.from({ length: 24 }, (_, h) => (
+                <SelectItem key={h} value={String(h)}>
+                  {hourLabel(h)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </SettingRow>
+      ) : null}
+
+      {data.stagedVersion ? (
+        <div className="space-y-2.5 rounded-xl border border-primary/25 bg-primary/[0.04] p-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge className="border-0 bg-primary text-[11px] font-semibold text-primary-foreground shadow-none">
+              Update staged
+            </Badge>
+            <span className="font-mono text-[13px] font-semibold text-foreground">v{data.stagedVersion}</span>
+          </div>
+          <p className="text-[13px] text-muted-foreground">
+            Downloaded and built — nothing has changed yet. Applying restarts Arciin&apos;s services, which takes a
+            few seconds and briefly interrupts any active uploads or streams.
+          </p>
+          <Button
+            type="button"
+            size="sm"
+            className="bg-primary text-white hover:bg-primary/90"
+            disabled={applyMutation.isPending}
+            onClick={() => applyMutation.mutate()}
+          >
+            {applyMutation.isPending ? "Applying…" : "Apply now"}
+          </Button>
+        </div>
+      ) : null}
+
+      {data.lastError ? (
+        <SettingsPanelError message="The last automatic stage attempt failed." hint={data.lastError.split("\n")[0]} />
+      ) : null}
+
+      {data.lastCheckedAt ? (
+        <p className="text-[11px] text-muted-foreground">
+          Last automatic check {formatRelativeDate(data.lastCheckedAt)}
+        </p>
+      ) : null}
+    </SettingsCard>
   )
 }
 

@@ -4,6 +4,18 @@ import { z } from "zod"
 export const coreEnvSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   ARCIIN_DATA_DIR: z.string().default("/srv/arciin-storage/arciin"),
+  /**
+   * URL of a small JSON manifest ({ latest, channel, changelogUrl, notes })
+   * this instance polls to check for newer Arciin releases. Empty → the
+   * "check for updates" feature reports itself as unconfigured rather than
+   * erroring, since not every self-hosted instance points at one. Read by
+   * both the API (on-demand checks) and the worker (scheduled auto-update
+   * staging).
+   */
+  ARCIIN_UPDATE_MANIFEST_URL: z.preprocess(
+    (v) => (typeof v === "string" && v.trim() === "" ? undefined : v),
+    z.string().url().optional(),
+  ),
 })
 
 export const apiEnvSchema = coreEnvSchema.extend({
@@ -60,16 +72,6 @@ export const apiEnvSchema = coreEnvSchema.extend({
     if (v === false || v === "0" || v === "false") return false
     return undefined
   }, z.boolean().optional()),
-  /**
-   * URL of a small JSON manifest ({ latest, channel, changelogUrl, notes })
-   * this instance polls to check for newer Arciin releases. Empty → the
-   * "check for updates" feature reports itself as unconfigured rather than
-   * erroring, since not every self-hosted instance points at one.
-   */
-  ARCIIN_UPDATE_MANIFEST_URL: z.preprocess(
-    (v) => (typeof v === "string" && v.trim() === "" ? undefined : v),
-    z.string().url().optional(),
-  ),
 })
 
 export const workerEnvSchema = coreEnvSchema.extend({

@@ -55,4 +55,6 @@ export const JOB_TYPES = {
   calculateStorageUsage: "calculate_storage_usage",
   migrateStorage: "migrate_storage",
   plexSyncPlaceholder: "plex_sync_placeholder",
+  stageUpdate: "stage_update",
+  applyUpdate: "apply_update",
 } as const

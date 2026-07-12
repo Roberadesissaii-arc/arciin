@@ -1,6 +1,7 @@
 export const queryKeys = {
   instanceStatus: ["instance", "status"] as const,
   updateCheck: ["instance", "update-check"] as const,
+  autoUpdateSettings: ["instance", "auto-update"] as const,
   authMe: ["auth", "me"] as const,
   userPreferences: ["auth", "preferences"] as const,
   libraries: ["libraries"] as const,

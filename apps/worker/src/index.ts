@@ -12,6 +12,7 @@ import {
   handleStorageJob,
   markJobFailure,
 } from "@/processors/worker-handlers"
+import { maybeRunScheduledStage } from "@/services/auto-update"
 import { handleImportUrl } from "@/services/url-import"
 
 const redisUrl = new URL(workerConfig.REDIS_URL)
@@ -72,7 +73,7 @@ async function start() {
     JOB_QUEUE_NAMES.storage,
     async (job) => {
       try {
-        await handleStorageJob(job.name, job.data)
+        await handleStorageJob(job.name, job.data, redis)
       } catch (error) {
         await markJobFailure(job.data.jobRecordId, error)
         throw error
@@ -80,6 +81,14 @@ async function start() {
     },
     { connection }
   )
+
+  // Checks once an hour whether it's the user's configured auto-update
+  // window; stages (never applies) at most once per available version.
+  const autoUpdateCheck = setInterval(() => {
+    void maybeRunScheduledStage(redis).catch((error) => {
+      console.error("[auto-update] scheduled stage check failed", error)
+    })
+  }, 60 * 60_000)
 
   const integrationsWorker = new Worker(
     JOB_QUEUE_NAMES.integrations,
@@ -96,6 +105,7 @@ async function start() {
 
   const shutdown = async () => {
     clearInterval(heartbeat)
+    clearInterval(autoUpdateCheck)
     await Promise.all([
       mediaWorker.close(),
       storageWorker.close(),

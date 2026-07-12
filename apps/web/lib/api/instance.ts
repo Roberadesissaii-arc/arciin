@@ -27,6 +27,29 @@ export function getUpdateCheck(options?: { refresh?: boolean; signal?: AbortSign
   )
 }
 
+export type AutoUpdateConfig = {
+  enabled: boolean
+  hour: number | null
+  stagedVersion: string | null
+  stagedAt: string | null
+  lastCheckedAt: string | null
+  lastError: string | null
+}
+
+export function getAutoUpdateSettings(signal?: AbortSignal) {
+  return fetchApi<AutoUpdateConfig>("/instance/auto-update", { method: "GET", signal })
+}
+
+export function updateAutoUpdateSettings(input: { enabled: boolean; hour: number | null }) {
+  return fetchApi<AutoUpdateConfig>("/instance/auto-update", { method: "PATCH", body: input })
+}
+
+export function applyStagedUpdate() {
+  return fetchApi<{ jobId: string; applyingVersion: string }>("/instance/auto-update/apply", {
+    method: "POST",
+  })
+}
+
 export function claimInstance(input: ClaimInstanceInput) {
   return fetchApi<AuthSession>("/instance/claim", {
     method: "POST",

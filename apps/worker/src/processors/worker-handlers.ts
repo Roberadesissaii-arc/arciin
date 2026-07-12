@@ -15,12 +15,14 @@ import {
   assetSupportsDocumentThumbnail,
   inferMediaType,
   type AnalyzeFilePayload,
+  type ApplyUpdatePayload,
   type CalculateStorageUsagePayload,
   type CleanupTempFilesPayload,
   type MigrateStoragePayload,
   type ExtractMetadataPayload,
   type GenerateThumbnailPayload,
   type PlexSyncPlaceholderPayload,
+  type StageUpdatePayload,
 } from "@arciin/shared"
 import {
   candidateStorageObjectPaths,
@@ -29,6 +31,7 @@ import {
 } from "@arciin/storage"
 
 import { workerConfig } from "@/config"
+import { runApplyUpdate, runStageUpdate } from "@/services/auto-update"
 import { syncConnectorMirrorsForAsset } from "@/services/connector-mirror"
 import { createRealtimeEvent, publishRealtimeEvent } from "@/services/realtime"
 
@@ -474,7 +477,34 @@ export async function handleStorageJob(
     | (CleanupTempFilesPayload & { jobRecordId?: string })
     | (CalculateStorageUsagePayload & { jobRecordId?: string })
     | (MigrateStoragePayload & { jobRecordId?: string })
+    | (StageUpdatePayload & { jobRecordId?: string })
+    | (ApplyUpdatePayload & { jobRecordId?: string }),
+  redis: Redis
 ) {
+  if (name === JOB_TYPES.stageUpdate && "targetVersion" in data) {
+    await markJob(data.jobRecordId, { status: "ACTIVE", progress: 10 })
+    const result = await runStageUpdate(data.targetVersion, redis)
+    if (result.success) {
+      await markJob(data.jobRecordId, { status: "COMPLETED", progress: 100, result: {} })
+    } else {
+      await markJobFailure(data.jobRecordId, new Error("Update stage failed — see Settings -> Updates for details."))
+    }
+    return
+  }
+
+  if (name === JOB_TYPES.applyUpdate) {
+    await markJob(data.jobRecordId, { status: "ACTIVE", progress: 10 })
+    const result = await runApplyUpdate(redis)
+    // If applyNative() actually restarted this process, execution never
+    // reaches here — that's expected, not an error.
+    if (result.success) {
+      await markJob(data.jobRecordId, { status: "COMPLETED", progress: 100, result: {} })
+    } else {
+      await markJobFailure(data.jobRecordId, new Error("No staged update to apply, or apply failed."))
+    }
+    return
+  }
+
   await markJob(data.jobRecordId, { status: "ACTIVE", progress: 10 })
 
   const instance = await prisma.instanceConfig.findFirst()

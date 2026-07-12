@@ -3,9 +3,15 @@ import { timingSafeEqual } from "node:crypto"
 import type { FastifyInstance } from "fastify"
 import { z } from "zod"
 
-import { DEFAULT_LIBRARY_DEFINITIONS, DEFAULT_USER_PREFERENCES } from "@arciin/shared"
+import {
+  DEFAULT_LIBRARY_DEFINITIONS,
+  DEFAULT_USER_PREFERENCES,
+  JOB_TYPES,
+  parseAutoUpdateConfig,
+} from "@arciin/shared"
 
 import { apiConfig } from "@/config"
+import { storageQueue } from "@/services/jobs/queues"
 import { clientIpFromRequest } from "@/services/security/client-ip"
 import { checkForUpdate, invalidateUpdateCheckCache } from "@/services/instance/update-check"
 
@@ -118,6 +124,86 @@ export async function registerInstanceRoutes(fastify: FastifyInstance) {
       }
       const result = await checkForUpdate()
       reply.send({ data: result })
+    },
+  )
+
+  fastify.get(
+    "/instance/auto-update",
+    { preHandler: requireRole(["OWNER", "ADMIN", "MEMBER", "VIEWER"]) },
+    async (_request, reply) => {
+      const instance = await fastify.prisma.instanceConfig.findFirst()
+      reply.send({ data: parseAutoUpdateConfig(instance?.autoUpdateConfig) })
+    },
+  )
+
+  const autoUpdatePatchSchema = z.object({
+    enabled: z.boolean(),
+    hour: z.number().int().min(0).max(23).nullable(),
+  })
+
+  fastify.patch(
+    "/instance/auto-update",
+    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    async (request, reply) => {
+      const parsed = autoUpdatePatchSchema.safeParse(request.body)
+      if (!parsed.success) {
+        reply.status(400).send({
+          error: { code: "VALIDATION_ERROR", message: "Invalid auto-update settings.", details: parsed.error.flatten() },
+        })
+        return
+      }
+
+      const instance = await fastify.prisma.instanceConfig.findFirst()
+      if (!instance) {
+        reply.status(404).send({ error: { code: "NOT_FOUND", message: "Instance not initialized." } })
+        return
+      }
+
+      const current = parseAutoUpdateConfig(instance.autoUpdateConfig)
+      const next = {
+        ...current,
+        enabled: parsed.data.enabled,
+        hour: parsed.data.enabled ? parsed.data.hour : null,
+      }
+      await fastify.prisma.instanceConfig.update({
+        where: { id: instance.id },
+        data: { autoUpdateConfig: next },
+      })
+
+      reply.send({ data: next })
+    },
+  )
+
+  fastify.post(
+    "/instance/auto-update/apply",
+    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    async (request, reply) => {
+      const instance = await fastify.prisma.instanceConfig.findFirst()
+      const current = parseAutoUpdateConfig(instance?.autoUpdateConfig)
+      if (!current.stagedVersion) {
+        reply.status(409).send({
+          error: { code: "NOTHING_STAGED", message: "No staged update is ready to apply." },
+        })
+        return
+      }
+
+      const job = await fastify.prisma.job.create({
+        data: {
+          type: JOB_TYPES.applyUpdate,
+          status: "QUEUED",
+          progress: 0,
+          payload: { requestedByUserId: request.auth?.user.id },
+        },
+      })
+
+      await storageQueue.add(JOB_TYPES.applyUpdate, {
+        requestedByUserId: request.auth?.user.id,
+        jobRecordId: job.id,
+      })
+
+      // Services (including this API process) restart shortly after this
+      // responds — the frontend should expect the connection to drop.
+      reply.status(202).send({ data: { jobId: job.id, applyingVersion: current.stagedVersion } })
     },
   )
 

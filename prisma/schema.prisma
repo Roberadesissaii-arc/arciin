@@ -161,6 +161,10 @@ model InstanceConfig {
   remoteAccessMode   String?  @default("local")
   remoteAccessConfig Json?
   aiConfig           Json?
+  /// { enabled, hour (0-23 local, preferred stage time), stagedVersion, stagedAt,
+  /// lastCheckedAt, lastError } — staged updates are never applied without a
+  /// user clicking "Apply now"; this only controls the unattended stage step.
+  autoUpdateConfig   Json?
   /// free | pro | team | business — effective plan may be free after expiry.
   licensePlan        String   @default("free")
   /// none | active | grace | expired

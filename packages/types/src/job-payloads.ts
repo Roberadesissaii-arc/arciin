@@ -47,3 +47,11 @@ export type PlexSyncPlaceholderPayload = {
   integrationId: string
   requestedByUserId?: string
 }
+
+export type StageUpdatePayload = {
+  targetVersion: string
+}
+
+export type ApplyUpdatePayload = {
+  requestedByUserId?: string
+}
