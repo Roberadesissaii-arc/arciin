@@ -21,6 +21,7 @@ import { UserIdentityAvatar } from "@/components/app-shell/user-identity-avatar"
 import { clearPendingWelcomeToast } from "@/lib/auth/login-remember"
 import { ArciinIcon, ArciinSidebarWordmarkText } from "@/components/ui/arciin-icon"
 import { getMe } from "@/lib/api/auth"
+import { getUpdateCheck } from "@/lib/api/instance"
 import { queryKeys } from "@/lib/api/query-keys"
 import { resolveUserAvatarUrl } from "@/lib/utils/user-avatar-url"
 import { NotificationUnreadBadge } from "@/components/notifications/notification-unread-badge"
@@ -182,6 +183,12 @@ function AppSidebarInner({ auth }: { auth: AuthSession }) {
   const logoutMutation = useLogout()
   const { data: libraries } = useLibraries()
   const license = useLicense()
+
+  const updateQuery = useQuery({
+    queryKey: queryKeys.updateCheck,
+    queryFn: ({ signal }) => getUpdateCheck({ signal }),
+    staleTime: 5 * 60 * 1000,
+  })
 
   function navLock(itemId: string): { locked: boolean; planBadge: string | null } {
     const feature = NAV_ITEM_FEATURES[itemId]
@@ -424,6 +431,31 @@ function AppSidebarInner({ auth }: { auth: AuthSession }) {
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+
+        {/* Version + update indicator */}
+        {!collapsed && updateQuery.data ? (
+          <Link
+            href="/settings?tab=updates"
+            className="mt-1 flex items-center justify-between rounded-lg px-2 py-1.5 text-[11px] transition-colors"
+            style={{ color: "rgba(255,255,255,0.25)" }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = HOVER; e.currentTarget.style.color = "rgba(255,255,255,0.5)" }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "rgba(255,255,255,0.25)" }}
+          >
+            <span className="font-mono">v{updateQuery.data.currentVersion}</span>
+            {updateQuery.data.updateAvailable ? (
+              <span
+                className="flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-semibold"
+                style={{
+                  color: "var(--arciin-accent, #ff4f12)",
+                  background: "color-mix(in srgb, var(--arciin-accent, #ff4f12) 14%, transparent)",
+                }}
+              >
+                <span className="size-1.5 rounded-full" style={{ background: "var(--arciin-accent, #ff4f12)" }} />
+                Update
+              </span>
+            ) : null}
+          </Link>
+        ) : null}
 
         {/* Collapse button */}
         {!isMobile && (

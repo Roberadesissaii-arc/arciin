@@ -14,6 +14,7 @@ import {
   Palette,
   Shield,
   ShieldAlert,
+  Sparkles,
 } from "lucide-react"
 
 export type SettingsTab =
@@ -21,6 +22,7 @@ export type SettingsTab =
   | "attached-disks"
   | "domain"
   | "license"
+  | "updates"
   | "passwords"
   | "data-reset"
   | "access-control"
@@ -37,6 +39,7 @@ export const SETTINGS_VALID_TABS: SettingsTab[] = [
   "attached-disks",
   "domain",
   "license",
+  "updates",
   "passwords",
   "data-reset",
   "access-control",
@@ -53,7 +56,6 @@ export const SETTINGS_DEFAULT_TAB: SettingsTab = "storage"
 
 export const SETTINGS_LEGACY_TAB_ROUTES: Record<string, string> = {
   general: "/settings?tab=access-control",
-  updates: "/settings?tab=access-control",
   mail: "/settings?tab=notifications",
   data: "/settings?tab=storage",
   security: "/settings?tab=access-control",
@@ -72,6 +74,7 @@ export const SETTINGS_NAV: SettingsNavItem[][] = [
     { id: "attached-disks", label: "Attached disks", icon: HardDrive },
     { id: "domain", label: "Domain", icon: Globe },
     { id: "license", label: "License", icon: KeyRound },
+    { id: "updates", label: "Updates", icon: Sparkles },
   ],
   [
     { id: "passwords", label: "Passwords", icon: FingerprintPattern },

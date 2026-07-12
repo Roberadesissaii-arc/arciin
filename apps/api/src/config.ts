@@ -39,6 +39,7 @@ export const apiConfig = {
   ...parsed,
   setupToken: defaultSetupToken,
   appVersion: APP_VERSION,
+  updateManifestUrl: parsed.ARCIIN_UPDATE_MANIFEST_URL,
   isProduction: parsed.NODE_ENV === "production",
   trustProxy: resolveTrustProxy(),
   maxUploadSizeBytes: parsed.MAX_UPLOAD_SIZE_MB * 1024 * 1024,

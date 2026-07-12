@@ -1,0 +1,137 @@
+"use client"
+
+import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { CheckCircle2, ExternalLink, RefreshCw, Sparkles } from "lucide-react"
+
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { Skeleton } from "@/components/ui/skeleton"
+import {
+  SectionHeader,
+  SettingsCard,
+  SettingsFieldLabel,
+  SettingsHint,
+} from "@/components/settings/settings-panel-primitives"
+import { SettingsPanelError } from "@/components/settings/settings-panel-error"
+import { getUpdateCheck, type UpdateCheckResult } from "@/lib/api/instance"
+import { queryKeys } from "@/lib/api/query-keys"
+import { formatRelativeDate } from "@/lib/utils/format-date"
+import { cn } from "@/lib/utils"
+
+export function UpdatesPanel() {
+  const queryClient = useQueryClient()
+
+  const query = useQuery({
+    queryKey: queryKeys.updateCheck,
+    queryFn: ({ signal }) => getUpdateCheck({ signal }),
+    staleTime: 5 * 60 * 1000,
+  })
+
+  async function refresh() {
+    const result = await getUpdateCheck({ refresh: true })
+    queryClient.setQueryData(queryKeys.updateCheck, result)
+  }
+
+  return (
+    <div className="space-y-5">
+      <SectionHeader
+        icon={Sparkles}
+        title="Software updates"
+        description="Arciin is self-hosted software you control — updates are applied manually, never automatically."
+      />
+
+      {query.isLoading ? (
+        <SettingsCard>
+          <Skeleton className="h-24 w-full rounded-lg" />
+        </SettingsCard>
+      ) : query.isError ? (
+        <SettingsPanelError
+          message="Could not check for updates."
+          hint={query.error instanceof Error ? query.error.message : undefined}
+        />
+      ) : query.data ? (
+        <UpdateStatusCard data={query.data} onRefresh={refresh} refreshing={query.isFetching} />
+      ) : null}
+    </div>
+  )
+}
+
+function UpdateStatusCard({
+  data,
+  onRefresh,
+  refreshing,
+}: {
+  data: UpdateCheckResult
+  onRefresh: () => void
+  refreshing: boolean
+}) {
+  return (
+    <SettingsCard className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="space-y-1">
+          <SettingsFieldLabel>Current version</SettingsFieldLabel>
+          <p className="font-mono text-[15px] font-semibold text-foreground">v{data.currentVersion}</p>
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="gap-1.5 border-border bg-card text-foreground hover:bg-muted/50"
+          onClick={onRefresh}
+          disabled={refreshing}
+        >
+          <RefreshCw className={cn("size-3.5", refreshing && "animate-spin")} />
+          Check for updates
+        </Button>
+      </div>
+
+      {!data.configured ? (
+        <SettingsHint>
+          No update manifest is configured for this instance. Set{" "}
+          <code className="rounded bg-muted px-1 py-0.5 font-mono text-[11px]">ARCIIN_UPDATE_MANIFEST_URL</code>{" "}
+          to a JSON manifest URL to enable update checks. This is optional — your instance runs fine without it.
+        </SettingsHint>
+      ) : data.error ? (
+        <SettingsPanelError message="The update manifest could not be reached." hint={data.error} />
+      ) : data.updateAvailable ? (
+        <div className="space-y-3 rounded-xl border border-primary/25 bg-primary/[0.04] p-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge className="border-0 bg-primary text-[11px] font-semibold text-primary-foreground shadow-none">
+              Update available
+            </Badge>
+            <span className="font-mono text-[13px] font-semibold text-foreground">v{data.latestVersion}</span>
+            {data.channel ? (
+              <span className="text-[11px] text-muted-foreground">· {data.channel}</span>
+            ) : null}
+          </div>
+          {data.notes ? <p className="text-[13px] text-muted-foreground">{data.notes}</p> : null}
+          {data.changelogUrl ? (
+            <a
+              href={data.changelogUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1.5 text-[13px] font-medium text-primary underline-offset-4 hover:underline"
+            >
+              View changelog
+              <ExternalLink className="size-3.5" />
+            </a>
+          ) : null}
+          <SettingsHint>
+            Arciin never updates itself. To apply this release on a Docker install, run{" "}
+            <code className="rounded bg-muted px-1 py-0.5 font-mono text-[11px]">docker compose pull && docker compose up -d</code>{" "}
+            from your install directory. For a native/PM2 install, re-run <code className="rounded bg-muted px-1 py-0.5 font-mono text-[11px]">install.sh</code>.
+          </SettingsHint>
+        </div>
+      ) : (
+        <div className="flex items-center gap-2 rounded-xl border border-border bg-muted/20 px-4 py-3">
+          <CheckCircle2 className="size-4 shrink-0 text-emerald-600" />
+          <p className="text-[13px] font-medium text-foreground">You&apos;re on the latest version.</p>
+        </div>
+      )}
+
+      <p className="text-[11px] text-muted-foreground">
+        Last checked {formatRelativeDate(data.checkedAt)}
+      </p>
+    </SettingsCard>
+  )
+}

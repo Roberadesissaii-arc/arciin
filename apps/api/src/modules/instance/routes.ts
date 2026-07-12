@@ -7,6 +7,7 @@ import { DEFAULT_LIBRARY_DEFINITIONS, DEFAULT_USER_PREFERENCES } from "@arciin/s
 
 import { apiConfig } from "@/config"
 import { clientIpFromRequest } from "@/services/security/client-ip"
+import { checkForUpdate, invalidateUpdateCheckCache } from "@/services/instance/update-check"
 
 /** Length-safe, constant-time string compare (avoids setup-token timing leaks). */
 function constantTimeEqual(a: string, b: string): boolean {
@@ -106,6 +107,19 @@ export async function registerInstanceRoutes(fastify: FastifyInstance) {
       },
     })
   })
+
+  fastify.get(
+    "/instance/update-check",
+    { preHandler: requireRole(["OWNER", "ADMIN", "MEMBER", "VIEWER"]) },
+    async (request, reply) => {
+      const query = request.query as { refresh?: string }
+      if (query.refresh === "1" || query.refresh === "true") {
+        invalidateUpdateCheckCache()
+      }
+      const result = await checkForUpdate()
+      reply.send({ data: result })
+    },
+  )
 
   fastify.get("/instance/storage-discovery", async (_request, reply) => {
     if (await isInitialized(fastify)) {

@@ -28,6 +28,7 @@ import {
 } from "@/components/settings/settings-nav-config"
 import { SettingsShell } from "@/components/settings/settings-shell"
 import { StorageSettingsForm } from "@/components/settings/storage-settings-form"
+import { UpdatesPanel } from "@/components/settings/updates-panel"
 
 export function SettingsPage() {
   const router = useRouter()
@@ -69,6 +70,7 @@ export function SettingsPage() {
     "attached-disks": <AttachedDisksPanel />,
     domain: <DomainPanel />,
     license: <LicensePanel />,
+    updates: <UpdatesPanel />,
     passwords: <PasswordsPanel />,
     "data-reset": <ClearDataPanel />,
     "access-control": <AccessControlPanel />,
