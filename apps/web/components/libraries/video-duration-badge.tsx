@@ -15,7 +15,7 @@ export function VideoDurationBadge({
     <span
       data-preview-chrome
       className={cn(
-        "pointer-events-none absolute bottom-1 right-1 z-20 rounded-xl bg-black/75 px-1.5 py-0.5",
+        "pointer-events-none absolute bottom-1 right-1 z-20 rounded-xl bg-black/50 px-1.5 py-0.5 backdrop-blur-sm",
         "text-[10px] font-semibold leading-none tabular-nums text-white shadow-sm",
         className,
       )}

@@ -142,7 +142,8 @@ function ImageOrIconPreview({ asset }: { asset: AssetSummary }) {
     return <ServerAssetThumbnail key={thumbKey} asset={asset} />
   }
 
-  const badgeLabel = thumbnailStatusLabel(asset, false)
+  const ext = (asset.extension ?? asset.originalFilename.split(".").pop() ?? "").trim().toUpperCase()
+  const badgeLabel = thumbnailStatusLabel(asset, false, ext || undefined)
   return <DocumentThumbnailPlaceholder asset={asset} badgeLabel={badgeLabel} />
 }
 

@@ -2,16 +2,9 @@
 
 import Link from "next/link"
 import { useState } from "react"
-import {
-  File,
-  FileText,
-  FileVideo,
-  Image as ImageIcon,
-  Music4,
-  type LucideIcon,
-} from "lucide-react"
 
 import { AssetStatusBadge } from "@/components/dashboard/asset-status-badge"
+import { MediaTypeIcon } from "@/components/libraries/media-type-icon"
 import { VideoHoverThumb } from "@/components/libraries/video-hover-thumb"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useAssets } from "@/hooks/use-assets"
@@ -22,8 +15,9 @@ import {
   DASHBOARD_UPLOADS_LIMIT,
   dashboardUploadsGrid,
 } from "@/lib/dashboard-card-styles"
+import { formatMediaTypeLabel } from "@/lib/utils/media-type"
 import { cn } from "@/lib/utils"
-import type { AssetSummary, MediaType } from "@/lib/types/models"
+import type { AssetSummary } from "@/lib/types/models"
 
 const LIBRARY_ROUTES: Record<string, string> = {
   inbox: "/inbox",
@@ -33,20 +27,28 @@ const LIBRARY_ROUTES: Record<string, string> = {
   documents: "/documents",
 }
 
-const mediaTypeIcon: Partial<Record<MediaType, LucideIcon>> = {
-  VIDEO: FileVideo,
-  IMAGE: ImageIcon,
-  AUDIO: Music4,
-  DOCUMENT: FileText,
+/** Glassy bottom-right chip — matches the video duration badge's look. */
+function TypeLabelBadge({ label }: { label: string }) {
+  if (!label) return null
+  return (
+    <span
+      className="pointer-events-none absolute bottom-1 right-1 z-20 rounded-xl bg-black/50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide leading-none text-white backdrop-blur-sm"
+    >
+      {label}
+    </span>
+  )
 }
 
 function UploadPlaceholder({ asset }: { asset: AssetSummary }) {
-  const Icon =
-    (asset.mediaType && mediaTypeIcon[asset.mediaType]) || File
-
   return (
-    <div className="flex size-full items-center justify-center bg-gradient-to-br from-zinc-50 to-zinc-100">
-      <Icon className="size-4 text-zinc-300" strokeWidth={1.75} />
+    <div className="flex size-full items-center justify-center bg-muted/40">
+      <MediaTypeIcon
+        mediaType={asset.mediaType}
+        filename={asset.originalFilename}
+        mimeType={asset.mimeType}
+        extension={asset.extension}
+        className="size-6 text-muted-foreground"
+      />
     </div>
   )
 }
@@ -54,6 +56,11 @@ function UploadPlaceholder({ asset }: { asset: AssetSummary }) {
 function UploadTilePreview({ asset }: { asset: AssetSummary }) {
   const [thumbFailed, setThumbFailed] = useState(false)
   const thumbSrc = `/api/assets/${asset.id}/thumbnail?v=${encodeURIComponent(asset.updatedAt)}`
+  const typeLabel = formatMediaTypeLabel(asset.mediaType, {
+    filename: asset.originalFilename,
+    mimeType: asset.mimeType,
+    extension: asset.extension,
+  })
 
   if (asset.mediaType === "VIDEO") {
     return (
@@ -67,21 +74,27 @@ function UploadTilePreview({ asset }: { asset: AssetSummary }) {
 
   if (thumbFailed) {
     return (
-      <div className="absolute inset-0">
-        <UploadPlaceholder asset={asset} />
-      </div>
+      <>
+        <div className="absolute inset-0">
+          <UploadPlaceholder asset={asset} />
+        </div>
+        <TypeLabelBadge label={typeLabel} />
+      </>
     )
   }
 
   return (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img
-      src={thumbSrc}
-      alt=""
-      className="absolute inset-0 size-full object-cover"
-      loading="lazy"
-      onError={() => setThumbFailed(true)}
-    />
+    <>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={thumbSrc}
+        alt=""
+        className="absolute inset-0 size-full object-cover"
+        loading="lazy"
+        onError={() => setThumbFailed(true)}
+      />
+      <TypeLabelBadge label={typeLabel} />
+    </>
   )
 }
 
