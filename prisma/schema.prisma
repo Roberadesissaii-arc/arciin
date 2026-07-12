@@ -83,6 +83,76 @@ enum WebhookDeliveryStatus {
   FAILED
 }
 
+enum ShareResourceType {
+  ASSET
+  ASSETS
+  FOLDER
+}
+
+enum ShareFeedbackSentiment {
+  LIKE
+  DISLIKE
+}
+
+/// Opaque public link to a single asset or folder (token hash at rest).
+model ShareLink {
+  id            String             @id @default(cuid())
+  createdById   String
+  resourceType  ShareResourceType
+  assetId       String?
+  folderId      String?
+  tokenHash     String             @unique
+  tokenPrefix   String
+  label         String?
+  expiresAt     DateTime?
+  maxViews      Int?
+  viewCount     Int                @default(0)
+  allowDownload Boolean            @default(true)
+  revokedAt     DateTime?
+  lastViewedAt  DateTime?
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+  createdBy     User               @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  asset         Asset?             @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  folder        Folder?            @relation(fields: [folderId], references: [id], onDelete: Cascade)
+  shareAssets   ShareLinkAsset[]
+  feedback      ShareFeedback[]
+
+  @@index([createdById])
+  @@index([assetId])
+  @@index([folderId])
+  @@index([revokedAt])
+  @@index([expiresAt])
+}
+
+model ShareLinkAsset {
+  id          String    @id @default(cuid())
+  shareLinkId String
+  assetId     String
+  sortOrder   Int       @default(0)
+  createdAt   DateTime  @default(now())
+  shareLink   ShareLink @relation(fields: [shareLinkId], references: [id], onDelete: Cascade)
+  asset       Asset     @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@unique([shareLinkId, assetId])
+  @@index([shareLinkId])
+  @@index([assetId])
+}
+
+model ShareFeedback {
+  id          String                 @id @default(cuid())
+  shareLinkId String
+  assetId     String?
+  sentiment   ShareFeedbackSentiment
+  createdAt   DateTime               @default(now())
+  shareLink   ShareLink              @relation(fields: [shareLinkId], references: [id], onDelete: Cascade)
+  asset       Asset?                 @relation(fields: [assetId], references: [id], onDelete: SetNull)
+
+  @@index([shareLinkId])
+  @@index([assetId])
+  @@index([createdAt])
+}
+
 model InstanceConfig {
   id                 String   @id @default(cuid())
   instanceName       String
@@ -91,6 +161,19 @@ model InstanceConfig {
   remoteAccessMode   String?  @default("local")
   remoteAccessConfig Json?
   aiConfig           Json?
+  /// free | pro | team | business — effective plan may be free after expiry.
+  licensePlan        String   @default("free")
+  /// none | active | grace | expired
+  licenseStatus      String   @default("none")
+  licenseKeyPrefix   String?
+  licenseActivatedAt DateTime?
+  licenseExpiresAt   DateTime?
+  /// Premium features stay on until this time after licenseExpiresAt.
+  licenseGraceUntil  DateTime?
+  /// Locally signed license token (cloud verification later).
+  licenseSignedToken String?  @db.Text
+  /// mock_dev | token | default
+  licenseSource      String?
   initializedAt      DateTime
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
@@ -113,8 +196,10 @@ model User {
   id             String          @id @default(cuid())
   name           String
   email          String          @unique
-  passwordHash   String
-  role           UserRole
+  passwordHash        String
+  recoveryQuestion    String?
+  recoveryAnswerHash  String?
+  role                UserRole
   status         UserStatus      @default(ACTIVE)
   avatarPath     String?
   preferences    Json?
@@ -128,6 +213,7 @@ model User {
   activityEvents    ActivityEvent[]
   appDatabases      AppDatabase[]
   chatConversations ChatConversation[]
+  shareLinks        ShareLink[]
 }
 
 /// Logical app database for API/automation: metadata + JSON in PostgreSQL (not library file storage).
@@ -275,6 +361,7 @@ model Folder {
   childFolders   Folder[]        @relation("FolderTree")
   assets         Asset[]
   uploadSessions UploadSession[]
+  shareLinks     ShareLink[]
 
   @@unique([libraryId, pathCache])
   @@index([libraryId])
@@ -319,6 +406,16 @@ model Asset {
   codec            String?
   status           AssetStatus
   processingError  String?
+  /// Original public link this asset was imported from (used to show a source badge).
+  importSourceUrl  String?
+  /// Device channel the upload request came from ("web" | "mobile") — fallback badge when there's no import source.
+  uploadClient     String?
+  /// Custom badge label override (null = auto-detect from importSourceUrl).
+  badgeLabel       String?
+  /// Custom badge color override as hex (null = auto-detect or default).
+  badgeColor       String?
+  /// When false, the source badge is hidden on cards and lists.
+  showBadge        Boolean         @default(true)
   /// Relative path under storage root for Plex-visible library mirror (e.g. libraries/videos/plex/file.mp4).
   libraryMirrorPath String?
   createdAt        DateTime        @default(now())
@@ -330,6 +427,9 @@ model Asset {
   owner            User            @relation(fields: [ownerId], references: [id], onDelete: Restrict)
   uploadSessions   UploadSession[]
   tags             AssetTag[]
+  shareLinks       ShareLink[]
+  shareLinkAssets  ShareLinkAsset[]
+  shareFeedback    ShareFeedback[]
 
   @@index([libraryId])
   @@index([folderId])
@@ -339,6 +439,11 @@ model Asset {
   @@index([mediaType])
   @@index([createdAt])
   @@index([deletedAt])
+  // Composite indexes matching the hot list queries (library/folder browse,
+  // newest-first, excluding soft-deleted) so large libraries don't degrade to
+  // index-scan-plus-sort under concurrent load.
+  @@index([libraryId, deletedAt, createdAt(sort: Desc)])
+  @@index([folderId, deletedAt, createdAt(sort: Desc)])
 }
 
 model UploadSession {
@@ -473,6 +578,7 @@ model ModelProfile {
   apiKey       String?
   baseUrl      String?
   defaultModel String?
+  ttsModel     String?
   isDefault    Boolean  @default(false)
   isEnabled    Boolean  @default(true)
   createdAt    DateTime @default(now())

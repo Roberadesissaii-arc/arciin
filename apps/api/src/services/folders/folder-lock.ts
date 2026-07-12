@@ -87,6 +87,18 @@ export async function assertFolderAccess(
   return folder
 }
 
+/** Enforce folder lock when an asset lives inside a locked folder. */
+export async function assertAssetFolderAccess(
+  fastify: FastifyInstance,
+  request: FastifyRequest,
+  reply: FastifyReply,
+  folderId: string | null | undefined,
+): Promise<boolean> {
+  if (!folderId) return true
+  const allowed = await assertFolderAccess(fastify, request, reply, folderId)
+  return allowed !== null
+}
+
 export async function grantFolderSessionAccess(
   fastify: FastifyInstance,
   request: FastifyRequest,

@@ -13,10 +13,7 @@ import {
   JOB_TYPES,
   VIDEO_THUMBNAIL_PLACEHOLDER_SVG,
   assetSupportsDocumentThumbnail,
-  candidateStorageObjectPaths,
   inferMediaType,
-  normalizeConfiguredStorageRoot,
-  resolveArciinStorageRoot,
   type AnalyzeFilePayload,
   type CalculateStorageUsagePayload,
   type CleanupTempFilesPayload,
@@ -25,6 +22,11 @@ import {
   type GenerateThumbnailPayload,
   type PlexSyncPlaceholderPayload,
 } from "@arciin/shared"
+import {
+  candidateStorageObjectPaths,
+  normalizeConfiguredStorageRoot,
+  resolveArciinStorageRoot,
+} from "@arciin/storage"
 
 import { workerConfig } from "@/config"
 import { syncConnectorMirrorsForAsset } from "@/services/connector-mirror"
@@ -60,18 +62,55 @@ async function markJob(
 export async function markJobFailure(jobRecordId: string | undefined, error: unknown) {
   await markJob(jobRecordId, {
     status: "FAILED",
-    progress: 100,
+    progress: 0,
     error: error instanceof Error ? error.message : "Job failed.",
   })
 }
 
+async function readWithFfprobe(filePath: string) {
+  try {
+    const { stdout } = await execa("ffprobe", [
+      "-v",
+      "quiet",
+      "-print_format",
+      "json",
+      "-show_streams",
+      "-show_format",
+      filePath,
+    ])
+
+    return JSON.parse(stdout) as {
+      streams?: Array<Record<string, unknown>>
+      format?: Record<string, unknown>
+    }
+  } catch {
+    return null
+  }
+}
+
+function parseDurationSeconds(
+  format: Record<string, unknown> | undefined,
+  stream: Record<string, unknown> | undefined,
+): number | undefined {
+  const raw =
+    (typeof format?.duration === "string" ? Number(format.duration) : undefined) ??
+    (typeof stream?.duration === "string" ? Number(stream.duration) : undefined)
+
+  if (raw == null || !Number.isFinite(raw) || raw <= 0) return undefined
+  return raw
+}
+
 async function detectMetadata(filePath: string) {
   const detected = await fileTypeFromFile(filePath)
+  const mimeType = detected?.mime
+  const extension = detected?.ext
 
   let width: number | undefined
   let height: number | undefined
+  let durationSeconds: number | undefined
+  let codec: string | undefined
 
-  if (detected?.mime?.startsWith("image/")) {
+  if (mimeType?.startsWith("image/")) {
     try {
       const metadata = await sharp(filePath).metadata()
       width = metadata.width
@@ -82,11 +121,26 @@ async function detectMetadata(filePath: string) {
     }
   }
 
+  if (mimeType?.startsWith("video/") || mimeType?.startsWith("audio/")) {
+    const ffprobe = await readWithFfprobe(filePath)
+    const stream = ffprobe?.streams?.find((item) =>
+      mimeType.startsWith("video/")
+        ? item.codec_type === "video"
+        : item.codec_type === "audio",
+    )
+    durationSeconds = parseDurationSeconds(ffprobe?.format, stream)
+    width = typeof stream?.width === "number" ? stream.width : width
+    height = typeof stream?.height === "number" ? stream.height : height
+    codec = typeof stream?.codec_name === "string" ? stream.codec_name : undefined
+  }
+
   return {
-    mimeType: detected?.mime,
-    extension: detected?.ext,
+    mimeType,
+    extension,
     width,
     height,
+    durationSeconds,
+    codec,
   }
 }
 
@@ -267,6 +321,8 @@ export async function handleMediaJob(
         mediaType,
         width: metadata.width ?? asset.width,
         height: metadata.height ?? asset.height,
+        durationSeconds: metadata.durationSeconds ?? asset.durationSeconds,
+        codec: metadata.codec ?? asset.codec,
       },
     })
 
@@ -340,13 +396,19 @@ export async function handleMediaJob(
       where: {
         assetId: asset.id,
       },
+      include: {
+        targetLibrary: { select: { name: true } },
+      },
     })
 
     /** PDFs are often READY before thumbnail jobs run — do not re-emit upload.completed (Sonner spam). */
     const uploadNotYetAnnounced =
       upload && upload.status !== "READY" && upload.completedAt == null
 
-    if (uploadNotYetAnnounced) {
+    if (uploadNotYetAnnounced && !asset.importSourceUrl) {
+      const origin = asset.importSourceUrl ? "url" : "upload"
+      const destination = upload.targetLibrary?.name
+
       await prisma.uploadSession.update({
         where: { id: upload.id },
         data: {
@@ -364,7 +426,15 @@ export async function handleMediaJob(
           uploadId: upload.id,
           assetId: asset.id,
           progress: 100,
-          message: `${asset.originalFilename} is ready.`,
+          message:
+            origin === "url"
+              ? `${asset.originalFilename} imported from link.`
+              : `${asset.originalFilename} uploaded.`,
+          data: {
+            fileName: asset.originalFilename,
+            destination,
+            origin,
+          },
         }),
       )
     }

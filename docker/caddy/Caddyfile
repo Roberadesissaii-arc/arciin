@@ -2,11 +2,20 @@
   encode zstd gzip
 
   handle /api/* {
-    reverse_proxy api:4000
+    reverse_proxy api:4000 {
+      # Reset X-Forwarded-For to the real peer so a client cannot smuggle a
+      # forged value past the edge. The API trusts only this proxy hop
+      # (see ARCIIN_TRUST_PROXY / the default private-subnet trust list).
+      header_up X-Forwarded-For {remote_host}
+      header_up -X-Real-IP
+    }
   }
 
   handle /socket.io/* {
-    reverse_proxy api:4000
+    reverse_proxy api:4000 {
+      header_up X-Forwarded-For {remote_host}
+      header_up -X-Real-IP
+    }
   }
 
   handle {

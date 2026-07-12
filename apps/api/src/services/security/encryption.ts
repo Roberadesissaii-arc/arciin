@@ -5,8 +5,12 @@ import { apiConfig } from "@/config"
 const KEY_LEN = 32
 
 function getKey() {
-  // Derive stable key from SESSION_SECRET. Not raw-secret storage; secrets are encrypted at rest.
-  return scryptSync(apiConfig.SESSION_SECRET, "arciin-webhooks", KEY_LEN)
+  // Prefer a dedicated encryption key so session signing and data encryption
+  // can rotate independently. Falls back to SESSION_SECRET when unset so
+  // existing ciphertext keeps decrypting. The domain salt separates this
+  // subkey from the vault's.
+  const material = apiConfig.ARCIIN_ENCRYPTION_KEY ?? apiConfig.SESSION_SECRET
+  return scryptSync(material, "arciin-webhooks", KEY_LEN)
 }
 
 export function encryptSecret(plaintext: string) {

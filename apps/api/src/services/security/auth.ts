@@ -99,13 +99,18 @@ export function setSessionCookie(
   token: string,
   expiresAt: Date,
   request?: FastifyRequest,
+  options?: {
+    /** false → browser-session cookie (no expires); forgotten when the browser closes. */
+    persistent?: boolean
+  },
 ) {
+  const persistent = options?.persistent ?? true
   reply.setCookie(apiConfig.SESSION_COOKIE_NAME, token, {
     httpOnly: true,
     sameSite: "lax",
     path: "/",
     secure: isSecureCookie(request),
-    expires: expiresAt,
+    ...(persistent ? { expires: expiresAt } : {}),
   })
 }
 
@@ -352,6 +357,45 @@ export function requireRole(roles: Array<"OWNER" | "ADMIN" | "MEMBER" | "VIEWER"
         },
       })
     }
+  }
+
+  return handler
+}
+
+/**
+ * Enforce plan entitlements on the API (never rely on UI alone).
+ * Free-core routes (files, libraries, uploads) must NOT use this for basic access.
+ */
+export function requireFeature(feature: import("@arciin/shared").LicenseFeatureId) {
+  const handler = async (request: FastifyRequest, reply: FastifyReply) => {
+    if (reply.sent) return
+
+    // Lazy import avoids circular deps with license-service → config.
+    const [{ hasFeature, plansWithFeature }, licenseService] = await Promise.all([
+      import("@arciin/shared"),
+      import("@/services/license/license-service"),
+    ])
+
+    let snapshot = await licenseService.loadLicenseSnapshot(request.server.prisma)
+    snapshot = await licenseService.syncLicenseStatusIfNeeded(request.server.prisma, snapshot)
+
+    if (hasFeature(snapshot, feature)) {
+      return
+    }
+
+    const needed = plansWithFeature(feature)
+    reply.status(403).send({
+      error: {
+        code: "LICENSE_REQUIRED",
+        message: `This feature requires a higher Arciin plan (${needed.join(", ")}). Free core still keeps your files accessible.`,
+        details: {
+          feature,
+          plan: snapshot.plan,
+          status: snapshot.status,
+          requiredPlans: needed,
+        },
+      },
+    })
   }
 
   return handler

@@ -37,6 +37,13 @@ yarn-error.log*
 .env*
 !.env.example
 !.env.docker.example
+!.env.production.example
+
+# private distribution packaging output
+/dist/
+
+# hosted license server SQLite (prototype)
+/apps/license-server/data/
 
 # vercel
 .vercel
@@ -58,3 +65,5 @@ next-env.d.ts
 data/
 __pycache__/
 *.pyc
+.env.docker.test
+docker-compose.smoke.yml

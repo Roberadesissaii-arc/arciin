@@ -12,14 +12,17 @@ import {
   executeArciinChatTool,
 } from "@/services/chat/arciin-chat-tools"
 import {
+  assistantClaimsFolderMutation,
   buildSyntheticCreateLibraryFolderArgsFromUser,
   buildSyntheticDeleteLibraryFolderArgsFromUser,
   extractBracketPseudoToolCalls,
   extractProseLibraryFolderMutations,
 } from "@/services/chat/folder-tool-synthetic"
+import { buildSyntheticReadPdfAssetArgsFromUser } from "@/services/chat/read-pdf-asset-synthetic"
 import { buildSyntheticReadTextAssetArgsFromUser } from "@/services/chat/read-text-asset-synthetic"
 import { normalizeOllamaCloudModelId } from "@/services/chat/ollama-cloud-models"
 import { formatOllamaProviderError, ollamaAuthHeaders } from "@/services/chat/ollama-http"
+import { ollamaModelSupportsThinking } from "@/services/models/ollama-model-capabilities"
 import { stripAssistantStreamMarkup } from "@arciin/shared"
 import { writeSseEvent } from "@/services/chat/sse-stream"
 
@@ -105,7 +108,7 @@ function flattenToolMessagesForFinalAnswer(messages: ChatMsg[]): ChatMsg[] {
       if (toolPayloads.length > 0) {
         out.push({
           role: "user",
-          content: `Tool results (use these to answer the user):\n\n${toolPayloads
+          content: `Tool results (use these to answer the user — report findings in your final answer; do not say you will search or read):\n\n${toolPayloads
             .map((p, idx) => `--- Result ${idx + 1} ---\n${p}`)
             .join("\n\n")}`,
         })
@@ -121,10 +124,19 @@ function flattenToolMessagesForFinalAnswer(messages: ChatMsg[]): ChatMsg[] {
   return out
 }
 
-function thinkOption(model: string, isCloud: boolean): boolean | string {
+function thinkOption(
+  model: string,
+  isCloud: boolean,
+  thinkingSupported: boolean,
+): boolean | string {
   if (/gpt-oss/i.test(model)) return isCloud ? "low" : "medium"
+  if (!thinkingSupported) return false
   if (isCloud) return false
   return true
+}
+
+function ollamaThinkingNotSupportedError(status: number, text: string): boolean {
+  return status === 400 && /does not support thinking/i.test(text)
 }
 
 /** Stream thinking/text deltas to the client (SSE). */
@@ -163,34 +175,58 @@ async function ollamaChatOnce(
   baseUrl: string,
   model: string,
   messages: ChatMsg[],
-  opts: { stream: boolean; tools?: ToolMode; apiKey?: string | null },
+  opts: {
+    stream: boolean
+    tools?: ToolMode
+    apiKey?: string | null
+    thinkingSupported: boolean
+  },
 ): Promise<Response> {
   const isCloud = baseUrl.includes("ollama.com")
   const apiModel = isCloud ? normalizeOllamaCloudModelId(model) : model
-  const body: Record<string, unknown> = {
-    model: apiModel,
-    messages,
-    stream: opts.stream,
-    think: thinkOption(apiModel, isCloud),
+  const think = thinkOption(apiModel, isCloud, opts.thinkingSupported)
+  const buildBody = (thinkValue: boolean | string) => {
+    const body: Record<string, unknown> = {
+      model: apiModel,
+      messages,
+      stream: opts.stream,
+      think: thinkValue,
+    }
+    const tools = opts.tools === undefined ? undefined : resolveOllamaTools(opts.tools)
+    if (tools?.length) body.tools = tools
+    return body
   }
-  const tools = opts.tools === undefined ? undefined : resolveOllamaTools(opts.tools)
-  if (tools?.length) body.tools = tools
 
-  return fetch(`${baseUrl}/api/chat`, {
-    method: "POST",
-    headers: ollamaAuthHeaders(opts.apiKey),
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(600_000),
-  }).then(async (res) => {
-    if (res.ok) return res
+  const post = (thinkValue: boolean | string) =>
+    fetch(`${baseUrl}/api/chat`, {
+      method: "POST",
+      headers: ollamaAuthHeaders(opts.apiKey),
+      body: JSON.stringify(buildBody(thinkValue)),
+      signal: AbortSignal.timeout(600_000),
+    })
+
+  let res = await post(think)
+  if (!res.ok) {
     const text = await res.text().catch(() => res.statusText)
+    if (ollamaThinkingNotSupportedError(res.status, text) && think !== false) {
+      res = await post(false)
+      if (res.ok) return res
+      const retryText = await res.text().catch(() => res.statusText)
+      throw new Error(
+        formatOllamaProviderError(res.status, retryText, {
+          hasApiKey: Boolean(opts.apiKey?.trim()),
+          isCloud,
+        }),
+      )
+    }
     throw new Error(
       formatOllamaProviderError(res.status, text, {
         hasApiKey: Boolean(opts.apiKey?.trim()),
         isCloud,
       }),
     )
-  })
+  }
+  return res
 }
 
 async function collectStreamedOllama(
@@ -267,17 +303,22 @@ async function streamFinalAnswer(
   messages: ChatMsg[],
   totalIn: number,
   totalOut: number,
-  apiKey?: string | null,
+  apiKey: string | null | undefined,
+  thinkingSupported: boolean,
 ): Promise<void> {
   const answerRes = await ollamaChatOnce(baseUrl, model, flattenToolMessagesForFinalAnswer(messages), {
     stream: true,
     tools: false,
     apiKey,
+    thinkingSupported,
   })
   if (!answerRes.body) {
     throw new Error("Provider error: empty response body from Ollama.")
   }
-  const final = await collectStreamedOllama(answerRes, raw, { thinking: true, text: true })
+  const final = await collectStreamedOllama(answerRes, raw, {
+    thinking: thinkingSupported,
+    text: true,
+  })
   const inTok = totalIn + (final.usage?.inputTokens ?? 0)
   const outTok = totalOut + (final.usage?.outputTokens ?? 0)
   writeSseEvent(raw, {
@@ -320,9 +361,14 @@ export async function streamOllamaWithArciinTools(opts: {
   const messages = [...opts.messages]
   let totalIn = 0
   let totalOut = 0
+  const thinkingSupported = await ollamaModelSupportsThinking({
+    baseUrl,
+    apiKey: apiKey ?? null,
+    model,
+  })
 
   if (opts.disableTools) {
-    await streamFinalAnswer(raw, baseUrl, model, messages, totalIn, totalOut, apiKey)
+    await streamFinalAnswer(raw, baseUrl, model, messages, totalIn, totalOut, apiKey, thinkingSupported)
     return
   }
 
@@ -339,7 +385,24 @@ export async function streamOllamaWithArciinTools(opts: {
       const result = await executeArciinChatTool(syntheticCall, toolCtx)
       messages.push({ role: "assistant", content: " ", tool_calls: [syntheticCall] })
       messages.push({ role: "tool", content: JSON.stringify(result) })
-      await streamFinalAnswer(raw, baseUrl, model, messages, totalIn, totalOut, apiKey)
+      await streamFinalAnswer(raw, baseUrl, model, messages, totalIn, totalOut, apiKey, thinkingSupported)
+      return
+    }
+
+    const pdfArgs = buildSyntheticReadPdfAssetArgsFromUser(
+      lastUser.content,
+      priorUserTexts,
+      messages,
+    )
+    if (pdfArgs) {
+      writeSseEvent(raw, { libraryAction: "read_pdf_asset", status: "Reading PDF…" })
+      const syntheticCall = {
+        function: { name: "read_pdf_asset" as const, arguments: pdfArgs },
+      }
+      const result = await executeArciinChatTool(syntheticCall, toolCtx)
+      messages.push({ role: "assistant", content: " ", tool_calls: [syntheticCall] })
+      messages.push({ role: "tool", content: JSON.stringify(result) })
+      await streamFinalAnswer(raw, baseUrl, model, messages, totalIn, totalOut, apiKey, thinkingSupported)
       return
     }
   }
@@ -354,7 +417,7 @@ export async function streamOllamaWithArciinTools(opts: {
       const result = await executeArciinChatTool(syntheticCall, toolCtx)
       messages.push({ role: "assistant", content: " ", tool_calls: [syntheticCall] })
       messages.push({ role: "tool", content: JSON.stringify(result) })
-      await streamFinalAnswer(raw, baseUrl, model, messages, totalIn, totalOut, apiKey)
+      await streamFinalAnswer(raw, baseUrl, model, messages, totalIn, totalOut, apiKey, thinkingSupported)
       return
     }
     const createArgs = buildSyntheticCreateLibraryFolderArgsFromUser(lastUser.content)
@@ -366,7 +429,7 @@ export async function streamOllamaWithArciinTools(opts: {
       const result = await executeArciinChatTool(syntheticCall, toolCtx)
       messages.push({ role: "assistant", content: " ", tool_calls: [syntheticCall] })
       messages.push({ role: "tool", content: JSON.stringify(result) })
-      await streamFinalAnswer(raw, baseUrl, model, messages, totalIn, totalOut, apiKey)
+      await streamFinalAnswer(raw, baseUrl, model, messages, totalIn, totalOut, apiKey, thinkingSupported)
       return
     }
   }
@@ -395,7 +458,7 @@ export async function streamOllamaWithArciinTools(opts: {
       content: JSON.stringify(result),
     })
 
-    await streamFinalAnswer(raw, baseUrl, model, messages, totalIn, totalOut, apiKey)
+    await streamFinalAnswer(raw, baseUrl, model, messages, totalIn, totalOut, apiKey, thinkingSupported)
     return
   }
 
@@ -404,15 +467,17 @@ export async function streamOllamaWithArciinTools(opts: {
       stream: true,
       tools: toolMode,
       apiKey,
+      thinkingSupported,
     })
 
     if (!res.body) {
       throw new Error("Provider error: empty response body from Ollama.")
     }
 
+    const toolsActive = toolMode !== false
     const collected = await collectStreamedOllama(res, raw, {
-      thinking: true,
-      text: true,
+      thinking: thinkingSupported,
+      text: !toolsActive,
     })
     totalIn += collected.usage?.inputTokens ?? 0
     totalOut += collected.usage?.outputTokens ?? 0
@@ -424,14 +489,35 @@ export async function streamOllamaWithArciinTools(opts: {
         (typeof collected.thinking === "string" ? collected.thinking : "").trim() ||
         (typeof collected.thought === "string" ? collected.thought : "").trim()
 
+      // Detect narrated-but-not-executed folder mutations BEFORE streaming the
+      // narration — otherwise the client shows "I've created it" for a folder
+      // that never existed. When one is found, execute it and stream a final
+      // answer grounded in the real tool result instead of the narration.
       const combined = `${answer}\n${thinking}`
       if (agentEnabled && folderMutationsOk && !requireApproval) {
         const pseudo = extractBracketPseudoToolCalls(combined)
         const prose = extractProseLibraryFolderMutations(combined)
-        for (const p of [...pseudo, ...prose]) {
-          if (p.name !== "delete_library_folder" && p.name !== "create_library_folder") continue
-          const syntheticCall = { function: { name: p.name, arguments: p.arguments } }
-          writeSseEvent(raw, { libraryAction: p.name, status: "Updating library…" })
+        let actions = [...pseudo, ...prose].filter(
+          (p) => p.name === "delete_library_folder" || p.name === "create_library_folder",
+        )
+
+        // The model claimed it acted but its prose has no parseable name/library —
+        // fall back to args parsed from the user's own request.
+        if (actions.length === 0 && lastUser) {
+          const claimed = assistantClaimsFolderMutation(combined)
+          if (claimed === "create") {
+            const args = buildSyntheticCreateLibraryFolderArgsFromUser(lastUser.content)
+            if (args) actions = [{ name: "create_library_folder", arguments: args }]
+          } else if (claimed === "delete") {
+            const args = buildSyntheticDeleteLibraryFolderArgsFromUser(lastUser.content)
+            if (args) actions = [{ name: "delete_library_folder", arguments: args }]
+          }
+        }
+
+        const first = actions[0]
+        if (first) {
+          const syntheticCall = { function: { name: first.name, arguments: first.arguments } }
+          writeSseEvent(raw, { libraryAction: first.name, status: "Updating library…" })
           const toolResult = await executeArciinChatTool(syntheticCall, toolCtx)
           messages.push({
             role: "assistant",
@@ -439,9 +525,13 @@ export async function streamOllamaWithArciinTools(opts: {
             tool_calls: [syntheticCall],
           })
           messages.push({ role: "tool", content: JSON.stringify(toolResult) })
-          await streamFinalAnswer(raw, baseUrl, model, messages, totalIn, totalOut, apiKey)
+          await streamFinalAnswer(raw, baseUrl, model, messages, totalIn, totalOut, apiKey, thinkingSupported)
           return
         }
+      }
+
+      if (toolsActive && answer) {
+        writeSseEvent(raw, { text: answer })
       }
 
       // Some thinking models leave `content` empty and put the user-visible reply in `thinking`.
@@ -484,5 +574,5 @@ export async function streamOllamaWithArciinTools(opts: {
   }
 
   writeSseEvent(raw, { status: "Writing answer…" })
-  await streamFinalAnswer(raw, baseUrl, model, messages, totalIn, totalOut, apiKey)
+  await streamFinalAnswer(raw, baseUrl, model, messages, totalIn, totalOut, apiKey, thinkingSupported)
 }

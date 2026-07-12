@@ -1,0 +1,3 @@
+{
+  "/(dashboard)/settings/remote-access/page": "app/(dashboard)/settings/remote-access/page.js"
+}

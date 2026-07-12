@@ -123,6 +123,33 @@ if grep -qE '^SESSION_SECRET=(change-this-in-production|change-me)?$' "$ENV_FILE
   ok "Generated SESSION_SECRET"
 fi
 
+# Dedicated data-encryption key (vault/webhook/integration secrets at rest).
+if grep -qE '^ARCIIN_ENCRYPTION_KEY=(change-me)?$' "$ENV_FILE" 2>/dev/null || ! grep -q '^ARCIIN_ENCRYPTION_KEY=' "$ENV_FILE"; then
+  enckey="$(openssl rand -hex 32 2>/dev/null || head -c 32 /dev/urandom | xxd -p -c 64)"
+  _ensure_env_kv "$ENV_FILE" "ARCIIN_ENCRYPTION_KEY" "$enckey"
+  ok "Generated ARCIIN_ENCRYPTION_KEY"
+fi
+
+# Database + cache passwords (no longer hardcoded in docker-compose.yml).
+if grep -qE '^POSTGRES_PASSWORD=(change-me|arciin)?$' "$ENV_FILE" 2>/dev/null || ! grep -q '^POSTGRES_PASSWORD=' "$ENV_FILE"; then
+  pgpw="$(openssl rand -hex 24 2>/dev/null || head -c 24 /dev/urandom | xxd -p -c 48)"
+  _ensure_env_kv "$ENV_FILE" "POSTGRES_PASSWORD" "$pgpw"
+  ok "Generated POSTGRES_PASSWORD"
+fi
+
+if grep -qE '^REDIS_PASSWORD=(change-me)?$' "$ENV_FILE" 2>/dev/null || ! grep -q '^REDIS_PASSWORD=' "$ENV_FILE"; then
+  redispw="$(openssl rand -hex 24 2>/dev/null || head -c 24 /dev/urandom | xxd -p -c 48)"
+  _ensure_env_kv "$ENV_FILE" "REDIS_PASSWORD" "$redispw"
+  ok "Generated REDIS_PASSWORD"
+fi
+
+# Align the container uid with the host user that owns the storage bind-mount.
+if ! grep -q '^ARCIIN_PUID=' "$ENV_FILE"; then
+  _ensure_env_kv "$ENV_FILE" "ARCIIN_PUID" "$(id -u)"
+  _ensure_env_kv "$ENV_FILE" "ARCIIN_PGID" "$(id -g)"
+  ok "Pinned container uid/gid to the host user"
+fi
+
 if grep -qE '^ARCIIN_PUBLIC_URL=http://localhost(:3000)?$' "$ENV_FILE" 2>/dev/null; then
   if [[ -t 0 ]]; then
     echo ""
@@ -137,6 +164,22 @@ chmod 600 "$ENV_FILE" 2>/dev/null || true
 
 SETUP_TOKEN="$(grep '^ARCIIN_SETUP_TOKEN=' "$ENV_FILE" | cut -d= -f2-)"
 PUBLIC_URL="$(grep '^ARCIIN_PUBLIC_URL=' "$ENV_FILE" | cut -d= -f2-)"
+
+# ── Firewall (browser access from LAN / internet) ─────────────────────────────
+if [[ "${ARCIIN_SKIP_FIREWALL:-0}" != "1" ]]; then
+  # shellcheck source=scripts/lib/open-firewall-ports.sh
+  source "${ROOT_DIR}/scripts/lib/open-firewall-ports.sh"
+  http_port="$(grep -E '^ARCIIN_HTTP_PORT=' "$ENV_FILE" 2>/dev/null | cut -d= -f2- | tr -d '"' || true)"
+  http_port="${http_port:-${ARCIIN_HTTP_PORT:-80}}"
+  echo ""
+  echo -e "  ${BOLD}Firewall${RESET} ${DIM}(open HTTP so phones/PCs can open the app)${RESET}"
+  # Docker customers need Caddy HTTP; also open platform ports if this host runs account/license server
+  arciin_open_firewall_ports "$http_port" 80 443 || true
+  # Optional: when developing account + license on same host
+  if [[ "${ARCIIN_OPEN_PLATFORM_PORTS:-1}" == "1" ]]; then
+    arciin_open_firewall_ports 3010 4100 || true
+  fi
+fi
 
 # ── Build & start ─────────────────────────────────────────────────────────────
 arciin_docker_warn_repo_media "$ROOT_DIR" "$HOST_DATA"

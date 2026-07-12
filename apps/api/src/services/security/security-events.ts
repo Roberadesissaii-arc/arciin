@@ -9,6 +9,8 @@ export function isSecurityLogType(type: string): boolean {
 
 export type SecurityEventMetadata = {
   clientIp?: string
+  deviceLabel?: string
+  userAgent?: string
   reason?: string
   path?: string
   status?: string

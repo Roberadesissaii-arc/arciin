@@ -1,56 +1,92 @@
-# Arciin Python API examples
+# Arciin Python examples
 
-Runnable scripts for self-hosted automation. Each file is standalone: edit **`arciin_example_client.py`** once, then run any example.
+Copy-paste scripts for REST API automation and Socket.IO event monitoring. Organized in two folders:
+
+| Folder | Purpose |
+|--------|---------|
+| **`api/`** | REST API — health, libraries, folders, uploads, assets |
+| **`events/`** | Socket.IO — live event monitors (compare with dashboard **Events**) |
+
+## Quick start
 
 ```bash
 pip install requests
-# Socket.IO examples also need:
+# Events folder also needs:
 pip install "python-socketio[client]" websocket-client
 ```
+
+### 1. Configure once
+
+Edit **`lib/arciin_client.py`**:
+
+| Setting | Example |
+|---------|---------|
+| `API_BASE` | `http://127.0.0.1:4000/api` or `http://192.168.x.x:4000/api` |
+| `API_KEY` | Full `arc_…` secret from **Developer → API keys** |
+| `AUTH_MODE` | `"api_key"` (scripts) or `"email"` (session) |
+
+### 2. Test connectivity
+
+```bash
+python scripts/examples/api/01_health_check.py
+```
+
+### 3. Run any API example
+
+```bash
+python scripts/examples/api/02_list_libraries.py
+python scripts/examples/api/06_upload_to_library.py /path/to/photo.jpg
+```
+
+See **`api/README.md`** for the full script list and required API key scopes.
+
+### 4. Monitor realtime events
+
+```bash
+cd scripts/examples/events
+# Edit CONFIG in 01_monitor_api_key.py
+python 01_monitor_api_key.py
+```
+
+See **`events/README.md`** for all five Socket.IO monitors.
 
 ## WSL (Arciin in WSL, Python on Windows)
 
 ```bash
-bash scripts/examples/arciin_wsl_hosts.sh
+bash scripts/examples/lib/wsl_hosts.sh
 ```
 
-Set `API_BASE` in `arciin_example_client.py` to `http://<WSL-IP>:4000/api`.
+Set `API_BASE` in `lib/arciin_client.py` to `http://<WSL-IP>:4000/api`.
 
-## Auth config (`arciin_example_client.py`)
+## API key scopes
 
-Placeholders only — replace before running:
+| Task | Scopes |
+|------|--------|
+| Health check | *(none)* |
+| List libraries / folders | `libraries:read` |
+| Create folder | `libraries:write` |
+| List assets | `assets:read` or `libraries:read` |
+| Upload files | `uploads:create` (+ `libraries:read` to pick library) |
+| App data databases | `appdata:databases:read` |
+| Socket.IO events | `events:subscribe` |
 
-| Setting | Example placeholder |
-|---------|---------------------|
-| `API_KEY` | `arc_paste_full_key_here` → your full `arc_…` key |
-| `EMAIL` | `admin@example.com` → your login email |
-| `PASSWORD` | `change-me` → your password |
+Use the **full** `arc_…` secret from the one-time create dialog — not the short table prefix.
 
-Use `AUTH_MODE = "api_key"` for scripts, or `"email"` for session cookie auth (Socket.IO).
+## Layout
 
-## Examples
-
-| Script | What it does |
-|--------|----------------|
-| `health_check_example.py` | Ping API, database, Redis, worker |
-| `list_libraries_example.py` | List Videos, Images, Music, … with ids |
-| `list_folders_example.py` | List folders inside a library |
-| `create_folder_example.py` | Create a folder under a library |
-| `upload_image_example.py` | Upload an image to the Images library |
-| `upload_video_example.py` | Upload a video to the Videos library |
-| `upload_auto_classify_example.py` | Upload without library — MIME auto-route |
-| `list_assets_example.py` | List recent assets (optional library filter) |
-| `app_databases_example.py` | List logical App data databases |
-| `socket_events_example.py` | Listen to live Socket.IO events |
-
-## API keys
-
-Create a key in **Developer → API keys**. Scopes by script:
-
-- **uploads:create** — upload examples
-- **libraries:read** — list libraries / folders / assets
-- **libraries:write** — create folder
-- **appdata:databases:read** — app databases example
-- **events:subscribe** — socket events example
-
-Use the **full** `arc_…` secret from the one-time dialog, not the short table prefix.
+```
+scripts/examples/
+├── README.md           ← you are here
+├── lib/
+│   ├── arciin_client.py   ← shared config + helpers (API scripts)
+│   └── wsl_hosts.sh       ← WSL IP helper
+├── api/
+│   ├── README.md
+│   ├── 01_health_check.py
+│   ├── 02_list_libraries.py
+│   └── …
+└── events/
+    ├── README.md
+    ├── 01_monitor_api_key.py
+    └── …
+```

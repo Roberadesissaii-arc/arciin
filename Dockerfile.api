@@ -2,7 +2,9 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-RUN apk add --no-cache bash postgresql-client curl ca-certificates
+# bash/psql/curl for scripts + health; ffmpeg + poppler-utils (pdftoppm) power
+# on-demand image/PDF thumbnail generation.
+RUN apk add --no-cache bash postgresql-client curl ca-certificates ffmpeg poppler-utils
 
 COPY scripts/install-cloudflared.sh /tmp/install-cloudflared.sh
 RUN chmod +x /tmp/install-cloudflared.sh && /tmp/install-cloudflared.sh && rm /tmp/install-cloudflared.sh
@@ -14,6 +16,10 @@ COPY apps/api/package.json apps/api/package.json
 COPY apps/worker/package.json apps/worker/package.json
 COPY packages/database/package.json packages/database/package.json
 COPY packages/shared/package.json packages/shared/package.json
+COPY packages/config/package.json packages/config/package.json
+COPY packages/types/package.json packages/types/package.json
+COPY packages/storage/package.json packages/storage/package.json
+COPY packages/ui/package.json packages/ui/package.json
 
 RUN pnpm install --frozen-lockfile
 
@@ -27,5 +33,11 @@ ENV API_PORT=4000
 EXPOSE 4000
 
 RUN chmod +x scripts/arciin-init.sh scripts/entrypoint-api.sh
+
+# Run as a non-root user (uid/gid 1000 by default). Pin a matching host uid via
+# `user:` in compose so the bind-mounted data dir stays writable.
+RUN addgroup -S -g 1000 arciin && adduser -S -u 1000 -G arciin arciin \
+ && chown -R arciin:arciin /app
+USER arciin
 
 CMD ["sh", "scripts/entrypoint-api.sh"]

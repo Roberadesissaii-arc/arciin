@@ -5,6 +5,7 @@ import {
   TOAST_STYLES,
   UI_RADIUS_OPTIONS,
   mergeUserPreferences,
+  parseUserPreferences,
 } from "@arciin/shared"
 import { createReadStream } from "node:fs"
 import { access } from "node:fs/promises"
@@ -15,7 +16,11 @@ import { z } from "zod"
 import { apiConfig } from "@/config"
 import { serializeAuth, serializeSession, serializeUser } from "@/services/serializers"
 import { loadAccessControlSettings } from "@/services/security/access-control-settings"
-import { clientIpFromRequest, normalizeClientIp } from "@/services/security/client-ip"
+import {
+  formatAuthSecurityMessage,
+  resolveRequestClientContext,
+} from "@/services/security/login-audit"
+import { normalizeClientIp } from "@/services/security/client-ip"
 import { recordSecurityEvent } from "@/services/security/security-events"
 import {
   authenticate,
@@ -27,6 +32,10 @@ import {
   setSessionCookie,
   verifyPassword,
 } from "@/services/security/auth"
+import {
+  hashRecoveryAnswer,
+  verifyRecoveryAnswer,
+} from "@/services/security/recovery-answer"
 import { checkEndpointRateLimit } from "@/services/security/endpoint-rate-limit"
 import {
   clearFailedLoginAttempts,
@@ -43,9 +52,12 @@ import { loadUserPreferences } from "@/services/user/preferences"
 import { mediaQueue } from "@/services/jobs/queues"
 import { queueDocumentThumbnailBackfill } from "@/services/media/thumbnail-jobs"
 
+const MAX_AVATAR_BYTES = 10 * 1024 * 1024
+
 const loginSchema = z.object({
   email: z.email(),
   password: z.string().min(8),
+  rememberMe: z.boolean().optional(),
 })
 
 const registerSchema = z.object({
@@ -75,6 +87,7 @@ const userPreferencesPatchSchema = z
         toastPosition: z.enum(TOAST_POSITIONS).optional(),
         toastStyle: z.enum(TOAST_STYLES).optional(),
         toastShowIcons: z.boolean().optional(),
+        toastOrbitColor: z.enum(accentValues).optional(),
         uiRadius: z.enum(UI_RADIUS_OPTIONS).optional(),
       })
       .optional(),
@@ -227,18 +240,32 @@ export async function registerAuthRoutes(fastify: FastifyInstance) {
     await clearFailedLoginAttempts(fastify, email)
 
     const access = await loadAccessControlSettings(fastify.prisma)
-    const { session, rawToken } = await createSession(request, user.id, {
-      expiresInMinutes: access.sessionTimeoutMinutes,
+    const rememberMe = parsed.data.rememberMe === true
+    // Remember me → 30-day session with a persistent cookie. Otherwise the
+    // session keeps the configured timeout and the cookie dies with the browser.
+    const { session, rawToken } = await createSession(
+      request,
+      user.id,
+      rememberMe
+        ? { expiresInDays: 30 }
+        : { expiresInMinutes: access.sessionTimeoutMinutes },
+    )
+    setSessionCookie(reply, rawToken, session.expiresAt, request, {
+      persistent: rememberMe,
     })
-    setSessionCookie(reply, rawToken, session.expiresAt, request)
 
-    const ip = normalizeClientIp(clientIpFromRequest(request)) ?? clientIpFromRequest(request)
+    const ctx = resolveRequestClientContext(request)
     await recordSecurityEvent(fastify, {
       userId: user.id,
       type: "auth.login",
       title: "Signed in",
-      message: `${user.name} signed in from ${ip}.`,
-      metadata: { clientIp: normalizeClientIp(ip) ?? undefined, status: "ok" },
+      message: formatAuthSecurityMessage(user.name, ctx.ip, ctx.deviceLabel),
+      metadata: {
+        clientIp: ctx.normalizedIp,
+        deviceLabel: ctx.deviceLabel ?? undefined,
+        userAgent: ctx.userAgent,
+        status: "ok",
+      },
     })
 
     reply.send({
@@ -332,7 +359,9 @@ export async function registerAuthRoutes(fastify: FastifyInstance) {
         return
       }
 
-      const file = await request.file()
+      // Cap avatar size here — the global multipart limit is huge (asset uploads
+      // stream to disk) and toBuffer() below reads the whole file into memory.
+      const file = await request.file({ limits: { fileSize: MAX_AVATAR_BYTES } })
       if (!file) {
         reply.status(400).send({
           error: { code: "VALIDATION_ERROR", message: "Choose an image file to upload." },
@@ -340,7 +369,18 @@ export async function registerAuthRoutes(fastify: FastifyInstance) {
         return
       }
 
-      const buffer = await file.toBuffer()
+      let buffer: Buffer
+      try {
+        buffer = await file.toBuffer()
+      } catch {
+        reply.status(413).send({
+          error: {
+            code: "AVATAR_TOO_LARGE",
+            message: `Profile images must be ${Math.floor(MAX_AVATAR_BYTES / (1024 * 1024))} MB or smaller.`,
+          },
+        })
+        return
+      }
       const mime = file.mimetype || "application/octet-stream"
 
       try {
@@ -491,6 +531,188 @@ export async function registerAuthRoutes(fastify: FastifyInstance) {
   /** POST alias — iOS PWA often fails CORS preflight on PATCH. */
   fastify.post("/auth/password", passwordAuth, handlePasswordChange)
 
+  const recoveryQuestionSchema = z.string().trim().min(4).max(200)
+  const recoveryAnswerSchema = z.string().trim().min(2).max(200)
+
+  const recoverySetupSchema = z.object({
+    question: recoveryQuestionSchema,
+    answer: recoveryAnswerSchema,
+  })
+
+  fastify.post("/auth/recovery/setup", passwordAuth, async (request, reply) => {
+    if (!request.auth) return
+    if (
+      await checkEndpointRateLimit(request, reply, {
+        key: "recovery-setup",
+        limit: 10,
+        windowSec: 3600,
+      })
+    ) {
+      return
+    }
+
+    const parsed = recoverySetupSchema.safeParse(request.body)
+    if (!parsed.success) {
+      reply.status(400).send({
+        error: {
+          code: "VALIDATION_ERROR",
+          message: "Invalid recovery question or answer.",
+          details: parsed.error.flatten(),
+        },
+      })
+      return
+    }
+
+    const answerHash = await hashRecoveryAnswer(parsed.data.answer)
+    await request.server.prisma.user.update({
+      where: { id: request.auth.user.id },
+      data: {
+        recoveryQuestion: parsed.data.question,
+        recoveryAnswerHash: answerHash,
+      },
+    })
+
+    reply.send({ data: { success: true } })
+  })
+
+  const recoveryLookupSchema = z.object({
+    email: z.email(),
+  })
+
+  fastify.post("/auth/recovery/lookup", async (request, reply) => {
+    if (
+      await checkEndpointRateLimit(request, reply, {
+        key: "recovery-lookup",
+        limit: 20,
+        windowSec: 3600,
+      })
+    ) {
+      return
+    }
+
+    const parsed = recoveryLookupSchema.safeParse(request.body)
+    if (!parsed.success) {
+      reply.status(400).send({
+        error: {
+          code: "VALIDATION_ERROR",
+          message: "Enter a valid email address.",
+          details: parsed.error.flatten(),
+        },
+      })
+      return
+    }
+
+    const user = await request.server.prisma.user.findUnique({
+      where: { email: parsed.data.email.toLowerCase() },
+      select: {
+        recoveryQuestion: true,
+        recoveryAnswerHash: true,
+        status: true,
+      },
+    })
+
+    const available =
+      user?.status === "ACTIVE" &&
+      Boolean(user.recoveryQuestion?.trim()) &&
+      Boolean(user.recoveryAnswerHash)
+
+    reply.send({
+      data: {
+        available,
+        question: available ? user!.recoveryQuestion! : undefined,
+      },
+    })
+  })
+
+  const recoveryResetSchema = z.object({
+    email: z.email(),
+    answer: recoveryAnswerSchema,
+    newPassword: z.string().min(8),
+  })
+
+  fastify.post("/auth/recovery/reset", async (request, reply) => {
+    if (
+      await checkEndpointRateLimit(request, reply, {
+        key: "recovery-reset",
+        limit: 10,
+        windowSec: 3600,
+      })
+    ) {
+      return
+    }
+
+    const parsed = recoveryResetSchema.safeParse(request.body)
+    if (!parsed.success) {
+      reply.status(400).send({
+        error: {
+          code: "VALIDATION_ERROR",
+          message: "Invalid reset payload.",
+          details: parsed.error.flatten(),
+        },
+      })
+      return
+    }
+
+    const user = await request.server.prisma.user.findUnique({
+      where: { email: parsed.data.email.toLowerCase() },
+    })
+
+    const genericFailure = () => {
+      reply.status(400).send({
+        error: {
+          code: "RECOVERY_FAILED",
+          message:
+            "Could not reset your password. Check your email and security answer, or ask an admin for help.",
+        },
+      })
+    }
+
+    if (
+      !user ||
+      user.status !== "ACTIVE" ||
+      !user.recoveryQuestion?.trim() ||
+      !user.recoveryAnswerHash
+    ) {
+      genericFailure()
+      return
+    }
+
+    const answerOk = await verifyRecoveryAnswer(parsed.data.answer, user.recoveryAnswerHash)
+    if (!answerOk) {
+      await recordSecurityEvent(request.server, {
+        userId: user.id,
+        type: "security.recovery_failed",
+        title: "Password recovery failed",
+        message: "A password recovery attempt used an incorrect security answer.",
+      })
+      genericFailure()
+      return
+    }
+
+    const passwordHash = await hashPassword(parsed.data.newPassword)
+    await request.server.prisma.user.update({
+      where: { id: user.id },
+      data: { passwordHash },
+    })
+
+    // Revoke every existing session — anyone holding an old cookie (including a
+    // possible attacker) must sign in again with the new password.
+    await request.server.prisma.session.deleteMany({
+      where: { userId: user.id },
+    })
+
+    await request.server.prisma.activityEvent.create({
+      data: {
+        userId: user.id,
+        type: "security.password_recovered",
+        title: "Password recovered",
+        message: `${user.name} reset their password using a security question.`,
+      },
+    })
+
+    reply.send({ data: { success: true } })
+  })
+
   fastify.get(
     "/auth/sessions",
     { preHandler: authenticate },
@@ -569,12 +791,30 @@ export async function registerAuthRoutes(fastify: FastifyInstance) {
     }
 
     try {
-      const current = await loadUserPreferences(request.server.prisma, request.auth.user.id)
+      const user = await request.server.prisma.user.findUnique({
+        where: { id: request.auth.user.id },
+        select: { preferences: true },
+      })
+      const root =
+        user?.preferences &&
+        typeof user.preferences === "object" &&
+        !Array.isArray(user.preferences)
+          ? { ...(user.preferences as Record<string, unknown>) }
+          : {}
+
+      const current = parseUserPreferences(root)
       const next = mergeUserPreferences(current, parsed.data)
+      const merged: Record<string, unknown> = {
+        ...root,
+        notifications: next.notifications,
+        appearance: next.appearance,
+        accessibility: next.accessibility,
+        media: next.media,
+      }
 
       await request.server.prisma.user.update({
         where: { id: request.auth.user.id },
-        data: { preferences: next },
+        data: { preferences: merged as import("@prisma/client").Prisma.InputJsonValue },
       })
 
       const enabledDocs =

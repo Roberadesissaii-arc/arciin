@@ -4,9 +4,11 @@ import path from "node:path"
 import {
   IMAGE_THUMBNAIL_PLACEHOLDER_SVG,
   VIDEO_THUMBNAIL_PLACEHOLDER_SVG,
+} from "@arciin/shared"
+import {
   candidateStorageObjectPaths,
   resolveArciinStorageRoot,
-} from "@arciin/shared"
+} from "@arciin/storage"
 import { execa } from "execa"
 import sharp from "sharp"
 

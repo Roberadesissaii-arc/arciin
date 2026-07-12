@@ -5,9 +5,14 @@ services:
       - web
       - api
     ports:
-      - "80:80"
+      # Host port is configurable (default 80) so it can coexist with an
+      # existing web server. Browser uses relative /api + same-origin sockets,
+      # so any host port works.
+      - "${ARCIIN_HTTP_PORT:-80}:80"
     volumes:
       - ./docker/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+    security_opt:
+      - "no-new-privileges:true"
 
   web:
     build:
@@ -16,8 +21,8 @@ services:
       args:
         NEXT_PUBLIC_API_BASE_URL: /api
         ARCIIN_PUBLIC_URL: http://localhost
-    env_file:
-      - .env
+    # No env_file: the public web tier must not hold back-end secrets
+    # (SESSION_SECRET, DB/Redis creds, AI keys). Only public + routing vars here.
     environment:
       NODE_ENV: production
       ARCIIN_PUBLIC_URL: http://localhost
@@ -27,6 +32,8 @@ services:
       NEXT_PUBLIC_SOCKET_URL: ""
     depends_on:
       - api
+    security_opt:
+      - "no-new-privileges:true"
 
   api:
     build:
@@ -34,11 +41,17 @@ services:
       dockerfile: Dockerfile.api
     env_file:
       - .env
+    # Match a host uid so the bind-mounted data dir stays writable as non-root.
+    user: "${ARCIIN_PUID:-1000}:${ARCIIN_PGID:-1000}"
+    security_opt:
+      - "no-new-privileges:true"
+    cap_drop:
+      - ALL
     environment:
       NODE_ENV: production
       API_PORT: 4000
-      DATABASE_URL: postgresql://arciin:arciin@postgres:5432/arciin
-      REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgresql://arciin:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/arciin
+      REDIS_URL: redis://:${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}@redis:6379
       ARCIIN_DATA_DIR: /data/arciin
       ARCIIN_HOST_DATA_DIR: ${ARCIIN_HOST_DATA_DIR:-/srv/arciin-storage/arciin}
       ARCIIN_PUBLIC_URL: http://localhost
@@ -47,6 +60,8 @@ services:
       NEXT_PUBLIC_SOCKET_URL: http://localhost
       # cloudflared runs in the api container; forward to Caddy (not 127.0.0.1)
       ARCIIN_TUNNEL_TARGET: http://caddy:80
+      # Behind Caddy: trust exactly the compose network so XFF can't be forged.
+      ARCIIN_TRUST_PROXY: "172.16.0.0/12, 10.0.0.0/8, 192.168.0.0/16, 127.0.0.1/8, ::1/128"
     depends_on:
       postgres:
         condition: service_healthy
@@ -74,12 +89,21 @@ services:
       dockerfile: Dockerfile.worker
     env_file:
       - .env
+    user: "${ARCIIN_PUID:-1000}:${ARCIIN_PGID:-1000}"
+    security_opt:
+      - "no-new-privileges:true"
+    cap_drop:
+      - ALL
+    # Bound resources: media transcodes/imports are heavy and attacker-triggerable.
+    mem_limit: 1500m
+    cpus: "1.5"
     environment:
       NODE_ENV: production
-      DATABASE_URL: postgresql://arciin:arciin@postgres:5432/arciin
-      REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgresql://arciin:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/arciin
+      REDIS_URL: redis://:${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}@redis:6379
       ARCIIN_DATA_DIR: /data/arciin
       ARCIIN_HOST_DATA_DIR: ${ARCIIN_HOST_DATA_DIR:-/srv/arciin-storage/arciin}
+      ARCIIN_WORKER_CONCURRENCY: ${ARCIIN_WORKER_CONCURRENCY:-2}
     depends_on:
       postgres:
         condition: service_healthy
@@ -92,12 +116,15 @@ services:
 
   postgres:
     image: postgres:16-alpine
+    # Not published to the host — reachable only on the internal compose network.
     environment:
       POSTGRES_DB: arciin
       POSTGRES_USER: arciin
-      POSTGRES_PASSWORD: arciin
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    security_opt:
+      - "no-new-privileges:true"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U arciin -d arciin"]
       interval: 2s
@@ -106,11 +133,21 @@ services:
 
   redis:
     image: redis:7-alpine
-    command: ["redis-server", "--appendonly", "yes"]
+    # Password-protected and unpublished — internal network only.
+    command:
+      [
+        "redis-server",
+        "--appendonly",
+        "yes",
+        "--requirepass",
+        "${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}",
+      ]
     volumes:
       - redis_data:/data
+    security_opt:
+      - "no-new-privileges:true"
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "redis-cli -a \"$REDIS_PASSWORD\" ping | grep -q PONG"]
       interval: 2s
       timeout: 5s
       retries: 15

@@ -3,7 +3,7 @@ import { setInterval } from "node:timers"
 import { Worker } from "bullmq"
 import Redis from "ioredis"
 
-import { JOB_QUEUE_NAMES, WORKER_HEARTBEAT_KEY } from "@arciin/shared"
+import { JOB_QUEUE_NAMES, JOB_TYPES, WORKER_HEARTBEAT_KEY } from "@arciin/shared"
 
 import { workerConfig } from "@/config"
 import {
@@ -12,6 +12,7 @@ import {
   handleStorageJob,
   markJobFailure,
 } from "@/processors/worker-handlers"
+import { handleImportUrl } from "@/services/url-import"
 
 const redisUrl = new URL(workerConfig.REDIS_URL)
 
@@ -39,13 +40,23 @@ async function start() {
     JOB_QUEUE_NAMES.media,
     async (job) => {
       try {
-        await handleMediaJob(job.name, job.data, redis)
+        if (job.name === JOB_TYPES.importUrl) {
+          await handleImportUrl(job.data, redis)
+        } else {
+          await handleMediaJob(job.name, job.data, redis)
+        }
       } catch (error) {
         await markJobFailure(job.data.jobRecordId, error)
         throw error
       }
     },
-    { connection }
+    {
+      connection,
+      // Bound heavy media work (transcodes/imports) so a burst can't exhaust
+      // CPU/RAM and starve thumbnailing for everyone.
+      concurrency: workerConfig.ARCIIN_WORKER_CONCURRENCY,
+      limiter: { max: workerConfig.ARCIIN_WORKER_CONCURRENCY * 2, duration: 60_000 },
+    }
   )
 
   const storageWorker = new Worker(

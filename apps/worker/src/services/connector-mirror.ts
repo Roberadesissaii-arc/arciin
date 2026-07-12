@@ -3,7 +3,8 @@ import path from "node:path"
 
 import type { Asset, Folder, Library, PrismaClient, StorageObject } from "@prisma/client"
 import { prisma } from "@arciin/database"
-import { MEDIA_LIBRARY_SLUGS, mirrorFilenameForDisk, normalizeConfiguredStorageRoot } from "@arciin/shared"
+import { MEDIA_LIBRARY_SLUGS } from "@arciin/shared"
+import { mirrorFilenameForDisk, normalizeConfiguredStorageRoot } from "@arciin/storage"
 
 import { workerConfig } from "@/config"
 

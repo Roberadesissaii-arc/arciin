@@ -6,7 +6,10 @@ import type { RealtimeEvent } from "@arciin/shared"
 import { isSelfHostedLanHostname } from "@arciin/shared"
 
 import { apiConfig } from "@/config"
-import { resolveLocalAccessUrls } from "@/services/remote-access/local-access-urls"
+import {
+  resolveLocalAccessUrls,
+  resolveMobileLocalAccessUrls,
+} from "@/services/remote-access/local-access-urls"
 
 export type MobileServerUrls = {
   webUrl: string
@@ -32,9 +35,17 @@ function stripTrailingSlash(url: string) {
   return url.replace(/\/$/, "")
 }
 
+function isApiPort(port: string): boolean {
+  const apiPort = String(apiConfig.API_PORT)
+  return port === apiPort || port === "4000" || port === "4001"
+}
+
 function requestOriginFromHeaders(request?: FastifyRequest): string | null {
   if (!request) return null
-  const host = request.headers.host
+  const forwardedHost = request.headers["x-forwarded-host"]
+  const host =
+    (typeof forwardedHost === "string" ? forwardedHost.split(",")[0]?.trim() : null) ||
+    request.headers.host
   if (!host || typeof host !== "string") return null
   const forwarded = request.headers["x-forwarded-proto"]
   const proto =
@@ -100,7 +111,8 @@ export async function buildMobileDiscoverPayload(
   const instance = await prisma.instanceConfig.findFirst()
   const urls = await resolveMobileServerUrls(prisma, request)
   const canonical = await resolveCanonicalPublicServerUrls(prisma)
-  const local = resolveLocalAccessUrls()
+  const mobileLocal = resolveMobileLocalAccessUrls()
+  const desktopLocal = resolveLocalAccessUrls()
 
   return {
     ...urls,
@@ -108,7 +120,7 @@ export async function buildMobileDiscoverPayload(
     canonicalPublicUrl: canonical?.webUrl ?? null,
     canonicalApiBaseUrl: canonical?.apiBaseUrl ?? null,
     canonicalSocketUrl: canonical?.socketUrl ?? null,
-    lanUrls: local.lanUrls,
+    lanUrls: mobileLocal.lanUrls.length ? mobileLocal.lanUrls : desktopLocal.lanUrls,
   }
 }
 
@@ -117,8 +129,10 @@ export async function broadcastInstanceUrlsUpdated(
   instanceId: string,
   options?: { previousPublicUrl?: string | null },
 ) {
+  const payload = await buildMobileDiscoverPayload(fastify.prisma)
   const canonical = await resolveCanonicalPublicServerUrls(fastify.prisma)
-  if (!canonical) return
+  const urls =
+    canonical && canonical.webUrl.startsWith("https://") ? canonical : payload
 
   const event: RealtimeEvent = {
     id: randomUUID(),
@@ -126,11 +140,11 @@ export async function broadcastInstanceUrlsUpdated(
     instanceId,
     createdAt: new Date().toISOString(),
     data: {
-      webUrl: canonical.webUrl,
-      apiBaseUrl: canonical.apiBaseUrl,
-      socketUrl: canonical.socketUrl,
-      instanceName: canonical.instanceName,
-      version: canonical.version,
+      webUrl: urls.webUrl,
+      apiBaseUrl: urls.apiBaseUrl,
+      socketUrl: urls.socketUrl,
+      instanceName: urls.instanceName,
+      version: urls.version,
       previousPublicUrl: options?.previousPublicUrl ?? null,
     },
   }
@@ -157,19 +171,38 @@ export async function resolveMobileServerUrls(
     typeof config.mobilePublicUrl === "string" ? stripTrailingSlash(config.mobilePublicUrl) : null
   const instancePublic = instance?.publicUrl ? stripTrailingSlash(instance.publicUrl) : null
   const requestOrigin = requestOriginFromHeaders(request)
+  const mobileLocal = resolveMobileLocalAccessUrls()
 
   if (requestOrigin) {
     try {
       const origin = stripTrailingSlash(requestOrigin)
-      const { hostname } = new URL(origin)
-      if (isSelfHostedLanHostname(hostname)) {
+      const parsed = new URL(origin)
+      const { hostname } = parsed
+      const port = parsed.port || (parsed.protocol === "https:" ? "443" : "80")
+
+      if (isApiPort(port)) {
+        if (mobileLocal.primaryLanUrl) {
+          const mobileOrigin = stripTrailingSlash(mobileLocal.primaryLanUrl)
+          return {
+            webUrl: mobileOrigin,
+            apiBaseUrl: `${mobileOrigin}/api`,
+            socketUrl: mobileOrigin,
+            instanceName: instance?.instanceName ?? "Arciin",
+            version: apiConfig.appVersion,
+            requestOrigin: mobileOrigin,
+          }
+        }
+      } else if (
+        isSelfHostedLanHostname(hostname) ||
+        port === mobileLocal.webPort
+      ) {
         return {
           webUrl: origin,
           apiBaseUrl: `${origin}/api`,
           socketUrl: origin,
           instanceName: instance?.instanceName ?? "Arciin",
           version: apiConfig.appVersion,
-          requestOrigin,
+          requestOrigin: origin,
         }
       }
     } catch {
@@ -189,6 +222,18 @@ export async function resolveMobileServerUrls(
       instanceName: instance?.instanceName ?? "Arciin",
       version: apiConfig.appVersion,
       requestOrigin,
+    }
+  }
+
+  if (mobileLocal.primaryLanUrl) {
+    const mobileOrigin = stripTrailingSlash(mobileLocal.primaryLanUrl)
+    return {
+      webUrl: mobileOrigin,
+      apiBaseUrl: `${mobileOrigin}/api`,
+      socketUrl: mobileOrigin,
+      instanceName: instance?.instanceName ?? "Arciin",
+      version: apiConfig.appVersion,
+      requestOrigin: mobileOrigin,
     }
   }
 

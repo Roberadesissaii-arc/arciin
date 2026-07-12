@@ -45,6 +45,18 @@ async function readWithFfprobe(filePath: string) {
   }
 }
 
+function parseDurationSeconds(
+  format: Record<string, unknown> | undefined,
+  stream: Record<string, unknown> | undefined,
+): number | undefined {
+  const raw =
+    (typeof format?.duration === "string" ? Number(format.duration) : undefined) ??
+    (typeof stream?.duration === "string" ? Number(stream.duration) : undefined)
+
+  if (raw == null || !Number.isFinite(raw) || raw <= 0) return undefined
+  return raw
+}
+
 export async function analyzeStoredFile(
   filePath: string,
   originalFilename: string,
@@ -85,8 +97,7 @@ export async function analyzeStoredFile(
 
     return {
       ...base,
-      durationSeconds:
-        typeof format?.duration === "string" ? Number(format.duration) : undefined,
+      durationSeconds: parseDurationSeconds(format, stream),
       width: typeof stream?.width === "number" ? stream.width : undefined,
       height: typeof stream?.height === "number" ? stream.height : undefined,
       codec: typeof stream?.codec_name === "string" ? stream.codec_name : undefined,

@@ -1,14 +1,18 @@
 import type { FastifyInstance } from "fastify"
 import { z } from "zod"
+import {
+  DEFAULT_GEMINI_CHAT_MODEL,
+  DEFAULT_GEMINI_TTS_MODEL,
+} from "@arciin/shared"
 
-import { assertOllamaCloudApiKey } from "@/services/chat/ollama-http"
+import { assertOllamaCloudApiKey, formatOllamaProviderError } from "@/services/chat/ollama-http"
 import {
   availableCloudModelNames,
   invalidateOllamaCloudProbeCache,
   probeOllamaCloudModels,
 } from "@/services/chat/ollama-cloud-models"
 import { resolveOllamaModelCapabilities } from "@/services/models/ollama-model-capabilities"
-import { requireRole } from "@/services/security/auth"
+import { requireFeature, requireRole } from "@/services/security/auth"
 
 const OLLAMA_PROVIDERS = new Set(["ollama", "ollama-local", "ollama-cloud"])
 
@@ -23,6 +27,7 @@ const upsertSchema = z.object({
   apiKey:       z.string().max(512).optional().nullable(),
   baseUrl:      z.string().url().max(512).optional().nullable(),
   defaultModel: z.string().max(200).optional().nullable(),
+  ttsModel:     z.string().max(200).optional().nullable(),
   isDefault:    z.boolean().optional(),
   isEnabled:    z.boolean().optional(),
 })
@@ -40,6 +45,7 @@ function serializeProfile(p: {
   apiKey: string | null
   baseUrl: string | null
   defaultModel: string | null
+  ttsModel?: string | null
   isDefault: boolean
   isEnabled: boolean
   createdAt: Date
@@ -53,10 +59,26 @@ function serializeProfile(p: {
     hasApiKey:    Boolean(p.apiKey),
     baseUrl:      p.baseUrl,
     defaultModel: p.defaultModel,
+    ttsModel:     p.ttsModel ?? null,
     isDefault:    p.isDefault,
     isEnabled:    p.isEnabled,
     createdAt:    p.createdAt.toISOString(),
     updatedAt:    p.updatedAt.toISOString(),
+  }
+}
+
+function normalizeGeminiProfileDefaults<
+  T extends {
+    provider: string
+    defaultModel?: string | null
+    ttsModel?: string | null
+  },
+>(data: T): T {
+  if (data.provider !== "gemini") return data
+  return {
+    ...data,
+    defaultModel: data.defaultModel?.trim() || DEFAULT_GEMINI_CHAT_MODEL,
+    ttsModel: data.ttsModel?.trim() || DEFAULT_GEMINI_TTS_MODEL,
   }
 }
 
@@ -83,8 +105,9 @@ export async function registerModelRoutes(fastify: FastifyInstance) {
         return
       }
       const { isDefault, ...rest } = parsed.data
+      const normalized = normalizeGeminiProfileDefaults(rest)
 
-      const cloudKeyError = assertOllamaCloudApiKey(rest.provider, rest.apiKey)
+      const cloudKeyError = assertOllamaCloudApiKey(normalized.provider, normalized.apiKey)
       if (cloudKeyError) {
         reply.status(400).send({ error: cloudKeyError })
         return
@@ -96,9 +119,9 @@ export async function registerModelRoutes(fastify: FastifyInstance) {
       }
 
       const profile = await fastify.prisma.modelProfile.create({
-        data: { ...rest, isDefault: isDefault ?? false },
+        data: { ...normalized, isDefault: isDefault ?? false },
       })
-      if (profile.provider === "ollama-cloud" && rest.apiKey) {
+      if (profile.provider === "ollama-cloud" && normalized.apiKey) {
         await invalidateOllamaCloudProbeCache(profile.id, fastify.redis)
       }
       reply.status(201).send({ data: serializeProfile(profile) })
@@ -414,4 +437,118 @@ export async function registerModelRoutes(fastify: FastifyInstance) {
       reply.send({ data: serializeProfile(updated) })
     },
   )
+
+  /**
+   * Free-tier connection test — one short prompt, one short reply.
+   * Gated by core.basic_ai (all plans) and restricted to Ollama profiles only:
+   * proves the key / local daemon works without unlocking full AI chat (ai.chat).
+   */
+  fastify.post(
+    "/models/:id/test",
+    {
+      preHandler: [requireRole(["OWNER", "ADMIN", "MEMBER"]), requireFeature("core.basic_ai")],
+    },
+    async (request, reply) => {
+      const { id } = request.params as { id: string }
+      const body = testSchema.safeParse(request.body ?? {})
+      if (!body.success) {
+        reply.status(400).send({ error: { code: "INVALID_INPUT", message: "Invalid test input." } })
+        return
+      }
+
+      const profile = await fastify.prisma.modelProfile.findUnique({ where: { id } })
+      if (!profile || !profile.isEnabled) {
+        reply.status(404).send({ error: { code: "NOT_FOUND", message: "Model profile not found." } })
+        return
+      }
+      if (!OLLAMA_PROVIDERS.has(profile.provider)) {
+        reply.status(403).send({
+          error: {
+            code: "TEST_OLLAMA_ONLY",
+            message: "Connection tests run against Ollama Local or Ollama Cloud profiles only.",
+          },
+        })
+        return
+      }
+
+      const cloudKeyError = assertOllamaCloudApiKey(profile.provider, profile.apiKey)
+      if (cloudKeyError) {
+        reply.status(400).send({ error: cloudKeyError })
+        return
+      }
+
+      const model = (body.data.model ?? profile.defaultModel ?? "").trim()
+      if (!model) {
+        reply.status(400).send({
+          error: { code: "NO_MODEL", message: "Pick a model for this profile first." },
+        })
+        return
+      }
+
+      const prompt = (body.data.prompt ?? "Say hello from Arciin.").trim().slice(0, 200)
+      const base = ollamaNativeBase(profile.provider, profile.baseUrl)
+      const headers: Record<string, string> = { "Content-Type": "application/json" }
+      if (profile.apiKey?.trim()) headers.Authorization = `Bearer ${profile.apiKey.trim()}`
+
+      try {
+        const controller = new AbortController()
+        const timeout = setTimeout(() => controller.abort(), 60_000)
+        const res = await fetch(`${base}/api/chat`, {
+          method: "POST",
+          headers,
+          signal: controller.signal,
+          body: JSON.stringify({
+            model,
+            stream: false,
+            messages: [{ role: "user", content: prompt }],
+            options: { num_predict: 160 },
+          }),
+        })
+        clearTimeout(timeout)
+
+        if (!res.ok) {
+          const text = await res.text().catch(() => "")
+          reply.status(502).send({
+            error: {
+              code: "TEST_FAILED",
+              message: formatOllamaProviderError(res.status, text, {
+                hasApiKey: Boolean(profile.apiKey),
+                isCloud: profile.provider === "ollama-cloud",
+              }),
+            },
+          })
+          return
+        }
+
+        const json = (await res.json().catch(() => null)) as
+          | { message?: { content?: string } }
+          | null
+        const replyText = json?.message?.content?.trim()
+        if (!replyText) {
+          reply.status(502).send({
+            error: {
+              code: "TEST_EMPTY",
+              message: "The model returned an empty reply. Check that the model is installed and try again.",
+            },
+          })
+          return
+        }
+
+        reply.send({ data: { model, reply: replyText.slice(0, 2000) } })
+      } catch (err) {
+        const message =
+          err instanceof Error && err.name === "AbortError"
+            ? "Test timed out after 60s. Check that Ollama is running and the model is loaded."
+            : err instanceof Error
+              ? err.message
+              : "Could not reach Ollama."
+        reply.status(502).send({ error: { code: "TEST_UNREACHABLE", message } })
+      }
+    },
+  )
 }
+
+const testSchema = z.object({
+  prompt: z.string().max(400).optional(),
+  model: z.string().max(200).optional(),
+})

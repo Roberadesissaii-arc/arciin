@@ -110,6 +110,27 @@ async function mapPool<T, R>(
   return out
 }
 
+/** Whether this Ollama model accepts `think` on /api/chat (from /api/show capabilities). */
+export async function ollamaModelSupportsThinking(opts: {
+  baseUrl: string
+  apiKey: string | null
+  model: string
+}): Promise<boolean> {
+  const model = opts.model.trim()
+  if (!model) return false
+
+  const headers: Record<string, string> = { "Content-Type": "application/json" }
+  if (opts.apiKey) headers.Authorization = `Bearer ${opts.apiKey}`
+
+  const base = opts.baseUrl.replace(/\/$/, "")
+  try {
+    const entry = await fetchShow(base, headers, model)
+    return entry.thinking
+  } catch {
+    return false
+  }
+}
+
 export async function resolveOllamaModelCapabilities(opts: {
   profileId: string
   baseUrl: string

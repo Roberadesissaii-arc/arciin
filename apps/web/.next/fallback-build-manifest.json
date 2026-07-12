@@ -1,0 +1,13 @@
+{
+  "pages": {
+    "/_app": []
+  },
+  "devFiles": [],
+  "polyfillFiles": [],
+  "lowPriorityFiles": [
+    "static/tebosqI-mLFlVRdnVGBGJ/_buildManifest.js",
+    "static/tebosqI-mLFlVRdnVGBGJ/_ssgManifest.js",
+    "static/tebosqI-mLFlVRdnVGBGJ/_clientMiddlewareManifest.js"
+  ],
+  "rootMainFiles": []
+}

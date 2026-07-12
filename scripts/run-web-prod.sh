@@ -2,14 +2,15 @@
 # Production Next.js — requires `pnpm build:web` (or `pnpm build`) first.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-cd "$ROOT"
+WEB="${ROOT}/apps/web"
+cd "$WEB"
 
 BIND_HOST="${HOSTNAME:-${ARCIIN_BIND_HOST:-0.0.0.0}}"
 PORT="${PORT:-3000}"
-BUILD_ID_FILE="${ROOT}/.next/BUILD_ID"
+BUILD_ID_FILE="${WEB}/.next/BUILD_ID"
 
 if [[ ! -f "$BUILD_ID_FILE" ]]; then
-  echo "[arciin-web] ERROR: No production build in .next (missing BUILD_ID)." >&2
+  echo "[arciin-web] ERROR: No production build in apps/web/.next (missing BUILD_ID)." >&2
   echo "[arciin-web] After git pull or code changes, run:" >&2
   echo "  cd ${ROOT}" >&2
   echo "  pnpm install" >&2

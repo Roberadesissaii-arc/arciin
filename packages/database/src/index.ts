@@ -4,4 +4,4 @@ export {
   ensureStorageLayout,
   estimateStorageCopyBytes,
   runStorageMigration,
-} from "./storage-migrate"
+} from "@arciin/storage"

@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify"
 
-import { evaluateIpAccess } from "@arciin/shared"
+import { evaluateIpAccess, parseClientDeviceLabel } from "@arciin/shared"
 
 import { clientIpFromRequest } from "@/services/security/client-ip"
 import { loadApiProtectionSettings } from "@/services/security/instance-security"
@@ -46,6 +46,9 @@ export async function registerApiProtection(fastify: FastifyInstance) {
     const ipResult = evaluateIpAccess(ip, settings)
     if (!ipResult.allowed) {
       const reason = ipResult.reason ?? "denied"
+      const userAgent =
+        typeof request.headers["user-agent"] === "string" ? request.headers["user-agent"] : undefined
+      const deviceLabel = parseClientDeviceLabel(userAgent)
       if (await shouldRecordSecurityDedupe(fastify.redis, `ip_denied:${ip}:${reason}`)) {
         const reasonLabel =
           reason === "ip_blocked"
@@ -56,8 +59,15 @@ export async function registerApiProtection(fastify: FastifyInstance) {
         void recordSecurityEvent(fastify, {
           type: "security.ip_denied",
           title: "API request blocked",
-          message: `${ip} denied (${reasonLabel}) on ${path}.`,
-          metadata: { clientIp: ip, reason, path, status: "blocked" },
+          message: `Request blocked (${reasonLabel}).`,
+          metadata: {
+            clientIp: ip,
+            reason,
+            path,
+            status: "blocked",
+            deviceLabel: deviceLabel ?? undefined,
+            userAgent,
+          },
         }).catch(() => {})
       }
 

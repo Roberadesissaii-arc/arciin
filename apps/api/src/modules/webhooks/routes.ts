@@ -7,7 +7,7 @@ import { SOCKET_EVENT_TYPES } from "@arciin/shared"
 
 import { recordAndBroadcastActivity } from "@/services/activity/record-and-broadcast-activity"
 import { encryptSecret, decryptSecret, signBody } from "@/services/security/encryption"
-import { requireRole } from "@/services/security/auth"
+import { requireFeature, requireRole } from "@/services/security/auth"
 
 const endpointSchema = z.object({
   name: z.string().min(2),
@@ -91,7 +91,7 @@ async function deliverWebhook({
 export async function registerWebhookRoutes(fastify: FastifyInstance) {
   fastify.get(
     "/webhooks",
-    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    { preHandler: [requireRole(["OWNER", "ADMIN"]), requireFeature("developer.webhooks")] },
     async (_request, reply) => {
       const endpoints = await fastify.prisma.webhookEndpoint.findMany({
         orderBy: { createdAt: "desc" },
@@ -115,7 +115,7 @@ export async function registerWebhookRoutes(fastify: FastifyInstance) {
 
   fastify.post(
     "/webhooks",
-    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    { preHandler: [requireRole(["OWNER", "ADMIN"]), requireFeature("developer.webhooks")] },
     async (request, reply) => {
       const parsed = endpointSchema.safeParse(request.body)
 
@@ -171,7 +171,7 @@ export async function registerWebhookRoutes(fastify: FastifyInstance) {
 
   fastify.patch(
     "/webhooks/:id",
-    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    { preHandler: [requireRole(["OWNER", "ADMIN"]), requireFeature("developer.webhooks")] },
     async (request, reply) => {
       const params = z.object({ id: z.string().min(1) }).parse(request.params)
       const parsed = updateSchema.safeParse(request.body)
@@ -249,7 +249,7 @@ export async function registerWebhookRoutes(fastify: FastifyInstance) {
 
   fastify.delete(
     "/webhooks/:id",
-    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    { preHandler: [requireRole(["OWNER", "ADMIN"]), requireFeature("developer.webhooks")] },
     async (request, reply) => {
       const params = z.object({ id: z.string().min(1) }).parse(request.params)
 
@@ -285,7 +285,7 @@ export async function registerWebhookRoutes(fastify: FastifyInstance) {
 
   fastify.get(
     "/webhooks/:id/deliveries",
-    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    { preHandler: [requireRole(["OWNER", "ADMIN"]), requireFeature("developer.webhooks")] },
     async (request, reply) => {
       const params = z.object({ id: z.string().min(1) }).parse(request.params)
       const deliveries = await fastify.prisma.webhookDelivery.findMany({
@@ -312,7 +312,7 @@ export async function registerWebhookRoutes(fastify: FastifyInstance) {
 
   fastify.post(
     "/webhooks/:id/test",
-    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    { preHandler: [requireRole(["OWNER", "ADMIN"]), requireFeature("developer.webhooks")] },
     async (request, reply) => {
       const params = z.object({ id: z.string().min(1) }).parse(request.params)
       const endpoint = await fastify.prisma.webhookEndpoint.findUnique({

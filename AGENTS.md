@@ -20,6 +20,24 @@ Arciin is not a generic cloud drive, streaming clone, or marketing-first SaaS te
 
 ---
 
+## Server vs client installs
+
+**Server install** (this repo, `arciin/`): runs Web (`apps/web`), API, Worker, PostgreSQL, Redis, and file storage. First-run **claim/setup** happens here only (`/setup` on the server web UI).
+
+**Client install** (separate repo `arciin-app/`): mobile PWA that **connects** to an existing Arciin API. No PostgreSQL, no Redis, no storage root, no instance claim on the device.
+
+All clients (browser, mobile PWA, future desktop shell) must talk to the **API only** — never to PostgreSQL directly. The API is the gatekeeper for auth, permissions, uploads, storage paths, jobs, and migrations.
+
+```txt
+Mobile PWA / Browser / Desktop app
+              ↓
+        Arciin API (apps/api)
+              ↓
+    PostgreSQL + file storage + Worker
+```
+
+---
+
 ## Current Development Priority
 
 Build the actual self-hosted application first.
@@ -120,23 +138,22 @@ Do not delete existing configuration unless there is a clear technical reason.
 Known existing structure:
 
 ```txt
-app/
-components/
-components/ui/
-hooks/
-lib/
-public/
-components.json
-next.config.ts
-tsconfig.json
-eslint.config.mjs
-postcss.config.mjs
+apps/web/           Next.js UI (app, components, hooks, lib, public)
+apps/api/           Fastify API
+apps/worker/        BullMQ worker
+packages/types/     Shared types and socket events
+packages/config/    Constants, env schemas, defaults
+packages/storage/   Filesystem storage helpers
+packages/ui/        Shared UI tokens
+packages/database/  Prisma client (API + worker only)
+packages/shared/    Domain helpers + re-exports
+prisma/             Schema and migrations
+docker/
+scripts/
+components.json     (under apps/web)
+next.config.ts      (under apps/web)
 pnpm-workspace.yaml
 package.json
-pnpm-lock.yaml
-README.md
-AGENTS.md
-CLAUDE.md
 ```
 
 Known shadcn/ui components already present:

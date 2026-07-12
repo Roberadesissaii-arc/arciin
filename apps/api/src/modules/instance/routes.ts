@@ -1,12 +1,24 @@
+import { timingSafeEqual } from "node:crypto"
+
 import type { FastifyInstance } from "fastify"
 import { z } from "zod"
 
-import { DEFAULT_LIBRARY_DEFINITIONS } from "@arciin/shared"
+import { DEFAULT_LIBRARY_DEFINITIONS, DEFAULT_USER_PREFERENCES } from "@arciin/shared"
 
 import { apiConfig } from "@/config"
+import { clientIpFromRequest } from "@/services/security/client-ip"
+
+/** Length-safe, constant-time string compare (avoids setup-token timing leaks). */
+function constantTimeEqual(a: string, b: string): boolean {
+  const ab = Buffer.from(a)
+  const bb = Buffer.from(b)
+  if (ab.length !== bb.length) return false
+  return timingSafeEqual(ab, bb)
+}
 import { resolveEffectiveStorageRoot } from "@/services/storage/effective-storage-root"
 import { serializeAuth } from "@/services/serializers"
 import { createSession, hashPassword, requireRole, setSessionCookie } from "@/services/security/auth"
+import { hashRecoveryAnswer } from "@/services/security/recovery-answer"
 import {
   consolidateStorageVolumes,
   discoverStorageVolumes,
@@ -34,6 +46,19 @@ const claimSchema = z
       .refine((value) => value === true, {
         message: "Terms and Privacy Policy acceptance is required to claim this instance.",
       }),
+    recoveryQuestion: z.string().trim().min(4).max(200).optional(),
+    recoveryAnswer: z.string().trim().min(2).max(200).optional(),
+  })
+  .superRefine((data, ctx) => {
+    const hasQuestion = Boolean(data.recoveryQuestion?.trim())
+    const hasAnswer = Boolean(data.recoveryAnswer?.trim())
+    if (hasQuestion !== hasAnswer) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Provide both a security question and answer, or leave both empty.",
+        path: ["recoveryQuestion"],
+      })
+    }
   })
 
 async function isInitialized(fastify: FastifyInstance) {
@@ -61,6 +86,12 @@ export async function registerInstanceRoutes(fastify: FastifyInstance) {
         setupRequired: !instance,
         instanceName: instance?.instanceName,
         version: apiConfig.appVersion,
+        /**
+         * Prefill the setup UI so the owner never re-types the token on their own
+         * server. Only returned before the instance is claimed (the setup window),
+         * and never after — claiming locks it permanently.
+         */
+        setupTokenPrefill: !instance ? apiConfig.setupToken : undefined,
         suggestedStorageRoot: suggested,
         runtimeStorageRoot: discovery.runtimeDataDir,
         hostStorageRoot: discovery.hostDataDir,
@@ -143,7 +174,11 @@ export async function registerInstanceRoutes(fastify: FastifyInstance) {
   })
 
   fastify.post("/instance/claim", async (request, reply) => {
-    if (await checkEndpointRateLimit(request, reply, { key: "claim", limit: 5, windowSec: 300 })) return
+    // Per-IP throttle on the (api-protection-exempt) claim endpoint so the
+    // setup token can't be brute-forced before the instance is claimed.
+    const claimIp = clientIpFromRequest(request)
+    if (await checkEndpointRateLimit(request, reply, { key: `claim:${claimIp}`, limit: 5, windowSec: 3600 })) return
+    if (await checkEndpointRateLimit(request, reply, { key: "claim:global", limit: 20, windowSec: 300 })) return
 
     const parsed = claimSchema.safeParse(request.body)
 
@@ -168,7 +203,7 @@ export async function registerInstanceRoutes(fastify: FastifyInstance) {
       return
     }
 
-    if (parsed.data.setupToken !== apiConfig.setupToken) {
+    if (!constantTimeEqual(parsed.data.setupToken, apiConfig.setupToken)) {
       reply.status(403).send({
         error: {
           code: "INVALID_SETUP_TOKEN",
@@ -184,6 +219,10 @@ export async function registerInstanceRoutes(fastify: FastifyInstance) {
     await ensureStorageDirectories(storageRoot)
 
     const passwordHash = await hashPassword(parsed.data.adminPassword)
+    const recoveryAnswerHash =
+      parsed.data.recoveryQuestion?.trim() && parsed.data.recoveryAnswer?.trim()
+        ? await hashRecoveryAnswer(parsed.data.recoveryAnswer)
+        : null
     const selectedLibraries = DEFAULT_LIBRARY_DEFINITIONS.filter((library) =>
       parsed.data.libraries.includes(library.name)
     )
@@ -263,8 +302,11 @@ export async function registerInstanceRoutes(fastify: FastifyInstance) {
           name: parsed.data.adminName,
           email: parsed.data.adminEmail.toLowerCase(),
           passwordHash,
+          recoveryQuestion: parsed.data.recoveryQuestion?.trim() || null,
+          recoveryAnswerHash,
           role: "OWNER",
           status: "ACTIVE",
+          preferences: DEFAULT_USER_PREFERENCES,
         },
       })
 

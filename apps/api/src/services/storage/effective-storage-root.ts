@@ -1,7 +1,7 @@
 import path from "node:path"
 
 import type { PrismaClient } from "@prisma/client"
-import { normalizeConfiguredStorageRoot } from "@arciin/shared"
+import { normalizeConfiguredStorageRoot } from "@arciin/storage"
 
 import { apiConfig } from "@/config"
 

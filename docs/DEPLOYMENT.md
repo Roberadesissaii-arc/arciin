@@ -7,8 +7,12 @@ Arciin ships with Docker assets for a local-first self-hosted deployment:
 - `Dockerfile.web`
 - `Dockerfile.api`
 - `Dockerfile.worker`
-- `docker-compose.yml`
+- `docker-compose.yml` — source build (dev / clone)
+- `docker-compose.production.yml` — private distribution (pre-built images)
+- `.env.production.example`
 - `docker/caddy/Caddyfile`
+
+Customer-facing install without the monorepo: **[PRIVATE_DISTRIBUTION.md](./PRIVATE_DISTRIBUTION.md)**.
 
 ## Compose flow
 

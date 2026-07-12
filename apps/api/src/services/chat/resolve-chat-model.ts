@@ -82,5 +82,10 @@ export async function resolveChatModelName(input: {
     return resolveOllamaModelName(input)
   }
 
+  // Never send Ollama tag names (e.g. ministral-3:3b) to cloud APIs.
+  if (override && override.includes(":") && !/^gemini-/i.test(override)) {
+    return fallback || override
+  }
+
   return override || fallback
 }

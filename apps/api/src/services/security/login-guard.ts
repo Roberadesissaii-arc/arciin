@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify"
 
-import { clientIpFromRequest } from "@/services/security/client-ip"
 import { loadAccessControlSettings } from "@/services/security/access-control-settings"
+import { resolveRequestClientContext } from "@/services/security/login-audit"
 import { recordSecurityEvent } from "@/services/security/security-events"
 
 const FAIL_WINDOW_SEC = 900
@@ -39,12 +39,18 @@ export async function recordFailedLogin(
   }
 
   if (settings.loginAlertsEnabled) {
-    const ip = clientIpFromRequest(request)
+    const ctx = resolveRequestClientContext(request)
+    const devicePart = ctx.deviceLabel ? ` (${ctx.deviceLabel})` : ""
     await recordSecurityEvent(fastify, {
       type: "auth.login_failed",
       title: "Failed sign-in attempt",
-      message: `Failed login for ${email.toLowerCase()} from ${ip}.`,
-      metadata: { clientIp: ip, status: "denied" },
+      message: `Failed login for ${email.toLowerCase()} from ${ctx.ip}${devicePart}.`,
+      metadata: {
+        clientIp: ctx.normalizedIp,
+        deviceLabel: ctx.deviceLabel ?? undefined,
+        userAgent: ctx.userAgent,
+        status: "denied",
+      },
     })
   }
 

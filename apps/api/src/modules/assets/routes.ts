@@ -7,15 +7,16 @@ import { z } from "zod"
 
 import {
   assetSupportsDocumentThumbnail,
+  DEFAULT_USER_PREFERENCES,
   isCodeFilename,
-  resolveArciinStorageRoot,
   resolveInlineContentType,
 } from "@arciin/shared"
+import { resolveArciinStorageRoot } from "@arciin/storage"
 
 import { apiConfig } from "@/config"
 import { buildRealtimeEvent } from "@/services/events/publish-event"
 import { recordAndBroadcastActivity } from "@/services/activity/record-and-broadcast-activity"
-import { assertFolderAccess } from "@/services/folders/folder-lock"
+import { assertAssetFolderAccess, assertFolderAccess } from "@/services/folders/folder-lock"
 import {
   ensureThumbnailWritten,
   renderImageWebpThumbnailBuffer,
@@ -24,6 +25,7 @@ import {
   resolveReadableObjectPath,
   resolvedThumbnailPath,
 } from "@/services/media/thumbnail-cache"
+import { streamFileResponse } from "@/services/media/stream-file-response"
 import {
   assetIsInJellyfinFolder,
   clearAssetJellyfinMirror,
@@ -41,10 +43,44 @@ import { getPdfNavigationIndex } from "@/services/chat/read-pdf-asset"
 import { serializeAsset } from "@/services/serializers"
 import { loadUserPreferences } from "@/services/user/preferences"
 
+/**
+ * MIME types safe to render inline in the browser. Everything else (SVG, HTML,
+ * XML, unknown) is served as a download so uploaded active content can't run
+ * script on the app origin. SVG is deliberately excluded despite being image/*.
+ */
+const INLINE_SAFE_MIME_TYPES = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/gif",
+  "image/avif",
+  "image/bmp",
+  "image/x-icon",
+  "video/mp4",
+  "video/webm",
+  "video/quicktime",
+  "audio/mpeg",
+  "audio/mp4",
+  "audio/aac",
+  "audio/ogg",
+  "audio/wav",
+  "audio/x-wav",
+  "audio/flac",
+  "application/pdf",
+  "text/plain",
+])
+
 const assetUpdateSchema = z.object({
   title: z.string().max(200).optional(),
   description: z.string().max(2000).optional(),
   originalFilename: z.string().min(1).max(255).optional(),
+  badgeLabel: z.string().min(1).max(32).nullable().optional(),
+  badgeColor: z
+    .string()
+    .regex(/^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})$/)
+    .nullable()
+    .optional(),
+  showBadge: z.boolean().optional(),
 })
 
 const assetMoveSchema = z.object({
@@ -221,6 +257,10 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
             message: "Asset not found.",
           },
         })
+        return
+      }
+
+      if (!(await assertAssetFolderAccess(fastify, request, reply, asset.folderId))) {
         return
       }
 
@@ -448,6 +488,19 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
     },
     async (request, reply) => {
       const params = assetIdParamsSchema.parse(request.params)
+      const asset = await fastify.prisma.asset.findFirst({
+        where: { id: params.assetId, deletedAt: null },
+        select: { folderId: true },
+      })
+      if (!asset) {
+        reply.status(404).send({
+          error: { code: "ASSET_NOT_FOUND", message: "Asset not found." },
+        })
+        return
+      }
+      if (!(await assertAssetFolderAccess(fastify, request, reply, asset.folderId))) {
+        return
+      }
       const result = await getPdfNavigationIndex(fastify.prisma, params.assetId)
       if ("error" in result) {
         reply.status(400).send({
@@ -498,24 +551,32 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
         return
       }
 
-      reply.header(
-        "content-type",
-        inlinePreview
-          ? resolveInlineContentType(asset.mimeType, asset.originalFilename)
-          : asset.mimeType,
-      )
-      if (inlinePreview) {
-        reply.header("content-disposition", "inline")
+      if (!(await assertAssetFolderAccess(fastify, request, reply, asset.folderId))) {
+        return
+      }
+
+      const requestedContentType = inlinePreview
+        ? resolveInlineContentType(asset.mimeType, asset.originalFilename)
+        : asset.mimeType
+
+      // Only render a known-safe set of types inline. SVG/HTML/XML and unknown
+      // types are active content that could run script on the app origin, so we
+      // force them to download regardless of the inline flag.
+      const inlineSafe =
+        inlinePreview &&
+        INLINE_SAFE_MIME_TYPES.has(requestedContentType.split(";")[0]!.trim().toLowerCase())
+
+      const contentType = inlineSafe ? requestedContentType : asset.mimeType
+      let contentDisposition: string | null = null
+      if (inlineSafe) {
+        contentDisposition = "inline"
       } else {
         // Sanitize the filename to prevent header injection via quotes, newlines, etc.
         // Use RFC 5987 percent-encoding for the filename* parameter so arbitrary
         // Unicode characters (and ASCII control chars) are safe.
         const safeAscii = asset.originalFilename.replace(/[^\w.\- ]/g, "_")
         const encodedName = encodeURIComponent(asset.originalFilename)
-        reply.header(
-          "content-disposition",
-          `attachment; filename="${safeAscii}"; filename*=UTF-8''${encodedName}`
-        )
+        contentDisposition = `attachment; filename="${safeAscii}"; filename*=UTF-8''${encodedName}`
       }
 
       // Prevent path traversal: object must live under resolved storage root.
@@ -551,7 +612,19 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
         return
       }
 
-      return reply.send(createReadStream(resolvedPath))
+      // Defense-in-depth for served files: never sniff, and sandbox anything
+      // not rendered inline so an uploaded document can't execute on our origin.
+      reply.header("X-Content-Type-Options", "nosniff")
+      if (!inlineSafe) {
+        reply.header("Content-Security-Policy", "sandbox; default-src 'none'")
+      }
+
+      return streamFileResponse(reply, {
+        path: resolvedPath,
+        contentType,
+        contentDisposition,
+        rangeHeader: request.headers.range ?? null,
+      })
     }
   )
 
@@ -630,10 +703,16 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
         return
       }
 
+      if (!(await assertAssetFolderAccess(fastify, request, reply, asset.folderId))) {
+        return
+      }
+
       const userPrefs = request.auth?.user?.id
         ? await loadUserPreferences(fastify.prisma, request.auth.user.id)
         : null
-      const documentThumbsEnabled = userPrefs?.media.documentThumbnails ?? false
+      const documentThumbsEnabled =
+        userPrefs?.media.documentThumbnails ??
+        DEFAULT_USER_PREFERENCES.media.documentThumbnails
       const wantsDocumentThumb =
         documentThumbsEnabled &&
         assetSupportsDocumentThumbnail(

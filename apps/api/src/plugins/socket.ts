@@ -7,21 +7,6 @@ import { isSelfHostedLanOrigin, SOCKET_EVENT_CHANNEL, type RealtimeEvent } from 
 import { apiConfig } from "@/config"
 import { hashApiKey, hashToken, scopeAllows } from "@/services/security/auth"
 
-function isSelfHostedInstance(): boolean {
-  try {
-    const { hostname } = new URL(apiConfig.ARCIIN_PUBLIC_URL)
-    return (
-      hostname === "localhost" ||
-      hostname === "127.0.0.1" ||
-      /^192\.168\./.test(hostname) ||
-      /^10\./.test(hostname) ||
-      /^172\.(1[6-9]|2\d|3[01])\./.test(hostname)
-    )
-  } catch {
-    return true
-  }
-}
-
 function isCloudflareQuickTunnelOrigin(origin: string): boolean {
   try {
     const { hostname, protocol } = new URL(origin)
@@ -67,6 +52,7 @@ function emitRealtimeEvent(io: Server, event: RealtimeEvent) {
 export async function registerSocket(fastify: FastifyInstance) {
   const instance = await fastify.prisma.instanceConfig.findFirst()
   const instancePublic = instance?.publicUrl?.replace(/\/+$/, "") ?? null
+  const cachedInstanceId = instance?.id ?? null
 
   const corsOrigins = [
     apiConfig.ARCIIN_PUBLIC_URL,
@@ -83,12 +69,15 @@ export async function registerSocket(fastify: FastifyInstance) {
           callback(null, true)
           return
         }
+        // Strict allowlist: configured origins, an origin that is itself a LAN
+        // address (app reached via 192.168.x.x), or the instance's Cloudflare
+        // quick-tunnel. The old "!isProduction / isSelfHostedInstance()" escape
+        // hatches let ANY origin open an authenticated socket (cross-site
+        // WebSocket hijacking) and are removed.
         if (
           corsOrigins.includes(origin) ||
           isSelfHostedLanOrigin(origin) ||
-          isCloudflareQuickTunnelOrigin(origin) ||
-          !apiConfig.isProduction ||
-          isSelfHostedInstance()
+          isCloudflareQuickTunnelOrigin(origin)
         ) {
           callback(null, true)
           return
@@ -105,7 +94,11 @@ export async function registerSocket(fastify: FastifyInstance) {
   subscriber.on("message", (_channel, message) => {
     try {
       const event = JSON.parse(message) as RealtimeEvent
-      emitRealtimeEvent(io, event)
+      const enriched =
+        cachedInstanceId && !event.instanceId
+          ? { ...event, instanceId: cachedInstanceId }
+          : event
+      emitRealtimeEvent(io, enriched)
     } catch {
       fastify.log.warn("Could not parse realtime event payload.")
     }
@@ -191,14 +184,32 @@ export async function registerSocket(fastify: FastifyInstance) {
     }
   })
 
-  io.on("connection", async (socket) => {
-    const instance = await fastify.prisma.instanceConfig.findFirst()
+  // Resolve the instance id, preferring the value cached at registration to
+  // avoid a DB round-trip on every socket connection. Only queries as a fallback
+  // (e.g. the instance was claimed after the socket server started).
+  const resolveInstanceId = async (): Promise<string | null> =>
+    cachedInstanceId ?? (await fastify.prisma.instanceConfig.findFirst())?.id ?? null
 
+  io.on("connection", async (socket) => {
     socket.join(`user:${socket.data.user.id}`)
 
-    if (instance) {
-      socket.join(`instance:${instance.id}`)
+    // OWNER/ADMIN get the instance-wide feed (all users' events). Auto-joined on
+    // connect; the frontend also emits subscribe:instance-events as a safety net
+    // (idempotent join), so a reconnect or a future refactor can't silently drop
+    // the instance stream. Members keep only their own user-scoped events.
+    const role = socket.data.user.role
+    const isInstanceViewer = role === "OWNER" || role === "ADMIN"
+
+    if (isInstanceViewer) {
+      const instanceId = await resolveInstanceId()
+      if (instanceId) await socket.join(`instance:${instanceId}`)
     }
+
+    socket.on("subscribe:instance-events", async () => {
+      if (!isInstanceViewer) return
+      const instanceId = await resolveInstanceId()
+      if (instanceId) await socket.join(`instance:${instanceId}`)
+    })
   })
 
   fastify.decorate("io", io)

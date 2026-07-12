@@ -20,8 +20,10 @@ import {
   resolveUploadFolderId,
   syncAssetToPlexMirror,
 } from "@/services/integrations/plex"
+import { getUploadLimits, UploadTooLargeError } from "@/services/config/upload-limits"
 import { appendUploadLog } from "@/services/logs/upload-log"
 import { resolveEffectiveStorageRoot } from "@/services/storage/effective-storage-root"
+import { resolveClientChannel } from "@/services/security/client-channel"
 import {
   createObjectStoragePath,
   moveTempToObject,
@@ -89,11 +91,13 @@ export async function registerUploadRoutes(fastify: FastifyInstance) {
         return
       }
 
-      const uploadRateLimit = Number(process.env.UPLOAD_RATE_LIMIT_PER_MINUTE || "500")
+      const clientChannel = resolveClientChannel(request)
+
+      const { uploadRateLimitPerMinute } = getUploadLimits()
       if (
         await checkEndpointRateLimit(request, reply, {
           key: `upload:user:${request.auth.user.id}`,
-          limit: Number.isFinite(uploadRateLimit) && uploadRateLimit > 0 ? uploadRateLimit : 500,
+          limit: uploadRateLimitPerMinute,
           windowSec: 60,
         })
       ) {
@@ -211,6 +215,7 @@ export async function registerUploadRoutes(fastify: FastifyInstance) {
           height: analysis.height,
           codec: analysis.codec,
           status: requiresProcessing ? "PROCESSING" : "READY",
+          uploadClient: clientChannel,
         },
       })
 
@@ -225,7 +230,7 @@ export async function registerUploadRoutes(fastify: FastifyInstance) {
           targetLibraryId: targetLibrary.id,
           detectedMediaType: analysis.mediaType,
           assetId: asset.id,
-          completedAt: requiresProcessing ? null : new Date(),
+          completedAt: new Date(),
         },
         include: {
           targetLibrary: true,
@@ -316,37 +321,63 @@ export async function registerUploadRoutes(fastify: FastifyInstance) {
           mediaType: analysis.mediaType,
           libraryId: targetLibrary.id,
           destination: targetLibrary.name,
+          fileName: file.filename,
+          client: clientChannel,
         },
       })
 
-      // Always emit asset.created so the Events monitor shows every upload
+      await fastify.publishRealtimeEvent(
+        buildRealtimeEvent("upload.started", {
+          userId: request.auth.user.id,
+          libraryId: targetLibrary.id,
+          uploadId: upload.id,
+          progress: requiresProcessing ? 88 : 100,
+          message: `${file.filename} received on the server.`,
+          data: {
+            fileName: file.filename,
+            sizeBytes: tempResult.sizeBytes,
+            destination: targetLibrary.name,
+            origin: "upload",
+            client: clientChannel,
+          },
+        })
+      )
+
+      // Always emit asset.created so library grids can refresh immediately.
       await fastify.publishRealtimeEvent(
         buildRealtimeEvent("asset.created", {
           userId: request.auth.user.id,
           libraryId: targetLibrary.id,
           assetId: asset.id,
           message: `${file.filename} added to ${targetLibrary.name}.`,
-          data: { mediaType: analysis.mediaType, destination: targetLibrary.name },
+          data: {
+            mediaType: analysis.mediaType,
+            destination: targetLibrary.name,
+            fileName: file.filename,
+            client: clientChannel,
+          },
         })
       )
 
-      if (!requiresProcessing) {
-        await fastify.publishRealtimeEvent(
-          buildRealtimeEvent("upload.completed", {
-            userId: request.auth.user.id,
-            libraryId: targetLibrary.id,
-            uploadId: upload.id,
-            assetId: asset.id,
-            progress: 100,
-            message: `${file.filename} uploaded successfully.`,
-            data: {
-              fileName: file.filename,
-              sizeBytes: tempResult.sizeBytes,
-              destination: targetLibrary.name,
-            },
-          })
-        )
-      }
+      await fastify.publishRealtimeEvent(
+        buildRealtimeEvent("upload.completed", {
+          userId: request.auth.user.id,
+          libraryId: targetLibrary.id,
+          uploadId: upload.id,
+          assetId: asset.id,
+          progress: requiresProcessing ? 88 : 100,
+          message: requiresProcessing
+            ? `${file.filename} uploaded — finishing media processing…`
+            : `${file.filename} uploaded successfully.`,
+          data: {
+            fileName: file.filename,
+            sizeBytes: tempResult.sizeBytes,
+            destination: targetLibrary.name,
+            origin: "upload",
+            client: clientChannel,
+          },
+        })
+      )
 
       reply.status(201).send({
         data: serializeUpload(upload),
@@ -379,7 +410,8 @@ export async function registerUploadRoutes(fastify: FastifyInstance) {
 
         request.log.error({ err, fileName: file.filename }, "upload failed")
 
-        reply.status(500).send({
+        const status = err instanceof UploadTooLargeError ? 413 : 500
+        reply.status(status).send({
           error: {
             code,
             message,
@@ -535,6 +567,24 @@ export async function registerUploadRoutes(fastify: FastifyInstance) {
           error: "Cancelled by user.",
         },
       })
+
+      const activeKey = `import:active:${upload.userId}`
+      const remaining = await fastify.redis.decr(activeKey).catch(() => 0)
+      if (remaining < 0) {
+        await fastify.redis.set(activeKey, "0").catch(() => {})
+      }
+
+      await fastify.publishRealtimeEvent(
+        buildRealtimeEvent("upload.failed", {
+          userId: upload.userId,
+          uploadId: upload.id,
+          message: "Cancelled by user.",
+          data: {
+            fileName: upload.originalFilename,
+            origin: "upload",
+          },
+        }),
+      )
 
       reply.send({
         data: {

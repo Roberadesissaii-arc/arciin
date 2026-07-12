@@ -7,6 +7,7 @@ import { pipeline } from "node:stream/promises"
 import type { MultipartFile } from "@fastify/multipart"
 
 import { apiConfig } from "@/config"
+import { getUploadLimits, UploadTooLargeError } from "@/services/config/upload-limits"
 
 export function getStoragePaths(rootPath = apiConfig.dataDir) {
   return {
@@ -54,13 +55,30 @@ export async function writeMultipartToTemp(
   const hash = createHash("sha256")
   let sizeBytes = 0
 
+  const maxBytes = getUploadLimits().maxUploadSizeBytes
   const destination = fs.createWriteStream(tempPath)
+  let rejected: UploadTooLargeError | null = null
+
   part.file.on("data", (chunk) => {
-    hash.update(chunk)
+    if (rejected) return
     sizeBytes += chunk.length
+    if (sizeBytes > maxBytes) {
+      rejected = new UploadTooLargeError(getUploadLimits().maxUploadSizeMb)
+      part.file.destroy(rejected)
+      destination.destroy(rejected)
+      return
+    }
+    hash.update(chunk)
   })
 
-  await pipeline(part.file, destination)
+  try {
+    await pipeline(part.file, destination)
+  } catch (err) {
+    if (rejected) throw rejected
+    throw err
+  }
+
+  if (rejected) throw rejected
 
   return {
     tempPath,

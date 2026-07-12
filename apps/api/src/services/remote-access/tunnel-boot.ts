@@ -15,7 +15,8 @@ import {
   persistTunnelPublicUrl,
   readRemoteAccessConfig,
 } from "@/services/remote-access/tunnel-persistence"
-import { resolveCloudflareTunnelTarget } from "@/services/remote-access/tunnel-target"
+import { resolveCloudflareTunnelTarget, resolveMobileCloudflareTunnelTarget } from "@/services/remote-access/tunnel-target"
+import { resolveLocalAccessUrls, resolveMobileLocalAccessUrls } from "@/services/remote-access/local-access-urls"
 
 const BOOT_RETRY_DELAYS_MS = [12_000, 25_000, 45_000]
 const RESTART_AFTER_EXIT_MS = 12_000
@@ -48,6 +49,16 @@ async function shouldAutoStart(fastify: FastifyInstance): Promise<boolean> {
   return isCloudflareTunnelAutoStartEnabled(config, instance.remoteAccessMode)
 }
 
+/** When mobile PWA listens on a different port than desktop web, auto-start tunnels :3003 not :3002. */
+function resolveAutoStartTunnelTarget(): string {
+  const desktop = resolveLocalAccessUrls()
+  const mobile = resolveMobileLocalAccessUrls()
+  if (mobile.webPort !== desktop.webPort) {
+    return resolveMobileCloudflareTunnelTarget()
+  }
+  return resolveCloudflareTunnelTarget()
+}
+
 async function tryStartTunnel(fastify: FastifyInstance, reason: string): Promise<boolean> {
   if (!(await shouldAutoStart(fastify))) return false
   if (!(await cloudflaredAvailable())) {
@@ -73,9 +84,9 @@ async function tryStartTunnel(fastify: FastifyInstance, reason: string): Promise
   }
 
   try {
-    const localTarget = resolveCloudflareTunnelTarget()
+    const localTarget = resolveAutoStartTunnelTarget()
     const url = await startCloudflareQuickTunnel(localTarget)
-    fastify.log.info({ url, reason }, "Cloudflare quick tunnel started")
+    fastify.log.info({ url, localTarget, reason }, "Cloudflare quick tunnel started")
     return true
   } catch (err) {
     fastify.log.warn(

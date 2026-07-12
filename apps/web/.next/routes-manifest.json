@@ -1,0 +1,445 @@
+{
+  "version": 3,
+  "pages404": true,
+  "appType": "app",
+  "caseSensitive": false,
+  "basePath": "",
+  "redirects": [
+    {
+      "source": "/applications",
+      "destination": "/inbox",
+      "statusCode": 308,
+      "regex": "^(?!/_next)/applications(?:/)?$"
+    },
+    {
+      "source": "/applications/:path*",
+      "destination": "/inbox",
+      "statusCode": 308,
+      "regex": "^(?!/_next)/applications(?:/((?:[^/]+?)(?:/(?:[^/]+?))*))?(?:/)?$"
+    }
+  ],
+  "headers": [],
+  "onMatchHeaders": [],
+  "rewrites": {
+    "beforeFiles": [],
+    "afterFiles": [
+      {
+        "source": "/socket.io",
+        "destination": "http://127.0.0.1:4000/socket.io/",
+        "regex": "^/socket\\.io(?:/)?$"
+      },
+      {
+        "source": "/socket.io/:path*",
+        "destination": "http://127.0.0.1:4000/socket.io/:path*",
+        "regex": "^/socket\\.io(?:/((?:[^/]+?)(?:/(?:[^/]+?))*))?(?:/)?$"
+      }
+    ],
+    "fallback": []
+  },
+  "dynamicRoutes": [
+    {
+      "page": "/api/[...path]",
+      "regex": "^/api/(.+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPpath": "nxtPpath"
+      },
+      "namedRegex": "^/api/(?<nxtPpath>.+?)(?:/)?$"
+    },
+    {
+      "page": "/database/app-data/[databaseId]",
+      "regex": "^/database/app\\-data/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPdatabaseId": "nxtPdatabaseId"
+      },
+      "namedRegex": "^/database/app\\-data/(?<nxtPdatabaseId>[^/]+?)(?:/)?$"
+    },
+    {
+      "page": "/database/[table]",
+      "regex": "^/database/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPtable": "nxtPtable"
+      },
+      "namedRegex": "^/database/(?<nxtPtable>[^/]+?)(?:/)?$"
+    },
+    {
+      "page": "/documents/[folder]",
+      "regex": "^/documents/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPfolder": "nxtPfolder"
+      },
+      "namedRegex": "^/documents/(?<nxtPfolder>[^/]+?)(?:/)?$"
+    },
+    {
+      "page": "/images/[folder]",
+      "regex": "^/images/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPfolder": "nxtPfolder"
+      },
+      "namedRegex": "^/images/(?<nxtPfolder>[^/]+?)(?:/)?$"
+    },
+    {
+      "page": "/music/[folder]",
+      "regex": "^/music/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPfolder": "nxtPfolder"
+      },
+      "namedRegex": "^/music/(?<nxtPfolder>[^/]+?)(?:/)?$"
+    },
+    {
+      "page": "/s/[token]",
+      "regex": "^/s/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPtoken": "nxtPtoken"
+      },
+      "namedRegex": "^/s/(?<nxtPtoken>[^/]+?)(?:/)?$"
+    },
+    {
+      "page": "/videos/[folder]",
+      "regex": "^/videos/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPfolder": "nxtPfolder"
+      },
+      "namedRegex": "^/videos/(?<nxtPfolder>[^/]+?)(?:/)?$"
+    },
+    {
+      "page": "/[...slug]",
+      "regex": "^/(.+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPslug": "nxtPslug"
+      },
+      "namedRegex": "^/(?<nxtPslug>.+?)(?:/)?$"
+    }
+  ],
+  "staticRoutes": [
+    {
+      "page": "/",
+      "regex": "^/(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/(?:/)?$"
+    },
+    {
+      "page": "/_global-error",
+      "regex": "^/_global\\-error(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/_global\\-error(?:/)?$"
+    },
+    {
+      "page": "/_not-found",
+      "regex": "^/_not\\-found(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/_not\\-found(?:/)?$"
+    },
+    {
+      "page": "/account",
+      "regex": "^/account(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/account(?:/)?$"
+    },
+    {
+      "page": "/activity",
+      "regex": "^/activity(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/activity(?:/)?$"
+    },
+    {
+      "page": "/api/chat",
+      "regex": "^/api/chat(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/chat(?:/)?$"
+    },
+    {
+      "page": "/api-keys",
+      "regex": "^/api\\-keys(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api\\-keys(?:/)?$"
+    },
+    {
+      "page": "/apple-icon.png",
+      "regex": "^/apple\\-icon\\.png(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/apple\\-icon\\.png(?:/)?$"
+    },
+    {
+      "page": "/chat",
+      "regex": "^/chat(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/chat(?:/)?$"
+    },
+    {
+      "page": "/dashboard",
+      "regex": "^/dashboard(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/dashboard(?:/)?$"
+    },
+    {
+      "page": "/database",
+      "regex": "^/database(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/database(?:/)?$"
+    },
+    {
+      "page": "/database/app-data",
+      "regex": "^/database/app\\-data(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/database/app\\-data(?:/)?$"
+    },
+    {
+      "page": "/demo/licenses",
+      "regex": "^/demo/licenses(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/demo/licenses(?:/)?$"
+    },
+    {
+      "page": "/developer",
+      "regex": "^/developer(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/developer(?:/)?$"
+    },
+    {
+      "page": "/developer/api-keys",
+      "regex": "^/developer/api\\-keys(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/developer/api\\-keys(?:/)?$"
+    },
+    {
+      "page": "/developer/web-sockets",
+      "regex": "^/developer/web\\-sockets(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/developer/web\\-sockets(?:/)?$"
+    },
+    {
+      "page": "/developer/webhooks",
+      "regex": "^/developer/webhooks(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/developer/webhooks(?:/)?$"
+    },
+    {
+      "page": "/docs",
+      "regex": "^/docs(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/docs(?:/)?$"
+    },
+    {
+      "page": "/documents",
+      "regex": "^/documents(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/documents(?:/)?$"
+    },
+    {
+      "page": "/events",
+      "regex": "^/events(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/events(?:/)?$"
+    },
+    {
+      "page": "/favicon.ico",
+      "regex": "^/favicon\\.ico(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/favicon\\.ico(?:/)?$"
+    },
+    {
+      "page": "/files",
+      "regex": "^/files(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/files(?:/)?$"
+    },
+    {
+      "page": "/forgot-password",
+      "regex": "^/forgot\\-password(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/forgot\\-password(?:/)?$"
+    },
+    {
+      "page": "/icon.svg",
+      "regex": "^/icon\\.svg(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/icon\\.svg(?:/)?$"
+    },
+    {
+      "page": "/images",
+      "regex": "^/images(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/images(?:/)?$"
+    },
+    {
+      "page": "/inbox",
+      "regex": "^/inbox(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/inbox(?:/)?$"
+    },
+    {
+      "page": "/integrations",
+      "regex": "^/integrations(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/integrations(?:/)?$"
+    },
+    {
+      "page": "/jobs",
+      "regex": "^/jobs(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/jobs(?:/)?$"
+    },
+    {
+      "page": "/legal/privacy",
+      "regex": "^/legal/privacy(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/legal/privacy(?:/)?$"
+    },
+    {
+      "page": "/legal/terms",
+      "regex": "^/legal/terms(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/legal/terms(?:/)?$"
+    },
+    {
+      "page": "/login",
+      "regex": "^/login(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/login(?:/)?$"
+    },
+    {
+      "page": "/login/forgot-password",
+      "regex": "^/login/forgot\\-password(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/login/forgot\\-password(?:/)?$"
+    },
+    {
+      "page": "/logs",
+      "regex": "^/logs(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/logs(?:/)?$"
+    },
+    {
+      "page": "/manifest.webmanifest",
+      "regex": "^/manifest\\.webmanifest(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/manifest\\.webmanifest(?:/)?$"
+    },
+    {
+      "page": "/models",
+      "regex": "^/models(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/models(?:/)?$"
+    },
+    {
+      "page": "/music",
+      "regex": "^/music(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/music(?:/)?$"
+    },
+    {
+      "page": "/notifications",
+      "regex": "^/notifications(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/notifications(?:/)?$"
+    },
+    {
+      "page": "/passwords",
+      "regex": "^/passwords(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/passwords(?:/)?$"
+    },
+    {
+      "page": "/security",
+      "regex": "^/security(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/security(?:/)?$"
+    },
+    {
+      "page": "/settings",
+      "regex": "^/settings(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/settings(?:/)?$"
+    },
+    {
+      "page": "/settings/developer",
+      "regex": "^/settings/developer(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/settings/developer(?:/)?$"
+    },
+    {
+      "page": "/settings/domain",
+      "regex": "^/settings/domain(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/settings/domain(?:/)?$"
+    },
+    {
+      "page": "/settings/remote-access",
+      "regex": "^/settings/remote\\-access(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/settings/remote\\-access(?:/)?$"
+    },
+    {
+      "page": "/settings/security",
+      "regex": "^/settings/security(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/settings/security(?:/)?$"
+    },
+    {
+      "page": "/settings/storage",
+      "regex": "^/settings/storage(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/settings/storage(?:/)?$"
+    },
+    {
+      "page": "/settings/users",
+      "regex": "^/settings/users(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/settings/users(?:/)?$"
+    },
+    {
+      "page": "/setup",
+      "regex": "^/setup(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/setup(?:/)?$"
+    },
+    {
+      "page": "/setup/complete",
+      "regex": "^/setup/complete(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/setup/complete(?:/)?$"
+    },
+    {
+      "page": "/support",
+      "regex": "^/support(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/support(?:/)?$"
+    },
+    {
+      "page": "/uploads",
+      "regex": "^/uploads(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/uploads(?:/)?$"
+    },
+    {
+      "page": "/videos",
+      "regex": "^/videos(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/videos(?:/)?$"
+    },
+    {
+      "page": "/webhooks",
+      "regex": "^/webhooks(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/webhooks(?:/)?$"
+    }
+  ],
+  "dataRoutes": [],
+  "rsc": {
+    "header": "rsc",
+    "varyHeader": "rsc, next-router-state-tree, next-router-prefetch, next-router-segment-prefetch",
+    "prefetchHeader": "next-router-prefetch",
+    "didPostponeHeader": "x-nextjs-postponed",
+    "contentTypeHeader": "text/x-component",
+    "suffix": ".rsc",
+    "prefetchSegmentHeader": "next-router-segment-prefetch",
+    "prefetchSegmentSuffix": ".segment.rsc",
+    "prefetchSegmentDirSuffix": ".segments",
+    "clientParamParsing": false,
+    "dynamicRSCPrerender": false
+  },
+  "rewriteHeaders": {
+    "pathHeader": "x-nextjs-rewritten-path",
+    "queryHeader": "x-nextjs-rewritten-query"
+  }
+}

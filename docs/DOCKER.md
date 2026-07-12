@@ -16,6 +16,16 @@ Arciin runs in Docker on **any Linux host** with Docker Engine and Compose — h
 
 **Recommendation:** Use **Docker** unless you already run and maintain a native Node/Postgres stack on the host. If native `install.sh` fails at “System packages”, switch to Docker.
 
+### Private distribution (no monorepo)
+
+For the **product packaging prototype** (customers pull images, never clone source), see **[PRIVATE_DISTRIBUTION.md](./PRIVATE_DISTRIBUTION.md)**:
+
+- `docker-compose.production.yml` — `image:` only for web / api / worker
+- `./scripts/install-private.sh` — installs into `/srv/arciin` + `/srv/arciin-storage/arciin`
+- `pnpm docker:build` / `docker:up` / `docker:package`
+
+Source-based `docker-compose.yml` below remains the monorepo / developer path.
+
 ---
 
 ## How storage works (important)
@@ -170,6 +180,7 @@ docker compose up --build -d
 - **Port 80** must be free for Caddy (or change `docker-compose.yml` port mapping).
 - **LAN access:** set `ARCIIN_PUBLIC_URL=http://<server-ip>` in `.env`, then `docker compose up -d` again.
 - **64-bit Linux** recommended for the Node 20 images.
+- **Firewall:** `./install.sh`, `./scripts/docker-setup.sh`, and private `install.sh` open the needed TCP ports (HTTP, and for native installs web + API). On a new VPS, UFW is often inactive — installers **enable UFW** after allowing SSH + Arciin ports so browser access works. Re-run anytime: `bash scripts/open-firewall.sh`. Skip with `ARCIIN_SKIP_FIREWALL=1`.
 
 ### Native install: “held broken packages”
 

@@ -10,6 +10,7 @@ import type {
   Job,
   Library,
   Session,
+  ShareLink,
   StorageLocation,
   UploadSession,
   User,
@@ -113,6 +114,11 @@ export function serializeAsset(asset: Asset) {
     codec: asset.codec,
     status: asset.status,
     processingError: asset.processingError,
+    importSourceUrl: asset.importSourceUrl,
+    uploadClient: asset.uploadClient,
+    badgeLabel: asset.badgeLabel,
+    badgeColor: asset.badgeColor,
+    showBadge: asset.showBadge,
     createdAt: asset.createdAt.toISOString(),
     updatedAt: asset.updatedAt.toISOString(),
     deletedAt: asset.deletedAt?.toISOString() ?? null,
@@ -256,5 +262,39 @@ export function serializeAppDatabaseRecord(record: AppDatabaseRecord) {
     mimeType: record.mimeType,
     createdAt: record.createdAt.toISOString(),
     updatedAt: record.updatedAt.toISOString(),
+  }
+}
+
+export function serializeShareLink(
+  share: ShareLink & {
+    asset?: { originalFilename: string; title: string | null } | null
+    folder?: { name: string } | null
+    _count?: { shareAssets: number }
+  },
+) {
+  const resourceName =
+    share.resourceType === "ASSET"
+      ? share.asset?.title?.trim() || share.asset?.originalFilename || "File"
+      : share.resourceType === "ASSETS"
+        ? share._count?.shareAssets === 1
+          ? "1 file"
+          : `${share._count?.shareAssets ?? 0} files`
+        : share.folder?.name || "Folder"
+
+  return {
+    id: share.id,
+    resourceType: share.resourceType,
+    assetId: share.assetId,
+    folderId: share.folderId,
+    assetCount: share.resourceType === "ASSETS" ? share._count?.shareAssets ?? 0 : undefined,
+    tokenPrefix: share.tokenPrefix,
+    label: share.label ?? resourceName,
+    expiresAt: share.expiresAt?.toISOString() ?? null,
+    maxViews: share.maxViews,
+    viewCount: share.viewCount,
+    allowDownload: share.allowDownload,
+    lastViewedAt: share.lastViewedAt?.toISOString() ?? null,
+    createdAt: share.createdAt.toISOString(),
+    updatedAt: share.updatedAt.toISOString(),
   }
 }

@@ -3,7 +3,7 @@ import type { Prisma } from "@prisma/client"
 import { z } from "zod"
 
 import { recordAndBroadcastActivity } from "@/services/activity/record-and-broadcast-activity"
-import { requireSessionRolesOrApiKeyScopes } from "@/services/security/auth"
+import { requireFeature, requireSessionRolesOrApiKeyScopes } from "@/services/security/auth"
 import {
   serializeAppDatabase,
   serializeAppDatabaseFolder,
@@ -123,7 +123,7 @@ export async function registerAppDatabaseRoutes(fastify: FastifyInstance) {
 
   fastify.get(
     "/app-databases",
-    { preHandler: readDatabases },
+    { preHandler: [readDatabases, requireFeature("developer.app_databases")] },
     async (_request, reply) => {
       const list = await fastify.prisma.appDatabase.findMany({
         orderBy: { createdAt: "desc" },
@@ -145,7 +145,7 @@ export async function registerAppDatabaseRoutes(fastify: FastifyInstance) {
 
   fastify.post(
     "/app-databases",
-    { preHandler: writeDatabases },
+    { preHandler: [writeDatabases, requireFeature("developer.app_databases")] },
     async (request, reply) => {
       const parsed = createAppDatabaseSchema.safeParse(request.body)
       if (!parsed.success || !request.auth) {
@@ -206,7 +206,7 @@ export async function registerAppDatabaseRoutes(fastify: FastifyInstance) {
 
   fastify.get(
     "/app-databases/:databaseId",
-    { preHandler: readDatabases },
+    { preHandler: [readDatabases, requireFeature("developer.app_databases")] },
     async (request, reply) => {
       const params = z.object({ databaseId: z.string() }).parse(request.params)
       const db = await fastify.prisma.appDatabase.findUnique({
@@ -227,7 +227,7 @@ export async function registerAppDatabaseRoutes(fastify: FastifyInstance) {
 
   fastify.delete(
     "/app-databases/:databaseId",
-    { preHandler: deleteDatabases },
+    { preHandler: [deleteDatabases, requireFeature("developer.app_databases")] },
     async (request, reply) => {
       const params = z.object({ databaseId: z.string() }).parse(request.params)
       const existing = await fastify.prisma.appDatabase.findUnique({
@@ -262,7 +262,7 @@ export async function registerAppDatabaseRoutes(fastify: FastifyInstance) {
 
   fastify.get(
     "/app-databases/:databaseId/folders",
-    { preHandler: readFolders },
+    { preHandler: [readFolders, requireFeature("developer.app_databases")] },
     async (request, reply) => {
       const params = z.object({ databaseId: z.string() }).parse(request.params)
       const db = await fastify.prisma.appDatabase.findUnique({
@@ -302,7 +302,7 @@ export async function registerAppDatabaseRoutes(fastify: FastifyInstance) {
 
   fastify.post(
     "/app-databases/:databaseId/folders",
-    { preHandler: writeFolders },
+    { preHandler: [writeFolders, requireFeature("developer.app_databases")] },
     async (request, reply) => {
       const params = z.object({ databaseId: z.string() }).parse(request.params)
       const parsed = createAppFolderSchema.safeParse(request.body)
@@ -393,7 +393,7 @@ export async function registerAppDatabaseRoutes(fastify: FastifyInstance) {
 
   fastify.patch(
     "/app-database-folders/:folderId",
-    { preHandler: writeFolders },
+    { preHandler: [writeFolders, requireFeature("developer.app_databases")] },
     async (request, reply) => {
       const params = z.object({ folderId: z.string() }).parse(request.params)
       const parsed = updateAppFolderSchema.safeParse(request.body)
@@ -457,7 +457,7 @@ export async function registerAppDatabaseRoutes(fastify: FastifyInstance) {
 
   fastify.delete(
     "/app-database-folders/:folderId",
-    { preHandler: deleteFolders },
+    { preHandler: [deleteFolders, requireFeature("developer.app_databases")] },
     async (request, reply) => {
       const params = z.object({ folderId: z.string() }).parse(request.params)
 
@@ -496,7 +496,7 @@ export async function registerAppDatabaseRoutes(fastify: FastifyInstance) {
 
   fastify.get(
     "/app-database-folders/:folderId/records",
-    { preHandler: readRecords },
+    { preHandler: [readRecords, requireFeature("developer.app_databases")] },
     async (request, reply) => {
       const params = z.object({ folderId: z.string() }).parse(request.params)
 
@@ -525,7 +525,7 @@ export async function registerAppDatabaseRoutes(fastify: FastifyInstance) {
 
   fastify.post(
     "/app-database-folders/:folderId/records",
-    { preHandler: writeRecords },
+    { preHandler: [writeRecords, requireFeature("developer.app_databases")] },
     async (request, reply) => {
       const params = z.object({ folderId: z.string() }).parse(request.params)
       const parsed = createRecordSchema.safeParse(request.body)
@@ -578,7 +578,7 @@ export async function registerAppDatabaseRoutes(fastify: FastifyInstance) {
 
   fastify.patch(
     "/app-database-records/:recordId",
-    { preHandler: writeRecords },
+    { preHandler: [writeRecords, requireFeature("developer.app_databases")] },
     async (request, reply) => {
       const params = z.object({ recordId: z.string() }).parse(request.params)
       const parsed = updateRecordSchema.safeParse(request.body)
@@ -623,7 +623,7 @@ export async function registerAppDatabaseRoutes(fastify: FastifyInstance) {
 
   fastify.delete(
     "/app-database-records/:recordId",
-    { preHandler: deleteRecords },
+    { preHandler: [deleteRecords, requireFeature("developer.app_databases")] },
     async (request, reply) => {
       const params = z.object({ recordId: z.string() }).parse(request.params)
 

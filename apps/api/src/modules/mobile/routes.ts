@@ -4,7 +4,10 @@ import type { User } from "@prisma/client"
 import { z } from "zod"
 
 import { serializeUser } from "@/services/serializers"
-import { clientIpFromRequest, normalizeClientIp } from "@/services/security/client-ip"
+import {
+  formatAuthSecurityMessage,
+  resolveRequestClientContext,
+} from "@/services/security/login-audit"
 import { createSession, verifyPassword } from "@/services/security/auth"
 import {
   clearFailedLoginAttempts,
@@ -20,7 +23,6 @@ import {
 } from "@/services/mobile/mobile-pairing"
 import {
   buildMobileDiscoverPayload,
-  resolveCanonicalPublicServerUrls,
   resolveMobileServerUrls,
 } from "@/services/mobile/mobile-server-urls"
 import { authenticate } from "@/services/security/auth"
@@ -88,24 +90,14 @@ export async function registerMobileRoutes(fastify: FastifyInstance) {
   /** Current canonical URLs for an already-paired phone (session Bearer). */
   fastify.get("/mobile/server", { preHandler: authenticate }, async (request, reply) => {
     const payload = await buildMobileDiscoverPayload(fastify.prisma, request)
-    const canonical =
-      (await resolveCanonicalPublicServerUrls(fastify.prisma)) ?? {
-        webUrl: payload.webUrl,
-        apiBaseUrl: payload.apiBaseUrl,
-        socketUrl: payload.socketUrl,
-        instanceName: payload.instanceName,
-        version: payload.version,
-        requestOrigin: payload.requestOrigin,
-      }
-
     reply.send({
       data: {
         instanceId: payload.instanceId,
         instanceName: payload.instanceName,
         version: payload.version,
-        webUrl: canonical.webUrl,
-        apiBaseUrl: canonical.apiBaseUrl,
-        socketUrl: canonical.socketUrl,
+        webUrl: payload.webUrl,
+        apiBaseUrl: payload.apiBaseUrl,
+        socketUrl: payload.socketUrl,
         lanUrls: payload.lanUrls,
         requestOrigin: payload.requestOrigin,
       },
@@ -182,16 +174,21 @@ export async function registerMobileRoutes(fastify: FastifyInstance) {
 
     await consumeMobilePairingCode(fastify.prisma, pairing.id)
 
-    const deviceLabel = parsed.data.deviceName?.trim() || "Mobile"
+    const ctx = resolveRequestClientContext(request)
+    const deviceLabel = parsed.data.deviceName?.trim() || ctx.deviceLabel || "Mobile"
     const auth = await issueMobileSession(request, fastify, user, deviceLabel)
 
-    const ip = normalizeClientIp(clientIpFromRequest(request)) ?? clientIpFromRequest(request)
     await recordSecurityEvent(fastify, {
       userId: user.id,
       type: "auth.login",
       title: "Mobile paired",
-      message: `${user.name} connected a mobile device from ${ip}.`,
-      metadata: { clientIp: normalizeClientIp(ip) ?? undefined, status: "ok" },
+      message: formatAuthSecurityMessage(user.name, ctx.ip, deviceLabel, "connected a mobile device"),
+      metadata: {
+        clientIp: ctx.normalizedIp,
+        deviceLabel: deviceLabel ?? undefined,
+        userAgent: ctx.userAgent,
+        status: "ok",
+      },
     })
 
     reply.send({ data: auth })
@@ -252,16 +249,21 @@ export async function registerMobileRoutes(fastify: FastifyInstance) {
 
     await clearFailedLoginAttempts(fastify, email)
 
-    const deviceLabel = parsed.data.deviceName?.trim() || "Mobile"
+    const ctx = resolveRequestClientContext(request)
+    const deviceLabel = parsed.data.deviceName?.trim() || ctx.deviceLabel || "Mobile"
     const auth = await issueMobileSession(request, fastify, user, deviceLabel)
 
-    const ip = normalizeClientIp(clientIpFromRequest(request)) ?? clientIpFromRequest(request)
     await recordSecurityEvent(fastify, {
       userId: user.id,
       type: "auth.login",
       title: "Signed in (mobile)",
-      message: `${user.name} signed in from ${ip}.`,
-      metadata: { clientIp: normalizeClientIp(ip) ?? undefined, status: "ok" },
+      message: formatAuthSecurityMessage(user.name, ctx.ip, deviceLabel),
+      metadata: {
+        clientIp: ctx.normalizedIp,
+        deviceLabel: deviceLabel ?? undefined,
+        userAgent: ctx.userAgent,
+        status: "ok",
+      },
     })
 
     reply.send({ data: auth })

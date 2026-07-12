@@ -4,7 +4,8 @@ import path from "node:path"
 import type { PrismaClient } from "@prisma/client"
 import type { Queue } from "bullmq"
 
-import { JOB_TYPES, assetSupportsDocumentThumbnail, resolveArciinStorageRoot } from "@arciin/shared"
+import { JOB_TYPES, assetSupportsDocumentThumbnail } from "@arciin/shared"
+import { resolveArciinStorageRoot } from "@arciin/storage"
 
 import { getStoragePaths } from "@/services/storage/local-storage"
 

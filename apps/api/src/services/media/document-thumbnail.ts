@@ -1,4 +1,4 @@
-import { access, mkdir, unlink, writeFile } from "node:fs/promises"
+import { access, mkdir, readdir, unlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 
@@ -7,7 +7,9 @@ import { execa } from "execa"
 import sharp from "sharp"
 
 /**
- * Render the first page of a PDF (or PDF-like document) to WebP via ffmpeg + sharp.
+ * Render the first page of a PDF to WebP. Primary renderer is pdftoppm
+ * (poppler-utils) — ffmpeg cannot decode PDFs — with ffmpeg kept as a
+ * fallback for any other document container that slips through.
  */
 export async function ensureDocumentThumbnailWritten(opts: {
   mediaType: string
@@ -36,41 +38,18 @@ export async function ensureDocumentThumbnailWritten(opts: {
 
   await mkdir(path.dirname(opts.thumbnailPath), { recursive: true })
 
-  const tmpPng = path.join(
-    tmpdir(),
-    `arciin-doc-${process.pid}-${Date.now()}.png`,
-  )
+  const tmpBase = path.join(tmpdir(), `arciin-doc-${process.pid}-${Date.now()}`)
 
   try {
-    const r = await execa(
-      "ffmpeg",
-      [
-        "-hide_banner",
-        "-loglevel",
-        "error",
-        "-y",
-        "-i",
-        opts.sourcePath,
-        "-frames:v",
-        "1",
-        "-vf",
-        "scale=640:-1",
-        tmpPng,
-      ],
-      { timeout: 120_000, reject: false },
-    )
+    const pngPath =
+      (await renderPdfFirstPage(opts.sourcePath, tmpBase)) ??
+      (await renderWithFfmpeg(opts.sourcePath, `${tmpBase}.png`))
 
-    if (r.exitCode !== 0) {
+    if (!pngPath) {
       return false
     }
 
-    try {
-      await access(tmpPng)
-    } catch {
-      return false
-    }
-
-    const buf = await sharp(tmpPng, { failOn: "none" })
+    const buf = await sharp(pngPath, { failOn: "none" })
       .resize(640, 360, { fit: "inside" })
       .webp({ quality: 82 })
       .toBuffer()
@@ -80,6 +59,60 @@ export async function ensureDocumentThumbnailWritten(opts: {
   } catch {
     return false
   } finally {
-    await unlink(tmpPng).catch(() => {})
+    await cleanupTmp(tmpBase)
   }
+}
+
+/** pdftoppm writes `<prefix>-1.png` / `<prefix>-001.png` depending on version. */
+async function renderPdfFirstPage(sourcePath: string, tmpBase: string) {
+  const r = await execa(
+    "pdftoppm",
+    ["-png", "-f", "1", "-l", "1", "-scale-to", "640", sourcePath, tmpBase],
+    { timeout: 120_000, reject: false },
+  )
+  if (r.exitCode !== 0) return null
+
+  const dir = path.dirname(tmpBase)
+  const prefix = path.basename(tmpBase)
+  const entries = await readdir(dir).catch(() => [] as string[])
+  const produced = entries.find((f) => f.startsWith(`${prefix}-`) && f.endsWith(".png"))
+  return produced ? path.join(dir, produced) : null
+}
+
+async function renderWithFfmpeg(sourcePath: string, tmpPng: string) {
+  const r = await execa(
+    "ffmpeg",
+    [
+      "-hide_banner",
+      "-loglevel",
+      "error",
+      "-y",
+      "-i",
+      sourcePath,
+      "-frames:v",
+      "1",
+      "-vf",
+      "scale=640:-1",
+      tmpPng,
+    ],
+    { timeout: 120_000, reject: false },
+  )
+  if (r.exitCode !== 0) return null
+  try {
+    await access(tmpPng)
+    return tmpPng
+  } catch {
+    return null
+  }
+}
+
+async function cleanupTmp(tmpBase: string) {
+  const dir = path.dirname(tmpBase)
+  const prefix = path.basename(tmpBase)
+  const entries = await readdir(dir).catch(() => [] as string[])
+  await Promise.all(
+    entries
+      .filter((f) => f.startsWith(prefix))
+      .map((f) => unlink(path.join(dir, f)).catch(() => {})),
+  )
 }

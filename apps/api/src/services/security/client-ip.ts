@@ -1,5 +1,8 @@
 import type { FastifyRequest } from "fastify"
 
+/** Set by the Next.js API proxy on loopback hops (see apps/web/lib/server/api-proxy.ts). */
+export const ARCIIN_CLIENT_IP_HEADER = "x-arciin-client-ip"
+
 const IPV4 =
   /^(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)$/
 const IPV6 =
@@ -41,26 +44,31 @@ export function normalizeClientIp(raw: string | null | undefined): string | null
   return null
 }
 
+function isLoopbackPeer(remoteAddress: string | null | undefined): boolean {
+  const peer = normalizeClientIp(remoteAddress)
+  return peer === "127.0.0.1" || peer === "::1"
+}
+
 export function clientIpFromRequest(request: FastifyRequest): string {
-  const forwarded = request.headers["x-forwarded-for"]
-  if (typeof forwarded === "string") {
-    for (const part of forwarded.split(",")) {
-      const normalized = normalizeClientIp(part)
-      if (normalized) return normalized
-    }
-  }
-  if (typeof forwarded === "object" && Array.isArray(forwarded)) {
-    for (const part of forwarded) {
-      const normalized = normalizeClientIp(part)
-      if (normalized) return normalized
-    }
+  const peer = normalizeClientIp(request.socket?.remoteAddress)
+
+  // Next.js proxies /api on loopback and sets this header after resolving the
+  // real browser IP. Only trust it from loopback peers so LAN clients cannot
+  // forge it by hitting :4000 directly.
+  const arciinHeader = request.headers[ARCIIN_CLIENT_IP_HEADER]
+  if (isLoopbackPeer(peer) && typeof arciinHeader === "string") {
+    const fromArciin = normalizeClientIp(arciinHeader)
+    if (fromArciin) return fromArciin
   }
 
+  // request.ip already honors the configured trustProxy setting: Fastify walks
+  // X-Forwarded-For from the socket peer inward and stops at the first
+  // *untrusted* hop, so a client cannot forge an IP past the edge proxy. Do
+  // NOT re-parse the raw header here — that reintroduces the spoofing vector.
   const direct = normalizeClientIp(request.ip)
   if (direct) return direct
 
-  const socket = request.socket?.remoteAddress
-  const fromSocket = normalizeClientIp(socket)
+  const fromSocket = normalizeClientIp(request.socket?.remoteAddress)
   if (fromSocket) return fromSocket
 
   return request.ip?.trim() || "unknown"

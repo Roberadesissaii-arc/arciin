@@ -2,5 +2,12 @@
   "name": "@arciin/api",
   "version": "0.1.0",
   "private": true,
-  "type": "module"
+  "type": "module",
+  "dependencies": {
+    "@arciin/config": "workspace:*",
+    "@arciin/database": "workspace:*",
+    "@arciin/shared": "workspace:*",
+    "@arciin/storage": "workspace:*",
+    "@arciin/types": "workspace:*"
+  }
 }

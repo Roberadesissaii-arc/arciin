@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify"
 
+import { resolveDeviceLabelForIp } from "@/services/security/device-for-ip"
 import { recordSecurityEvent } from "@/services/security/security-events"
 
 export async function logIpPolicyChanges(
@@ -20,42 +21,66 @@ export async function logIpPolicyChanges(
   const ipMeta = actorIp ? { clientIp: actorIp, status: "policy" as const } : { status: "policy" as const }
 
   for (const ip of input.nextBlocklist.filter((x) => !input.prevBlocklist.includes(x))) {
+    const deviceLabel = await resolveDeviceLabelForIp(fastify.prisma, ip)
     await recordSecurityEvent(fastify, {
       userId: actorUserId,
       type: "security.ip_blocklist_added",
       title: "IP blocked",
       message: `${actorName} added ${ip} to the blocklist.`,
-      metadata: { ...ipMeta, clientIp: ip },
+      metadata: {
+        ...ipMeta,
+        clientIp: ip,
+        deviceLabel: deviceLabel ?? undefined,
+        status: "policy",
+      },
     })
   }
 
   for (const ip of input.prevBlocklist.filter((x) => !input.nextBlocklist.includes(x))) {
+    const deviceLabel = await resolveDeviceLabelForIp(fastify.prisma, ip)
     await recordSecurityEvent(fastify, {
       userId: actorUserId,
       type: "security.ip_blocklist_removed",
       title: "IP unblocked",
       message: `${actorName} removed ${ip} from the blocklist.`,
-      metadata: { ...ipMeta, clientIp: ip },
+      metadata: {
+        ...ipMeta,
+        clientIp: ip,
+        deviceLabel: deviceLabel ?? undefined,
+        status: "policy",
+      },
     })
   }
 
   for (const ip of input.nextAllowlist.filter((x) => !input.prevAllowlist.includes(x))) {
+    const deviceLabel = await resolveDeviceLabelForIp(fastify.prisma, ip)
     await recordSecurityEvent(fastify, {
       userId: actorUserId,
       type: "security.ip_allowlist_added",
       title: "IP allowlisted",
       message: `${actorName} added ${ip} to the allowlist.`,
-      metadata: { ...ipMeta, clientIp: ip },
+      metadata: {
+        ...ipMeta,
+        clientIp: ip,
+        deviceLabel: deviceLabel ?? undefined,
+        status: "policy",
+      },
     })
   }
 
   for (const ip of input.prevAllowlist.filter((x) => !input.nextAllowlist.includes(x))) {
+    const deviceLabel = await resolveDeviceLabelForIp(fastify.prisma, ip)
     await recordSecurityEvent(fastify, {
       userId: actorUserId,
       type: "security.ip_allowlist_removed",
       title: "IP removed from allowlist",
       message: `${actorName} removed ${ip} from the allowlist.`,
-      metadata: { ...ipMeta, clientIp: ip },
+      metadata: {
+        ...ipMeta,
+        clientIp: ip,
+        deviceLabel: deviceLabel ?? undefined,
+        status: "policy",
+      },
     })
   }
 

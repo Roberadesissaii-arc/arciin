@@ -85,6 +85,29 @@ done_()   { echo -ne "\r\033[2K"; echo -e "    ${GREEN}✔${RESET}  $1"; }
 warn()    { echo -e "    ${YELLOW}⚠${RESET}  $1"; }
 fail()    { echo -e "    ${RED}✖${RESET}  $1"; exit 1; }
 
+# Background spin() steps cannot show a sudo password prompt — authenticate up front.
+require_sudo_credentials() {
+  if sudo -n true 2>/dev/null; then
+    return 0
+  fi
+  echo ""
+  echo -e "  ${YELLOW}Administrator access required${RESET}"
+  echo -e "  ${DIM}Native install uses sudo for apt, PostgreSQL, firewall, and PM2 boot setup.${RESET}"
+  echo -e "  ${DIM}Steps run in the background, so your password must be cached first.${RESET}"
+  if [[ -t 0 ]]; then
+    echo ""
+    if ! sudo -v; then
+      fail "sudo authentication failed"
+    fi
+    ok "sudo credentials cached"
+  else
+    echo ""
+    echo -e "  ${DIM}Run ${RESET}sudo -v${DIM} in your terminal, then re-run:${RESET}  ./install.sh"
+    echo -e "  ${DIM}Or skip host apt if deps exist:${RESET}  ARCIIN_SKIP_SYSTEM_PACKAGES=1 ./install.sh"
+    fail "sudo credentials required (no TTY for password prompt)"
+  fi
+}
+
 LAST_SPIN_LOG=""
 
 on_err() {
@@ -138,22 +161,60 @@ spin() {
   return $exit_code
 }
 
+report_spin_failure() {
+  local label="$1"
+  echo ""
+  echo -e "    ${RED}Step failed:${RESET} $label"
+  if [[ -n "${LAST_SPIN_LOG:-}" && -f "${LAST_SPIN_LOG:-}" ]]; then
+    echo ""
+    echo -e "    ${YELLOW}Command output:${RESET}"
+    sed 's/^/    /' "$LAST_SPIN_LOG"
+    rm -f "$LAST_SPIN_LOG"
+    LAST_SPIN_LOG=""
+  fi
+  fail "$label failed"
+}
+
 spin_ok() {
   local label="$1" done_msg="$2"; shift 2
   if spin "$label" "$@"; then
     done_ "$done_msg"
   else
-    echo ""
-    echo -e "    ${RED}Step failed:${RESET} $label"
-    if [[ -n "${LAST_SPIN_LOG:-}" && -f "${LAST_SPIN_LOG:-}" ]]; then
-      echo ""
-      echo -e "    ${YELLOW}Command output:${RESET}"
-      sed 's/^/    /' "$LAST_SPIN_LOG"
-      rm -f "$LAST_SPIN_LOG"
-      LAST_SPIN_LOG=""
-    fi
-    fail "$label failed"
+    report_spin_failure "$label"
   fi
+}
+
+wait_for_apt_lock() {
+  local max_wait="${1:-180}" elapsed=0
+  while (( elapsed < max_wait )); do
+    if ! sudo fuser /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock /var/lib/apt/lists/lock >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 1
+    elapsed=$(( elapsed + 1 ))
+  done
+  return 1
+}
+
+apt_get_install() {
+  local max_attempts=5 attempt
+  for (( attempt = 1; attempt <= max_attempts; attempt++ )); do
+    wait_for_apt_lock || return 1
+    if sudo apt-get install -y -qq "$@"; then
+      return 0
+    fi
+    if (( attempt < max_attempts )); then
+      sleep $(( attempt * 2 ))
+    fi
+  done
+  return 1
+}
+
+install_nodejs_nodesource() {
+  local major="$1"
+  curl -fsSL "https://deb.nodesource.com/setup_${major}.x" | sudo bash -
+  wait_for_apt_lock || return 1
+  apt_get_install nodejs
 }
 
 # ── Flags ─────────────────────────────────────────────────────────────────────
@@ -252,7 +313,7 @@ _apply_app_ports_to_env() {
     _set_env_kv "$env_file" "ARCIIN_DATA_DIR" "$ARCIIN_DEFAULT_STORAGE"
   fi
   if ! grep -q '^MAX_UPLOAD_SIZE_MB=' "$env_file" 2>/dev/null; then
-    _set_env_kv "$env_file" "MAX_UPLOAD_SIZE_MB" "10240"
+    _set_env_kv "$env_file" "MAX_UPLOAD_SIZE_MB" "20480"
   fi
   ARCIIN_WEB_PORT="$web_port"
   ARCIIN_API_PORT="$api_port"
@@ -289,8 +350,13 @@ finalize_ports_before_launch() {
 
   if $changed || [[ "$web_port" != "${ARCIIN_WEB_PORT:-}" ]] || [[ "$api_port" != "${ARCIIN_API_PORT:-}" ]]; then
     _apply_app_ports_to_env "$env_file" "$lan_ip" "$web_port" "$api_port"
-    if command -v ufw >/dev/null 2>&1; then
+    # shellcheck source=scripts/lib/open-firewall-ports.sh
+    if [[ -f "${ROOT_DIR}/scripts/lib/open-firewall-ports.sh" ]]; then
+      source "${ROOT_DIR}/scripts/lib/open-firewall-ports.sh"
+      arciin_open_firewall_ports "$web_port" "$api_port" || true
+    elif command -v ufw >/dev/null 2>&1; then
       sudo ufw allow "${web_port}/tcp" comment "Arciin web UI" &>/dev/null || true
+      sudo ufw allow "${api_port}/tcp" comment "Arciin API (LAN scripts)" &>/dev/null || true
     fi
     ok "Ports finalized for launch — web ${web_port}, API ${api_port}"
   fi
@@ -376,14 +442,34 @@ _env_public_url_port() {
   grep '^ARCIIN_PUBLIC_URL=' "$1" 2>/dev/null | sed -n 's|.*:\([0-9][0-9]*\)$|\1|p' | head -1
 }
 
+# Port reserved for ../arciin-app mobile PWA (avoid desktop web stealing it on reinstall).
+_reserved_mobile_pwa_port() {
+  local mobile_env="${ROOT_DIR}/../arciin-app/.env.local"
+  local port
+  port="$(grep -oP '(?<=^ARCIIN_MOBILE_PORT=)\d+' "${ROOT_DIR}/.env" 2>/dev/null | head -1 || true)"
+  if [[ -n "$port" ]]; then
+    echo "$port"
+    return 0
+  fi
+  [[ -f "$mobile_env" ]] || return 1
+  port="$(grep -oP '(?<=^ARCIIN_MOBILE_PORT=)\d+' "$mobile_env" 2>/dev/null | head -1 || true)"
+  if [[ -n "$port" ]]; then
+    echo "$port"
+    return 0
+  fi
+  port="$(_env_public_url_port "$mobile_env")"
+  [[ -n "$port" ]] && echo "$port"
+}
+
 configure_app_ports() {
   local env_file="${ROOT_DIR}/.env"
   [[ -f "$env_file" ]] || return 0
 
-  local web_port api_port lan_ip saved_web_port saved_api
+  local web_port api_port lan_ip saved_web_port saved_api mobile_port
   lan_ip="$(_detect_lan_ip)"
   web_port="$(_find_free_port "$DEFAULT_WEB_PORT" 3099)"
   api_port="$(_find_free_port "$DEFAULT_API_PORT" 4099)"
+  mobile_port="$(_reserved_mobile_pwa_port 2>/dev/null || true)"
 
   saved_web_port="$(_env_public_url_port "$env_file")"
   saved_api="$(grep -oP '(?<=^API_PORT=)\d+' "$env_file" 2>/dev/null || true)"
@@ -392,6 +478,11 @@ configure_app_ports() {
     web_port="$saved_web_port"
   elif [[ -n "$saved_web_port" ]]; then
     warn "Web port $saved_web_port is in use — switching to $web_port"
+  fi
+
+  if [[ -n "$mobile_port" && "$web_port" == "$mobile_port" ]]; then
+    warn "Web port ${web_port} is reserved for Arciin Mobile — finding next free port"
+    web_port="$(_find_free_port "$((mobile_port + 1))" 3099)"
   fi
 
   if [[ -n "$saved_api" ]] && _port_available "$saved_api"; then
@@ -404,7 +495,11 @@ configure_app_ports() {
 
   ok "Web UI (LAN)   → http://${lan_ip}:${web_port}"
   ok "Web UI (local) → http://localhost:${web_port}"
-  ok "API (internal) → http://127.0.0.1:${api_port}"
+  ok "API (LAN)      → http://${lan_ip}:${api_port}"
+  ok "API (local)    → http://127.0.0.1:${api_port}"
+  if [[ -n "$mobile_port" ]]; then
+    ok "Mobile PWA       → port ${mobile_port} (../arciin-app)"
+  fi
 }
 
 ensure_production_secrets() {
@@ -427,6 +522,16 @@ ensure_production_secrets() {
     ok "ARCIIN_SETUP_TOKEN secured (random)"
   fi
 
+  # Dedicated key for encrypting the credential vault / webhooks / integrations
+  # at rest, independent of SESSION_SECRET. Only minted on a FRESH install — on
+  # an existing instance the code falls back to the SESSION_SECRET-derived key,
+  # so we must not introduce a new key that can't decrypt existing data.
+  if [[ "${ARCIIN_FRESH_INSTALL:-0}" == "1" ]] \
+    && ! grep -q '^ARCIIN_ENCRYPTION_KEY=[0-9a-fA-F]\{64\}$' "$env_file" 2>/dev/null; then
+    _set_env_kv "$env_file" "ARCIIN_ENCRYPTION_KEY" "$(openssl rand -hex 32 2>/dev/null || _gen_secret)"
+    ok "ARCIIN_ENCRYPTION_KEY secured (random)"
+  fi
+
   chmod 600 "$env_file" 2>/dev/null && ok ".env readable only by you (chmod 600)" || true
 }
 
@@ -434,15 +539,11 @@ configure_firewall() {
   local env_file="${ROOT_DIR}/.env"
   local web_port="${ARCIIN_WEB_PORT:-$(_env_public_url_port "$env_file")}"
   web_port="${web_port:-${DEFAULT_WEB_PORT}}"
+  local api_port="${ARCIIN_API_PORT:-$(grep -oP '(?<=^API_PORT=)\d+' "$env_file" 2>/dev/null || echo "${DEFAULT_API_PORT}")}"
+  api_port="${api_port:-${DEFAULT_API_PORT}}"
 
-  if ! command -v ufw >/dev/null 2>&1; then
-    if sudo apt-get install -y -qq ufw &>/dev/null; then
-      ok "ufw installed"
-    else
-      warn "ufw not available — open TCP port ${web_port} manually on your firewall"
-      return 0
-    fi
-  fi
+  # shellcheck source=scripts/lib/open-firewall-ports.sh
+  source "${ROOT_DIR}/scripts/lib/open-firewall-ports.sh"
 
   while ! _port_available "$web_port"; do
     warn "Port ${web_port} is in use — trying next port"
@@ -451,19 +552,20 @@ configure_firewall() {
   done
 
   if [[ "$web_port" != "${ARCIIN_WEB_PORT}" ]]; then
-    _apply_app_ports_to_env "$env_file" "$(_detect_lan_ip)" "$web_port" "${ARCIIN_API_PORT:-${DEFAULT_API_PORT}}"
+    _apply_app_ports_to_env "$env_file" "$(_detect_lan_ip)" "$web_port" "$api_port"
     warn "Updated web port to ${web_port} in .env"
   fi
 
-  spin_ok "Allowing Arciin web port ${web_port}/tcp in UFW..." \
-    "Firewall allows port ${web_port}/tcp" \
-    sudo ufw allow "${web_port}/tcp" comment "Arciin web UI"
-
-  ok "API (port ${ARCIIN_API_PORT}) binds to 127.0.0.1 — not opened in UFW"
+  # Collect ports: web + API + Docker HTTP + optional mobile + account/license platform ports
+  local -a ports=()
+  mapfile -t ports < <(arciin_collect_standard_ports "$env_file")
+  ports+=("$web_port" "$api_port")
 
   echo ""
-  echo -e "    ${DIM}── sudo ufw status ──${RESET}"
-  sudo ufw status 2>/dev/null | sed 's/^/    /' || warn "Could not read ufw status"
+  echo -e "  ${BOLD}Firewall${RESET} ${DIM}(so browsers on your LAN can reach Arciin)${RESET}"
+  arciin_open_firewall_ports "${ports[@]}"
+  ok "Firewall rules applied for web ${web_port}, API ${api_port}, and platform ports if enabled"
+  echo -e "    ${DIM}Skip with ARCIIN_SKIP_FIREWALL=1 · platform ports 3010/4100 with ARCIIN_OPEN_PLATFORM_PORTS=0 to disable${RESET}"
 }
 
 stop_dev_servers() {
@@ -484,7 +586,7 @@ stop_existing_arciin() {
     pm2 delete arciin-web arciin-api arciin-worker &>/dev/null || true
     sleep 1
   fi
-  rm -f "${ROOT_DIR}/.next/dev/lock" 2>/dev/null || true
+  rm -f "${ROOT_DIR}/apps/web/.next/dev/lock" 2>/dev/null || true
 }
 
 wait_for_api_health() {
@@ -596,8 +698,13 @@ ensure_env_file() {
       fail ".env.example not found — cannot create .env"
     fi
     cp "${ROOT_DIR}/.env.example" "${ROOT_DIR}/.env"
+    # Fresh install: no encrypted data exists yet, so it is safe to mint a
+    # dedicated ARCIIN_ENCRYPTION_KEY. On re-runs of an existing install we
+    # leave it alone to avoid orphaning already-encrypted vault/integration data.
+    ARCIIN_FRESH_INSTALL=1
     ok "Created .env from .env.example"
   else
+    ARCIIN_FRESH_INSTALL=0
     ok ".env already exists"
   fi
 }
@@ -721,6 +828,8 @@ if [[ -t 0 ]] && [[ "${ARCIIN_SKIP_INSTALL_CHOICE:-0}" != "1" ]] && [[ "${ARCIIN
   ARCIIN_INSTALL_MODE=native
 fi
 
+require_sudo_credentials
+
 # ── 1. System packages ────────────────────────────────────────────────────────
 step "System packages"
 
@@ -730,7 +839,7 @@ _apt_install_system_deps() {
   if sudo apt-get install -y -qq \
     ca-certificates curl git gnupg build-essential unzip python3 openssl \
     libssl-dev pkg-config libatomic1 lsof \
-    ffmpeg redis-server postgresql postgresql-contrib >"$log" 2>&1; then
+    ffmpeg poppler-utils redis-server postgresql postgresql-contrib >"$log" 2>&1; then
     rm -f "$log"
     return 0
   fi
@@ -753,6 +862,40 @@ _apt_install_system_deps() {
   fail "System package installation failed"
 }
 
+# yt-dlp + gallery-dl power the URL-import feature (videos, social, galleries).
+# apt versions lag badly, so install the official standalone binaries. Both are
+# self-contained and use the system python3 (installed above). Non-fatal: import
+# is a feature, not a core requirement.
+install_media_import_tools() {
+  local bindir="/usr/local/bin"
+
+  if command -v yt-dlp >/dev/null 2>&1; then
+    ok "yt-dlp $(yt-dlp --version 2>/dev/null | head -1) already installed"
+  else
+    if sudo curl -fsSL "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp" -o "${bindir}/yt-dlp" 2>/dev/null \
+      && sudo chmod a+rx "${bindir}/yt-dlp" 2>/dev/null \
+      && "${bindir}/yt-dlp" --version >/dev/null 2>&1; then
+      ok "yt-dlp installed (video/social link imports)"
+    else
+      sudo rm -f "${bindir}/yt-dlp" 2>/dev/null || true
+      warn "yt-dlp not installed — importing videos from links won't work until you install it"
+    fi
+  fi
+
+  if command -v gallery-dl >/dev/null 2>&1; then
+    ok "gallery-dl already installed"
+  else
+    if sudo curl -fsSL "https://github.com/mikf/gallery-dl/releases/latest/download/gallery-dl.bin" -o "${bindir}/gallery-dl" 2>/dev/null \
+      && sudo chmod a+rx "${bindir}/gallery-dl" 2>/dev/null \
+      && "${bindir}/gallery-dl" --version >/dev/null 2>&1; then
+      ok "gallery-dl installed (image gallery imports)"
+    else
+      sudo rm -f "${bindir}/gallery-dl" 2>/dev/null || true
+      warn "gallery-dl not installed — importing from image galleries won't work until you install it"
+    fi
+  fi
+}
+
 if [[ "${ARCIIN_SKIP_SYSTEM_PACKAGES:-0}" == "1" ]]; then
   ok "Skipping system packages (ARCIIN_SKIP_SYSTEM_PACKAGES=1)"
 else
@@ -764,10 +907,12 @@ else
     ok "Skipping apt upgrade (set ARCIIN_UPGRADE_SYSTEM=1 to enable)"
   fi
 
-  doing "Installing dependencies (curl, git, ffmpeg, PostgreSQL, Redis)..."
+  doing "Installing dependencies (curl, git, ffmpeg, poppler, PostgreSQL, Redis)..."
   if _apt_install_system_deps; then
-    done_ "curl, git, ffmpeg, lsof, PostgreSQL, Redis ready"
+    done_ "curl, git, ffmpeg, poppler-utils, lsof, PostgreSQL, Redis ready"
   fi
+
+  install_media_import_tools
 
   if command -v cloudflared >/dev/null 2>&1; then
     ok "cloudflared $(cloudflared --version 2>/dev/null | head -1 || true)"
@@ -789,21 +934,33 @@ if command -v node >/dev/null 2>&1; then
   if [[ "${NODE_MAJOR}" -ge "${DEFAULT_NODE_MAJOR}" ]]; then
     ok "Node.js $(node -v) already installed"
   else
-    spin_ok "Upgrading Node.js to ${DEFAULT_NODE_MAJOR}..." "Node.js $(node -v) ready" \
-      bash -c "curl -fsSL https://deb.nodesource.com/setup_${DEFAULT_NODE_MAJOR}.x | sudo -E bash - && sudo apt-get install -y -qq nodejs"
+    _node_label="Upgrading Node.js to ${DEFAULT_NODE_MAJOR}..."
+    if spin "$_node_label" install_nodejs_nodesource "${DEFAULT_NODE_MAJOR}"; then
+      done_ "Node.js $(node -v) ready"
+    else
+      report_spin_failure "$_node_label"
+    fi
   fi
 else
-  spin_ok "Installing Node.js ${DEFAULT_NODE_MAJOR}..." "Node.js $(node -v) installed" \
-    bash -c "curl -fsSL https://deb.nodesource.com/setup_${DEFAULT_NODE_MAJOR}.x | sudo -E bash - && sudo apt-get install -y -qq nodejs"
+  _node_label="Installing Node.js ${DEFAULT_NODE_MAJOR}..."
+  if spin "$_node_label" install_nodejs_nodesource "${DEFAULT_NODE_MAJOR}"; then
+    done_ "Node.js $(node -v) installed"
+  else
+    report_spin_failure "$_node_label"
+  fi
 fi
 
 # ── 3. pnpm ───────────────────────────────────────────────────────────────────
 step "pnpm"
 
-spin_ok "Updating Corepack..." "Corepack ready" sudo npm install --global corepack@latest --silent
-corepack enable pnpm
-spin_ok "Activating pnpm ${DEFAULT_PNPM_VERSION}..." "pnpm $(pnpm --version) ready" \
-  corepack prepare "pnpm@${DEFAULT_PNPM_VERSION}" --activate
+if command -v pnpm >/dev/null 2>&1 && [[ "$(pnpm --version 2>/dev/null)" == "${DEFAULT_PNPM_VERSION}" ]]; then
+  ok "pnpm ${DEFAULT_PNPM_VERSION} already active"
+else
+  spin_ok "Updating Corepack..." "Corepack ready" sudo npm install --global corepack@latest --silent
+  corepack enable pnpm
+  spin_ok "Activating pnpm ${DEFAULT_PNPM_VERSION}..." "pnpm $(pnpm --version) ready" \
+    corepack prepare "pnpm@${DEFAULT_PNPM_VERSION}" --activate
+fi
 
 # ── 4. Environment ────────────────────────────────────────────────────────────
 step "Environment"
@@ -912,7 +1069,8 @@ echo -e "  ${BOLD}${WHITE}Services & ports${RESET}"
 echo ""
 echo -e "    ${DIM}Web UI (LAN)${RESET}   ${BOLD}${WHITE}${PUBLIC_URL}${RESET}  ${DIM}(port ${WEB_PORT}, 0.0.0.0)${RESET}"
 echo -e "    ${DIM}Web UI (local)${RESET} ${BOLD}${WHITE}${LOCAL_URL}${RESET}"
-echo -e "    ${DIM}API (internal)${RESET} ${BOLD}${WHITE}${API_URL}${RESET}  ${DIM}(port ${API_PORT})${RESET}"
+echo -e "    ${DIM}API (LAN)${RESET}      ${BOLD}${WHITE}http://${LAN_IP}:${API_PORT}${RESET}  ${DIM}(port ${API_PORT}, 0.0.0.0)${RESET}"
+echo -e "    ${DIM}API (local)${RESET}    ${BOLD}${WHITE}${API_URL}${RESET}"
 echo -e "    ${DIM}PostgreSQL${RESET}   localhost:${PG_PORT}"
 echo -e "    ${DIM}Redis${RESET}        localhost:6379"
 echo ""
@@ -933,17 +1091,18 @@ echo -e "    ${DIM}bash stop.sh${RESET}                Stop Arciin"
 echo -e "    ${DIM}bash start.sh${RESET}               Start Arciin"
 echo ""
 echo -e "  ${BOLD}${WHITE}LAN access${RESET}"
-echo -e "    Use ${BOLD}http://${LAN_IP}:${WEB_PORT}${RESET} from other devices on your network."
-echo -e "    UFW was configured to allow TCP ${WEB_PORT} during install (see step 10)."
+echo -e "    Web UI:  ${BOLD}http://${LAN_IP}:${WEB_PORT}${RESET}"
+echo -e "    API:     ${BOLD}http://${LAN_IP}:${API_PORT}${RESET}  ${DIM}(Python scripts, Socket.IO)${RESET}"
+echo -e "    UFW allows TCP ${WEB_PORT}, ${API_PORT}, and mobile (if installed) during install."
 echo ""
 echo -e "  ${BOLD}${WHITE}Security${RESET}"
-echo -e "    ${DIM}.env${RESET} is mode 600; API is loopback-only; review ${DIM}LICENSE${RESET} for terms."
+echo -e "    ${DIM}.env${RESET} is mode 600; restrict LAN access with UFW if needed; review ${DIM}LICENSE${RESET} for terms."
 echo ""
 echo -e "  ${BOLD}${WHITE}Important${RESET}"
 echo -e "    Do ${BOLD}not${RESET} run ${DIM}pnpm dev${RESET} on this server — use PM2 only (${DIM}bash start.sh${RESET})."
 echo -e "    Port conflicts: ${DIM}bash scripts/port-status.sh${RESET}"
 echo -e "    After upgrades: ${DIM}bash install.sh${RESET} or ${DIM}pnpm exec prisma migrate deploy${RESET} applies DB changes."
-echo -e "    Large uploads need ${DIM}MAX_UPLOAD_SIZE_MB${RESET} in .env (default 10240) and ${DIM}pm2 restart arciin-web${RESET} after changes."
+echo -e "    Large uploads need ${DIM}MAX_UPLOAD_SIZE_MB${RESET} in .env (default 20480) and ${DIM}pm2 restart arciin-web${RESET} after changes."
 echo -e "    Profile photos: ${DIM}\${ARCIIN_DATA_DIR}/avatars${RESET} — created during init."
 echo ""
 echo -e "  ${BOLD}${WHITE}Options${RESET}"
@@ -954,3 +1113,39 @@ echo -e "    ${DIM}ARCIIN_UPGRADE_SYSTEM=0 ./install.sh${RESET}   Skip apt upgra
 echo -e "    ${DIM}./install.sh --docker${RESET}                  Docker (avoid host apt stack)"
 echo -e "    ${DIM}ARCIIN_SKIP_SYSTEM_PACKAGES=1 ./install.sh${RESET}  Skip apt deps (native only)"
 echo ""
+
+maybe_offer_mobile_install() {
+  if [[ ! -t 0 ]]; then
+    return 0
+  fi
+
+  local mobile_dir="${ROOT_DIR}/../arciin-app"
+  if [[ -f "${mobile_dir}/install.sh" ]] && command -v pm2 >/dev/null 2>&1 \
+    && pm2 describe arciin-mobile 2>/dev/null | grep -q "online"; then
+    ok "Arciin Mobile is already running (../arciin-app)"
+    return 0
+  fi
+
+  echo ""
+  echo -e "  ${BOLD}${WHITE}Install Arciin Mobile (phone PWA)?${RESET}"
+  echo -e "  ${DIM}Companion app for uploads and browsing on your phone — same API, no extra database.${RESET}"
+  echo ""
+  echo -e "    ${BOLD}Yes${RESET}  Clone ${DIM}arciin-app${RESET} next to this repo and run its installer"
+  echo -e "    ${BOLD}No${RESET}   Skip for now — install later in the web UI under Integrations"
+  echo ""
+  read -r -p "  Install mobile app now? [y/N]: " _mobile_yes
+  _mobile_yes="${_mobile_yes:-N}"
+
+  if [[ "${_mobile_yes,,}" == "y" || "${_mobile_yes,,}" == "yes" ]]; then
+    echo ""
+    bash "${ROOT_DIR}/scripts/install-mobile-pwa.sh"
+  else
+    echo ""
+    echo -e "  ${DIM}Skipped mobile install.${RESET} Install anytime from ${BOLD}Integrations → Arciin Mobile${RESET} in the web UI,"
+    echo -e "  ${DIM}or run:${RESET}"
+    echo -e "       ${DIM}cd ${ROOT_DIR}/../arciin-app && ./install.sh${RESET}"
+    echo -e "  ${DIM}Clone:${RESET} ${DIM}https://github.com/Roberadesissaii-arc/arciin-app.git${RESET}"
+  fi
+}
+
+maybe_offer_mobile_install

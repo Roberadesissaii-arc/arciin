@@ -8,16 +8,19 @@ const eslintConfig = defineConfig([
   // Override default ignores of eslint-config-next.
   globalIgnores([
     // Default ignores of eslint-config-next:
-    ".next/**",
+    "apps/web/.next/**",
     "out/**",
     "build/**",
-    "next-env.d.ts",
+    "apps/web/next-env.d.ts",
     // Reference-only snapshot; not part of the Arciin app package graph.
     "Arceclaw/**",
     // PM2 production config (CommonJS require).
     "ecosystem.config.cjs",
-    "public/pdfjs-wasm/**",
+    "apps/web/public/pdfjs-wasm/**",
   ]),
+  {
+    files: ["apps/web/**/*.{js,jsx,ts,tsx,mjs}"],
+  },
 ]);
 
 export default eslintConfig;

@@ -3,7 +3,8 @@ import path from "node:path"
 
 import type { Asset, Folder, Integration, Library, PrismaClient, StorageObject } from "@prisma/client"
 
-import { MEDIA_LIBRARY_SLUGS, mirrorFilenameForDisk } from "@arciin/shared"
+import { MEDIA_LIBRARY_SLUGS } from "@arciin/shared"
+import { mirrorFilenameForDisk } from "@arciin/storage"
 
 import { slugify } from "@/services/slug"
 import { resolveEffectiveStorageRoot } from "@/services/storage/effective-storage-root"

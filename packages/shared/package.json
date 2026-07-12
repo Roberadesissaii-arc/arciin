@@ -5,5 +5,10 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@arciin/config": "workspace:*",
+    "@arciin/types": "workspace:*",
+    "@arciin/ui": "workspace:*"
   }
 }

@@ -1,0 +1,180 @@
+# Arciin — private distribution (image-based)
+#
+# Customer install uses pre-built images only — no monorepo, no source bind mounts.
+# Local prototype: build images first with `pnpm docker:build` (or scripts/docker-build-images.sh),
+# then: docker compose -f docker-compose.production.yml --env-file .env up -d
+#
+# Image tags (override via .env):
+#   ARCIIN_IMAGE_WEB / ARCIIN_IMAGE_API / ARCIIN_IMAGE_WORKER
+#
+# Registry note: images are NOT published publicly yet. Load local tags or a private registry.
+
+name: arciin
+
+services:
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    depends_on:
+      web:
+        condition: service_started
+      api:
+        condition: service_healthy
+    ports:
+      - "${ARCIIN_HTTP_PORT:-80}:80"
+    volumes:
+      - ./docker/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+    security_opt:
+      - "no-new-privileges:true"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:80/"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  web:
+    image: ${ARCIIN_IMAGE_WEB:-arciin/arciin-web:latest}
+    restart: unless-stopped
+    # No env_file: public web tier must not hold back-end secrets.
+    environment:
+      NODE_ENV: production
+      ARCIIN_PUBLIC_URL: ${ARCIIN_PUBLIC_URL:-http://localhost}
+      ARCIIN_API_URL: ${ARCIIN_API_URL:-http://api:4000}
+      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-/api}
+      # Empty: browser uses same origin (Caddy → /socket.io → api)
+      NEXT_PUBLIC_SOCKET_URL: ${NEXT_PUBLIC_SOCKET_URL:-}
+      NEXT_PUBLIC_ARCIIN_PUBLIC_URL: ${NEXT_PUBLIC_ARCIIN_PUBLIC_URL:-}
+    depends_on:
+      api:
+        condition: service_started
+    security_opt:
+      - "no-new-privileges:true"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+      start_period: 40s
+
+  api:
+    image: ${ARCIIN_IMAGE_API:-arciin/arciin-api:latest}
+    restart: unless-stopped
+    env_file:
+      - .env
+    user: "${ARCIIN_PUID:-1000}:${ARCIIN_PGID:-1000}"
+    security_opt:
+      - "no-new-privileges:true"
+    cap_drop:
+      - ALL
+    environment:
+      NODE_ENV: production
+      API_PORT: 4000
+      DATABASE_URL: postgresql://arciin:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/arciin
+      REDIS_URL: redis://:${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}@redis:6379
+      ARCIIN_DATA_DIR: ${ARCIIN_DATA_DIR:-/data/arciin}
+      ARCIIN_HOST_DATA_DIR: ${ARCIIN_HOST_DATA_DIR:-/srv/arciin-storage/arciin}
+      ARCIIN_PUBLIC_URL: ${ARCIIN_PUBLIC_URL:-http://localhost}
+      ARCIIN_API_URL: ${ARCIIN_API_URL:-http://api:4000}
+      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-/api}
+      NEXT_PUBLIC_SOCKET_URL: ${NEXT_PUBLIC_SOCKET_URL:-}
+      ARCIIN_TUNNEL_TARGET: ${ARCIIN_TUNNEL_TARGET:-http://caddy:80}
+      ARCIIN_TRUST_PROXY: ${ARCIIN_TRUST_PROXY:-172.16.0.0/12, 10.0.0.0/8, 192.168.0.0/16, 127.0.0.1/8, ::1/128}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:4000/api/health').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 90s
+    volumes:
+      - ${ARCIIN_HOST_DATA_DIR:-/srv/arciin-storage/arciin}:/data/arciin
+
+  worker:
+    image: ${ARCIIN_IMAGE_WORKER:-arciin/arciin-worker:latest}
+    restart: unless-stopped
+    env_file:
+      - .env
+    user: "${ARCIIN_PUID:-1000}:${ARCIIN_PGID:-1000}"
+    security_opt:
+      - "no-new-privileges:true"
+    cap_drop:
+      - ALL
+    mem_limit: 1500m
+    cpus: "1.5"
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://arciin:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/arciin
+      REDIS_URL: redis://:${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}@redis:6379
+      ARCIIN_DATA_DIR: ${ARCIIN_DATA_DIR:-/data/arciin}
+      ARCIIN_HOST_DATA_DIR: ${ARCIIN_HOST_DATA_DIR:-/srv/arciin-storage/arciin}
+      ARCIIN_WORKER_CONCURRENCY: ${ARCIIN_WORKER_CONCURRENCY:-2}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_started
+    volumes:
+      - ${ARCIIN_HOST_DATA_DIR:-/srv/arciin-storage/arciin}:/data/arciin
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: arciin
+      POSTGRES_USER: arciin
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    security_opt:
+      - "no-new-privileges:true"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U arciin -d arciin"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}
+    command:
+      [
+        "redis-server",
+        "--appendonly",
+        "yes",
+        "--requirepass",
+        "${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}",
+      ]
+    volumes:
+      - redis_data:/data
+    security_opt:
+      - "no-new-privileges:true"
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+
+volumes:
+  postgres_data:
+  redis_data:

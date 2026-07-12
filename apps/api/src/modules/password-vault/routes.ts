@@ -4,6 +4,7 @@ import { z } from "zod"
 import { isVaultImportEntry, parsePasswordImportFile } from "@arciin/shared"
 
 import {
+  requireFeature,
   requireRole,
   verifyPassword,
 } from "@/services/security/auth"
@@ -154,7 +155,7 @@ function redactSecrets<T extends { password: string | null }>(
 export async function registerPasswordVaultRoutes(fastify: FastifyInstance) {
   fastify.get(
     "/settings/password-vault",
-    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    { preHandler: [requireRole(["OWNER", "ADMIN"]), requireFeature("vault.password")] },
     async (request, reply) => {
       const userId = request.auth!.user.id
       const [rows, instance] = await Promise.all([
@@ -187,7 +188,7 @@ export async function registerPasswordVaultRoutes(fastify: FastifyInstance) {
 
   fastify.post(
     "/settings/password-vault/unlock",
-    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    { preHandler: [requireRole(["OWNER", "ADMIN"]), requireFeature("vault.password")] },
     async (request, reply) => {
       const parsed = unlockSchema.safeParse(request.body)
       if (!parsed.success) {
@@ -232,7 +233,7 @@ export async function registerPasswordVaultRoutes(fastify: FastifyInstance) {
 
   fastify.post(
     "/settings/password-vault/verify",
-    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    { preHandler: [requireRole(["OWNER", "ADMIN"]), requireFeature("vault.password")] },
     async (request, reply) => {
       const parsed = unlockSchema.safeParse(request.body)
       if (!parsed.success) {
@@ -268,7 +269,7 @@ export async function registerPasswordVaultRoutes(fastify: FastifyInstance) {
 
   fastify.post(
     "/settings/password-vault/:id/reveal",
-    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    { preHandler: [requireRole(["OWNER", "ADMIN"]), requireFeature("vault.password")] },
     async (request, reply) => {
       const { id } = request.params as { id: string }
       const parsed = unlockSchema.safeParse(request.body)
@@ -313,7 +314,7 @@ export async function registerPasswordVaultRoutes(fastify: FastifyInstance) {
 
   fastify.post(
     "/settings/password-vault/pin",
-    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    { preHandler: [requireRole(["OWNER", "ADMIN"]), requireFeature("vault.password")] },
     async (request, reply) => {
       const parsed = setPinSchema.safeParse(request.body)
       if (!parsed.success) {
@@ -357,7 +358,7 @@ export async function registerPasswordVaultRoutes(fastify: FastifyInstance) {
 
   fastify.delete(
     "/settings/password-vault/pin",
-    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    { preHandler: [requireRole(["OWNER", "ADMIN"]), requireFeature("vault.password")] },
     async (request, reply) => {
       const parsed = removePinSchema.safeParse(request.body)
       if (!parsed.success) {
@@ -394,7 +395,7 @@ export async function registerPasswordVaultRoutes(fastify: FastifyInstance) {
 
   fastify.post(
     "/settings/password-vault/lock",
-    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    { preHandler: [requireRole(["OWNER", "ADMIN"]), requireFeature("vault.password")] },
     async (request, reply) => {
       clearVaultUnlockCookie(reply)
       const sessionId = request.auth?.session?.id
@@ -408,7 +409,7 @@ export async function registerPasswordVaultRoutes(fastify: FastifyInstance) {
     },
   )
 
-  const vaultDisplayAuth = { preHandler: requireRole(["OWNER", "ADMIN"]) }
+  const vaultDisplayAuth = { preHandler: [requireRole(["OWNER", "ADMIN"]), requireFeature("vault.password")] }
 
   async function handlePasswordVaultDisplayPatch(request: FastifyRequest, reply: FastifyReply) {
     const parsed = displayPatchSchema.safeParse(request.body)
@@ -473,7 +474,7 @@ export async function registerPasswordVaultRoutes(fastify: FastifyInstance) {
 
   fastify.get(
     "/settings/password-vault/ai-snapshot",
-    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    { preHandler: [requireRole(["OWNER", "ADMIN"]), requireFeature("vault.password")] },
     async (_request, reply) => {
       reply.send({ data: await getPasswordVaultAiSnapshot(fastify.prisma) })
     },
@@ -481,7 +482,7 @@ export async function registerPasswordVaultRoutes(fastify: FastifyInstance) {
 
   fastify.post(
     "/settings/password-vault/import",
-    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    { preHandler: [requireRole(["OWNER", "ADMIN"]), requireFeature("vault.password")] },
     async (request, reply) => {
       const parsed = importSchema.safeParse(request.body)
       if (!parsed.success) {
@@ -542,7 +543,7 @@ export async function registerPasswordVaultRoutes(fastify: FastifyInstance) {
 
   fastify.delete(
     "/settings/password-vault",
-    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    { preHandler: [requireRole(["OWNER", "ADMIN"]), requireFeature("vault.password")] },
     async (_request, reply) => {
       const result = await fastify.prisma.passwordVaultEntry.deleteMany()
       reply.send({ data: { deleted: result.count } })
@@ -551,7 +552,7 @@ export async function registerPasswordVaultRoutes(fastify: FastifyInstance) {
 
   fastify.patch(
     "/settings/password-vault/:id",
-    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    { preHandler: [requireRole(["OWNER", "ADMIN"]), requireFeature("vault.password")] },
     async (request, reply) => {
       const { id } = request.params as { id: string }
       const parsed = updateEntrySchema.safeParse(request.body)
@@ -599,7 +600,7 @@ export async function registerPasswordVaultRoutes(fastify: FastifyInstance) {
 
   fastify.delete(
     "/settings/password-vault/:id",
-    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    { preHandler: [requireRole(["OWNER", "ADMIN"]), requireFeature("vault.password")] },
     async (request, reply) => {
       const { id } = request.params as { id: string }
       await fastify.prisma.passwordVaultEntry.delete({ where: { id } })

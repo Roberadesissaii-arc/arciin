@@ -5,5 +5,9 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@arciin/storage": "workspace:*",
+    "@prisma/client": "^6.19.3"
   }
 }

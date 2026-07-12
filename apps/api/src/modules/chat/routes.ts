@@ -22,6 +22,11 @@ import { z } from "zod"
 
 import { assertOllamaCloudApiKey } from "@/services/chat/ollama-http"
 import { executeArciinChatTool } from "@/services/chat/arciin-chat-tools"
+import {
+  DEFAULT_GEMINI_TTS_VOICE,
+  synthesizeGeminiTts,
+} from "@/services/chat/gemini-tts"
+import { resolveGeminiTtsConfig } from "@/services/chat/resolve-gemini-tts-key"
 import { streamOllamaWithArciinTools } from "@/services/chat/ollama-chat-with-tools"
 import { flushSseResponse, writeSseEvent } from "@/services/chat/sse-stream"
 import { buildFocusAssetSystemAppend } from "@/services/chat/focus-asset-context"
@@ -36,14 +41,14 @@ import {
   visionSearchLibraryImages,
   visionSuggestAssetRename,
 } from "@/services/chat/vision-library"
-import { requireRole } from "@/services/security/auth"
+import { requireFeature, requireRole } from "@/services/security/auth"
 
 import { corsHeadersForRequestOrigin } from "@/plugins/cors-origins"
 
 const messageSchema = z.object({
   role:    z.enum(["user", "assistant", "system"]),
   content: z.string(),
-  /** Base64-encoded image bytes (Ollama vision). Only the latest user message should include these. */
+  /** Base64-encoded image bytes (vision). Only the latest user message should include these. */
   images: z.array(z.string().min(1)).max(4).optional(),
 })
 
@@ -77,6 +82,54 @@ function messagesForOllama(messages: ChatMessageIn[]): Array<{ role: string; con
     })
 }
 
+type OpenAICompatContentPart =
+  | { type: "text"; text: string }
+  | { type: "image_url"; image_url: { url: string } }
+
+type OpenAICompatMessage = {
+  role: string
+  content: string | OpenAICompatContentPart[]
+}
+
+function mimeFromBase64(b64: string): string {
+  try {
+    const bytes = Buffer.from(b64.slice(0, 32), "base64")
+    if (bytes[0] === 0x89 && bytes[1] === 0x50) return "image/png"
+    if (bytes[0] === 0xff && bytes[1] === 0xd8) return "image/jpeg"
+    if (bytes[0] === 0x47 && bytes[1] === 0x49) return "image/gif"
+    if (bytes[0] === 0x52 && bytes[1] === 0x49) return "image/webp"
+  } catch {
+    /* ignore */
+  }
+  return "image/jpeg"
+}
+
+/** OpenAI-compatible multimodal messages (Gemini, GPT-4o, etc.). */
+function messagesForOpenAICompat(messages: ChatMessageIn[]): OpenAICompatMessage[] {
+  return messages
+    .filter((m) => m.role !== "assistant" || m.content.trim().length > 0)
+    .map((m) => {
+      if (m.role === "system") return { role: m.role, content: m.content }
+      if (m.images?.length) {
+        const parts: OpenAICompatContentPart[] = []
+        if (m.content.trim()) parts.push({ type: "text", text: m.content })
+        for (const b64 of m.images) {
+          const mime = mimeFromBase64(b64)
+          parts.push({
+            type: "image_url",
+            image_url: { url: `data:${mime};base64,${b64}` },
+          })
+        }
+        return { role: m.role, content: parts }
+      }
+      return { role: m.role, content: m.content }
+    })
+}
+
+function openAICompatUsesVision(messages: ChatMessageIn[]): boolean {
+  return messages.some((m) => (m.images?.length ?? 0) > 0)
+}
+
 const OLLAMA_PROVIDERS = new Set(["ollama", "ollama-local", "ollama-cloud"])
 
 function sanitizeMessagesForProvider<T extends { role: string; content: string }>(
@@ -87,6 +140,25 @@ function sanitizeMessagesForProvider<T extends { role: string; content: string }
     ...m,
     content: sanitizeOutboundChatText(m.content, security, m.role),
   }))
+}
+
+function sanitizeOpenAICompatMessages(
+  messages: OpenAICompatMessage[],
+  security: ReturnType<typeof parseAiSecurityConfig>,
+): OpenAICompatMessage[] {
+  return messages.map((m) => {
+    if (typeof m.content === "string") {
+      return { ...m, content: sanitizeOutboundChatText(m.content, security, m.role) }
+    }
+    return {
+      ...m,
+      content: m.content.map((part) =>
+        part.type === "text"
+          ? { ...part, text: sanitizeOutboundChatText(part.text, security, m.role) }
+          : part,
+      ),
+    }
+  })
 }
 
 function appendSystemInstructions<T extends { role: string; content: string }>(
@@ -101,6 +173,24 @@ function appendSystemInstructions<T extends { role: string; content: string }>(
     out[sysIdx] = { ...out[sysIdx]!, content: out[sysIdx]!.content + append }
   } else {
     out.unshift({ role: "system", content: trimmed } as T)
+  }
+  return out
+}
+
+function appendSystemInstructionsOpenAI(
+  messages: OpenAICompatMessage[],
+  append: string,
+): OpenAICompatMessage[] {
+  const trimmed = append.trim()
+  if (!trimmed) return messages
+  const out = [...messages]
+  const sysIdx = out.findIndex((m) => m.role === "system")
+  if (sysIdx >= 0) {
+    const sys = out[sysIdx]!
+    const base = typeof sys.content === "string" ? sys.content : ""
+    out[sysIdx] = { ...sys, content: base + append }
+  } else {
+    out.unshift({ role: "system", content: trimmed })
   }
   return out
 }
@@ -142,10 +232,16 @@ const saveMessagesSchema = z.object({
 })
 
 export async function registerChatRoutes(fastify: FastifyInstance) {
+  /** Full AI chat / file analysis — Pro+. Free keeps core.files only. */
+  const requireAiChat = [
+    requireRole(["OWNER", "ADMIN", "MEMBER"]),
+    requireFeature("ai.chat"),
+  ]
+
   // ── Instance context for AI ─────────────────────────────────────────────────
   fastify.get(
     "/chat/context",
-    { preHandler: requireRole(["OWNER", "ADMIN", "MEMBER"]) },
+    { preHandler: requireAiChat },
     async (_request, reply) => {
       const [libraries, assetCounts, storageAgg, recentUpload, appDbRows, codeAssetRows] =
         await Promise.all([
@@ -195,6 +291,7 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
             originalFilename: true,
             mediaType: true,
             sizeBytes: true,
+            createdAt: true,
             library: { select: { slug: true, name: true } },
           },
         }),
@@ -256,6 +353,29 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
           libraryName: a.library.name,
         }))
 
+      const documentFiles = codeAssetRows
+        .filter((a) => a.mediaType === "DOCUMENT")
+        .slice(0, 80)
+        .map((a) => ({
+          id: a.id,
+          filename: a.originalFilename,
+          mediaType: a.mediaType,
+          sizeBytes: Number(a.sizeBytes),
+          librarySlug: a.library.slug,
+          libraryName: a.library.name,
+        }))
+
+      // Most-recently uploaded assets across ALL libraries, newest first — lets
+      // the assistant answer "what did I upload recently" with the actual files
+      // in order instead of dumping the whole library.
+      const recentAssets = codeAssetRows.slice(0, 15).map((a) => ({
+        id: a.id,
+        filename: a.originalFilename,
+        mediaType: a.mediaType,
+        librarySlug: a.library.slug,
+        createdAt: a.createdAt.toISOString(),
+      }))
+
       const rawContext = {
         libraries: libraries.map((l) => ({
           id: l.id,
@@ -267,6 +387,8 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
         folders,
         appDatabases,
         codeFiles,
+        documentFiles,
+        recentAssets,
         byMediaType: assetCounts.map((r) => ({ type: r.mediaType, count: r._count._all })),
         storageGb: Math.round(gb * 10) / 10,
         lastUploadAt: recentUpload?.createdAt ?? null,
@@ -290,7 +412,7 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
   /** Recent IMAGE assets as base64 for Ollama `/api/chat` `images[]` (vision). */
   fastify.get(
     "/chat/vision-recent",
-    { preHandler: requireRole(["OWNER", "ADMIN", "MEMBER"]) },
+    { preHandler: requireAiChat },
     async (request, reply) => {
       const q = z.object({ limit: z.coerce.number().int().min(1).max(3).default(1) }).parse(request.query ?? {})
 
@@ -325,7 +447,7 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
   /** Scan recent library images with a vision model and return matches for a text query. */
   fastify.post(
     "/chat/vision-search",
-    { preHandler: requireRole(["OWNER", "ADMIN", "MEMBER"]) },
+    { preHandler: requireAiChat },
     async (request, reply) => {
       const parsed = z.object({
         query:     z.string().min(1).max(500),
@@ -409,7 +531,7 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
   /** Suggest title/filename from vision for one library image (optional assetId, else most recent). */
   fastify.post(
     "/chat/vision-suggest-rename",
-    { preHandler: requireRole(["OWNER", "ADMIN", "MEMBER"]) },
+    { preHandler: requireAiChat },
     async (request, reply) => {
       const parsed = z.object({
         profileId: z.string(),
@@ -473,7 +595,7 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
   /** Classify images in the Images library into folders (vision + create/move). */
   fastify.post(
     "/chat/organize-images",
-    { preHandler: requireRole(["OWNER", "ADMIN", "MEMBER"]) },
+    { preHandler: requireAiChat },
     async (request, reply) => {
       const parsed = z
         .object({
@@ -541,7 +663,7 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
   // ── List conversations ───────────────────────────────────────────────────────
   fastify.get(
     "/chat/conversations",
-    { preHandler: requireRole(["OWNER", "ADMIN", "MEMBER"]) },
+    { preHandler: requireAiChat },
     async (request, reply) => {
       const user = request.auth!.user
       const convos = await fastify.prisma.chatConversation.findMany({
@@ -561,7 +683,7 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
   // ── Get single conversation with messages ────────────────────────────────────
   fastify.get(
     "/chat/conversations/:id",
-    { preHandler: requireRole(["OWNER", "ADMIN", "MEMBER"]) },
+    { preHandler: requireAiChat },
     async (request, reply) => {
       const user  = request.auth!.user
       const { id } = request.params as { id: string }
@@ -580,7 +702,7 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
   // ── Create conversation ──────────────────────────────────────────────────────
   fastify.post(
     "/chat/conversations",
-    { preHandler: requireRole(["OWNER", "ADMIN", "MEMBER"]) },
+    { preHandler: requireAiChat },
     async (request, reply) => {
       const user   = request.auth!.user
       const parsed = conversationSchema.safeParse(request.body)
@@ -599,7 +721,7 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
   // ── Append messages to conversation ─────────────────────────────────────────
   fastify.post(
     "/chat/conversations/messages",
-    { preHandler: requireRole(["OWNER", "ADMIN", "MEMBER"]) },
+    { preHandler: requireAiChat },
     async (request, reply) => {
       const user   = request.auth!.user
       const parsed = saveMessagesSchema.safeParse(request.body)
@@ -656,7 +778,7 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
 
   fastify.patch(
     "/chat/messages/:id",
-    { preHandler: requireRole(["OWNER", "ADMIN", "MEMBER"]) },
+    { preHandler: requireAiChat },
     async (request, reply) => {
       const user = request.auth!.user
       const { id } = request.params as { id: string }
@@ -705,7 +827,7 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
 
   fastify.patch(
     "/chat/messages/:id/feedback",
-    { preHandler: requireRole(["OWNER", "ADMIN", "MEMBER"]) },
+    { preHandler: requireAiChat },
     async (request, reply) => {
       const user = request.auth!.user
       const { id } = request.params as { id: string }
@@ -749,7 +871,7 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
   )
 
   // ── Delete conversation ──────────────────────────────────────────────────────
-  const deleteConversationPreHandler = requireRole(["OWNER", "ADMIN", "MEMBER"])
+  const deleteConversationPreHandler = requireAiChat
 
   async function handleDeleteConversation(request: FastifyRequest, reply: FastifyReply) {
     const user = request.auth!.user
@@ -781,7 +903,7 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
   // ── Rename conversation ──────────────────────────────────────────────────────
   fastify.patch(
     "/chat/conversations/:id",
-    { preHandler: requireRole(["OWNER", "ADMIN", "MEMBER"]) },
+    { preHandler: requireAiChat },
     async (request, reply) => {
       const user   = request.auth!.user
       const { id } = request.params as { id: string }
@@ -805,7 +927,7 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
   fastify.post(
     "/chat",
     {
-      preHandler: requireRole(["OWNER", "ADMIN", "MEMBER"]),
+      preHandler: requireAiChat,
       bodyLimit: 32 * 1024 * 1024,
     },
     async (request, reply) => {
@@ -992,7 +1114,22 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
               }
             }
           }
-          const compatMessages = appendSystemInstructions(safeText, compatAppend)
+          const compatUsesVision = openAICompatUsesVision(messages)
+          const compatSource = compatUsesVision
+            ? messagesForOpenAICompat(messages)
+            : messagesTextOnly(messages)
+          const compatMessages = compatUsesVision
+            ? appendSystemInstructionsOpenAI(
+                sanitizeOpenAICompatMessages(compatSource as OpenAICompatMessage[], security),
+                compatAppend,
+              )
+            : appendSystemInstructions(
+                sanitizeMessagesForProvider(
+                  compatSource as { role: string; content: string }[],
+                  security,
+                ),
+                compatAppend,
+              )
           await streamOpenAICompat({
             raw,
             baseUrl,
@@ -1015,7 +1152,7 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
 
   fastify.get(
     "/chat/profiles",
-    { preHandler: requireRole(["OWNER", "ADMIN", "MEMBER"]) },
+    { preHandler: requireAiChat },
     async (_request, reply) => {
       const profiles = await fastify.prisma.modelProfile.findMany({
         where: { isEnabled: true },
@@ -1033,7 +1170,7 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
 
   fastify.get(
     "/chat/selection",
-    { preHandler: requireRole(["OWNER", "ADMIN", "MEMBER"]) },
+    { preHandler: requireAiChat },
     async (request, reply) => {
       const user = await fastify.prisma.user.findUnique({
         where: { id: request.auth!.user.id },
@@ -1063,7 +1200,7 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
     },
   )
 
-  const chatSelectionPreHandler = requireRole(["OWNER", "ADMIN", "MEMBER"])
+  const chatSelectionPreHandler = requireAiChat
 
   async function handleChatSelectionSave(
     request: import("fastify").FastifyRequest,
@@ -1118,6 +1255,82 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
 
   /** POST alias — iOS PWA often fails CORS preflight on PUT. */
   fastify.post("/chat/selection", { preHandler: chatSelectionPreHandler }, handleChatSelectionSave)
+
+  const chatTtsSchema = z.object({
+    text: z.string().min(1).max(12_000),
+    profileId: z.string().optional(),
+    voice: z.string().max(64).optional(),
+  })
+
+  fastify.post(
+    "/chat/tts",
+    { preHandler: requireAiChat },
+    async (request, reply) => {
+      const parsed = chatTtsSchema.safeParse(request.body)
+      if (!parsed.success) {
+        reply.status(400).send({
+          error: {
+            code: "VALIDATION_ERROR",
+            message: "Invalid TTS request.",
+            details: parsed.error.flatten(),
+          },
+        })
+        return
+      }
+
+      const instance = await fastify.prisma.instanceConfig.findFirst()
+      const cfg = (instance?.aiConfig as Record<string, unknown> | null) ?? {}
+      const security = parseAiSecurityConfig(cfg.security)
+      const text = sanitizeOutboundChatText(parsed.data.text, security, "assistant")
+      if (!text.trim()) {
+        reply.status(400).send({
+          error: { code: "TTS_EMPTY_TEXT", message: "Nothing to read aloud after privacy filters." },
+        })
+        return
+      }
+
+      try {
+        const { apiKey, ttsModel } = await resolveGeminiTtsConfig(
+          fastify.prisma,
+          parsed.data.profileId,
+        )
+        const { audio, mimeType } = await synthesizeGeminiTts({
+          apiKey,
+          text,
+          voice: parsed.data.voice ?? DEFAULT_GEMINI_TTS_VOICE,
+          model: ttsModel,
+        })
+        reply.send({
+          data: {
+            audioBase64: audio.toString("base64"),
+            mimeType,
+          },
+        })
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "TTS failed"
+        if (message === "GEMINI_NOT_CONFIGURED") {
+          reply.status(400).send({
+            error: {
+              code: "GEMINI_NOT_CONFIGURED",
+              message:
+                "Connect Google Gemini under Models and add your API key to use read aloud.",
+            },
+          })
+          return
+        }
+        if (message === "TTS_EMPTY_TEXT" || message === "TTS_NO_AUDIO") {
+          reply.status(400).send({
+            error: { code: message, message: "Could not generate speech for this reply." },
+          })
+          return
+        }
+        request.log.warn({ err }, "chat tts failed")
+        reply.status(502).send({
+          error: { code: "TTS_FAILED", message: "Gemini speech generation failed. Try again." },
+        })
+      }
+    },
+  )
 }
 
 // ── Ollama native streaming (/api/chat with think:true) ───────────────────────
@@ -1132,7 +1345,7 @@ async function streamOllamaNative({
   messages: Array<{ role: string; content: string; images?: string[] }>
 }) {
   /** GPT-OSS ignores boolean think; Ollama expects low | medium | high. */
-  const think: boolean | string = /gpt-oss/i.test(model) ? "medium" : true
+  const think: boolean | string = /gpt-oss/i.test(model) ? "medium" : false
 
   const res = await fetch(`${baseUrl}/api/chat`, {
     method: "POST",
@@ -1221,7 +1434,7 @@ async function streamOpenAICompat({
   baseUrl: string
   apiKey: string
   model: string
-  messages: { role: string; content: string }[]
+  messages: OpenAICompatMessage[]
   provider?: string
 }) {
   const isDeepSeek =

@@ -36,9 +36,38 @@ export type UnmountedBlockDevice = {
   sizeLabel: string
   sizeBytes: number | null
   filesystem: string | null
+  /** LUKS-encrypted volume — needs a disk encryption password before mount. */
+  isLuks: boolean
+  /** No usable filesystem detected (ext4/xfs/etc.) — format required before mount. */
+  needsFormat: boolean
   type: "disk" | "part"
   suggestedMountPoint: string
   suggestedArciinPath: string
+  model?: string | null
+  transport?: string | null
+}
+
+export type CurrentStorageDeviceContext = {
+  mountDevice: string | null
+  mountPoint: string | null
+  filesystemTotalBytes: number | null
+  filesystemAvailableBytes: number | null
+  blockDevice: string | null
+  blockDeviceSizeBytes: number | null
+  blockDeviceModel: string | null
+  blockDeviceTransport: string | null
+}
+
+export type StorageBlockDisk = {
+  id: string
+  device: string
+  name: string
+  sizeLabel: string
+  sizeBytes: number | null
+  model: string | null
+  transport: string | null
+  role: "system" | "attached" | "internal"
+  unmountedPartitionCount: number
 }
 
 export type StorageDiscovery = {
@@ -52,7 +81,14 @@ export type StorageDiscovery = {
     availableBytes: number | null
   }
   volumes: StorageVolumeOption[]
+  /** Block devices visible to lsblk but not mounted (mount on the host, then Rescan). */
   unmountedDevices: UnmountedBlockDevice[]
+  /** Physical disks detected on the server (NVMe, SD, USB, etc.). */
+  blockDisks: StorageBlockDisk[]
+  /** Where Arciin data lives vs the underlying physical disk size. */
+  currentDeviceContext: CurrentStorageDeviceContext | null
+  /** False when the API user must supply a sudo password to mount disks from the UI. */
+  mountPasswordlessSudo: boolean
   installNotes: string[]
 }
 
@@ -83,6 +119,16 @@ const SKIP_FS = new Set([
 
 function isDockerRuntime(): boolean {
   return path.resolve(apiConfig.dataDir) === "/data/arciin"
+}
+
+async function detectMountPasswordlessSudo(): Promise<boolean> {
+  if (isDockerRuntime()) return false
+  try {
+    await execFileAsync("sudo", ["-n", "true"], { timeout: 5000 })
+    return true
+  } catch {
+    return false
+  }
 }
 
 function hostDataDir(): string | null {
@@ -326,66 +372,274 @@ function parseLsblkSizeBytes(raw: string): number | null {
   return Math.round(value * (mult[unit] ?? 1))
 }
 
-/** Disks/partitions from lsblk that have no mount point (SSD must be mounted before Arciin can use them). */
-export async function discoverUnmountedBlockDevices(): Promise<UnmountedBlockDevice[]> {
-  try {
-    const { stdout } = await execFileAsync(
-      "lsblk",
-      ["-rno", "NAME,SIZE,TYPE,MOUNTPOINT,FSTYPE"],
-      { timeout: 8000, maxBuffer: 256 * 1024 },
-    )
-    const rows: Array<{
-      name: string
-      sizeLabel: string
-      sizeBytes: number | null
-      type: string
-      mount: string
-      fstype: string
-    }> = []
+type LsblkJsonNode = {
+  name?: string
+  size?: string | number | null
+  type?: string | null
+  mountpoint?: string | null
+  fstype?: string | null
+  pkname?: string | null
+  model?: string | null
+  tran?: string | null
+  children?: LsblkJsonNode[]
+}
 
-    for (const line of stdout.split("\n")) {
-      if (!line.trim()) continue
-      const parts = line.trim().split(/\s+/)
-      if (parts.length < 3) continue
-      const name = parts[0]!
-      const sizeLabel = parts[1]!
-      const type = parts[2]!
-      const mount = parts[3] ?? ""
-      const fstype = parts[4] ?? ""
-      if (name.startsWith("loop")) continue
-      if (type !== "disk" && type !== "part") continue
-      if (mount) continue
-      rows.push({
-        name,
-        sizeLabel,
-        sizeBytes: parseLsblkSizeBytes(sizeLabel),
-        type,
-        mount,
-        fstype,
-      })
+type LsblkInventoryRow = {
+  name: string
+  sizeLabel: string
+  sizeBytes: number | null
+  type: string
+  mount: string
+  fstype: string
+  pkname: string
+  model: string | null
+  transport: string | null
+}
+
+function flattenLsblkNodes(nodes: LsblkJsonNode[], out: LsblkJsonNode[] = []): LsblkJsonNode[] {
+  for (const node of nodes) {
+    out.push(node)
+    if (node.children?.length) flattenLsblkNodes(node.children, out)
+  }
+  return out
+}
+
+function lsblkNodeSizeLabel(node: LsblkJsonNode): string {
+  if (typeof node.size === "number") return formatBytesShort(node.size)
+  if (typeof node.size === "string" && node.size.trim()) return node.size.trim()
+  return "?"
+}
+
+function lsblkNodeSizeBytes(node: LsblkJsonNode): number | null {
+  if (typeof node.size === "number") return node.size
+  if (typeof node.size === "string") return parseLsblkSizeBytes(node.size)
+  return null
+}
+
+async function readLsblkInventory(): Promise<LsblkInventoryRow[]> {
+  const { stdout } = await execFileAsync(
+    "lsblk",
+    ["-J", "-o", "NAME,SIZE,TYPE,MOUNTPOINT,FSTYPE,PKNAME,MODEL,TRAN"],
+    { timeout: 8000, maxBuffer: 512 * 1024 },
+  )
+  const parsed = JSON.parse(stdout) as { blockdevices?: LsblkJsonNode[] }
+  const nodes = flattenLsblkNodes(parsed.blockdevices ?? [])
+  const rows: LsblkInventoryRow[] = []
+
+  for (const node of nodes) {
+    const name = node.name?.trim()
+    const type = node.type?.trim()
+    if (!name || !type) continue
+    if (name.startsWith("loop")) continue
+    rows.push({
+      name,
+      sizeLabel: lsblkNodeSizeLabel(node),
+      sizeBytes: lsblkNodeSizeBytes(node),
+      type,
+      mount: node.mountpoint?.trim() ?? "",
+      fstype: node.fstype?.trim() ?? "",
+      pkname: node.pkname?.trim() ?? "",
+      model: node.model?.trim() || null,
+      transport: node.tran?.trim() || null,
+    })
+  }
+
+  return rows
+}
+
+function rowByName(rows: LsblkInventoryRow[], name: string): LsblkInventoryRow | null {
+  return rows.find((row) => row.name === name) ?? null
+}
+
+const USABLE_MOUNT_FILESYSTEMS = new Set([
+  "ext4",
+  "xfs",
+  "btrfs",
+  "ntfs",
+  "exfat",
+  "vfat",
+])
+
+export function isUsableBlockFilesystem(fstype: string | null | undefined): boolean {
+  if (!fstype) return false
+  if (/^crypto_LUKS/i.test(fstype)) return false
+  if (fstype === "LVM2_member") return false
+  return USABLE_MOUNT_FILESYSTEMS.has(fstype.toLowerCase())
+}
+
+/** lsblk LVM nodes live under /dev/mapper, not /dev/<name>. */
+export function blockDevicePathForRow(row: Pick<LsblkInventoryRow, "name" | "type">): string {
+  if (row.type === "lvm") return `/dev/mapper/${row.name}`
+  return `/dev/${row.name}`
+}
+
+function resolvePhysicalDiskRow(
+  rows: LsblkInventoryRow[],
+  devicePath: string | null | undefined,
+): LsblkInventoryRow | null {
+  if (!devicePath) return null
+  const normalized = devicePath.replace(/^\/dev\//, "").replace(/^\/dev\/mapper\//, "")
+  let current = rowByName(rows, normalized)
+  if (!current && devicePath.startsWith("/dev/mapper/")) {
+    current = rowByName(rows, path.basename(devicePath))
+  }
+  if (!current) return null
+
+  let safety = 0
+  while (current && current.type !== "disk" && safety < 8) {
+    if (!current.pkname) break
+    current = rowByName(rows, current.pkname)
+    safety += 1
+  }
+  return current?.type === "disk" ? current : null
+}
+
+function diskRole(row: LsblkInventoryRow, rows: LsblkInventoryRow[]): StorageBlockDisk["role"] {
+  if (row.name === "nvme0n1" || row.transport === "nvme") return "system"
+  if (row.name.startsWith("mmcblk0") || row.transport === "usb") return "attached"
+  if (row.name.startsWith("mmcblk") || row.transport === "mmc") return "internal"
+  return "attached"
+}
+
+function countUnmountedPartitionsOnDisk(diskName: string, rows: LsblkInventoryRow[]): number {
+  return rows.filter((row) => {
+    if (row.mount) return false
+    if (row.fstype === "LVM2_member") return false
+    if (row.sizeBytes != null && row.sizeBytes < 4 * 1024 * 1024 * 1024) return false
+    if (row.type === "part" && row.pkname === diskName) return true
+    if (row.type === "lvm") {
+      const physical = resolvePhysicalDiskRow(rows, blockDevicePathForRow(row))
+      return physical?.name === diskName
+    }
+    return false
+  }).length
+}
+
+function discoverBlockDisks(rows: LsblkInventoryRow[]): StorageBlockDisk[] {
+  return rows
+    .filter(
+      (row) =>
+        row.type === "disk" &&
+        !/boot\d*$/i.test(row.name) &&
+        (row.sizeBytes ?? 0) >= 256 * 1024 * 1024,
+    )
+    .map((row) => ({
+      id: `disk-${row.name}`,
+      device: `/dev/${row.name}`,
+      name: row.name,
+      sizeLabel: row.sizeLabel,
+      sizeBytes: row.sizeBytes,
+      model: row.model,
+      transport: row.transport,
+      role: diskRole(row, rows),
+      unmountedPartitionCount: countUnmountedPartitionsOnDisk(row.name, rows),
+    }))
+    .sort((a, b) => (b.sizeBytes ?? 0) - (a.sizeBytes ?? 0))
+}
+
+function discoverCurrentStorageDeviceContext(
+  rows: LsblkInventoryRow[],
+  mounts: ParsedMount[],
+  storageRoot: string,
+): CurrentStorageDeviceContext | null {
+  const containing = findContainingMount(mounts, storageRoot)
+  if (!containing) return null
+
+  const physical = resolvePhysicalDiskRow(rows, containing.device)
+
+  return {
+    mountDevice: containing.device,
+    mountPoint: containing.mountPoint,
+    filesystemTotalBytes: null,
+    filesystemAvailableBytes: null,
+    blockDevice: physical ? `/dev/${physical.name}` : null,
+    blockDeviceSizeBytes: physical?.sizeBytes ?? null,
+    blockDeviceModel: physical?.model ?? null,
+    blockDeviceTransport: physical?.transport ?? null,
+  }
+}
+
+/** Disks/partitions from lsblk that have no mount point (SSD must be mounted before Arciin can use them). */
+export async function discoverUnmountedBlockDevices(options?: {
+  storageRoot?: string
+  inventory?: LsblkInventoryRow[]
+}): Promise<UnmountedBlockDevice[]> {
+  try {
+    const allRows = (options?.inventory ?? (await readLsblkInventory())).filter(
+      (row) => row.type === "disk" || row.type === "part" || row.type === "lvm",
+    )
+
+    const disksWithPartitions = new Set<string>()
+    for (const row of allRows) {
+      if (row.type !== "part") continue
+      if (row.pkname) {
+        disksWithPartitions.add(row.pkname)
+        continue
+      }
+      for (const disk of allRows) {
+        if (disk.type === "disk" && row.name.startsWith(`${disk.name}`)) {
+          disksWithPartitions.add(disk.name)
+        }
+      }
     }
 
-    const partNames = new Set(rows.filter((r) => r.type === "part").map((r) => r.name))
-    const filtered = rows.filter((row) => {
-      if (row.type === "disk" && [...partNames].some((p) => p.startsWith(row.name))) {
-        return false
+    const excludedNames = new Set<string>()
+    if (options?.storageRoot) {
+      const mounts = await parseLinuxMounts()
+      const containing = findContainingMount(mounts, options.storageRoot)
+      if (containing) {
+        const dev = containing.device.replace(/^\/dev\//, "")
+        excludedNames.add(dev)
+        const row = allRows.find((r) => r.name === dev)
+        if (row?.pkname) {
+          excludedNames.add(row.pkname)
+        } else {
+          for (const disk of allRows) {
+            if (disk.type === "disk" && dev.startsWith(disk.name)) {
+              excludedNames.add(disk.name)
+            }
+          }
+        }
       }
+    }
+
+    const filtered = allRows.filter((row) => {
+      if (row.mount) return false
+      if (excludedNames.has(row.name)) return false
+      if (row.type === "disk" && disksWithPartitions.has(row.name)) return false
+      if (/boot/i.test(row.name)) return false
+      if (row.fstype === "LVM2_member") return false
+      if (row.type === "lvm" && !isUsableBlockFilesystem(row.fstype)) return false
+      if (row.sizeBytes != null && row.sizeBytes < 4 * 1024 * 1024 * 1024) return false
       return true
     })
 
     return filtered.map((row) => {
       const mountSlug = row.name.replace(/[^a-zA-Z0-9]+/g, "-")
       const suggestedMountPoint = `/mnt/arciin-${mountSlug}`
+      const fstype = row.fstype || null
+      const isLuks = Boolean(fstype && /^crypto_LUKS/i.test(fstype))
+      const parentDisk = row.pkname
+        ? rowByName(allRows, row.pkname)
+        : row.type === "lvm"
+          ? resolvePhysicalDiskRow(allRows, blockDevicePathForRow(row))
+          : null
+      const blockType: UnmountedBlockDevice["type"] =
+        row.type === "disk" ? "disk" : row.type === "lvm" ? "part" : "part"
       return {
         id: `unmounted-${row.name}`,
-        device: `/dev/${row.name}`,
+        device: blockDevicePathForRow(row),
         name: row.name,
         sizeLabel: row.sizeLabel,
         sizeBytes: row.sizeBytes,
-        filesystem: row.fstype || null,
-        type: row.type as "disk" | "part",
+        filesystem: fstype,
+        isLuks,
+        needsFormat: !isLuks && !isUsableBlockFilesystem(fstype),
+        type: blockType,
         suggestedMountPoint,
         suggestedArciinPath: path.join(suggestedMountPoint, ARCIIN_SUBDIR),
+        model: parentDisk?.model ?? row.model,
+        transport: parentDisk?.transport ?? row.transport,
       }
     })
   } catch {
@@ -439,7 +693,9 @@ export function filterMigrationTargets(
 ): StorageVolumeOption[] {
   return discovery.volumes.filter((v) => {
     if (isVolumeCurrentStorage(v, ctx)) return false
-    return v.writable || v.availableBytes != null
+    if (v.sameDiskAsCurrent) return false
+    if (v.kind === "os-root" || v.kind === "runtime") return false
+    return v.writable !== false
   })
 }
 
@@ -454,6 +710,7 @@ export async function discoverStorageVolumes(): Promise<StorageDiscovery> {
 
   const seenPaths = new Set<string>()
   const volumes: StorageVolumeOption[] = []
+  const mounts = await parseLinuxMounts()
 
   async function addOption(input: {
     id: string
@@ -499,6 +756,8 @@ export async function discoverStorageVolumes(): Promise<StorageDiscovery> {
     mountPoint: path.dirname(recommended),
     kind: "recommended",
     recommended: true,
+    filesystem: findContainingMount(mounts, recommended)?.filesystem ?? null,
+    device: findContainingMount(mounts, recommended)?.device ?? null,
   })
 
   if (!docker && resolvedDistinct(runtimeDataDir, recommended)) {
@@ -510,7 +769,6 @@ export async function discoverStorageVolumes(): Promise<StorageDiscovery> {
     })
   }
 
-  const mounts = await parseLinuxMounts()
   const mountCandidates = mounts
     .filter((m) => {
       if (m.mountPoint === "/") return true
@@ -559,7 +817,25 @@ export async function discoverStorageVolumes(): Promise<StorageDiscovery> {
     return (b.availableBytes ?? 0) - (a.availableBytes ?? 0)
   })
 
-  const unmountedDevices = await discoverUnmountedBlockDevices()
+  const inventory = await readLsblkInventory()
+  const unmountedDevices = await discoverUnmountedBlockDevices({
+    storageRoot: runtimeDataDir,
+    inventory,
+  })
+  const blockDisks = discoverBlockDisks(inventory)
+  const mountPasswordlessSudo = await detectMountPasswordlessSudo()
+
+  const currentMountForContext = findContainingMount(mounts, runtimeDataDir)
+  const currentDeviceContext = discoverCurrentStorageDeviceContext(
+    inventory,
+    mounts,
+    runtimeDataDir,
+  )
+  if (currentDeviceContext && currentMountForContext) {
+    const probe = await probeMount(currentMountForContext.mountPoint)
+    currentDeviceContext.filesystemTotalBytes = probe.totalBytes
+    currentDeviceContext.filesystemAvailableBytes = probe.availableBytes
+  }
 
   const installNotes: string[] = []
   if (docker) {
@@ -592,10 +868,28 @@ export async function discoverStorageVolumes(): Promise<StorageDiscovery> {
     )
   }
 
-  if (unmountedDevices.length > 0) {
-    const names = unmountedDevices.map((d) => `${d.device} (${d.sizeLabel})`).join(", ")
+  if (currentDeviceContext?.blockDeviceSizeBytes && currentDeviceContext.filesystemTotalBytes) {
+    if (currentDeviceContext.blockDeviceSizeBytes > currentDeviceContext.filesystemTotalBytes * 1.1) {
+      const diskLabel =
+        currentDeviceContext.blockDeviceModel?.trim() ||
+        currentDeviceContext.blockDevice ||
+        "the physical disk"
+      installNotes.push(
+        `Arciin currently uses a ${formatBytesShort(currentDeviceContext.filesystemTotalBytes)} filesystem on ${currentMountForContext?.device ?? "this server"}. The underlying ${diskLabel} is ${formatBytesShort(currentDeviceContext.blockDeviceSizeBytes)} — mount attached storage below or expand system storage to use the rest.`,
+      )
+    }
+  }
+
+  const attachedDisks = blockDisks.filter((disk) => disk.role === "attached")
+  if (attachedDisks.length > 0) {
     installNotes.push(
-      `Unmounted drive(s): ${names}. Mount on the host (e.g. ${unmountedDevices[0]!.suggestedMountPoint}), add to /etc/fstab, then Rescan.`,
+      `Detected ${attachedDisks.length} attached storage device${attachedDisks.length === 1 ? "" : "s"}: ${attachedDisks.map((disk) => `${disk.sizeLabel}${disk.model ? ` (${disk.model})` : ""}`).join(", ")}.`,
+    )
+  }
+
+  if (unmountedDevices.length > 0) {
+    installNotes.push(
+      `${unmountedDevices.length} unmounted partition${unmountedDevices.length === 1 ? "" : "s"} ready to mount below (for example ${unmountedDevices[0]!.device}).`,
     )
   }
 
@@ -617,6 +911,9 @@ export async function discoverStorageVolumes(): Promise<StorageDiscovery> {
     },
     volumes: clientVolumes,
     unmountedDevices,
+    blockDisks,
+    currentDeviceContext,
+    mountPasswordlessSudo,
     installNotes,
   }
 }

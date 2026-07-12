@@ -52,6 +52,81 @@ export function resolveWebPort(): string {
   return "3000"
 }
 
+/** Mobile PWA listen port — separate from desktop web (ARCIIN_WEB_PORT). */
+export function resolveMobileWebPort(): string {
+  const fromEnv = process.env.ARCIIN_MOBILE_PORT?.trim()
+  if (fromEnv && !isApiPort(fromEnv)) {
+    return fromEnv
+  }
+
+  try {
+    const raw = process.env.ARCIIN_MOBILE_PUBLIC_URL?.trim()
+    if (raw) {
+      const u = new URL(raw)
+      if (u.port && !isApiPort(u.port)) {
+        return u.port
+      }
+    }
+  } catch {
+    /* fall through */
+  }
+
+  return resolveWebPort()
+}
+
+export function resolveMobileLocalAccessUrls(): LocalAccessUrls {
+  const webPort = resolveMobileWebPort()
+  const loopbackUrl = `http://127.0.0.1:${webPort}`
+  const lanUrls = new Set<string>()
+
+  try {
+    const raw = process.env.ARCIIN_MOBILE_PUBLIC_URL?.trim()
+    if (raw) {
+      const u = new URL(raw)
+      if (isSelfHostedLanHostname(u.hostname)) {
+        const port = u.port && !isApiPort(u.port) ? u.port : webPort
+        lanUrls.add(`http://${u.hostname}:${port}`)
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+
+  for (const ip of getLanIpv4Addresses()) {
+    lanUrls.add(`http://${ip}:${webPort}`)
+  }
+
+  const preferredHost = (() => {
+    try {
+      const raw = process.env.ARCIIN_MOBILE_PUBLIC_URL?.trim()
+      if (!raw) return null
+      const u = new URL(raw)
+      return isSelfHostedLanHostname(u.hostname) ? u.hostname : null
+    } catch {
+      return null
+    }
+  })()
+
+  const lanList = [...lanUrls].sort((a, b) => {
+    if (preferredHost) {
+      const ah = new URL(a).hostname
+      const bh = new URL(b).hostname
+      if (ah === preferredHost && bh !== preferredHost) return -1
+      if (bh === preferredHost && ah !== preferredHost) return 1
+    }
+    return a.localeCompare(b)
+  })
+  const primaryLanUrl = lanList[0] ?? null
+
+  return {
+    webPort,
+    loopbackUrl,
+    lanUrls: lanList,
+    primaryLanUrl,
+    localUrl: primaryLanUrl ?? loopbackUrl,
+  }
+}
+
 export function resolveLocalAccessUrls(): LocalAccessUrls {
   const webPort = resolveWebPort()
   const loopbackUrl = `http://127.0.0.1:${webPort}`

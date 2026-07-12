@@ -26,14 +26,14 @@ export async function buildFocusAssetSystemAppend(
     return "\n\n[Focused file] The open document could not be loaded (asset not found)."
   }
 
-  const pageNote =
-    focus.currentPage && focus.currentPage > 0
-      ? ` The user is viewing **PDF page ${focus.currentPage}** in the preview (viewer "Page X / total" uses PDF pages, not printed book pages). Prefer that page when answering page-specific questions; use the page index to map printed pages and chapters.`
-      : ""
-
   const isPdf =
     /\.pdf$/i.test(asset.originalFilename) ||
     (asset.mimeType ?? "").toLowerCase() === "application/pdf"
+
+  const pdfPageNote =
+    isPdf && focus.currentPage && focus.currentPage > 0
+      ? ` The user is viewing **PDF page ${focus.currentPage}** in the preview (status bar counts from the file start). Context includes a **Current view** block with the printed/book page when known, plus the **text of that page** for highlights. When they ask what page they are on, answer with both PDF and printed pages. For section titles use [highlight-heading:"…"]; for other text use [highlight-current:"…"].`
+      : ""
 
   if (isPdf) {
     const result = await readPdfAssetContent(prisma, {
@@ -44,24 +44,28 @@ export async function buildFocusAssetSystemAppend(
     })
     if (typeof result.content === "string") {
       const truncatedNote = result.truncated
-        ? "\n(Extract is partial — say so if the answer may be on a missing page.)"
+        ? "\n(Large book — chapter index may be partial, but the **current page text** is included for highlights.)"
         : ""
-      return `\n\n--- Focused PDF: ${asset.originalFilename} (asset_id: ${asset.id}) ---${pageNote}\n${result.content}\n---${truncatedNote}`
+      return `\n\n--- Focused PDF: ${asset.originalFilename} (asset_id: ${asset.id}) ---${pdfPageNote}\n${result.content}\n---${truncatedNote}`
     }
     const msg =
       typeof result.message === "string" ? result.message : "Could not read PDF text."
-    return `\n\n[Focused PDF: ${asset.originalFilename}] ${msg}${pageNote}`
+    return `\n\n[Focused PDF: ${asset.originalFilename}] ${msg}${pdfPageNote}`
   }
 
   if (asset.mediaType === "IMAGE") {
-    return `\n\n[Focused image: ${asset.originalFilename} (asset_id: ${asset.id})]${pageNote} The user has this image open in the library preview. Describe or answer from attached vision pixels when present; otherwise use filename and library context only.`
+    return `\n\n--- Focused image: ${asset.originalFilename} (asset_id: ${asset.id}) ---
+The user has this **image** open in the Images library preview (not a PDF or document).
+Answer only about what is visible in the attached image pixels.
+Use [point-grid:"label",row,col,rows,cols] or [point-box:…] when they ask to point at or highlight something on the image.
+Do not mention PDFs, chapters, or document pages.`
   }
 
   const textResult = await readTextAssetContent(prisma, { assetId: asset.id })
   if (typeof textResult.content === "string") {
     const truncatedNote = textResult.truncated ? "\n(Preview truncated.)" : ""
-    return `\n\n--- Focused file: ${asset.originalFilename} (asset_id: ${asset.id}) ---${pageNote}\n\`\`\`\n${textResult.content}\n\`\`\`\n---${truncatedNote}`
+    return `\n\n--- Focused file: ${asset.originalFilename} (asset_id: ${asset.id}) ---\n\`\`\`\n${textResult.content}\n\`\`\`\n---${truncatedNote}`
   }
 
-  return `\n\n[Focused file: ${asset.originalFilename} (asset_id: ${asset.id})]${pageNote} Binary or unsupported preview type — answer from metadata only unless the user describes the content.`
+  return `\n\n[Focused file: ${asset.originalFilename} (asset_id: ${asset.id})] Binary or unsupported preview type — answer from metadata only unless the user describes the content.`
 }

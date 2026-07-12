@@ -14,10 +14,13 @@ import type { FastifyInstance } from "fastify"
 import { z } from "zod"
 
 import { apiConfig } from "@/config"
+import { getUploadLimits, setUploadLimits } from "@/services/config/upload-limits"
 import { invalidateAccessControlCache } from "@/services/security/access-control-settings"
 import { invalidateApiProtectionCache } from "@/services/security/instance-security"
 import { hashToken, requireRole } from "@/services/security/auth"
 import { clientIpFromRequest, normalizeClientIp } from "@/services/security/client-ip"
+import { checkEndpointRateLimit } from "@/services/security/endpoint-rate-limit"
+import { enrichSecurityLogDeviceLabels } from "@/services/security/device-for-ip"
 import { logIpPolicyChanges } from "@/services/security/log-ip-policy-changes"
 import { isSecurityLogType, recordSecurityEvent } from "@/services/security/security-events"
 import { serializeActivity } from "@/services/serializers"
@@ -27,8 +30,8 @@ import {
   startCloudflareQuickTunnel,
   stopCloudflareQuickTunnel,
 } from "@/services/remote-access/cloudflare-tunnel"
-import { resolveLocalAccessUrls } from "@/services/remote-access/local-access-urls"
-import { resolveCloudflareTunnelTarget } from "@/services/remote-access/tunnel-target"
+import { resolveMobileLocalAccessUrls } from "@/services/remote-access/local-access-urls"
+import { resolveCloudflareTunnelTarget, resolveMobileCloudflareTunnelTarget } from "@/services/remote-access/tunnel-target"
 import {
   resolveDisplayStorageRoot,
   resolveEffectiveStorageRoot,
@@ -45,6 +48,10 @@ import {
   loadEffectiveStorageRoot,
 } from "@/services/storage/effective-storage-root"
 import {
+  MountBlockDeviceError,
+  mountBlockDevice,
+} from "@/services/storage/mount-block-device"
+import {
   StorageMigrationError,
   storageMigrationDisplayRoot,
   validateStorageMigrationTarget,
@@ -52,6 +59,10 @@ import {
 import { storageQueue } from "@/services/jobs/queues"
 import { JOB_TYPES } from "@arciin/shared"
 import { probeStorageRoot, resolveStorageUsageBytes } from "@/services/storage/local-storage"
+import {
+  getMobileAppInstallStatus,
+  startMobileAppInstall,
+} from "@/services/mobile/mobile-app-install"
 import {
   createMobilePairingCode,
   purgeExpiredMobilePairingCodes,
@@ -76,8 +87,14 @@ const storageSchema = z.object({
   storageRoot: z.string().min(1),
 })
 
+const uploadLimitsSchema = z.object({
+  maxUploadSizeMb: z.number().int().min(1).max(1_048_576).optional(),
+  uploadRateLimitPerMinute: z.number().int().min(1).max(10_000).optional(),
+})
+
 const remoteAccessSchema = z.object({
   publicUrl: z.union([z.string().url(), z.literal(""), z.null()]).optional(),
+  mobilePublicUrl: z.union([z.string().url(), z.literal(""), z.null()]).optional(),
   mode: z.enum(["local", "reverse-proxy", "cloudflare-tunnel"]).optional(),
   reverseProxyEnabled: z.boolean().optional(),
   cloudflareTunnelEnabled: z.boolean().optional(),
@@ -222,6 +239,67 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
         },
       })
     }
+  )
+
+  fastify.get(
+    "/settings/uploads",
+    {
+      preHandler: requireRole(["OWNER", "ADMIN", "MEMBER", "VIEWER"]),
+    },
+    async (_request, reply) => {
+      const limits = getUploadLimits()
+      reply.send({
+        data: {
+          ...limits,
+          webProxyMaxUploadSizeMb: limits.envMaxUploadSizeMb,
+          webProxyRestartRequired: limits.maxUploadSizeMb > limits.envMaxUploadSizeMb,
+        },
+      })
+    },
+  )
+
+  fastify.patch(
+    "/settings/uploads",
+    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    async (request, reply) => {
+      const parsed = uploadLimitsSchema.safeParse(request.body)
+      if (!parsed.success) {
+        reply.status(400).send({
+          error: {
+            code: "VALIDATION_ERROR",
+            message: "Invalid upload limits.",
+            details: parsed.error.flatten(),
+          },
+        })
+        return
+      }
+      if (!parsed.data.maxUploadSizeMb && !parsed.data.uploadRateLimitPerMinute) {
+        reply.status(400).send({
+          error: {
+            code: "VALIDATION_ERROR",
+            message: "Provide maxUploadSizeMb and/or uploadRateLimitPerMinute.",
+          },
+        })
+        return
+      }
+      try {
+        const limits = await setUploadLimits(parsed.data)
+        reply.send({
+          data: {
+            ...limits,
+            webProxyMaxUploadSizeMb: limits.envMaxUploadSizeMb,
+            webProxyRestartRequired: limits.maxUploadSizeMb > limits.envMaxUploadSizeMb,
+          },
+        })
+      } catch (err) {
+        reply.status(400).send({
+          error: {
+            code: "VALIDATION_ERROR",
+            message: err instanceof Error ? err.message : "Invalid upload limits.",
+          },
+        })
+      }
+    },
   )
 
   fastify.patch(
@@ -373,6 +451,40 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
   )
 
   fastify.post(
+    "/settings/storage/mount",
+    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    async (request, reply) => {
+      const bodySchema = z.object({
+        deviceId: z.string().min(1),
+        luksPassphrase: z.string().optional(),
+        sudoPassword: z.string().optional(),
+        formatAsExt4: z.boolean().optional(),
+        confirmErase: z.boolean().optional(),
+      })
+      const parsed = bodySchema.safeParse(request.body)
+      if (!parsed.success) {
+        reply.status(400).send({
+          error: { code: "VALIDATION_ERROR", message: "Invalid mount payload." },
+        })
+        return
+      }
+
+      try {
+        const result = await mountBlockDevice(parsed.data)
+        reply.send({ data: result })
+      } catch (error) {
+        if (error instanceof MountBlockDeviceError) {
+          reply.status(400).send({
+            error: { code: error.code, message: error.message },
+          })
+          return
+        }
+        throw error
+      }
+    },
+  )
+
+  fastify.post(
     "/settings/storage/migrate",
     { preHandler: requireRole(["OWNER"]) },
     async (request, reply) => {
@@ -441,18 +553,22 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
       const instance = await fastify.prisma.instanceConfig.findFirst()
       const config = (instance?.remoteAccessConfig as Record<string, unknown> | null) || {}
       const urls = await resolveMobileServerUrls(fastify.prisma, request)
-      const local = resolveLocalAccessUrls()
+      const mobileLocal = resolveMobileLocalAccessUrls()
 
       reply.send({
         data: {
           publicUrl: instance?.publicUrl ?? null,
           mobilePublicUrl:
             typeof config.mobilePublicUrl === "string" ? config.mobilePublicUrl : null,
-          localUrl: local.localUrl,
-          loopbackUrl: local.loopbackUrl,
-          lanUrls: local.lanUrls,
-          primaryLanUrl: local.primaryLanUrl,
-          currentUrl: instance?.publicUrl ?? urls.requestOrigin ?? local.localUrl,
+          localUrl: mobileLocal.localUrl,
+          loopbackUrl: mobileLocal.loopbackUrl,
+          lanUrls: mobileLocal.lanUrls,
+          primaryLanUrl: mobileLocal.primaryLanUrl,
+          currentUrl:
+            (typeof config.mobilePublicUrl === "string" ? config.mobilePublicUrl : null) ??
+            instance?.publicUrl ??
+            urls.requestOrigin ??
+            mobileLocal.localUrl,
           requestOrigin: urls.requestOrigin,
           mode: (instance?.remoteAccessMode as string) || "local",
           reverseProxyEnabled: Boolean(config.reverseProxyEnabled),
@@ -497,6 +613,14 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
       const prevConfig = (instance.remoteAccessConfig as Record<string, unknown> | null) || {}
       const nextConfig = {
         ...prevConfig,
+        ...(parsed.data.mobilePublicUrl !== undefined
+          ? {
+              mobilePublicUrl:
+                parsed.data.mobilePublicUrl === "" || parsed.data.mobilePublicUrl === null
+                  ? null
+                  : parsed.data.mobilePublicUrl,
+            }
+          : {}),
         reverseProxyEnabled:
           parsed.data.reverseProxyEnabled !== undefined
             ? parsed.data.reverseProxyEnabled
@@ -534,18 +658,22 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
 
       const urls = await resolveMobileServerUrls(fastify.prisma, request)
       const raw = (updated.remoteAccessConfig as Record<string, unknown> | null) || {}
-      const local = resolveLocalAccessUrls()
+      const mobileLocal = resolveMobileLocalAccessUrls()
 
       reply.send({
         data: {
           publicUrl: updated.publicUrl ?? null,
           mobilePublicUrl:
             typeof raw.mobilePublicUrl === "string" ? raw.mobilePublicUrl : null,
-          localUrl: local.localUrl,
-          loopbackUrl: local.loopbackUrl,
-          lanUrls: local.lanUrls,
-          primaryLanUrl: local.primaryLanUrl,
-          currentUrl: updated.publicUrl ?? urls.requestOrigin ?? local.localUrl,
+          localUrl: mobileLocal.localUrl,
+          loopbackUrl: mobileLocal.loopbackUrl,
+          lanUrls: mobileLocal.lanUrls,
+          primaryLanUrl: mobileLocal.primaryLanUrl,
+          currentUrl:
+            (typeof raw.mobilePublicUrl === "string" ? raw.mobilePublicUrl : null) ??
+            updated.publicUrl ??
+            urls.requestOrigin ??
+            mobileLocal.localUrl,
           requestOrigin: urls.requestOrigin,
           mode: updated.remoteAccessMode || "local",
           reverseProxyEnabled: Boolean(nextConfig.reverseProxyEnabled),
@@ -643,10 +771,21 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
         return
       }
 
-      const localTarget = resolveCloudflareTunnelTarget()
+      const localTarget = resolveMobileCloudflareTunnelTarget()
 
       try {
         const url = await startCloudflareQuickTunnel(localTarget)
+
+        if (request.auth) {
+          await fastify.prisma.activityEvent.create({
+            data: {
+              userId: request.auth.user.id,
+              type: "settings.cloudflare_tunnel_started",
+              title: "Cloudflare quick tunnel started (mobile)",
+              message: `Mobile public URL set to ${url}`,
+            },
+          })
+        }
 
         reply.send({
           data: {
@@ -684,7 +823,8 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
         take: 200,
       })
       const events = rows.filter((row) => isSecurityLogType(row.type)).slice(0, 100)
-      reply.send({ data: events.map(serializeActivity) })
+      const enriched = await enrichSecurityLogDeviceLabels(fastify.prisma, events)
+      reply.send({ data: enriched.map(serializeActivity) })
     },
   )
 
@@ -1221,6 +1361,41 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
           return
         }
         throw err
+      }
+    },
+  )
+
+  fastify.get(
+    "/settings/mobile-app",
+    { preHandler: requireRole(["OWNER"]) },
+    async (_request, reply) => {
+      reply.send({ data: await getMobileAppInstallStatus() })
+    },
+  )
+
+  fastify.post(
+    "/settings/mobile-app/install",
+    { preHandler: requireRole(["OWNER"]) },
+    async (request, reply) => {
+      if (
+        await checkEndpointRateLimit(request, reply, {
+          key: `mobile-app-install:${request.ip}`,
+          limit: 3,
+          windowSec: 3600,
+        })
+      ) {
+        return
+      }
+
+      try {
+        reply.status(202).send({ data: await startMobileAppInstall() })
+      } catch (err) {
+        reply.status(400).send({
+          error: {
+            code: "MOBILE_INSTALL_FAILED",
+            message: err instanceof Error ? err.message : "Could not start mobile install.",
+          },
+        })
       }
     },
   )

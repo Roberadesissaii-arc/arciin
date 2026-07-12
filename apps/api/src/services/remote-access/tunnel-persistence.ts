@@ -2,6 +2,8 @@ import type { FastifyInstance } from "fastify"
 
 import { recordAndBroadcastActivity } from "@/services/activity/record-and-broadcast-activity"
 import { broadcastInstanceUrlsUpdated } from "@/services/mobile/mobile-server-urls"
+import { getCloudflareTunnelState } from "@/services/remote-access/cloudflare-tunnel"
+import { resolveMobileLocalAccessUrls } from "@/services/remote-access/local-access-urls"
 
 export type RemoteAccessConfigJson = Record<string, unknown>
 
@@ -23,6 +25,16 @@ export function isCloudflareTunnelAutoStartEnabled(
   return config.cloudflareTunnelAutoStart !== false
 }
 
+function isMobileTunnelTarget(localTarget: string | null | undefined): boolean {
+  if (!localTarget?.trim()) return false
+  try {
+    const mobileLoopback = resolveMobileLocalAccessUrls().loopbackUrl.replace(/\/+$/, "")
+    return localTarget.replace(/\/+$/, "") === mobileLoopback
+  } catch {
+    return false
+  }
+}
+
 /** Save tunnel URL for mobile discover + desktop Domain; notify paired phones. */
 export async function persistTunnelPublicUrl(
   fastify: FastifyInstance,
@@ -31,11 +43,12 @@ export async function persistTunnelPublicUrl(
   const instance = await fastify.prisma.instanceConfig.findFirst()
   if (!instance) return
 
+  const localTarget = getCloudflareTunnelState().localTarget
+  const mobileOnly = isMobileTunnelTarget(localTarget)
+
   const prevConfig = readRemoteAccessConfig(instance.remoteAccessConfig)
   const previousPublicUrl =
-    (typeof prevConfig.mobilePublicUrl === "string"
-      ? prevConfig.mobilePublicUrl
-      : null) ??
+    (typeof prevConfig.mobilePublicUrl === "string" ? prevConfig.mobilePublicUrl : null) ??
     (instance.publicUrl ? instance.publicUrl : null)
   const normalizedPrevious = previousPublicUrl?.replace(/\/+$/, "") ?? null
   const normalizedNew = publicUrl.replace(/\/+$/, "")
@@ -43,17 +56,28 @@ export async function persistTunnelPublicUrl(
 
   await fastify.prisma.instanceConfig.update({
     where: { id: instance.id },
-    data: {
-      publicUrl,
-      remoteAccessMode: "cloudflare-tunnel",
-      remoteAccessConfig: {
-        ...prevConfig,
-        mobilePublicUrl: publicUrl,
-        cloudflareTunnelEnabled: true,
-        cloudflareTunnelAutoStart: prevConfig.cloudflareTunnelAutoStart !== false,
-        reverseProxyEnabled: false,
-      },
-    },
+    data: mobileOnly
+      ? {
+          remoteAccessMode: "cloudflare-tunnel",
+          remoteAccessConfig: {
+            ...prevConfig,
+            mobilePublicUrl: publicUrl,
+            cloudflareTunnelEnabled: true,
+            cloudflareTunnelAutoStart: prevConfig.cloudflareTunnelAutoStart !== false,
+            reverseProxyEnabled: false,
+          },
+        }
+      : {
+          publicUrl,
+          remoteAccessMode: "cloudflare-tunnel",
+          remoteAccessConfig: {
+            ...prevConfig,
+            mobilePublicUrl: publicUrl,
+            cloudflareTunnelEnabled: true,
+            cloudflareTunnelAutoStart: prevConfig.cloudflareTunnelAutoStart !== false,
+            reverseProxyEnabled: false,
+          },
+        },
   })
 
   if (urlChanged) {

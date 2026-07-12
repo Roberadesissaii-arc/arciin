@@ -1,138 +1,121 @@
 # Architecture
 
-Arciin is a multi-service self-hosted application with a Next.js web app at the repository root and separate API and worker runtimes under `apps/`.
+Arciin is a multi-service self-hosted platform. **One server install** owns the database, file storage, API, worker, and web UI. **Client apps** (mobile PWA, browser on another device, future desktop shell) talk to the API only — they never connect to PostgreSQL or own storage.
 
-## Services
+## Client vs server
 
-```txt
-Browser
-  -> Next.js web app
-  -> Fastify API
-  -> PostgreSQL
-  -> Redis / BullMQ
-  -> Worker
-  -> Local filesystem storage
+| Install type | Where | Runs | Does **not** run |
+|--------------|-------|------|------------------|
+| **Server** | LattePanda, mini PC, NAS, Docker host | Web (`apps/web`), API, Worker, PostgreSQL, Redis, disk storage | — |
+| **Client** | Phone PWA (`arciin-app`), remote browser | UI + API client (HTTP + Socket.IO) | Database, migrations, storage root, worker |
+
+```text
+Phone PWA ──────┐
+Desktop app ────┼──► HTTPS / WSS
+Browser ────────┘         │
+                          ▼
+              Reverse proxy (Caddy / Nginx / Cloudflare Tunnel)
+                          │
+                          ▼
+              Next.js Web App (apps/web)  ← interface only
+                          │
+                          ▼
+              Arciin API (apps/api)       ← auth, permissions, uploads, paths
+                          │
+            ┌─────────────┼─────────────┐
+            ▼             ▼             ▼
+      PostgreSQL      Redis/BullMQ   File storage
+            │             │
+            │             └──► Worker (apps/worker)
+            └── metadata, users, sessions, jobs
 ```
+
+The database is **logically central** but **only the API and worker** may access it. The Next.js web app uses `fetchServerApi()` and browser `/api` rewrites — no Prisma in the web layer.
+
+## Startup flow (server install)
+
+When Arciin starts on the server host:
+
+1. Check PostgreSQL is reachable; run migrations if needed (`scripts/arciin-init.sh`).
+2. Ensure storage directories exist under `ARCIIN_DATA_DIR`.
+3. API and worker start; worker publishes heartbeat to Redis.
+4. Web UI loads and calls `/api/instance/status`.
+5. If the instance is **not claimed** → redirect to `/setup` (web only on server).
+6. If claimed and user is signed out → `/login`.
+7. If authenticated → `/dashboard`.
+
+Client apps skip steps 1–4 on the device. They **connect** to an already-claimed server, then sign in.
 
 ## Repository layout
 
-```txt
-app/                 Next.js App Router pages and layouts
-components/          Reusable UI and app-shell components
-hooks/               React hooks for auth, queries, uploads, and sockets
-lib/                 Frontend API client, validation, stores, and view models
-
-apps/api/            Fastify API server
-apps/worker/         BullMQ worker
-packages/database/   Shared Prisma client wrapper
-packages/shared/     Shared constants, queue names, permissions, and events
-prisma/              Prisma schema and seed script
-docs/                Architecture, API, development, and deployment docs
-docker/              Reverse proxy assets
+```text
+arciin/
+├── apps/
+│   ├── web/          Next.js App Router (dashboard, setup, login)
+│   ├── api/          Fastify REST + Socket.IO
+│   └── worker/       BullMQ background jobs
+├── packages/
+│   ├── types/        Shared TypeScript types and events
+│   ├── config/       Constants, env schemas, defaults
+│   ├── storage/      Filesystem paths, layout, migration
+│   ├── ui/           Shared UI tokens and utilities
+│   ├── database/     Prisma client (API + worker only)
+│   └── shared/       Domain helpers + compatibility barrel
+├── prisma/           Schema and migrations (server only)
+├── docker/
+├── scripts/
+└── docs/
 ```
 
-## Web app
+## Web app (`apps/web`)
 
-The web app is an App Router application with three route groups:
+Route groups:
 
-- `(setup)` for first-run claim flow
-- `(auth)` for login
-- `(dashboard)` for the authenticated shell
+- `(setup)` — first-run claim (server install only)
+- `(auth)` — login
+- `(dashboard)` — authenticated shell
 
-The root route performs instance and session gating:
+Root `/` gating uses `getRootRouteState()` → setup, login, or dashboard.
 
-- uninitialized instance -> `/setup`
-- initialized but signed out -> `/login`
-- authenticated -> `/dashboard`
+The dashboard shell uses shadcn `sidebar-07`: grouped nav, command palette, global upload overlay, Socket.IO status.
 
-The dashboard shell is built on the existing shadcn `sidebar` primitive and includes:
+## API server (`apps/api`)
 
-- grouped navigation
-- command palette
-- upload queue
-- socket connection status
-- global drag-and-drop upload overlay
+Exposes instance, auth, mobile pairing, libraries, folders, assets, uploads, activity, jobs, settings, API keys, chat, webhooks, integrations, admin.
 
-## API server
-
-The API lives in `apps/api/` and exposes:
-
-- instance claim and status
-- local authentication
-- libraries, folders, assets, uploads
-- activity feed and jobs
-- API keys
-- storage and remote-access settings
-- integrations placeholder routes
-- Socket.IO event bridge
-
-All successful responses use:
+Response shape:
 
 ```json
 { "data": {} }
 ```
 
-Errors use:
+Errors:
 
 ```json
-{
-  "error": {
-    "code": "ERROR_CODE",
-    "message": "Human readable message"
-  }
-}
+{ "error": { "code": "ERROR_CODE", "message": "Human readable message" } }
 ```
 
 ## Data model
 
-Prisma models include:
+Prisma models include `InstanceConfig`, `User`, `Session`, `ApiKey`, `StorageLocation`, `Library`, `Folder`, `Asset`, `StorageObject`, `UploadSession`, `Job`, `ActivityEvent`, and extensions (chat, webhooks, password vault, app-databases).
 
-- `InstanceConfig`
-- `User`
-- `Session`
-- `ApiKey`
-- `StorageLocation`
-- `Library`
-- `Folder`
-- `Asset`
-- `StorageObject`
-- `UploadSession`
-- `Job`
-- `ActivityEvent`
-- `Integration`
-- `Tag`
-- `AssetTag`
-
-Files stay on disk. PostgreSQL stores metadata, identities, sessions, uploads, jobs, and activity.
+Files stay on disk. PostgreSQL stores metadata only.
 
 ## Upload flow
 
-1. The client accepts drag-and-drop or file picker input.
-2. Files are POSTed to `/api/uploads` with progress tracked client-side.
-3. The API writes a temp file, computes checksum, detects media type, and stores the object.
-4. The API creates `StorageObject`, `Asset`, and `UploadSession` rows.
-5. BullMQ jobs are created for metadata extraction and thumbnail generation when needed.
-6. The worker updates the database and publishes realtime events through Redis.
+1. Client POSTs to `/api/uploads` (large uploads may bypass Next proxy via direct API origin).
+2. API writes temp file, checksum, media type; creates DB rows.
+3. BullMQ jobs enqueue analysis and thumbnails.
+4. Worker updates DB and publishes realtime events.
 
 ## Realtime
 
-Socket.IO clients authenticate with the session cookie. The API subscribes to the Redis event channel and forwards events into socket rooms for:
-
-- `user:{userId}`
-- `instance:{instanceId}`
-- `library:{libraryId}`
-- `upload:{uploadId}`
-- `job:{jobId}`
+Socket.IO authenticates via session cookie (web) or Bearer token (mobile). Rooms: `user:`, `instance:`, `library:`, `upload:`, `job:`.
 
 ## Worker
 
-The worker processes queue jobs for:
+Queues: `analyze_file`, `extract_metadata`, `generate_thumbnail`, `cleanup_temp_files`, `calculate_storage_usage`, integration placeholders.
 
-- `analyze_file`
-- `extract_metadata`
-- `generate_thumbnail`
-- `cleanup_temp_files`
-- `calculate_storage_usage`
-- `plex_sync_placeholder`
+## Related client: Arciin Mobile
 
-The worker also writes a Redis heartbeat so the API health route can report worker status.
+[`arciin-app`](../arciin-app) is a **client-only** PWA. It proxies `/api` to the user's Arciin server, stores session tokens locally, and does **not** run PostgreSQL, Redis, or instance claim. First-run setup happens on the server web UI.

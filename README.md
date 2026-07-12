@@ -5,13 +5,13 @@
 Arciin is a self-hosted private file, library, and media management platform. Run it on your own machine — organize videos, images, music, and documents into libraries, upload from the browser or scripts, and watch activity update in real time. No cloud account required.
 
 <p align="center">
-  <img src="./public/assets/images/dashboard.png" alt="Arciin dashboard" width="900" />
+  <img src="./apps/web/public/assets/images/dashboard.png" alt="Arciin dashboard" width="900" />
   <br />
   <em>Dashboard — libraries, storage overview, uploads, and live activity.</em>
 </p>
 
 <p align="center">
-  <img src="./public/assets/images/Sign_up..png" alt="Arciin first-run setup" width="900" />
+  <img src="./apps/web/public/assets/images/Sign_up..png" alt="Arciin first-run setup" width="900" />
   <br />
   <em>First visit — claim the instance with your setup token and create the owner account.</em>
 </p>
@@ -255,7 +255,7 @@ Shortcut (web rebuild + PM2 restart):
 pnpm deploy
 ```
 
-If `arciin-web` shows **errored** and logs say *Could not find a production build in the '.next' directory*, run `pnpm build` before restart.
+If `arciin-web` shows **errored** and logs say *Could not find a production build*, run `pnpm build` before restart (build output lives in `apps/web/.next`).
 
 If you only changed environment variables (`.env`):
 
@@ -299,10 +299,10 @@ pnpm check        # lint + typecheck + build
 ### WSL: Python on Windows, Arciin in WSL
 
 ```bash
-bash scripts/examples/arciin_wsl_hosts.sh
+bash scripts/examples/lib/wsl_hosts.sh
 ```
 
-Set `API_BASE` in `scripts/examples/arciin_example_client.py` to the printed WSL IP.
+Set `API_BASE` in `scripts/examples/lib/arciin_client.py` to the printed WSL IP.
 
 ---
 
@@ -332,7 +332,7 @@ See `.env.example` for the full list.
 
 ## Python & API examples
 
-Runnable scripts live in **`scripts/examples/`**. Set shared config once in `arciin_example_client.py`.
+Runnable scripts live in **`scripts/examples/`** — **`api/`** for REST, **`events/`** for Socket.IO. Set shared config once in `lib/arciin_client.py`.
 
 ```bash
 pip install requests
@@ -341,12 +341,11 @@ pip install requests
 
 | Script | What it does |
 |--------|-------------|
-| `health_check_example.py` | Ping API health |
-| `list_libraries_example.py` | List libraries and IDs |
-| `create_folder_example.py` | Create a folder |
-| `upload_image_example.py` | Upload to Images library |
-| `upload_video_example.py` | Upload to Videos library |
-| `socket_events_example.py` | Listen for live events |
+| `api/01_health_check.py` | Ping API health |
+| `api/02_list_libraries.py` | List libraries and IDs |
+| `api/04_create_folder.py` | Create a folder |
+| `api/06_upload_to_library.py` | Upload to a chosen library |
+| `events/01_monitor_api_key.py` | Listen for live events |
 
 Create API keys in the app: **Developer → API Keys**.
 
@@ -364,6 +363,10 @@ bash scripts/verify-install-parity.sh   # quick parity check
 
 Full guide: **[`docs/DOCKER.md`](./docs/DOCKER.md)** (storage bind mounts, any Linux host, troubleshooting).
 
+**Private distribution (customers, no monorepo):** **[`docs/PRIVATE_DISTRIBUTION.md`](./docs/PRIVATE_DISTRIBUTION.md)** — image-based compose, `install-private.sh`, release tarball. Prototype only (no public registry / Stripe / license cloud yet).
+
+### Dev / source-based compose
+
 ```bash
 ./scripts/docker-setup.sh
 # Interactive: picks SSD path, writes .env, runs compose
@@ -380,6 +383,17 @@ export ARCIIN_HOST_DATA_DIR=/mnt/your-ssd/arciin-data
 docker compose up --build -d
 ```
 
+### Production images (local prototype)
+
+```bash
+pnpm docker:build          # tag arciin/arciin-{web,api,worker}:latest
+pnpm docker:up             # docker-compose.production.yml (images only)
+pnpm docker:logs
+pnpm docker:down
+pnpm docker:package        # dist/arciin-private-release.tar.gz (no source)
+pnpm docker:install-private  # install into /srv/arciin + storage
+```
+
 Open **http://localhost** (Caddy on port 80). Your files live on disk at **`ARCIIN_HOST_DATA_DIR`**, not inside the container.
 
 ---
@@ -388,22 +402,27 @@ Open **http://localhost** (Caddy on port 80). Your files live on disk at **`ARCI
 
 ```text
 arciin/
-├── app/                    # Next.js App Router (UI)
 ├── apps/
+│   ├── web/                # Next.js App Router (UI)
 │   ├── api/                # Fastify REST + Socket.IO + chat tools
 │   └── worker/             # BullMQ jobs (thumbnails, metadata)
-├── components/             # React UI (dashboard, libraries, chat, preview)
 ├── packages/
-│   ├── database/           # Prisma client wrapper
-│   └── shared/             # Shared types, PDF navigation helpers
-├── prisma/                 # Schema and migrations
+│   ├── types/              # Shared TypeScript types and events
+│   ├── config/             # Constants, env schemas, defaults
+│   ├── storage/            # Storage paths, layout, migration
+│   ├── ui/                 # Shared UI tokens and utilities
+│   ├── database/           # Prisma client wrapper (API + worker only)
+│   └── shared/             # Domain helpers + compatibility barrel
+├── prisma/                 # Schema and migrations (server only)
 ├── scripts/
 │   ├── examples/           # Python integration examples
 │   ├── start.sh            # Start all PM2 processes
 │   └── stop.sh             # Stop all PM2 processes
 ├── docker/                 # Caddy config and helpers
-├── docker-compose.yml
-└── install.sh              # First-time setup script
+├── docker-compose.yml      # Source-based compose (dev / clone install)
+├── docker-compose.production.yml  # Image-based private distribution
+├── .env.production.example
+└── install.sh              # Server install (web + api + worker + DB)
 ```
 
 ---
@@ -422,9 +441,13 @@ arciin/
 |-----|----------|
 | [`docs/DEVELOPMENT.md`](./docs/DEVELOPMENT.md) | Day-to-day dev workflow |
 | [`docs/DOCKER.md`](./docs/DOCKER.md) | Docker on any Linux host, SSD bind mounts |
+| [`docs/PRIVATE_DISTRIBUTION.md`](./docs/PRIVATE_DISTRIBUTION.md) | Image-based install without monorepo (prototype) |
+| [`docs/LICENSE_SERVER.md`](./docs/LICENSE_SERVER.md) | Hosted license server prototype (no Stripe) |
+| [`docs/ACCOUNT_DASHBOARD.md`](./docs/ACCOUNT_DASHBOARD.md) | Account portal prototype (account.arciin.com) |
 | [`docs/DEPLOYMENT.md`](./docs/DEPLOYMENT.md) | Production and self-hosting |
 | [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) | System design |
 | [`docs/API.md`](./docs/API.md) | API overview |
+| [`docs/THIRD_PARTY_NOTICES.md`](./docs/THIRD_PARTY_NOTICES.md) | Open-source licenses, fonts, brand icon attribution |
 | In-app **Documentation** | Full REST manual at `/docs` when running |
 
 Also see [`AGENTS.md`](./AGENTS.md) for contributor conventions.
@@ -433,7 +456,11 @@ Also see [`AGENTS.md`](./AGENTS.md) for contributor conventions.
 
 ## License
 
-Private / project-specific — see repository settings for license terms if published.
+Arciin is **proprietary** software. See [`LICENSE`](./LICENSE) for full terms.
+
+You may install and run Arciin on servers you own or control. Redistribution, sublicensing, and multi-tenant SaaS resale require separate permission.
+
+Third-party open-source components and brand icon attributions are documented in [`docs/THIRD_PARTY_NOTICES.md`](./docs/THIRD_PARTY_NOTICES.md).
 
 ---
 

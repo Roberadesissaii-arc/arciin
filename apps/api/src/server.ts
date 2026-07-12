@@ -22,8 +22,11 @@ import { registerMobileRoutes } from "@/modules/mobile/routes"
 import { registerLibraryRoutes } from "@/modules/libraries/routes"
 import { registerPasswordVaultRoutes } from "@/modules/password-vault/routes"
 import { registerSettingsRoutes } from "@/modules/settings/routes"
+import { registerShareRoutes } from "@/modules/shares/routes"
 import { registerUploadRoutes } from "@/modules/uploads/routes"
+import { registerImportRoutes } from "@/modules/imports/routes"
 import { registerWebhookRoutes } from "@/modules/webhooks/routes"
+import { registerLicenseRoutes } from "@/modules/license/routes"
 import { registerApiProtection } from "@/plugins/api-protection"
 import { registerCookies } from "@/plugins/cookies"
 import { registerCors } from "@/plugins/cors"
@@ -37,6 +40,7 @@ import { registerHealthRoutes } from "@/routes/health.routes"
 import { trimOversizedLogFiles } from "@/services/logs/log-files"
 import { registerCloudflareTunnelPersistence } from "@/services/remote-access/tunnel-boot"
 import { repairInstanceStorageRootsIfNeeded } from "@/services/storage/effective-storage-root"
+import { initUploadLimits } from "@/services/config/upload-limits"
 import { ensureStorageDirectories } from "@/services/storage/local-storage"
 
 export async function createServer() {
@@ -45,7 +49,9 @@ export async function createServer() {
   const logPath = path.join(apiConfig.storage.logsDir, "api.log")
 
   const fastify = Fastify({
-    trustProxy: true,
+    // Trust only known proxy subnets (default: loopback + RFC-1918/ULA) so a
+    // public client cannot forge X-Forwarded-For past the real edge proxy.
+    trustProxy: apiConfig.trustProxy,
     logger: {
       level: process.env.LOG_LEVEL ?? "info",
       stream: pino.multistream([
@@ -58,6 +64,7 @@ export async function createServer() {
     },
   })
 
+  await initUploadLimits()
   await registerHelmet(fastify)
   await registerErrorHandler(fastify)
   await registerCors(fastify)
@@ -108,12 +115,15 @@ export async function createServer() {
       await registerLibraryRoutes(api)
       await registerFolderRoutes(api)
       await registerAssetRoutes(api)
+      await registerShareRoutes(api)
       await registerUploadRoutes(api)
+      await registerImportRoutes(api)
       await registerActivityRoutes(api)
       await registerJobRoutes(api)
       await registerLogsRoutes(api)
       await registerApiKeyRoutes(api)
       await registerSettingsRoutes(api)
+      await registerLicenseRoutes(api)
       await registerPasswordVaultRoutes(api)
       await registerWebhookRoutes(api)
       await registerIntegrationRoutes(api)

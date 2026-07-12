@@ -15,7 +15,11 @@ const ALGO = "aes-256-gcm"
 const KEY_SALT = "arciin-password-vault-v1"
 
 function vaultKey(): Buffer {
-  return scryptSync(apiConfig.SESSION_SECRET, KEY_SALT, 32)
+  // Dedicated key when configured (ARCIIN_ENCRYPTION_KEY), else SESSION_SECRET
+  // so existing vault entries keep decrypting. KEY_SALT domain-separates this
+  // subkey from the webhook/integration one.
+  const material = apiConfig.ARCIIN_ENCRYPTION_KEY ?? apiConfig.SESSION_SECRET
+  return scryptSync(material, KEY_SALT, 32)
 }
 
 export function encryptVaultPayload(payload: VaultPayload): {
