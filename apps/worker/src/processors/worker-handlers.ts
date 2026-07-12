@@ -405,7 +405,7 @@ export async function handleMediaJob(
     const uploadNotYetAnnounced =
       upload && upload.status !== "READY" && upload.completedAt == null
 
-    if (uploadNotYetAnnounced && !asset.importSourceUrl) {
+    if (uploadNotYetAnnounced) {
       const origin = asset.importSourceUrl ? "url" : "upload"
       const destination = upload.targetLibrary?.name
 
