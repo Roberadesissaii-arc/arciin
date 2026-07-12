@@ -28,8 +28,12 @@ ENV NODE_ENV=production
 
 # The worker shells out to media tools (ffmpeg/yt-dlp) on remote input — never
 # as root. Pin a matching host uid via `user:` in compose for bind-mount writes.
-RUN addgroup -S -g 1000 arciin && adduser -S -u 1000 -G arciin arciin \
- && chown -R arciin:arciin /app
-USER arciin
+# Base images sometimes already ship a uid/gid 1000 user (e.g. node:alpine's
+# built-in "node") — reuse it instead of failing on a duplicate id.
+RUN set -eu; \
+    getent group 1000 >/dev/null 2>&1 || addgroup -S -g 1000 arciin; \
+    getent passwd 1000 >/dev/null 2>&1 || adduser -S -u 1000 -G "$(getent group 1000 | cut -d: -f1)" arciin; \
+    chown -R 1000:1000 /app
+USER 1000:1000
 
 CMD ["pnpm", "tsx", "--tsconfig", "apps/worker/tsconfig.json", "apps/worker/src/index.ts"]

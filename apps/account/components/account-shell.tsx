@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { useEffect, useState, type ReactNode } from "react"
+import { useState, type ReactNode } from "react"
 
 import { BrandLockupNav } from "@/components/brand"
 import { ProfileMenu, type ProfileSummary } from "@/components/profile-menu"
@@ -28,10 +28,11 @@ export function AccountShell({
 }) {
   const pathname = usePathname() || "/account"
   const [menuOpen, setMenuOpen] = useState(false)
-
-  useEffect(() => {
+  const [menuOpenForPathname, setMenuOpenForPathname] = useState(pathname)
+  if (pathname !== menuOpenForPathname) {
+    setMenuOpenForPathname(pathname)
     setMenuOpen(false)
-  }, [pathname])
+  }
 
   return (
     <div className="flex min-h-dvh flex-col bg-[var(--bg)]">

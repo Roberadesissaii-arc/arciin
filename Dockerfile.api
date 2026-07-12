@@ -36,8 +36,12 @@ RUN chmod +x scripts/arciin-init.sh scripts/entrypoint-api.sh
 
 # Run as a non-root user (uid/gid 1000 by default). Pin a matching host uid via
 # `user:` in compose so the bind-mounted data dir stays writable.
-RUN addgroup -S -g 1000 arciin && adduser -S -u 1000 -G arciin arciin \
- && chown -R arciin:arciin /app
-USER arciin
+# Base images sometimes already ship a uid/gid 1000 user (e.g. node:alpine's
+# built-in "node") — reuse it instead of failing on a duplicate id.
+RUN set -eu; \
+    getent group 1000 >/dev/null 2>&1 || addgroup -S -g 1000 arciin; \
+    getent passwd 1000 >/dev/null 2>&1 || adduser -S -u 1000 -G "$(getent group 1000 | cut -d: -f1)" arciin; \
+    chown -R 1000:1000 /app
+USER 1000:1000
 
 CMD ["sh", "scripts/entrypoint-api.sh"]
