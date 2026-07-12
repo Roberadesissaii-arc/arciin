@@ -6,9 +6,8 @@ import { useQuery } from "@tanstack/react-query"
 import { AssetPreviewFrame } from "@/components/libraries/asset-preview-frame"
 import { AudioCardArtwork } from "@/components/libraries/audio-card-artwork"
 import { VideoHoverThumb } from "@/components/libraries/video-hover-thumb"
-import { MediaTypeIcon } from "@/components/libraries/media-type-icon"
+import { FileTypePlaceholder } from "@/components/libraries/file-type-placeholder"
 import { thumbnailStatusLabel } from "@/components/libraries/thumbnail-status-badge"
-import { cn } from "@/lib/utils"
 import {
   toggleMusicAsset,
   useIsMusicAssetActive,
@@ -38,15 +37,15 @@ function DocumentThumbnailPlaceholder({
 }) {
   return (
     <AssetPreviewFrame asset={asset} badgeLabel={badgeLabel}>
-      <div className="relative flex aspect-[4/3] items-center justify-center overflow-hidden rounded-xl border border-border bg-muted/40 text-muted-foreground">
-        <MediaTypeIcon
-          mediaType={asset.mediaType}
-          filename={asset.originalFilename}
-          mimeType={asset.mimeType}
-          extension={asset.extension}
-          className={cn("size-7", loading && "arciin-doc-icon-pulse")}
-        />
-      </div>
+      <FileTypePlaceholder
+        mediaType={asset.mediaType}
+        filename={asset.originalFilename}
+        mimeType={asset.mimeType}
+        extension={asset.extension}
+        loading={loading}
+        className="aspect-[4/3] rounded-xl"
+        iconClassName="size-7"
+      />
     </AssetPreviewFrame>
   )
 }

@@ -4,7 +4,7 @@ import Link from "next/link"
 import { useState } from "react"
 
 import { AssetStatusBadge } from "@/components/dashboard/asset-status-badge"
-import { MediaTypeIcon } from "@/components/libraries/media-type-icon"
+import { FileTypePlaceholder } from "@/components/libraries/file-type-placeholder"
 import { VideoHoverThumb } from "@/components/libraries/video-hover-thumb"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useAssets } from "@/hooks/use-assets"
@@ -41,15 +41,14 @@ function TypeLabelBadge({ label }: { label: string }) {
 
 function UploadPlaceholder({ asset }: { asset: AssetSummary }) {
   return (
-    <div className="flex size-full items-center justify-center bg-muted/40">
-      <MediaTypeIcon
-        mediaType={asset.mediaType}
-        filename={asset.originalFilename}
-        mimeType={asset.mimeType}
-        extension={asset.extension}
-        className="size-6 text-muted-foreground"
-      />
-    </div>
+    <FileTypePlaceholder
+      mediaType={asset.mediaType}
+      filename={asset.originalFilename}
+      mimeType={asset.mimeType}
+      extension={asset.extension}
+      className="size-full border-0"
+      iconClassName="size-6"
+    />
   )
 }
 

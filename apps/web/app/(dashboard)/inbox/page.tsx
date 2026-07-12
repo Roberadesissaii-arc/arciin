@@ -1,3 +1,4 @@
+import { InboxPageIntro } from "@/components/libraries/inbox-page-intro"
 import { LibraryBrowser } from "@/components/libraries/library-browser"
 
 export default function InboxPage() {
@@ -6,6 +7,7 @@ export default function InboxPage() {
       title="Inbox"
       description="Unclassified files land here automatically. Review, move, or organise them into the right library."
       librarySlug="inbox"
+      intro={<InboxPageIntro />}
     />
   )
 }
