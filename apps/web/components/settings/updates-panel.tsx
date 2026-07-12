@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { CheckCircle2, ExternalLink, RefreshCw, Sparkles } from "lucide-react"
-import { toast } from "@/lib/notifications/arciin-toast"
+import { notifyAutoUpdateToggled, notifyError, notifySuccess } from "@/lib/notifications/toast-actions"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -90,17 +90,28 @@ function AutoUpdateCard({ data }: { data: AutoUpdateConfig }) {
     mutationFn: (input: { enabled: boolean; hour: number | null }) => updateAutoUpdateSettings(input),
     onSuccess: (result) => {
       queryClient.setQueryData(queryKeys.autoUpdateSettings, result)
-      toast.success(result.enabled ? "Automatic updates on" : "Automatic updates off")
+      notifyAutoUpdateToggled(result.enabled)
     },
-    onError: (e) => toast.error(e instanceof Error ? e.message : "Could not save automatic update settings."),
+    onError: (e) =>
+      notifyError(
+        "Could not save automatic update settings",
+        e instanceof Error ? e.message : "Try again in a moment.",
+      ),
   })
 
   const applyMutation = useMutation({
     mutationFn: () => applyStagedUpdate(),
     onSuccess: () => {
-      toast.success("Applying update — services are restarting now.")
+      notifySuccess(
+        "Applying update",
+        "Services are restarting now — this takes a few seconds and briefly interrupts active uploads.",
+      )
     },
-    onError: (e) => toast.error(e instanceof Error ? e.message : "Could not apply the staged update."),
+    onError: (e) =>
+      notifyError(
+        "Could not apply the staged update",
+        e instanceof Error ? e.message : "Try again in a moment.",
+      ),
   })
 
   return (

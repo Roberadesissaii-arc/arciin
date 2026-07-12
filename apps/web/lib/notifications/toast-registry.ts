@@ -53,6 +53,8 @@ export const TOAST_SURFACE = {
   apiKey: "arciin-action-toast arciin-action-toast--api-key",
   ipBlocked: "arciin-action-toast arciin-action-toast--ip-blocked",
   ipAllowed: "arciin-action-toast arciin-action-toast--ip-allowed",
+  shareFeedback: "arciin-action-toast arciin-action-toast--share-feedback",
+  update: "arciin-action-toast arciin-action-toast--update",
   default: "arciin-action-toast",
 } as const
 

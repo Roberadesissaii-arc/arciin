@@ -4,11 +4,13 @@ import {
   CloudUpload,
   Download,
   FingerprintPattern,
+  Heart,
   Info,
   LayoutDashboard,
   Link2,
   Loader2,
   Pencil,
+  Sparkles,
   Trash2,
   TriangleAlert,
   Ban,
@@ -216,6 +218,26 @@ export function notifyInfo(title: string, description?: string, meta?: ToastMeta
     icon: toastIcon(Info),
     duration: meta?.duration ?? 4200,
     id: meta?.id,
+  })
+}
+
+export function notifyShareFeedback(title: string, description?: string) {
+  return actionToast(title, {
+    description,
+    className: toastSurfaceClass("shareFeedback"),
+    icon: toastIcon(Heart),
+    duration: 4800,
+  })
+}
+
+export function notifyAutoUpdateToggled(enabled: boolean) {
+  return actionToast(enabled ? "Automatic updates on" : "Automatic updates off", {
+    description: enabled
+      ? "Arciin will stage new versions in the background at your chosen hour. You still choose when to apply them."
+      : "You can still check for and apply updates manually from this page.",
+    className: toastSurfaceClass("update"),
+    icon: toastIcon(Sparkles),
+    duration: 4800,
   })
 }
 

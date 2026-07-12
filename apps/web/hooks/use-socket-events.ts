@@ -2,7 +2,6 @@
 
 import { useEffect, useRef } from "react"
 import { useQueryClient } from "@tanstack/react-query"
-import { toast } from "@/lib/notifications/arciin-toast"
 import type { Socket } from "socket.io-client"
 
 import { queryKeys } from "@/lib/api/query-keys"
@@ -25,6 +24,8 @@ import { extractClientIpFromSecurityText } from "@/lib/notifications/toast-copy"
 import {
   notifyApiRequestBlocked,
   notifyIpPolicy,
+  notifyInfo,
+  notifyShareFeedback,
   notifyWarning,
 } from "@/lib/notifications/toast-actions"
 import { shouldToastForActivityEvent } from "@/lib/notifications/activity-toast-policy"
@@ -193,7 +194,7 @@ export function useSocketEvents(socket: Socket | null) {
             variant: sentiment === "DISLIKE" ? "warning" : "success",
             source: "activity",
           })
-          toast.message(title, message ? { description: message } : undefined)
+          notifyShareFeedback(title, message)
         } else if (eventType === "upload.completed" || eventType === "upload.failed") {
           if (eventType === "upload.completed") {
             const libraryId =
@@ -274,7 +275,7 @@ export function useSocketEvents(socket: Socket | null) {
             variant: "default",
             source: "activity",
           })
-          toast.message(title, message ? { description: message } : undefined)
+          notifyInfo(title, message)
         }
       }
 

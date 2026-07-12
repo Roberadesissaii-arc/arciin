@@ -106,7 +106,7 @@ export function AppDatabaseDetailPage({ databaseId }: { databaseId: string }) {
       queryClient.invalidateQueries({ queryKey: queryKeys.appDatabase(databaseId) })
       queryClient.invalidateQueries({ queryKey: queryKeys.adminTables })
       setTableSheetOpen(false); setTableName("")
-      toast.success("Table created.")
+      toast.success("Table created.", { description: "Add columns, or start adding rows right away." })
     },
     onError: (e) => { toast.error(e instanceof Error ? e.message : "Could not create table.") },
   })
@@ -116,7 +116,7 @@ export function AppDatabaseDetailPage({ databaseId }: { databaseId: string }) {
     onSuccess: (_data, folderId) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.appDatabaseFolders(databaseId) })
       if (openTableId === folderId) setOpenTableId(null)
-      toast.success("Table removed.")
+      toast.success("Table removed.", { description: "The table and all of its rows were deleted." })
     },
     onError: (e) => { toast.error(e instanceof Error ? e.message : "Could not delete table.") },
   })
@@ -144,7 +144,7 @@ export function AppDatabaseDetailPage({ databaseId }: { databaseId: string }) {
       queryClient.invalidateQueries({ queryKey: queryKeys.appFolderRecords(tid) })
       queryClient.invalidateQueries({ queryKey: queryKeys.adminTables })
       setRowSheetOpen(false); setRowKey(""); setRowValues({}); setRowRawBody(""); setRowSheetForTableId(null)
-      toast.success("Row saved to PostgreSQL.")
+      toast.success("Row saved.", { description: "Your data was added to this table in PostgreSQL." })
     },
     onError: (e) => { toast.error(e instanceof Error ? e.message : "Could not save row.") },
   })
@@ -174,7 +174,7 @@ export function AppDatabaseDetailPage({ databaseId }: { databaseId: string }) {
     setColumns(next)
     saveColumns(effectiveTableId, next)
     setColSheetOpen(false); setColName(""); setColType("text"); setColDefault(""); setColNullable(true); setColPrimary(false)
-    toast.success("Column added.")
+    toast.success("Column added.", { description: "New rows will now show a field for this column." })
   }
 
   function removeColumn(id: string) {

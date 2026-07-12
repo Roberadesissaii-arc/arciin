@@ -63,7 +63,7 @@ export function AppDatabasesPage() {
       setOpen(false)
       setName(generateDatabaseName())
       setDescription("")
-      toast.success("Database created with a Default table.")
+      toast.success("Database created.", { description: "A Default table is ready — add columns or start adding rows." })
     },
     onError: (e) => {
       toast.error(e instanceof Error ? e.message : "Could not create database.")

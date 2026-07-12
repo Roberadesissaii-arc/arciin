@@ -48,11 +48,27 @@ const SOURCE_LABEL: Record<InboxNotification["source"], string> = {
   system: "System",
 }
 
-const VARIANT_BADGE: Record<InboxNotification["variant"], string> = {
-  default: "border-0 bg-zinc-900 text-white",
-  success: "border-0 bg-emerald-600 text-white",
-  error: "border-0 bg-red-600 text-white",
-  warning: "border-0 bg-amber-500 text-white",
+/** Badge color reflects the category (source) — stable regardless of outcome. */
+const SOURCE_BADGE: Record<InboxNotification["source"], string> = {
+  upload: "border-0 bg-primary text-primary-foreground",
+  security: "border-0 bg-blue-600 text-white",
+  activity: "border-0 bg-violet-600 text-white",
+  system: "border-0 bg-zinc-600 text-white",
+}
+
+/** Outcome indicator, shown separately from the source badge so the two never conflate. */
+const VARIANT_DOT: Record<InboxNotification["variant"], string> = {
+  default: "bg-zinc-400",
+  success: "bg-emerald-500",
+  error: "bg-red-500",
+  warning: "bg-amber-500",
+}
+
+const VARIANT_LABEL: Record<InboxNotification["variant"], string> = {
+  default: "Info",
+  success: "Success",
+  error: "Failed",
+  warning: "Warning",
 }
 
 function mapActivityToInbox(event: {
@@ -143,21 +159,26 @@ function NotificationTableRow({
         <Badge
           className={cn(
             "inline-flex h-7 min-w-[5rem] justify-center rounded-md px-2.5 text-[11px] font-bold uppercase tracking-wide shadow-none",
-            VARIANT_BADGE[item.variant],
+            SOURCE_BADGE[item.source] ?? SOURCE_BADGE.activity,
           )}
         >
           {SOURCE_LABEL[item.source] ?? "Activity"}
         </Badge>
       </TableCell>
       <TableCell className="max-w-0 py-3.5">
-        <span
-          className={cn(
-            "block min-w-0 max-w-[14rem] truncate text-[13px] font-medium sm:max-w-[18rem] lg:max-w-[24rem]",
-            unreadItem ? "text-zinc-900" : "text-zinc-600",
-          )}
-          title={item.title}
-        >
-          {item.title}
+        <span className="flex min-w-0 items-center gap-1.5" title={`${VARIANT_LABEL[item.variant]}: ${item.title}`}>
+          <span
+            className={cn("size-1.5 shrink-0 rounded-full", VARIANT_DOT[item.variant])}
+            aria-hidden
+          />
+          <span
+            className={cn(
+              "block min-w-0 max-w-[14rem] truncate text-[13px] font-medium sm:max-w-[18rem] lg:max-w-[24rem]",
+              unreadItem ? "text-zinc-900" : "text-zinc-600",
+            )}
+          >
+            {item.title}
+          </span>
         </span>
       </TableCell>
       <TableCell className="max-w-0 py-3.5">
