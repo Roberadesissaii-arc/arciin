@@ -4,7 +4,9 @@ let unlockInstalled = false
 function getContext(): AudioContext | null {
   if (typeof window === "undefined") return null
   try {
-    audioContext ??= new AudioContext()
+    if (!audioContext || audioContext.state === "closed") {
+      audioContext = new AudioContext()
+    }
     return audioContext
   } catch {
     return null

@@ -89,7 +89,7 @@ export function ActivityItem({
 
       {dashboard ? (
         <>
-          <div className="min-w-0 flex-1 overflow-hidden">
+          <div className="min-w-0 max-w-[9.5rem] flex-1 overflow-hidden sm:max-w-[13rem] lg:max-w-[16rem] xl:max-w-[20rem]">
             <p className="truncate text-[13.5px] font-semibold leading-tight text-zinc-900">
               {event.title}
             </p>
@@ -103,7 +103,7 @@ export function ActivityItem({
             ) : null}
           </div>
 
-          <span className="inline-flex shrink-0 self-start rounded-md bg-zinc-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+          <span className="inline-flex min-w-[92px] shrink-0 items-center justify-center self-start rounded-md bg-zinc-100 px-2 py-0.5 text-center text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
             {label}
           </span>
 
