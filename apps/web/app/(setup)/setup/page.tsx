@@ -1,4 +1,3 @@
-import { redirect } from "next/navigation"
 import { Suspense } from "react"
 
 import {
@@ -6,46 +5,26 @@ import {
   AuthLightLegalFooter,
   AuthLightPageHeader,
 } from "@/components/auth/auth-light"
+import { AuthRouteGuard } from "@/components/auth/auth-route-guard"
 import { SetupForm } from "@/components/auth/setup-form"
 import { SetupHeroCopy } from "@/components/auth/setup-hero-copy"
-import { AccessDeniedScreen } from "@/components/app-shell/access-denied-screen"
-import { SystemUnavailable } from "@/components/app-shell/system-unavailable"
-import { getRootRouteState } from "@/lib/utils/route-guards"
 
 export const dynamic = "force-dynamic"
 
-export default async function SetupPage() {
-  const state = await getRootRouteState()
+export default function SetupPage() {
+  return (
+    <AuthRouteGuard
+      contextLabel="Setup"
+      unavailableTitle="Setup is waiting for the instance service."
+      unavailableDescription="The claim screen is ready, but Arciin cannot verify setup state until the API is available."
+      redirects={{ authenticated: "/dashboard", unauthenticated: "/login" }}
+    >
+      <SetupPageShell />
+    </AuthRouteGuard>
+  )
+}
 
-  if (state.kind === "authenticated") {
-    redirect("/dashboard")
-  }
-
-  if (state.kind === "unauthenticated") {
-    redirect("/login")
-  }
-
-  if (state.kind === "unavailable") {
-    return (
-      <SystemUnavailable
-        contextLabel="Setup"
-        title="Setup is waiting for the instance service."
-        description="The claim screen is ready, but Arciin cannot verify setup state until the API is available."
-      />
-    )
-  }
-
-  if (state.kind === "ip-forbidden") {
-    return (
-      <AccessDeniedScreen
-        theme="light"
-        contextLabel="Setup"
-        message={state.message}
-        instanceName={state.instance.instanceName}
-      />
-    )
-  }
-
+function SetupPageShell() {
   return (
     <main className="relative flex h-svh max-h-svh overflow-hidden bg-[#f7f7f7] text-[#222222]">
       <section className="relative z-0 hidden h-full lg:flex lg:w-[48%] xl:w-[45%] lg:p-5">
