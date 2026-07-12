@@ -13,6 +13,7 @@ import {
 } from "@arciin/shared"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { copyToClipboard } from "@/lib/utils/clipboard"
+import { createId } from "@/lib/utils/create-id"
 import { cn } from "@/lib/utils"
 import { IntegrationsDocs } from "@/components/docs/integrations-docs"
 import { DOC_TOC_GROUPS, flattenDocToc } from "@/lib/docs/doc-toc"
@@ -436,7 +437,7 @@ function ApiPlayground() {
           </table>
           <button
             type="button"
-            onClick={() => setHdrs(p => [...p, { id: crypto.randomUUID(), key: "", value: "", enabled: true }])}
+            onClick={() => setHdrs(p => [...p, { id: createId(), key: "", value: "", enabled: true }])}
             className="mt-1 text-[11px] font-medium text-primary hover:underline"
           >
             + Add header

@@ -25,6 +25,7 @@ import {
 } from "@/lib/api/app-databases"
 import { getMe } from "@/lib/api/auth"
 import { queryKeys } from "@/lib/api/query-keys"
+import { createId } from "@/lib/utils/create-id"
 import {
   columnValueToTyped,
   loadColumns,
@@ -136,7 +137,7 @@ export function AppDatabaseDetailPage({ databaseId }: { databaseId: string }) {
         payload = payloadFromRaw(rowRawBody)
       }
 
-      return createFolderRecord(tid, { name: rowKey.trim() || crypto.randomUUID(), payload })
+      return createFolderRecord(tid, { name: rowKey.trim() || createId(), payload })
     },
     onSuccess: () => {
       const tid = rowSheetForTableId ?? effectiveTableId!
@@ -162,7 +163,7 @@ export function AppDatabaseDetailPage({ databaseId }: { databaseId: string }) {
   function addColumn() {
     if (!colName.trim() || !effectiveTableId) return
     const newCol: ColumnDef = {
-      id: crypto.randomUUID(),
+      id: createId(),
       name: colName.trim(),
       type: colType,
       defaultValue: colDefault,

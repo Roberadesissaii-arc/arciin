@@ -3,6 +3,7 @@
 import { create } from "zustand"
 
 import type { SocketEventPayload } from "@/lib/types/events"
+import { createId } from "@/lib/utils/create-id"
 
 export type LiveSocketEvent = SocketEventPayload & {
   _rxAt: string
@@ -34,7 +35,7 @@ export function buildLiveSocketEvent(
   incoming: SocketEventPayload,
 ): LiveSocketEvent {
   return {
-    id: incoming?.id || crypto.randomUUID(),
+    id: incoming?.id || createId(),
     type: (incoming?.type ?? type) as SocketEventPayload["type"],
     userId: incoming?.userId,
     instanceId: incoming?.instanceId,
@@ -47,6 +48,6 @@ export function buildLiveSocketEvent(
     data: incoming?.data,
     createdAt: incoming?.createdAt || new Date().toISOString(),
     _rxAt: new Date().toISOString(),
-    _uid: crypto.randomUUID(),
+    _uid: createId(),
   }
 }
