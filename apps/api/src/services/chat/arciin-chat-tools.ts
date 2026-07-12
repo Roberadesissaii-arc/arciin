@@ -1,4 +1,5 @@
-import type { PrismaClient } from "@prisma/client"
+import type { Prisma, PrismaClient } from "@prisma/client"
+import { nanoid } from "nanoid"
 import type { AiLibraryToolAccess } from "@arciin/shared"
 import { libraryAllowsFolderMutations, libraryAllowsOrganize } from "@arciin/shared"
 
@@ -142,7 +143,137 @@ export const ARCIIN_CHAT_TOOLS = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "list_app_database_tables",
+      description:
+        "List the tables inside one of the user's App data databases (logical JSON stores, separate from library files), with row counts. Use this whenever the user asks what tables or databases they have, or before adding data so you know what already exists — do not guess table names.",
+      parameters: {
+        type: "object",
+        properties: {
+          database_name: {
+            type: "string",
+            description: "App database name or slug. Omit if the user only has one — it will be used automatically.",
+          },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "add_app_database_rows",
+      description:
+        "Insert one or more rows into a table in one of the user's App data databases. Creates the table automatically if it doesn't exist yet. Use when the user asks you to add, insert, or seed sample/test data into a database table from chat.",
+      parameters: {
+        type: "object",
+        properties: {
+          database_name: {
+            type: "string",
+            description: "App database name or slug. Omit if the user only has one — it will be used automatically.",
+          },
+          table_name: {
+            type: "string",
+            description: "Table name, e.g. \"orders\". Created automatically if it doesn't already exist.",
+          },
+          rows: {
+            type: "array",
+            description:
+              "Rows to insert. Each row is a JSON object of field/value pairs you choose based on what the table is for. Optionally include a \"_name\" field per row to set its display name; otherwise one is generated.",
+            items: { type: "object" },
+          },
+        },
+        required: ["table_name", "rows"],
+      },
+    },
+  },
 ] as const
+
+async function ensureAppDatabaseFeatureEnabled(
+  ctx: ArciinChatToolContext,
+): Promise<{ error: string; message: string } | null> {
+  const [{ hasFeature, plansWithFeature }, licenseService] = await Promise.all([
+    import("@arciin/shared"),
+    import("@/services/license/license-service"),
+  ])
+  const snapshot = await licenseService.loadLicenseSnapshot(ctx.prisma)
+  if (hasFeature(snapshot, "developer.app_databases")) return null
+  const needed = plansWithFeature("developer.app_databases")
+  return {
+    error: "license_required",
+    message: `App data databases require a higher Arciin plan (${needed.join(", ")}).`,
+  }
+}
+
+async function resolveAppDatabaseByName(
+  ctx: ArciinChatToolContext,
+  databaseName?: string,
+): Promise<
+  | { database: { id: string; name: string; slug: string } }
+  | { error: string; message: string; available?: string[] }
+> {
+  const where = databaseName
+    ? {
+        OR: [
+          { name: { equals: databaseName, mode: "insensitive" as const } },
+          { slug: slugify(databaseName) },
+        ],
+      }
+    : {}
+  const matches = await ctx.prisma.appDatabase.findMany({
+    where,
+    select: { id: true, name: true, slug: true },
+    take: 10,
+  })
+
+  if (matches.length === 1) return { database: matches[0]! }
+
+  if (matches.length === 0) {
+    const all = await ctx.prisma.appDatabase.findMany({ select: { name: true }, take: 20 })
+    return {
+      error: databaseName ? "database_not_found" : "no_databases",
+      message: databaseName
+        ? `No app database named "${databaseName}". Available: ${all.map((d) => d.name).join(", ") || "none"}.`
+        : "No app databases exist yet. Create one in App data databases first.",
+      available: all.map((d) => d.name),
+    }
+  }
+
+  return {
+    error: "ambiguous_database",
+    message: `Multiple app databases matched — specify database_name. Options: ${matches
+      .map((d) => d.name)
+      .join(", ")}.`,
+  }
+}
+
+async function resolveAppDatabaseTable(
+  ctx: ArciinChatToolContext,
+  databaseId: string,
+  tableName: string,
+  createIfMissing: boolean,
+): Promise<
+  | { folder: { id: string; name: string }; created: boolean }
+  | { error: string; message: string }
+> {
+  const existing = await ctx.prisma.appDatabaseFolder.findFirst({
+    where: { databaseId, deletedAt: null, name: { equals: tableName, mode: "insensitive" } },
+    select: { id: true, name: true },
+  })
+  if (existing) return { folder: existing, created: false }
+
+  if (!createIfMissing) {
+    return { error: "table_not_found", message: `No table named "${tableName}" in this database.` }
+  }
+
+  const slug = slugify(tableName) || "table"
+  const folder = await ctx.prisma.appDatabaseFolder.create({
+    data: { databaseId, name: tableName, slug, pathCache: slug },
+    select: { id: true, name: true },
+  })
+  return { folder, created: true }
+}
 
 function coalesceOptionalId(v: unknown): string | undefined {
   if (v === null || v === undefined) return undefined
@@ -425,6 +556,101 @@ export async function executeArciinChatTool(
       success: true,
       deleted_folder_id: existing.id,
       name: existing.name,
+    }
+  }
+
+  if (name === "list_app_database_tables") {
+    const featureError = await ensureAppDatabaseFeatureEnabled(ctx)
+    if (featureError) return featureError
+
+    const a = args as Record<string, unknown>
+    const resolved = await resolveAppDatabaseByName(ctx, pickArgString(a, ["database_name", "databaseName"]))
+    if ("error" in resolved) return resolved
+
+    const tables = await ctx.prisma.appDatabaseFolder.findMany({
+      where: { databaseId: resolved.database.id, deletedAt: null },
+      orderBy: { pathCache: "asc" },
+      include: { _count: { select: { records: true } } },
+      take: 200,
+    })
+
+    return {
+      database: resolved.database,
+      tables: tables.map((t) => ({
+        id: t.id,
+        name: t.name,
+        row_count: t._count.records,
+      })),
+    }
+  }
+
+  if (name === "add_app_database_rows") {
+    if (!libraryAllowsFolderMutations(access)) {
+      return {
+        error: "library_tool_policy",
+        message:
+          "Adding data via chat is disabled while library tools are set to read-only (vision only) in AI Security.",
+      }
+    }
+
+    const featureError = await ensureAppDatabaseFeatureEnabled(ctx)
+    if (featureError) return featureError
+
+    const a = args as Record<string, unknown>
+    const tableName = String(pickArgString(a, ["table_name", "tableName"]) ?? "").trim()
+    const rowsInput = Array.isArray(a.rows) ? a.rows : null
+
+    if (!tableName) {
+      return { error: "validation", message: "table_name is required." }
+    }
+    if (!rowsInput || rowsInput.length === 0) {
+      return { error: "validation", message: "rows must be a non-empty array of objects." }
+    }
+    if (rowsInput.length > 50) {
+      return { error: "validation", message: "Add at most 50 rows per call." }
+    }
+
+    const resolved = await resolveAppDatabaseByName(ctx, pickArgString(a, ["database_name", "databaseName"]))
+    if ("error" in resolved) return resolved
+
+    const tableResult = await resolveAppDatabaseTable(ctx, resolved.database.id, tableName, true)
+    if ("error" in tableResult) return tableResult
+
+    const inserted: Array<{ id: string; name: string }> = []
+    const failed: Array<{ index: number; error: string }> = []
+
+    for (let i = 0; i < rowsInput.length; i += 1) {
+      const row = rowsInput[i]
+      if (row === null || typeof row !== "object" || Array.isArray(row)) {
+        failed.push({ index: i, error: "row must be a JSON object" })
+        continue
+      }
+      const rowRecord = { ...(row as Record<string, unknown>) }
+      const explicitName = coalesceOptionalId(rowRecord._name)
+      delete rowRecord._name
+
+      try {
+        const record = await ctx.prisma.appDatabaseRecord.create({
+          data: {
+            folderId: tableResult.folder.id,
+            name: explicitName ?? nanoid(),
+            payload: rowRecord as Prisma.InputJsonValue,
+          },
+          select: { id: true, name: true },
+        })
+        inserted.push(record)
+      } catch (e) {
+        failed.push({ index: i, error: e instanceof Error ? e.message : "insert_failed" })
+      }
+    }
+
+    return {
+      success: failed.length === 0,
+      database: resolved.database,
+      table: { id: tableResult.folder.id, name: tableResult.folder.name, created: tableResult.created },
+      inserted_count: inserted.length,
+      inserted,
+      failed,
     }
   }
 
