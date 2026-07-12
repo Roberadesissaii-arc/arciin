@@ -4,6 +4,7 @@ import Link from "next/link"
 import { useState } from "react"
 
 import { AssetStatusBadge } from "@/components/dashboard/asset-status-badge"
+import { AssetSourceBadge } from "@/components/libraries/asset-source-badge"
 import { FileTypePlaceholder } from "@/components/libraries/file-type-placeholder"
 import { VideoHoverThumb } from "@/components/libraries/video-hover-thumb"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -117,11 +118,14 @@ function UploadGridTile({
       )}
     >
       <UploadTilePreview asset={asset} />
-      {asset.status !== "READY" ? (
-        <div className="absolute left-1 top-1 z-10 scale-90">
-          <AssetStatusBadge status={asset.status} />
-        </div>
-      ) : null}
+      <div className="absolute left-1 top-1 z-10 flex flex-col items-start gap-1">
+        <AssetSourceBadge asset={asset} className="scale-90 origin-top-left" />
+        {asset.status !== "READY" ? (
+          <div className="scale-90 origin-top-left">
+            <AssetStatusBadge status={asset.status} />
+          </div>
+        ) : null}
+      </div>
     </Link>
   )
 }

@@ -432,50 +432,54 @@ function AppSidebarInner({ auth }: { auth: AuthSession }) {
           </DropdownMenuContent>
         </DropdownMenu>
 
-        {/* Version + update indicator */}
-        {!collapsed && updateQuery.data ? (
-          <Link
-            href="/settings?tab=updates"
-            className="mt-1 flex items-center justify-between rounded-lg px-2 py-1.5 text-[11px] transition-colors"
-            style={{ color: "rgba(255,255,255,0.25)" }}
-            onMouseEnter={(e) => { e.currentTarget.style.background = HOVER; e.currentTarget.style.color = "rgba(255,255,255,0.5)" }}
-            onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "rgba(255,255,255,0.25)" }}
-          >
-            <span className="font-mono">v{updateQuery.data.currentVersion}</span>
-            {updateQuery.data.updateAvailable ? (
-              <span
-                className="flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-semibold"
-                style={{
-                  color: "var(--arciin-accent, #ff4f12)",
-                  background: "color-mix(in srgb, var(--arciin-accent, #ff4f12) 14%, transparent)",
-                }}
-              >
-                <span className="size-1.5 rounded-full" style={{ background: "var(--arciin-accent, #ff4f12)" }} />
-                Update
-              </span>
-            ) : null}
-          </Link>
-        ) : null}
+        {/* Version/update indicator + Collapse — share one row so version doesn't stretch the layout */}
+        <div className="mt-1 flex items-center gap-1">
+          {!collapsed && updateQuery.data ? (
+            <Link
+              href="/settings?tab=updates"
+              className="flex min-w-0 flex-1 items-center gap-1.5 rounded-lg px-2 py-1.5 text-[11px] transition-colors"
+              style={{ color: "rgba(255,255,255,0.25)" }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = HOVER; e.currentTarget.style.color = "rgba(255,255,255,0.5)" }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "rgba(255,255,255,0.25)" }}
+            >
+              <span className="shrink-0 font-mono">v{updateQuery.data.currentVersion}</span>
+              {updateQuery.data.updateAvailable ? (
+                <span
+                  className="flex shrink-0 items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-semibold"
+                  style={{
+                    color: "var(--arciin-accent, #ff4f12)",
+                    background: "color-mix(in srgb, var(--arciin-accent, #ff4f12) 14%, transparent)",
+                  }}
+                >
+                  <span className="size-1.5 rounded-full" style={{ background: "var(--arciin-accent, #ff4f12)" }} />
+                  Update
+                </span>
+              ) : null}
+            </Link>
+          ) : (
+            <div className="flex-1" />
+          )}
 
-        {/* Collapse button */}
-        {!isMobile && (
-          <button
-            type="button"
-            onClick={toggleSidebar}
-            className={cn(
-              "mt-1 flex h-8 w-full items-center rounded-lg px-2 text-[11px] transition-colors",
-              collapsed ? "justify-center" : "justify-end gap-1",
-            )}
-            style={{ color: "rgba(255,255,255,0.18)" }}
-            onMouseEnter={(e) => { e.currentTarget.style.background = HOVER; e.currentTarget.style.color = "rgba(255,255,255,0.5)" }}
-            onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "rgba(255,255,255,0.18)" }}
-          >
-            {collapsed
-              ? <ChevronRight className="h-3.5 w-3.5 shrink-0" />
-              : <><span>Collapse</span><ChevronLeft className="h-3.5 w-3.5 shrink-0" /></>
-            }
-          </button>
-        )}
+          {/* Collapse button */}
+          {!isMobile && (
+            <button
+              type="button"
+              onClick={toggleSidebar}
+              className={cn(
+                "flex h-8 shrink-0 items-center rounded-lg px-2 text-[11px] transition-colors",
+                collapsed ? "w-full justify-center" : "justify-end gap-1",
+              )}
+              style={{ color: "rgba(255,255,255,0.18)" }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = HOVER; e.currentTarget.style.color = "rgba(255,255,255,0.5)" }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "rgba(255,255,255,0.18)" }}
+            >
+              {collapsed
+                ? <ChevronRight className="h-3.5 w-3.5 shrink-0" />
+                : <><span>Collapse</span><ChevronLeft className="h-3.5 w-3.5 shrink-0" /></>
+              }
+            </button>
+          )}
+        </div>
       </div>
     </>
   )
