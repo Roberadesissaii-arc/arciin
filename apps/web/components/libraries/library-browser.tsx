@@ -141,12 +141,23 @@ export function LibraryBrowser({
             </SelectableAssetsContainer>
           </div>
         ) : (
-          <Empty className="border border-border bg-card py-16">
-            <EmptyHeader>
-              <EmptyMedia variant="icon">
-                <Search className="size-4" />
+          <Empty className="relative overflow-hidden border border-border bg-gradient-to-b from-muted/40 via-card to-card py-20">
+            <div
+              aria-hidden
+              className="pointer-events-none absolute inset-0 opacity-[0.07]"
+              style={{
+                backgroundImage:
+                  "radial-gradient(circle at 30% 15%, var(--arciin-accent, #ff4f12) 0%, transparent 45%)",
+              }}
+            />
+            <EmptyHeader className="relative">
+              <EmptyMedia
+                variant="icon"
+                className="mb-3 size-14 rounded-2xl bg-[var(--arciin-accent-icon-bg)] text-[var(--arciin-accent)] ring-1 ring-inset ring-[var(--arciin-accent-icon-ring)]"
+              >
+                <Search className="size-6" />
               </EmptyMedia>
-              <EmptyTitle>
+              <EmptyTitle className="text-base">
                 {filtersActive
                   ? "No files match your filters."
                   : "Drop anything. Arciin will sort it out."}

@@ -153,6 +153,7 @@ function VideoAssetPreview({ asset }: { asset: AssetSummary }) {
     <AssetPreviewFrame asset={asset} badgeLabel={badgeLabel}>
       <VideoHoverThumb
         asset={asset}
+        showDuration
         className="aspect-[4/3] rounded-xl border border-border bg-muted/40"
       />
     </AssetPreviewFrame>
