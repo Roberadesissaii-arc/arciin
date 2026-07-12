@@ -13,6 +13,8 @@ const connection = {
   password: redisUrl.password || undefined,
   db: redisUrl.pathname ? Number(redisUrl.pathname.slice(1)) || 0 : 0,
   tls: redisUrl.protocol === "rediss:" ? {} : undefined,
+  // Required by BullMQ for any connection it manages — see apps/worker/src/index.ts.
+  maxRetriesPerRequest: null as null,
 }
 
 export const mediaQueue = new Queue(JOB_QUEUE_NAMES.media, { connection })

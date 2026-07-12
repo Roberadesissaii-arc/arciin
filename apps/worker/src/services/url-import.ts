@@ -63,6 +63,7 @@ function getMediaQueue(): Queue {
       password: redisUrl.password || undefined,
       db: redisUrl.pathname ? Number(redisUrl.pathname.slice(1)) || 0 : 0,
       tls: redisUrl.protocol === "rediss:" ? {} : undefined,
+      maxRetriesPerRequest: null,
     },
   })
   return mediaQueue

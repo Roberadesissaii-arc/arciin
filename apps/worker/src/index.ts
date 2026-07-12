@@ -23,6 +23,15 @@ const connection = {
   password: redisUrl.password || undefined,
   db: redisUrl.pathname ? Number(redisUrl.pathname.slice(1)) || 0 : 0,
   tls: redisUrl.protocol === "rediss:" ? {} : undefined,
+  /**
+   * Required by BullMQ: Workers issue long-blocking Redis reads to wait for
+   * new jobs. ioredis's default maxRetriesPerRequest (20) eventually throws
+   * on those blocking calls during any transient hiccup, which silently
+   * kills the job-fetch loop for good — the process stays "online" but never
+   * picks up another job until restarted. This is why queued uploads were
+   * getting stuck showing "Processing" forever.
+   */
+  maxRetriesPerRequest: null as null,
 }
 
 async function start() {
