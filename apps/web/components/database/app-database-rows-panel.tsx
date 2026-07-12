@@ -178,8 +178,8 @@ export function AppDatabaseRowsPanel({
             <SheetTitle className="text-[15px] font-semibold text-foreground">New row</SheetTitle>
             <SheetDescription className="text-[13px] text-muted-foreground">
               {columns.length > 0
-                ? `Fill in the ${columns.length} column${columns.length === 1 ? "" : "s"} defined for this table.`
-                : "No columns defined — enter a key and optional JSON payload."}
+                ? `A row is one entry in this table. Fill in the ${columns.length} field${columns.length === 1 ? "" : "s"} below.`
+                : "A row is one entry in this table — like one line in a spreadsheet. Give it a name and save whatever you want below."}
             </SheetDescription>
           </SheetHeader>
 
@@ -187,7 +187,7 @@ export function AppDatabaseRowsPanel({
             {/* Row key — always present */}
             <div className="space-y-1.5">
               <Label htmlFor="row-key" className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                Row key <span className="normal-case font-normal text-muted-foreground">(optional — auto-generated if blank)</span>
+                Name this entry <span className="normal-case font-normal text-muted-foreground">(optional — we&apos;ll generate one if left blank)</span>
               </Label>
               <Input id="row-key" value={rowKey} onChange={(e) => setRowKey(e.target.value)} placeholder="e.g. order-1042 or leave blank" autoComplete="off" />
             </div>
@@ -239,17 +239,19 @@ export function AppDatabaseRowsPanel({
               /* Fallback: raw JSON */
               <div className="space-y-1.5">
                 <Label htmlFor="row-body" className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                  Payload <span className="normal-case font-normal">(optional)</span>
+                  What do you want to save? <span className="normal-case font-normal">(optional)</span>
                 </Label>
                 <textarea
                   id="row-body"
                   className="min-h-[140px] w-full rounded-xl border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
                   value={rowRawBody}
                   onChange={(e) => setRowRawBody(e.target.value)}
-                  placeholder={'Empty, or {"total": 42}, or plain text'}
+                  placeholder="Type anything — a note, a name, some text…"
                 />
-                <p className="text-[11px] text-muted-foreground">
-                  Leave empty for <code className="rounded bg-muted px-1">{"{}"}</code>. Add columns above for a structured form.
+                <p className="text-[11px] leading-relaxed text-muted-foreground">
+                  Plain text is fine — it&apos;ll be saved as-is. You can leave this empty too. If you have
+                  structured data, you can paste JSON instead, e.g.{" "}
+                  <code className="rounded bg-muted px-1">{'{"total": 42}'}</code>.
                 </p>
               </div>
             )}

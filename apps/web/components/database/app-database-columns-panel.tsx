@@ -75,8 +75,17 @@ export function AppDatabaseColumnsPanel({
       </div>
 
       {columns.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-border bg-muted/10 px-4 py-3 text-[13px] text-muted-foreground">
-          No columns defined. Add columns to enable a structured row form — or rows default to a free-form JSON payload.
+        <div className="rounded-xl border border-dashed border-border bg-muted/10 px-4 py-3 text-[13px] leading-relaxed text-muted-foreground">
+          <p>
+            No columns yet — and that&apos;s fine. You can start adding rows below and just type whatever you
+            want to save.
+          </p>
+          <p className="mt-1.5">
+            Only add columns here if you want every row in this table to share the same fields — like column
+            headers in a spreadsheet (e.g. <span className="font-mono text-foreground">price</span>,{" "}
+            <span className="font-mono text-foreground">status</span>). Once you add one, the &quot;Add
+            row&quot; form switches from a text box to fields matching your columns.
+          </p>
         </div>
       ) : (
         <div className="min-w-0 overflow-x-auto rounded-2xl border border-border bg-card p-2.5">
@@ -138,7 +147,8 @@ export function AppDatabaseColumnsPanel({
             </SheetClose>
             <SheetTitle className="text-[15px] font-semibold text-foreground">Add column</SheetTitle>
             <SheetDescription className="text-[13px] text-muted-foreground">
-              Define a column for <strong>{tableName}</strong>. Schema is saved in your browser.
+              A column is a field every row in <strong>{tableName}</strong> will have — like a header in a
+              spreadsheet. This setup is only saved in this browser; it won&apos;t show up on another device.
             </SheetDescription>
           </SheetHeader>
 
@@ -149,10 +159,13 @@ export function AppDatabaseColumnsPanel({
             </div>
 
             <div className="space-y-1.5">
-              <Label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Type</Label>
+              <Label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                Type <span className="normal-case font-normal">— what kind of value this field holds</span>
+              </Label>
               <TypePicker value={colType} onChange={setColType} />
               <p className="text-[11px] text-muted-foreground">
                 {PG_TYPES.find((t) => t.value === colType)?.label}
+                {colType === "text" ? " — not sure? This one works for almost anything." : null}
               </p>
             </div>
 
@@ -168,14 +181,19 @@ export function AppDatabaseColumnsPanel({
                 <input type="checkbox" checked={colPrimary} onChange={(e) => setColPrimary(e.target.checked)} className="accent-primary" />
                 <div>
                   <p className="text-[13px] font-medium text-foreground">Primary key</p>
-                  <p className="text-[11px] text-muted-foreground">Mark this column as the row identifier.</p>
+                  <p className="text-[11px] text-muted-foreground">
+                    Use this field&apos;s value to identify each row. Most tables don&apos;t need this —
+                    leave unchecked if unsure.
+                  </p>
                 </div>
               </label>
               <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-border bg-muted/30 px-3 py-2.5">
                 <input type="checkbox" checked={colNullable} onChange={(e) => setColNullable(e.target.checked)} className="accent-primary" />
                 <div>
-                  <p className="text-[13px] font-medium text-foreground">Nullable</p>
-                  <p className="text-[11px] text-muted-foreground">Allow NULL values for this column.</p>
+                  <p className="text-[13px] font-medium text-foreground">Allow empty</p>
+                  <p className="text-[11px] text-muted-foreground">
+                    Rows can skip this field. Uncheck to require a value every time.
+                  </p>
                 </div>
               </label>
             </div>

@@ -208,7 +208,7 @@ export function AppDatabaseDetailPage({ databaseId }: { databaseId: string }) {
           title={dbQuery.data?.name ?? "Database"}
           subtitle={dbQuery.data ? `Logical store · ${dbQuery.data.slug}` : "Loading…"}
           cornerDecoration={<IntroCornerIcon icon={Database} />}
-          description="Each table is a namespace; each row is a JSON document stored in PostgreSQL. Define columns to get a structured row form. Column schema is saved per-browser."
+          description="Think of a table like a spreadsheet tab. Add rows to save entries — no setup needed. Want each row to follow the same fields (like spreadsheet headers)? Add columns to a table first, and rows below will show a form instead of a free-text box."
           stats={[
             { label: "Tables",       value: foldersQuery.isLoading ? "…" : String(foldersQuery.data?.length ?? 0) },
             { label: "Columns",      value: columns.length ? String(columns.length) : "—" },
