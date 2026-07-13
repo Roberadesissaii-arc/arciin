@@ -7,6 +7,7 @@ import {
 import { useChatTextToSpeech } from "@/hooks/use-chat-text-to-speech"
 import { plainTextFromMessage } from "@/lib/chat/plain-text-from-message"
 import { toast } from "@/lib/notifications/arciin-toast"
+import { copyTextWithFallback } from "@/lib/utils/clipboard"
 import { cn } from "@/lib/utils"
 import type { ChatMessageFeedbackRating } from "@/lib/api/chat"
 
@@ -43,10 +44,10 @@ function MessageActions({
     "flex size-7 items-center justify-center rounded-md text-muted-foreground/70 transition-colors hover:bg-muted/80 hover:text-foreground"
 
   async function handleCopy() {
-    try {
-      await navigator.clipboard.writeText(plain || content)
+    const ok = await copyTextWithFallback(plain || content)
+    if (ok) {
       toast.success("Copied to clipboard", { description: "The message text is ready to paste." })
-    } catch {
+    } else {
       toast.error("Could not copy", { description: "Select and copy the text manually." })
     }
   }

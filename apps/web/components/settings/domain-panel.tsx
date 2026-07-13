@@ -19,13 +19,11 @@ import {
 } from "@/lib/api/settings"
 import { queryKeys } from "@/lib/api/query-keys"
 import { cn } from "@/lib/utils"
+import { copyToClipboard } from "@/lib/utils/clipboard"
 import { SettingsPanelError } from "@/components/settings/settings-panel-error"
 
 function copyText(value: string, label: string) {
-  void navigator.clipboard.writeText(value).then(
-    () => toast.success(`${label} copied.`, { description: "Saved to your clipboard." }),
-    () => toast.error("Could not copy.", { description: "Select and copy the value manually." }),
-  )
+  void copyToClipboard(value, label)
 }
 
 function UrlChip({
