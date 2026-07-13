@@ -35,7 +35,7 @@ export function getAppDatabase(databaseId: string, signal?: AbortSignal) {
 }
 
 export function listAppDatabaseFolders(databaseId: string, signal?: AbortSignal) {
-  return fetchApi<AppDatabaseFolderSummary[]>(`/app-databases/${databaseId}/folders`, {
+  return fetchApi<AppDatabaseFolderSummary[]>(`/app-databases/${databaseId}/tables`, {
     method: "GET",
     signal,
   })
@@ -46,7 +46,7 @@ export function createAppDatabaseFolder(
   body: { name: string; parentFolderId?: string },
   signal?: AbortSignal
 ) {
-  return fetchApi<AppDatabaseFolderSummary>(`/app-databases/${databaseId}/folders`, {
+  return fetchApi<AppDatabaseFolderSummary>(`/app-databases/${databaseId}/tables`, {
     method: "POST",
     body,
     signal,
@@ -54,14 +54,14 @@ export function createAppDatabaseFolder(
 }
 
 export function deleteAppDatabaseFolder(folderId: string, signal?: AbortSignal) {
-  return fetchApi<{ success: true }>(`/app-database-folders/${folderId}`, {
+  return fetchApi<{ success: true }>(`/app-database-tables/${folderId}`, {
     method: "DELETE",
     signal,
   })
 }
 
 export function listFolderRecords(folderId: string, signal?: AbortSignal) {
-  return fetchApi<AppDatabaseRecordSummary[]>(`/app-database-folders/${folderId}/records`, {
+  return fetchApi<AppDatabaseRecordSummary[]>(`/app-database-tables/${folderId}/rows`, {
     method: "GET",
     signal,
   })
@@ -72,7 +72,7 @@ export function createFolderRecord(
   body: { name: string; payload: Record<string, unknown>; mimeType?: string },
   signal?: AbortSignal
 ) {
-  return fetchApi<AppDatabaseRecordSummary>(`/app-database-folders/${folderId}/records`, {
+  return fetchApi<AppDatabaseRecordSummary>(`/app-database-tables/${folderId}/rows`, {
     method: "POST",
     body,
     signal,
@@ -80,7 +80,7 @@ export function createFolderRecord(
 }
 
 export function deleteFolderRecord(recordId: string, signal?: AbortSignal) {
-  return fetchApi<{ success: true }>(`/app-database-records/${recordId}`, {
+  return fetchApi<{ success: true }>(`/app-database-rows/${recordId}`, {
     method: "DELETE",
     signal,
   })

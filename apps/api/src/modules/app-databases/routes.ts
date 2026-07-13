@@ -261,7 +261,7 @@ export async function registerAppDatabaseRoutes(fastify: FastifyInstance) {
   )
 
   fastify.get(
-    "/app-databases/:databaseId/folders",
+    "/app-databases/:databaseId/tables",
     { preHandler: [readFolders, requireFeature("developer.app_databases")] },
     async (request, reply) => {
       const params = z.object({ databaseId: z.string() }).parse(request.params)
@@ -301,7 +301,7 @@ export async function registerAppDatabaseRoutes(fastify: FastifyInstance) {
   )
 
   fastify.post(
-    "/app-databases/:databaseId/folders",
+    "/app-databases/:databaseId/tables",
     { preHandler: [writeFolders, requireFeature("developer.app_databases")] },
     async (request, reply) => {
       const params = z.object({ databaseId: z.string() }).parse(request.params)
@@ -311,7 +311,7 @@ export async function registerAppDatabaseRoutes(fastify: FastifyInstance) {
         reply.status(400).send({
           error: {
             code: "VALIDATION_ERROR",
-            message: "Invalid folder payload.",
+            message: "Invalid table payload.",
             details: parsed.success ? undefined : parsed.error.flatten(),
           },
         })
@@ -370,7 +370,7 @@ export async function registerAppDatabaseRoutes(fastify: FastifyInstance) {
         reply.status(409).send({
           error: {
             code: "PATH_CONFLICT",
-            message: "A folder with this path already exists in this database.",
+            message: "A table with this path already exists in this database.",
           },
         })
         return
@@ -392,17 +392,17 @@ export async function registerAppDatabaseRoutes(fastify: FastifyInstance) {
   )
 
   fastify.patch(
-    "/app-database-folders/:folderId",
+    "/app-database-tables/:tableId",
     { preHandler: [writeFolders, requireFeature("developer.app_databases")] },
     async (request, reply) => {
-      const params = z.object({ folderId: z.string() }).parse(request.params)
+      const params = z.object({ tableId: z.string() }).parse(request.params)
       const parsed = updateAppFolderSchema.safeParse(request.body)
 
       if (!parsed.success) {
         reply.status(400).send({
           error: {
             code: "VALIDATION_ERROR",
-            message: "Invalid folder payload.",
+            message: "Invalid table payload.",
             details: parsed.success ? undefined : parsed.error.flatten(),
           },
         })
@@ -410,12 +410,12 @@ export async function registerAppDatabaseRoutes(fastify: FastifyInstance) {
       }
 
       const existing = await fastify.prisma.appDatabaseFolder.findFirst({
-        where: { id: params.folderId, deletedAt: null },
+        where: { id: params.tableId, deletedAt: null },
       })
 
       if (!existing) {
         reply.status(404).send({
-          error: { code: "NOT_FOUND", message: "Folder not found." },
+          error: { code: "NOT_FOUND", message: "Table not found." },
         })
         return
       }
@@ -456,18 +456,18 @@ export async function registerAppDatabaseRoutes(fastify: FastifyInstance) {
   )
 
   fastify.delete(
-    "/app-database-folders/:folderId",
+    "/app-database-tables/:tableId",
     { preHandler: [deleteFolders, requireFeature("developer.app_databases")] },
     async (request, reply) => {
-      const params = z.object({ folderId: z.string() }).parse(request.params)
+      const params = z.object({ tableId: z.string() }).parse(request.params)
 
       const existing = await fastify.prisma.appDatabaseFolder.findFirst({
-        where: { id: params.folderId, deletedAt: null },
+        where: { id: params.tableId, deletedAt: null },
       })
 
       if (!existing) {
         reply.status(404).send({
-          error: { code: "NOT_FOUND", message: "Folder not found." },
+          error: { code: "NOT_FOUND", message: "Table not found." },
         })
         return
       }
@@ -495,24 +495,24 @@ export async function registerAppDatabaseRoutes(fastify: FastifyInstance) {
   )
 
   fastify.get(
-    "/app-database-folders/:folderId/records",
+    "/app-database-tables/:tableId/rows",
     { preHandler: [readRecords, requireFeature("developer.app_databases")] },
     async (request, reply) => {
-      const params = z.object({ folderId: z.string() }).parse(request.params)
+      const params = z.object({ tableId: z.string() }).parse(request.params)
 
       const folder = await fastify.prisma.appDatabaseFolder.findFirst({
-        where: { id: params.folderId, deletedAt: null },
+        where: { id: params.tableId, deletedAt: null },
       })
 
       if (!folder) {
         reply.status(404).send({
-          error: { code: "NOT_FOUND", message: "Folder not found." },
+          error: { code: "NOT_FOUND", message: "Table not found." },
         })
         return
       }
 
       const records = await fastify.prisma.appDatabaseRecord.findMany({
-        where: { folderId: params.folderId },
+        where: { folderId: params.tableId },
         orderBy: { updatedAt: "desc" },
         take: 500,
       })
@@ -524,17 +524,17 @@ export async function registerAppDatabaseRoutes(fastify: FastifyInstance) {
   )
 
   fastify.post(
-    "/app-database-folders/:folderId/records",
+    "/app-database-tables/:tableId/rows",
     { preHandler: [writeRecords, requireFeature("developer.app_databases")] },
     async (request, reply) => {
-      const params = z.object({ folderId: z.string() }).parse(request.params)
+      const params = z.object({ tableId: z.string() }).parse(request.params)
       const parsed = createRecordSchema.safeParse(request.body)
 
       if (!parsed.success) {
         reply.status(400).send({
           error: {
             code: "VALIDATION_ERROR",
-            message: "Invalid record payload.",
+            message: "Invalid row payload.",
             details: parsed.success ? undefined : parsed.error.flatten(),
           },
         })
@@ -542,12 +542,12 @@ export async function registerAppDatabaseRoutes(fastify: FastifyInstance) {
       }
 
       const folder = await fastify.prisma.appDatabaseFolder.findFirst({
-        where: { id: params.folderId, deletedAt: null },
+        where: { id: params.tableId, deletedAt: null },
       })
 
       if (!folder) {
         reply.status(404).send({
-          error: { code: "NOT_FOUND", message: "Folder not found." },
+          error: { code: "NOT_FOUND", message: "Table not found." },
         })
         return
       }
@@ -556,7 +556,7 @@ export async function registerAppDatabaseRoutes(fastify: FastifyInstance) {
       try {
         record = await fastify.prisma.appDatabaseRecord.create({
           data: {
-            folderId: params.folderId,
+            folderId: params.tableId,
             name: parsed.data.name,
             payload: parsed.data.payload as Prisma.InputJsonValue,
             mimeType: parsed.data.mimeType ?? null,
@@ -566,7 +566,7 @@ export async function registerAppDatabaseRoutes(fastify: FastifyInstance) {
         reply.status(409).send({
           error: {
             code: "NAME_CONFLICT",
-            message: "A record with this name already exists in this folder.",
+            message: "A row with this name already exists in this table.",
           },
         })
         return
@@ -577,17 +577,17 @@ export async function registerAppDatabaseRoutes(fastify: FastifyInstance) {
   )
 
   fastify.patch(
-    "/app-database-records/:recordId",
+    "/app-database-rows/:rowId",
     { preHandler: [writeRecords, requireFeature("developer.app_databases")] },
     async (request, reply) => {
-      const params = z.object({ recordId: z.string() }).parse(request.params)
+      const params = z.object({ rowId: z.string() }).parse(request.params)
       const parsed = updateRecordSchema.safeParse(request.body)
 
       if (!parsed.success) {
         reply.status(400).send({
           error: {
             code: "VALIDATION_ERROR",
-            message: "Invalid record payload.",
+            message: "Invalid row payload.",
             details: parsed.success ? undefined : parsed.error.flatten(),
           },
         })
@@ -595,19 +595,19 @@ export async function registerAppDatabaseRoutes(fastify: FastifyInstance) {
       }
 
       const existing = await fastify.prisma.appDatabaseRecord.findUnique({
-        where: { id: params.recordId },
+        where: { id: params.rowId },
         include: { folder: true },
       })
 
       if (!existing || existing.folder.deletedAt) {
         reply.status(404).send({
-          error: { code: "NOT_FOUND", message: "Record not found." },
+          error: { code: "NOT_FOUND", message: "Row not found." },
         })
         return
       }
 
       const updated = await fastify.prisma.appDatabaseRecord.update({
-        where: { id: params.recordId },
+        where: { id: params.rowId },
         data: {
           ...(parsed.data.name !== undefined ? { name: parsed.data.name } : {}),
           ...(parsed.data.payload !== undefined
@@ -622,25 +622,25 @@ export async function registerAppDatabaseRoutes(fastify: FastifyInstance) {
   )
 
   fastify.delete(
-    "/app-database-records/:recordId",
+    "/app-database-rows/:rowId",
     { preHandler: [deleteRecords, requireFeature("developer.app_databases")] },
     async (request, reply) => {
-      const params = z.object({ recordId: z.string() }).parse(request.params)
+      const params = z.object({ rowId: z.string() }).parse(request.params)
 
       const existing = await fastify.prisma.appDatabaseRecord.findUnique({
-        where: { id: params.recordId },
+        where: { id: params.rowId },
         include: { folder: true },
       })
 
       if (!existing || existing.folder.deletedAt) {
         reply.status(404).send({
-          error: { code: "NOT_FOUND", message: "Record not found." },
+          error: { code: "NOT_FOUND", message: "Row not found." },
         })
         return
       }
 
       await fastify.prisma.appDatabaseRecord.delete({
-        where: { id: params.recordId },
+        where: { id: params.rowId },
       })
 
       reply.send({ data: { success: true } })

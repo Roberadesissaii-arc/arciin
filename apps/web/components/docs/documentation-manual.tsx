@@ -1635,13 +1635,13 @@ GET ${BASE}/libraries → match slug "images" → use id as targetLibraryId`}
                 ["GET",    "/app-databases",                              "List all databases"],
                 ["POST",   "/app-databases",                              "Create database (auto-creates Default table)"],
                 ["DELETE", "/app-databases/:id",                          "Delete database + all tables + records"],
-                ["GET",    "/app-databases/:id/folders",                  "List tables"],
-                ["POST",   "/app-databases/:id/folders",                  "Create table"],
-                ["DELETE", "/app-database-folders/:folderId",             "Delete table + records"],
-                ["GET",    "/app-database-folders/:folderId/records",     "List records"],
-                ["POST",   "/app-database-folders/:folderId/records",     "Create record"],
-                ["PATCH",  "/app-database-records/:recordId",             "Update record payload"],
-                ["DELETE", "/app-database-records/:recordId",             "Delete record"],
+                ["GET",    "/app-databases/:id/tables",                  "List tables"],
+                ["POST",   "/app-databases/:id/tables",                  "Create table"],
+                ["DELETE", "/app-database-tables/:tableId",             "Delete table + records"],
+                ["GET",    "/app-database-tables/:tableId/rows",     "List records"],
+                ["POST",   "/app-database-tables/:tableId/rows",     "Create record"],
+                ["PATCH",  "/app-database-rows/:rowId",             "Update record payload"],
+                ["DELETE", "/app-database-rows/:rowId",             "Delete record"],
               ].map(([m, p, d]) => <EndpointRow key={`${m}-${p}`} method={m} path={p} desc={d} />)}
             </div>
 
@@ -1652,16 +1652,16 @@ GET ${BASE}/libraries → match slug "images" → use id as targetLibraryId`}
               label="Copy full URLs — app databases"
               requests={[
                 { method: "POST", fullPath: "/app-databases", hint: "Create DB" },
-                { method: "GET", fullPath: "/app-databases/{dbId}/folders", hint: "List tables" },
-                { method: "POST", fullPath: "/app-database-folders/{tableId}/records", hint: "Create record" },
+                { method: "GET", fullPath: "/app-databases/{dbId}/tables", hint: "List tables" },
+                { method: "POST", fullPath: "/app-database-tables/{tableId}/rows", hint: "Create record" },
               ]}
             />
 
             <MultiCode
               title="Create a database and write records"
               postman={`POST ${BASE}/app-databases
-POST ${BASE}/app-databases/{{db_id}}/folders
-POST ${BASE}/app-database-folders/{{table_id}}/records`}
+POST ${BASE}/app-databases/{{db_id}}/tables
+POST ${BASE}/app-database-tables/{{table_id}}/rows`}
               node={`const API_KEY = process.env.ARCIIN_KEY ?? "arc_live_your_key_here";
 const BASE = "${BASE}";
 const auth = (body?: object) => ({
@@ -1687,8 +1687,8 @@ let json = await res.json();
 if (!res.ok) throw new Error(JSON.stringify(json));
 const db = json.data;
 
-// 2 · GET — full URL: \`\${BASE}/app-databases/\${db.id}/folders\`
-res = await fetch(\`\${BASE}/app-databases/\${db.id}/folders\`, {
+// 2 · GET — full URL: \`\${BASE}/app-databases/\${db.id}/tables\`
+res = await fetch(\`\${BASE}/app-databases/\${db.id}/tables\`, {
   method: "GET",
   ...auth(),
 });
@@ -1697,8 +1697,8 @@ if (!res.ok) throw new Error(JSON.stringify(json));
 const tables = json.data as { id: string; name: string }[];
 console.log("Tables:", tables.map((t) => t.name));
 
-// 3 · POST — full URL: \`\${BASE}/app-databases/\${db.id}/folders\`
-res = await fetch(\`\${BASE}/app-databases/\${db.id}/folders\`, {
+// 3 · POST — full URL: \`\${BASE}/app-databases/\${db.id}/tables\`
+res = await fetch(\`\${BASE}/app-databases/\${db.id}/tables\`, {
   method: "POST",
   ...auth({ name: "orders" }),
 });
@@ -1706,8 +1706,8 @@ json = await res.json();
 if (!res.ok) throw new Error(JSON.stringify(json));
 const ordersTable = json.data;
 
-// 4 · POST — full URL: \`\${BASE}/app-database-folders/\${ordersTable.id}/records\`
-res = await fetch(\`\${BASE}/app-database-folders/\${ordersTable.id}/records\`, {
+// 4 · POST — full URL: \`\${BASE}/app-database-tables/\${ordersTable.id}/rows\`
+res = await fetch(\`\${BASE}/app-database-tables/\${ordersTable.id}/rows\`, {
   method: "POST",
   ...auth({
     name: "order-1042",
@@ -1737,19 +1737,19 @@ r = s.post(
 r.raise_for_status()
 db = r.json()["data"]
 
-# 2 · GET — URL f"{API}/app-databases/{id}/folders"
-tables = s.get(f"{API}/app-databases/{db['id']}/folders", timeout=60).json()["data"]
+# 2 · GET — URL f"{API}/app-databases/{id}/tables"
+tables = s.get(f"{API}/app-databases/{db['id']}/tables", timeout=60).json()["data"]
 
-# 3 · POST table — URL f"{API}/app-databases/{id}/folders"
+# 3 · POST table — URL f"{API}/app-databases/{id}/tables"
 orders_table = s.post(
-    f"{API}/app-databases/{db['id']}/folders",
+    f"{API}/app-databases/{db['id']}/tables",
     json={"name": "orders"},
     timeout=60,
 ).json()["data"]
 
-# 4 · POST record — URL f"{API}/app-database-folders/{id}/records"
+# 4 · POST record — URL f"{API}/app-database-tables/{id}/rows"
 record = s.post(
-    f"{API}/app-database-folders/{orders_table['id']}/records",
+    f"{API}/app-database-tables/{orders_table['id']}/rows",
     json={
         "name": "order-1042",
         "payload": {"customerId": "usr_abc", "total": 99.98, "status": "pending"},
@@ -1767,14 +1767,14 @@ DB_ID=$(curl -sS -X POST "$API/app-databases" \\
   -d '{"name":"ecommerce","description":"Orders and products"}' \\
   | jq -r '.data.id')
 
-# 2 · POST full URL: $API/app-databases/$DB_ID/folders
-TBL_ID=$(curl -sS -X POST "$API/app-databases/$DB_ID/folders" \\
+# 2 · POST full URL: $API/app-databases/$DB_ID/tables
+TBL_ID=$(curl -sS -X POST "$API/app-databases/$DB_ID/tables" \\
   -H "Authorization: Bearer $ARCIIN_KEY" \\
   -H "Content-Type: application/json" -H "Accept: application/json" \\
   -d '{"name":"orders"}' | jq -r '.data.id')
 
-# 3 · POST full URL: $API/app-database-folders/$TBL_ID/records
-curl -sS -X POST "$API/app-database-folders/$TBL_ID/records" \\
+# 3 · POST full URL: $API/app-database-tables/$TBL_ID/rows
+curl -sS -X POST "$API/app-database-tables/$TBL_ID/rows" \\
   -H "Authorization: Bearer $ARCIIN_KEY" \\
   -H "Content-Type: application/json" -H "Accept: application/json" \\
   -d '{"name":"order-1042","payload":{"customerId":"usr_abc","total":99.98,"status":"pending"}}' \\
@@ -1783,9 +1783,9 @@ curl -sS -X POST "$API/app-database-folders/$TBL_ID/records" \\
 
             <MultiCode
               title="Read, update, delete records"
-              postman={`GET {{base}}/app-database-folders/{{table_id}}/records
-PATCH {{base}}/app-database-records/{{record_id}}
-DELETE {{base}}/app-database-records/{{record_id}}`}
+              postman={`GET {{base}}/app-database-tables/{{table_id}}/rows
+PATCH {{base}}/app-database-rows/{{row_id}}
+DELETE {{base}}/app-database-rows/{{row_id}}`}
               node={`const API_KEY = process.env.ARCIIN_KEY ?? "arc_live_your_key_here";
 const BASE = "${BASE}";
 const h = {
@@ -1795,17 +1795,17 @@ const h = {
 const tableId = "…";
 const recordId = "…";
 
-// GET — full URL: \`\${BASE}/app-database-folders/\${tableId}/records\`
+// GET — full URL: \`\${BASE}/app-database-tables/\${tableId}/rows\`
 let res = await fetch(
-  \`\${BASE}/app-database-folders/\${tableId}/records\`,
+  \`\${BASE}/app-database-tables/\${tableId}/rows\`,
   { headers: h },
 );
 let json = await res.json();
 if (!res.ok) throw new Error(JSON.stringify(json));
 const { data: records } = json;
 
-// PATCH — full URL: \`\${BASE}/app-database-records/\${recordId}\`
-res = await fetch(\`\${BASE}/app-database-records/\${recordId}\`, {
+// PATCH — full URL: \`\${BASE}/app-database-rows/\${recordId}\`
+res = await fetch(\`\${BASE}/app-database-rows/\${recordId}\`, {
   method: "PATCH",
   headers: { ...h, "Content-Type": "application/json" },
   body: JSON.stringify({
@@ -1815,8 +1815,8 @@ res = await fetch(\`\${BASE}/app-database-records/\${recordId}\`, {
 json = await res.json();
 if (!res.ok) throw new Error(JSON.stringify(json));
 
-// DELETE — full URL: \`\${BASE}/app-database-records/\${recordId}\`
-res = await fetch(\`\${BASE}/app-database-records/\${recordId}\`, {
+// DELETE — full URL: \`\${BASE}/app-database-rows/\${recordId}\`
+res = await fetch(\`\${BASE}/app-database-rows/\${recordId}\`, {
   method: "DELETE",
   headers: h,
 });
@@ -1834,36 +1834,36 @@ s.headers.update({"Authorization": f"Bearer {API_KEY}", "Accept": "application/j
 table_id = "…"
 record_id = "…"
 
-# GET — f"{API}/app-database-folders/{table_id}/records"
-records = s.get(f"{API}/app-database-folders/{table_id}/records", timeout=60).json()["data"]
+# GET — f"{API}/app-database-tables/{table_id}/rows"
+records = s.get(f"{API}/app-database-tables/{table_id}/rows", timeout=60).json()["data"]
 
-# PATCH — f"{API}/app-database-records/{record_id}"
+# PATCH — f"{API}/app-database-rows/{record_id}"
 s.patch(
-    f"{API}/app-database-records/{record_id}",
+    f"{API}/app-database-rows/{record_id}",
     json={"payload": {"status": "shipped"}},
     timeout=60,
 ).raise_for_status()
 
-# DELETE — f"{API}/app-database-records/{record_id}"
-s.delete(f"{API}/app-database-records/{record_id}", timeout=60).raise_for_status()`}
+# DELETE — f"{API}/app-database-rows/{record_id}"
+s.delete(f"{API}/app-database-rows/{record_id}", timeout=60).raise_for_status()`}
               curl={`export ARCIIN_KEY="arc_live_your_key_here"
 export API="${BASE}"
 TBL_ID="…"
 REC_ID="…"
 
-# GET full URL: $API/app-database-folders/$TBL_ID/records
-curl -sS "$API/app-database-folders/$TBL_ID/records" \\
+# GET full URL: $API/app-database-tables/$TBL_ID/rows
+curl -sS "$API/app-database-tables/$TBL_ID/rows" \\
   -H "Authorization: Bearer $ARCIIN_KEY" \\
   -H "Accept: application/json" | jq '.data[] | {name,payload}'
 
-# PATCH full URL: $API/app-database-records/$REC_ID
-curl -sS -X PATCH "$API/app-database-records/$REC_ID" \\
+# PATCH full URL: $API/app-database-rows/$REC_ID
+curl -sS -X PATCH "$API/app-database-rows/$REC_ID" \\
   -H "Authorization: Bearer $ARCIIN_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{"payload":{"status":"shipped"}}'
 
-# DELETE full URL: $API/app-database-records/$REC_ID
-curl -sS -X DELETE "$API/app-database-records/$REC_ID" \\
+# DELETE full URL: $API/app-database-rows/$REC_ID
+curl -sS -X DELETE "$API/app-database-rows/$REC_ID" \\
   -H "Authorization: Bearer $ARCIIN_KEY"`}
             />
           </section>
