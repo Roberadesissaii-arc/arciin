@@ -27,6 +27,7 @@ import {
   authenticateFlexible,
   clearSessionCookie,
   createSession,
+  extractMobileSessionToken,
   hashPassword,
   hashToken,
   setSessionCookie,
@@ -630,6 +631,10 @@ export async function registerAuthRoutes(fastify: FastifyInstance) {
     newPassword: z.string().min(8),
   })
 
+  const recoveryAttemptKey = (email: string) => `arciin:recovery-fails:${email.toLowerCase()}`
+  const RECOVERY_MAX_ATTEMPTS = 8
+  const RECOVERY_LOCKOUT_WINDOW_SEC = 3600
+
   fastify.post("/auth/recovery/reset", async (request, reply) => {
     if (
       await checkEndpointRateLimit(request, reply, {
@@ -653,9 +658,9 @@ export async function registerAuthRoutes(fastify: FastifyInstance) {
       return
     }
 
-    const user = await request.server.prisma.user.findUnique({
-      where: { email: parsed.data.email.toLowerCase() },
-    })
+    const email = parsed.data.email.toLowerCase()
+    const attemptKey = recoveryAttemptKey(email)
+    const attempts = Number((await request.server.redis.get(attemptKey)) ?? 0)
 
     const genericFailure = () => {
       reply.status(400).send({
@@ -666,6 +671,20 @@ export async function registerAuthRoutes(fastify: FastifyInstance) {
         },
       })
     }
+
+    if (attempts >= RECOVERY_MAX_ATTEMPTS) {
+      reply.status(429).send({
+        error: {
+          code: "RECOVERY_LOCKED",
+          message: "Too many failed recovery attempts for this account. Try again later or ask an admin for help.",
+        },
+      })
+      return
+    }
+
+    const user = await request.server.prisma.user.findUnique({
+      where: { email },
+    })
 
     if (
       !user ||
@@ -679,6 +698,10 @@ export async function registerAuthRoutes(fastify: FastifyInstance) {
 
     const answerOk = await verifyRecoveryAnswer(parsed.data.answer, user.recoveryAnswerHash)
     if (!answerOk) {
+      const nextAttempts = await request.server.redis.incr(attemptKey)
+      if (nextAttempts === 1) {
+        await request.server.redis.expire(attemptKey, RECOVERY_LOCKOUT_WINDOW_SEC)
+      }
       await recordSecurityEvent(request.server, {
         userId: user.id,
         type: "security.recovery_failed",
@@ -688,6 +711,8 @@ export async function registerAuthRoutes(fastify: FastifyInstance) {
       genericFailure()
       return
     }
+
+    await request.server.redis.del(attemptKey)
 
     const passwordHash = await hashPassword(parsed.data.newPassword)
     await request.server.prisma.user.update({
@@ -850,7 +875,9 @@ export async function registerAuthRoutes(fastify: FastifyInstance) {
   fastify.post("/auth/preferences", preferencesAuth, handlePreferencesUpdate)
 
   fastify.post("/auth/logout", async (request, reply) => {
-    const token = request.cookies[apiConfig.SESSION_COOKIE_NAME]
+    // Cookie sessions (web) or Bearer sessions (mobile PWA) — logout must revoke
+    // whichever credential the caller actually used, not just the cookie.
+    const token = request.cookies[apiConfig.SESSION_COOKIE_NAME] ?? extractMobileSessionToken(request)
 
     if (token) {
       await fastify.prisma.session.deleteMany({

@@ -146,7 +146,7 @@ export async function resolveSession(request: FastifyRequest) {
 }
 
 /** Session token from `Authorization: Bearer` or `?access_token=` (media `<audio>` / `<video>` cannot send headers). */
-function extractMobileSessionToken(request: FastifyRequest): string | null {
+export function extractMobileSessionToken(request: FastifyRequest): string | null {
   const authHeader = request.headers.authorization
   if (authHeader?.toLowerCase().startsWith("bearer ")) {
     const token = authHeader.slice(7).trim()

@@ -1,13 +1,6 @@
 import type { FastifyReply, FastifyRequest } from "fastify"
 
-function clientIp(request: FastifyRequest): string {
-  const forwarded = request.headers["x-forwarded-for"]
-  if (typeof forwarded === "string") {
-    const first = forwarded.split(",")[0]?.trim()
-    if (first) return first
-  }
-  return request.ip
-}
+import { clientIpFromRequest } from "@/services/security/client-ip"
 
 /**
  * Enforces a per-IP rate limit for a single endpoint using Redis.
@@ -23,11 +16,15 @@ export async function checkEndpointRateLimit(
     limit: number
     /** Window size in seconds */
     windowSec: number
+    /** Set false for buckets meant to cap requests across all clients, not per-IP. Default true. */
+    perIp?: boolean
   },
 ): Promise<boolean> {
-  const ip = clientIp(request)
   const bucket = Math.floor(Date.now() / (opts.windowSec * 1_000))
-  const redisKey = `arciin:rl:${opts.key}:${ip}:${bucket}`
+  const redisKey =
+    opts.perIp === false
+      ? `arciin:rl:${opts.key}:${bucket}`
+      : `arciin:rl:${opts.key}:${clientIpFromRequest(request)}:${bucket}`
 
   const count = await request.server.redis.incr(redisKey)
   if (count === 1) {

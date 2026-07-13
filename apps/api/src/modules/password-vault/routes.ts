@@ -82,17 +82,39 @@ const updateEntrySchema = z.object({
   category: z.string().max(200).optional(),
 })
 
+const VAULT_UNLOCK_MAX_ATTEMPTS = 8
+const VAULT_UNLOCK_LOCKOUT_WINDOW_SEC = 900
+
+function vaultUnlockAttemptKey(userId: string) {
+  return `arciin:vault-unlock-fails:${userId}`
+}
+
 async function unlockVaultWithCredential(
   fastify: FastifyInstance,
   userId: string,
   body: { password?: string; pin?: string },
   aiConfig: unknown,
 ) {
+  const attemptKey = vaultUnlockAttemptKey(userId)
+  const attempts = Number((await fastify.redis.get(attemptKey)) ?? 0)
+  if (attempts >= VAULT_UNLOCK_MAX_ATTEMPTS) {
+    return { ok: false as const, code: "LOCKED" as const }
+  }
+
+  const fail = async () => {
+    const next = await fastify.redis.incr(attemptKey)
+    if (next === 1) {
+      await fastify.redis.expire(attemptKey, VAULT_UNLOCK_LOCKOUT_WINDOW_SEC)
+    }
+  }
+
   if (body.pin) {
     const pinHash = readPasswordVaultPinHash(aiConfig)
     if (!pinHash || !(await verifyVaultPin(body.pin, pinHash))) {
+      await fail()
       return { ok: false as const, code: "INVALID_PIN" as const }
     }
+    await fastify.redis.del(attemptKey)
     return { ok: true as const }
   }
 
@@ -101,8 +123,10 @@ async function unlockVaultWithCredential(
     select: { passwordHash: true },
   })
   if (!user?.passwordHash || !(await verifyPassword(body.password!, user.passwordHash))) {
+    await fail()
     return { ok: false as const, code: "INVALID_PASSWORD" as const }
   }
+  await fastify.redis.del(attemptKey)
   return { ok: true as const }
 }
 
@@ -207,6 +231,15 @@ export async function registerPasswordVaultRoutes(fastify: FastifyInstance) {
         instance?.aiConfig,
       )
       if (!result.ok) {
+        if (result.code === "LOCKED") {
+          reply.status(429).send({
+            error: {
+              code: "LOCKED",
+              message: "Too many failed vault unlock attempts. Try again later.",
+            },
+          })
+          return
+        }
         reply.status(401).send({
           error: {
             code: result.code,
@@ -251,6 +284,15 @@ export async function registerPasswordVaultRoutes(fastify: FastifyInstance) {
         instance?.aiConfig,
       )
       if (!result.ok) {
+        if (result.code === "LOCKED") {
+          reply.status(429).send({
+            error: {
+              code: "LOCKED",
+              message: "Too many failed vault unlock attempts. Try again later.",
+            },
+          })
+          return
+        }
         reply.status(401).send({
           error: {
             code: result.code,
@@ -296,6 +338,15 @@ export async function registerPasswordVaultRoutes(fastify: FastifyInstance) {
         instance?.aiConfig,
       )
       if (!result.ok) {
+        if (result.code === "LOCKED") {
+          reply.status(429).send({
+            error: {
+              code: "LOCKED",
+              message: "Too many failed vault unlock attempts. Try again later.",
+            },
+          })
+          return
+        }
         reply.status(401).send({
           error: {
             code: result.code,

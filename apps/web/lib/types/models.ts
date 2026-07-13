@@ -69,8 +69,6 @@ export type InstanceStatus = {
   setupRequired: boolean
   instanceName?: string
   version: string
-  /** Dev-only — API may return this before claim so setup UI can prefill the token. */
-  setupTokenPrefill?: string
   /** Host or native path to pre-fill setup (not the in-container path when using Docker). */
   suggestedStorageRoot?: string
   runtimeStorageRoot?: string

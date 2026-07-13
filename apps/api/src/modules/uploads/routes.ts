@@ -99,6 +99,7 @@ export async function registerUploadRoutes(fastify: FastifyInstance) {
           key: `upload:user:${request.auth.user.id}`,
           limit: uploadRateLimitPerMinute,
           windowSec: 60,
+          perIp: false,
         })
       ) {
         return

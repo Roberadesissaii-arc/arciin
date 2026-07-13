@@ -142,9 +142,6 @@ export function SetupForm() {
     void getInstanceStatus()
       .then((status) => {
         if (cancelled) return
-        if (status.setupTokenPrefill && !form.getValues("setupToken")?.trim()) {
-          form.setValue("setupToken", status.setupTokenPrefill)
-        }
         if (!status.suggestedStorageRoot) return
         const current = form.getValues("storageRoot")
         if (!current?.trim() || current === ARCIIN_DEV_STORAGE_ROOT || current === "./data/arciin") {

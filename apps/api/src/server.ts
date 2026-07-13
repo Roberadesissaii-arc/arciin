@@ -43,6 +43,27 @@ import { repairInstanceStorageRootsIfNeeded } from "@/services/storage/effective
 import { initUploadLimits } from "@/services/config/upload-limits"
 import { ensureStorageDirectories } from "@/services/storage/local-storage"
 
+const REDACTED_QUERY_PARAMS = ["access_token"]
+
+/** `?access_token=` carries a live session credential (media tags can't send headers) — never let it hit logs. */
+function redactSensitiveUrl(url: string): string {
+  const [pathPart, queryPart] = url.split("?")
+  if (!queryPart) return url
+  try {
+    const params = new URLSearchParams(queryPart)
+    let redacted = false
+    for (const name of REDACTED_QUERY_PARAMS) {
+      if (params.has(name)) {
+        params.set(name, "[redacted]")
+        redacted = true
+      }
+    }
+    return redacted ? `${pathPart}?${params.toString()}` : url
+  } catch {
+    return url
+  }
+}
+
 export async function createServer() {
   await mkdir(apiConfig.storage.logsDir, { recursive: true })
   const trimmedLogs = await trimOversizedLogFiles()
@@ -61,6 +82,17 @@ export async function createServer() {
           stream: pino.destination({ dest: logPath, mkdir: true, sync: false }),
         },
       ]),
+      serializers: {
+        req(request) {
+          return {
+            method: request.method,
+            url: redactSensitiveUrl(request.url),
+            hostname: request.hostname,
+            remoteAddress: request.ip,
+            remotePort: request.socket?.remotePort,
+          }
+        },
+      },
     },
   })
 

@@ -93,12 +93,6 @@ export async function registerInstanceRoutes(fastify: FastifyInstance) {
         setupRequired: !instance,
         instanceName: instance?.instanceName,
         version: apiConfig.appVersion,
-        /**
-         * Prefill the setup UI so the owner never re-types the token on their own
-         * server. Only returned before the instance is claimed (the setup window),
-         * and never after — claiming locks it permanently.
-         */
-        setupTokenPrefill: !instance ? apiConfig.setupToken : undefined,
         suggestedStorageRoot: suggested,
         runtimeStorageRoot: discovery.runtimeDataDir,
         hostStorageRoot: discovery.hostDataDir,
@@ -278,7 +272,7 @@ export async function registerInstanceRoutes(fastify: FastifyInstance) {
     // setup token can't be brute-forced before the instance is claimed.
     const claimIp = clientIpFromRequest(request)
     if (await checkEndpointRateLimit(request, reply, { key: `claim:${claimIp}`, limit: 5, windowSec: 3600 })) return
-    if (await checkEndpointRateLimit(request, reply, { key: "claim:global", limit: 20, windowSec: 300 })) return
+    if (await checkEndpointRateLimit(request, reply, { key: "claim:global", limit: 20, windowSec: 300, perIp: false })) return
 
     const parsed = claimSchema.safeParse(request.body)
 
