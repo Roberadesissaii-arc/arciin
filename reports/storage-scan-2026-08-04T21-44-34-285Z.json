@@ -1,0 +1,59 @@
+{
+  "scannedAt": "2026-08-04T21:44:34.286Z",
+  "storageRoot": "/srv/arciin-storage/arciin",
+  "tempDir": "/srv/arciin-storage/arciin/temp",
+  "retentionHours": 24,
+  "temp": {
+    "deletable": [
+      {
+        "name": "1783479008163-db0cc1e3af8bf8.mp4",
+        "sizeBytes": 672436568,
+        "mtime": "2026-07-08T02:51:36.822Z"
+      },
+      {
+        "name": "1783479097815-1b3bfc8e472e9.mp4",
+        "sizeBytes": 880236955,
+        "mtime": "2026-07-08T02:53:06.808Z"
+      }
+    ],
+    "bytesRecoverable": 1552673523,
+    "retained": []
+  },
+  "database": {
+    "liveAssets": 333,
+    "orphanStorageObjects": 29,
+    "orphanBytes": 20582064,
+    "orphanIds": [
+      "cmra9fff5000ato5fqq6njh6h",
+      "cmra9fff5000cto5fc9fyguth",
+      "cmra9fffc000ito5f9li8qvbt",
+      "cmra9ffhg0011to5fybrba8xb",
+      "cmra9ffhj0013to5fblc51rf8",
+      "cmra9ffo1001kto5fzon05gum",
+      "cmra9ffpz001uto5fipeonocv",
+      "cmra9ffqr001wto5f76hr9vga",
+      "cmra9ffqz0022to5f60jcw6sd",
+      "cmra9ffqz0020to5fy5supsly",
+      "cmra9ffrg002cto5fmjz5xket",
+      "cmra9fft60035to5ft2ywgs99",
+      "cmra9fgaf005fto5fy74gnrrx",
+      "cmra9fgew006xto5fntl1ffay",
+      "cmra9fz7c008uto5fbs4j3z11",
+      "cmra9ffu8003nto5f87og3tbr",
+      "cmra9ffub003pto5f3hmzy3a6",
+      "cmra9fg38004cto5fiwwjqtrq",
+      "cmra9fg4x004lto5f6j65ev5u",
+      "cmra9fgav005mto5f3foa9v9f",
+      "cmra9fgfv007eto5f2geudh8q",
+      "cmra9fgib008eto5fg38nbzxh",
+      "cmraac4a90003tosyuqm789ut",
+      "cmraac4xm0005tow4h7g1xidl",
+      "cmraae3o5000ctosy3bhkenk2",
+      "cmrab9had0001to2rty5aoyfa",
+      "cmrabc02i0007to2r258criae",
+      "cmrabdu2u000dto2rr73714eb",
+      "cmrabfgsd0001toh1gqjx6pg0"
+    ],
+    "assetsMissingObject": 333
+  }
+}

@@ -1,0 +1,215 @@
+◇ injected env (0) from .env // tip: ◈ secrets for agents [www.dotenvx.com]
+Arciin — library placement audit
+Mode: DRY RUN (no writes)
+Database: arciin
+Libraries: 5
+
+──────────────────────────────────────────────────────────────────────────────
+UP-002 — Audio-only assets classified as VIDEO
+──────────────────────────────────────────────────────────────────────────────
+Affected records: 0
+  (none)
+
+──────────────────────────────────────────────────────────────────────────────
+UP-008-deleted — Assets inside soft-deleted folders
+──────────────────────────────────────────────────────────────────────────────
+Affected records: 3
+Auto-applicable:  0
+Needs review:     3
+
+  cmre83fzp0004tow3m6zhtbol
+    detail:   folderId=cmribxqxd0004to7xr01bfmir is soft-deleted — asset is unreachable in the UI
+    proposal: AMBIGUOUS — move to library root, restore the folder, or soft-delete the asset. Needs a human decision.
+  cmrg1o8b40008to10dw9bqarw
+    detail:   folderId=cmribxqxd0004to7xr01bfmir is soft-deleted — asset is unreachable in the UI
+    proposal: AMBIGUOUS — move to library root, restore the folder, or soft-delete the asset. Needs a human decision.
+  cmrg1o8b30006to10sq66xach
+    detail:   folderId=cmribxqxd0004to7xr01bfmir is soft-deleted — asset is unreachable in the UI
+    proposal: AMBIGUOUS — move to library root, restore the folder, or soft-delete the asset. Needs a human decision.
+
+──────────────────────────────────────────────────────────────────────────────
+UP-008-foreign — Assets whose folder belongs to a different library
+──────────────────────────────────────────────────────────────────────────────
+Affected records: 0
+  (none)
+
+──────────────────────────────────────────────────────────────────────────────
+UP-MISROUTED — Assets whose media type contradicts their library
+──────────────────────────────────────────────────────────────────────────────
+Affected records: 2
+Auto-applicable:  0
+Needs review:     2
+
+  cmri7gacx000etod5xtacxbxu
+    detail:   mediaType=VIDEO but library kind=IMAGE (at library root)
+    proposal: AMBIGUOUS — may be a deliberate user placement. Review before moving; not auto-applied.
+  cmricbcdt001cto7xnlit08vs
+    detail:   mediaType=DOCUMENT but library kind=IMAGE (at library root)
+    proposal: AMBIGUOUS — may be a deliberate user placement. Review before moving; not auto-applied.
+
+──────────────────────────────────────────────────────────────────────────────
+UP-001 — Upload sessions stranded at CLASSIFIED
+──────────────────────────────────────────────────────────────────────────────
+Affected records: 1280
+Auto-applicable:  192
+Needs review:     1088
+
+  cmrabbkij000dto3luguxnk3c
+    detail:   stranded at CLASSIFIED since 2026-07-07 (detected=IMAGE)
+    proposal: SKIP — no asset attached
+  cmrbhz4fu0002toojgptn2ren
+    detail:   stranded at CLASSIFIED since 2026-07-08 (detected=VIDEO)
+    proposal: SKIP — no asset attached
+  cmrbi0mdg0005toojnkgaimm2
+    detail:   stranded at CLASSIFIED since 2026-07-08 (detected=VIDEO)
+    proposal: SKIP — no asset attached
+  cmrbi3pac000btoojmdrjuupc
+    detail:   stranded at CLASSIFIED since 2026-07-08 (detected=VIDEO)
+    proposal: SKIP — no asset attached
+  cmrbiksgd000otoojkgqnk5yp
+    detail:   stranded at CLASSIFIED since 2026-07-08 (detected=VIDEO)
+    proposal: SKIP — no asset attached
+  cmrbil9sq000rtooj3bvror08
+    detail:   stranded at CLASSIFIED since 2026-07-08 (detected=VIDEO)
+    proposal: SKIP — no asset attached
+  cmrbiq4sb0004totxpbvih06y
+    detail:   stranded at CLASSIFIED since 2026-07-08 (detected=VIDEO)
+    proposal: SKIP — no asset attached
+  cmrbiyt9r0007totxsjxznit8
+    detail:   stranded at CLASSIFIED since 2026-07-08 (detected=VIDEO)
+    proposal: SKIP — no asset attached
+  cmrbizr11000atotx27mazz3x
+    detail:   stranded at CLASSIFIED since 2026-07-08 (detected=VIDEO)
+    proposal: SKIP — no asset attached
+  cmrbj2d7l000htotxhrr9456l
+    detail:   stranded at CLASSIFIED since 2026-07-08 (detected=IMAGE)
+    proposal: SKIP — no asset attached
+  cmrbjdjnf000xtotx77wgn5yi
+    detail:   stranded at CLASSIFIED since 2026-07-08 (detected=IMAGE)
+    proposal: SKIP — no asset attached
+  cmrbjklyj0006to9pj080sen9
+    detail:   stranded at CLASSIFIED since 2026-07-08 (detected=IMAGE)
+    proposal: SKIP — no asset attached
+  cmrbkdzop00keto07wa4epxae
+    detail:   stranded at CLASSIFIED since 2026-07-08 (detected=IMAGE)
+    proposal: SKIP — physical file missing on disk
+  cmrbkdzop00kgto07zjefqtpv
+    detail:   stranded at CLASSIFIED since 2026-07-08 (detected=IMAGE)
+    proposal: SKIP — physical file missing on disk
+  cmrbkdzvc00ksto07fggqjv3p
+    detail:   stranded at CLASSIFIED since 2026-07-08 (detected=IMAGE)
+    proposal: SKIP — physical file missing on disk
+  cmrbke0mb00l0to07fr3aqd0u
+    detail:   stranded at CLASSIFIED since 2026-07-08 (detected=IMAGE)
+    proposal: SKIP — physical file missing on disk
+  cmrbke0om00l8to0718ndwdg8
+    detail:   stranded at CLASSIFIED since 2026-07-08 (detected=IMAGE)
+    proposal: SKIP — physical file missing on disk
+  cmrbke0zk00lgto07oj62jzmc
+    detail:   stranded at CLASSIFIED since 2026-07-08 (detected=IMAGE)
+    proposal: SKIP — physical file missing on disk
+  cmrbke1m900loto07njx7bhi0
+    detail:   stranded at CLASSIFIED since 2026-07-08 (detected=IMAGE)
+    proposal: SKIP — physical file missing on disk
+  cmrbke1me00ltto07px9a5wdx
+    detail:   stranded at CLASSIFIED since 2026-07-08 (detected=IMAGE)
+    proposal: SKIP — physical file missing on disk
+  cmrbke1u200m4to07l4rdnwzh
+    detail:   stranded at CLASSIFIED since 2026-07-08 (detected=IMAGE)
+    proposal: SKIP — physical file missing on disk
+  cmrbke27r00mcto07xutinhlo
+    detail:   stranded at CLASSIFIED since 2026-07-08 (detected=IMAGE)
+    proposal: SKIP — physical file missing on disk
+  cmrbke2f200mkto07gimb20ut
+    detail:   stranded at CLASSIFIED since 2026-07-08 (detected=IMAGE)
+    proposal: SKIP — physical file missing on disk
+  cmrbke38q00msto076xqen6hn
+    detail:   stranded at CLASSIFIED since 2026-07-08 (detected=IMAGE)
+    proposal: SKIP — physical file missing on disk
+  cmrbkhbui00myto07ysivauk7
+    detail:   stranded at CLASSIFIED since 2026-07-08 (detected=VIDEO)
+    proposal: SKIP — no asset attached
+  cmrbki13000n1to07erc6bk26
+    detail:   stranded at CLASSIFIED since 2026-07-08 (detected=VIDEO)
+    proposal: SKIP — no asset attached
+  cmrbkqwfx0002toxgyxmsmhe3
+    detail:   stranded at CLASSIFIED since 2026-07-08 (detected=VIDEO)
+    proposal: SKIP — no asset attached
+  cmrbl91hj0008to71zv3qsvly
+    detail:   stranded at CLASSIFIED since 2026-07-08 (detected=VIDEO)
+    proposal: SKIP — no asset attached
+  cmrbln85j0002tohjpx6el05j
+    detail:   stranded at CLASSIFIED since 2026-07-08 (detected=IMAGE)
+    proposal: status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)
+  cmrblnshx0005tohjkb4mcquo
+    detail:   stranded at CLASSIFIED since 2026-07-08 (detected=IMAGE)
+    proposal: status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)
+  cmrblouf70008tohjjtstoxk9
+    detail:   stranded at CLASSIFIED since 2026-07-08 (detected=VIDEO)
+    proposal: SKIP — no asset attached
+  cmrblrjqt000dtohjzsxrcvsc
+    detail:   stranded at CLASSIFIED since 2026-07-08 (detected=IMAGE)
+    proposal: status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)
+  cmrblrt2f000gtohji2bbe35p
+    detail:   stranded at CLASSIFIED since 2026-07-08 (detected=IMAGE)
+    proposal: status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)
+  cmrblsm4y000jtohjjspn4o5v
+    detail:   stranded at CLASSIFIED since 2026-07-08 (detected=IMAGE)
+    proposal: status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)
+  cmrblu44m000qtohj28wbeuch
+    detail:   stranded at CLASSIFIED since 2026-07-08 (detected=IMAGE)
+    proposal: SKIP — no asset attached
+  cmrbnv0bq0006toen69yp2xfh
+    detail:   stranded at CLASSIFIED since 2026-07-08 (detected=IMAGE)
+    proposal: SKIP — no asset attached
+  cmrcc09870002tomqzq1sw9fl
+    detail:   stranded at CLASSIFIED since 2026-07-08 (detected=IMAGE)
+    proposal: status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)
+  cmrcms9sq0006tos7bjn7pki4
+    detail:   stranded at CLASSIFIED since 2026-07-08 (detected=IMAGE)
+    proposal: status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)
+  cmrd3xaa80006tor5hm1f2yrt
+    detail:   stranded at CLASSIFIED since 2026-07-09 (detected=VIDEO)
+    proposal: SKIP — no asset attached
+  cmrd435rr000ctor5ez4oeddm
+    detail:   stranded at CLASSIFIED since 2026-07-09 (detected=VIDEO)
+    proposal: SKIP — no asset attached
+  cmrd476x6000ftor5nlzt17ay
+    detail:   stranded at CLASSIFIED since 2026-07-09 (detected=VIDEO)
+    proposal: SKIP — no asset attached
+  cmrd47rid000itor5t0mb9zrf
+    detail:   stranded at CLASSIFIED since 2026-07-09 (detected=VIDEO)
+    proposal: SKIP — no asset attached
+  cmrd492ac000ltor54h8bm2lp
+    detail:   stranded at CLASSIFIED since 2026-07-09 (detected=VIDEO)
+    proposal: SKIP — no asset attached
+  cmrd4osmg000wtor5dmzquggy
+    detail:   stranded at CLASSIFIED since 2026-07-09 (detected=VIDEO)
+    proposal: SKIP — no asset attached
+  cmrd5nsmm0016tor5048ft3vt
+    detail:   stranded at CLASSIFIED since 2026-07-09 (detected=VIDEO)
+    proposal: SKIP — no asset attached
+  cmrd5oa71001gtor5pm449jp9
+    detail:   stranded at CLASSIFIED since 2026-07-09 (detected=VIDEO)
+    proposal: SKIP — no asset attached
+  cmrdorch40006to2zqc3jg5rj
+    detail:   stranded at CLASSIFIED since 2026-07-09 (detected=IMAGE)
+    proposal: status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)
+  cmrdqehga0006tog452vhgt12
+    detail:   stranded at CLASSIFIED since 2026-07-09 (detected=IMAGE)
+    proposal: status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)
+  cmrdqh5c2000gtog4e9xzs1d3
+    detail:   stranded at CLASSIFIED since 2026-07-09 (detected=IMAGE)
+    proposal: SKIP — no asset attached
+  cmre46pt70006to1xowhytlx4
+    detail:   stranded at CLASSIFIED since 2026-07-09 (detected=VIDEO)
+    proposal: SKIP — no asset attached
+  … and 1230 more (not listed)
+
+══════════════════════════════════════════════════════════════════════════════
+TOTAL findings: 1285
+══════════════════════════════════════════════════════════════════════════════
+
+Dry run — nothing was modified.
+To repair one class of issue:
+  pnpm tsx scripts/audit-and-repair-library-placement.ts --apply --issue UP-002

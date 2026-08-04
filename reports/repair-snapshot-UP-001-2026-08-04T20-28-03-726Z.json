@@ -1,0 +1,2314 @@
+{
+  "capturedAt": "2026-08-04T20:28:03.727Z",
+  "selection": {
+    "issue": "UP-001",
+    "assetId": null
+  },
+  "recordCount": 192,
+  "records": [
+    {
+      "issue": "UP-001",
+      "recordId": "cmrbln85j0002tohjpx6el05j",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrbln85j0002tohjpx6el05j",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-08T04:50:20.847Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrblnshx0005tohjkb4mcquo",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrblnshx0005tohjkb4mcquo",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-08T04:51:01.988Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrblrjqt000dtohjzsxrcvsc",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrblrjqt000dtohjzsxrcvsc",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-08T04:53:42.528Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrblrt2f000gtohji2bbe35p",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrblrt2f000gtohji2bbe35p",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-08T04:53:54.333Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrblsm4y000jtohjjspn4o5v",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrblsm4y000jtohjjspn4o5v",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-08T04:54:42.332Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrcc09870002tomqzq1sw9fl",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrcc09870002tomqzq1sw9fl",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-08T17:08:19.966Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrcms9sq0006tos7bjn7pki4",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrcms9sq0006tos7bjn7pki4",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-08T22:09:57.913Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrdorch40006to2zqc3jg5rj",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrdorch40006to2zqc3jg5rj",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-09T15:53:00.136Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrdqehga0006tog452vhgt12",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrdqehga0006tog452vhgt12",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-09T16:38:59.290Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmre4y94p000qtop4ryien5f8",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmre4y94p000qtop4ryien5f8",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-09T23:26:16.248Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmre719e9000wtoftmlc3rzho",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmre719e9000wtoftmlc3rzho",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-10T00:24:35.792Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmre787l50016toftzwr7a8gm",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmre787l50016toftzwr7a8gm",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-10T00:30:00.040Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmre83fzs0006tow3czm6p88g",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmre83fzs0006tow3czm6p88g",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-10T00:54:17.272Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrfufm0v000zto5hahjikfzv",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrfufm0v000zto5hahjikfzv",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-11T04:07:31.177Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrfx7u510009to2b3hoygodm",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrfx7u510009to2b3hoygodm",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-11T05:25:18.804Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrg1o8b8000ato107rw2z05a",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrg1o8b8000ato107rw2z05a",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-11T07:30:02.132Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrg1o8b8000cto10cnsp9j15",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrg1o8b8000cto10cnsp9j15",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-11T07:30:02.132Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrhy3g59000vtotcqhgyvq52",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrhy3g59000vtotcqhgyvq52",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-12T15:25:26.013Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrhy3yts0015totcsz60gae1",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrhy3yts0015totcsz60gae1",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-12T15:25:50.223Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrhy3yzy001ftotc3vtbrrl4",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrhy3yzy001ftotc3vtbrrl4",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-12T15:25:50.445Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrhy3z48001ptotcmolpsc6b",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrhy3z48001ptotcmolpsc6b",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-12T15:25:50.600Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrhy3zda001ztotcvruzcqgc",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrhy3zda001ztotcvruzcqgc",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-12T15:25:50.925Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrhy3zkh0029totcf7gnbtte",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrhy3zkh0029totcf7gnbtte",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-12T15:25:51.185Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrhy3zml002jtotc1d51vaxu",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrhy3zml002jtotc1d51vaxu",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-12T15:25:51.261Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmri7gad0000gtod5i6fhmqyt",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmri7gad0000gtod5i6fhmqyt",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-12T19:47:21.588Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmricnwdu000etoxaoi7ipkf1",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmricnwdu000etoxaoi7ipkf1",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-12T22:13:14.801Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrktckah0010tozxap5lkj2n",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrktckah0010tozxap5lkj2n",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-14T15:35:51.736Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrktckbt001atozxfduuahtx",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrktckbt001atozxfduuahtx",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-14T15:35:51.784Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrktckgl001ktozxsffc7ttb",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrktckgl001ktozxsffc7ttb",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-14T15:35:51.957Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrktckqn001utozxv4layioo",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrktckqn001utozxv4layioo",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-14T15:35:52.319Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrktcl5a0024tozxbs7p5bj0",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrktcl5a0024tozxbs7p5bj0",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-14T15:35:52.846Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrktclqt002etozx4p0tltgq",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrktclqt002etozx4p0tltgq",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-14T15:35:53.620Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrmkvfpd000rtod9nyt0desi",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrmkvfpd000rtod9nyt0desi",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-15T21:14:08.065Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrmkvfy70011tod9o4mz7fuj",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrmkvfy70011tod9o4mz7fuj",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-15T21:14:08.382Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrnox0tn00octod9g7y1akvw",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrnox0tn00octod9g7y1akvw",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-16T15:55:06.730Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrnpfc4v00omtod9zhhzz2ko",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrnpfc4v00omtod9zhhzz2ko",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-16T16:09:21.197Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrntgn2c00ostod9av4grlk6",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrntgn2c00ostod9av4grlk6",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-16T18:02:25.330Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrpj20vt06cxtod9gakgc5wz",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrpj20vt06cxtod9gakgc5wz",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-17T22:46:34.745Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrplxgwd0006tom34pjkuu99",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrplxgwd0006tom34pjkuu99",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-18T00:07:01.069Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrsgpgk5000sto068ysarb3s",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrsgpgk5000sto068ysarb3s",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-20T00:04:11.501Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrvhu161001cto06gd16n5nf",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrvhu161001cto06gd16n5nf",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-22T02:58:59.305Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrvhu16x001mto06j2q2dubm",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrvhu16x001mto06j2q2dubm",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-22T02:58:59.336Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrvhu1bv001wto06f1sbym11",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrvhu1bv001wto06f1sbym11",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-22T02:58:59.514Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrvhu1ls0026to0670od61l8",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrvhu1ls0026to0670od61l8",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-22T02:58:59.871Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrvhu1q0002gto06j1w2zgzo",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrvhu1q0002gto06j1w2zgzo",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-22T02:59:00.023Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrvhu1ve002qto06eo4cya0r",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrvhu1ve002qto06eo4cya0r",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-22T02:59:00.218Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrvhu1wr0030to069abheo3i",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrvhu1wr0030to069abheo3i",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-22T02:59:00.267Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrvhu24z003ato06lw9wf5iz",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrvhu24z003ato06lw9wf5iz",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-22T02:59:00.562Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrvhu2hu003kto06igpdglpa",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrvhu2hu003kto06igpdglpa",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-22T02:59:01.025Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrvhu2kg003uto06clwq9udq",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrvhu2kg003uto06clwq9udq",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-22T02:59:01.120Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrvhu2y70044to061kgdsf0h",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrvhu2y70044to061kgdsf0h",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-22T02:59:01.614Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrvhu353004eto06z9jeph7j",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrvhu353004eto06z9jeph7j",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-22T02:59:01.862Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrvhu3dm004oto06s0n9ene5",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrvhu3dm004oto06s0n9ene5",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-22T02:59:02.169Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrvhu3kc004yto066ijoziup",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrvhu3kc004yto066ijoziup",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-22T02:59:02.411Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrvhu3p30058to06dwdkqw0s",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrvhu3p30058to06dwdkqw0s",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-22T02:59:02.583Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrvhu3zy005mto0649hx0yt3",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrvhu3zy005mto0649hx0yt3",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-22T02:59:02.973Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrvhu3zy005oto06p38mszdo",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrvhu3zy005oto06p38mszdo",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-22T02:59:02.973Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrvhu4ad0062to06hom9b88j",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrvhu4ad0062to06hom9b88j",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-22T02:59:03.348Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrvhu4cd006cto06freu6eck",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrvhu4cd006cto06freu6eck",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-22T02:59:03.420Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrvhu4mv006mto062kz9vi1u",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrvhu4mv006mto062kz9vi1u",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-22T02:59:03.799Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrvhu4ph006wto064zsobf2k",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrvhu4ph006wto064zsobf2k",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-22T02:59:03.893Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrvhu50a0076to06wf4sixww",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrvhu50a0076to06wf4sixww",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-22T02:59:04.281Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrvhu53t007gto06zatmb3ib",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrvhu53t007gto06zatmb3ib",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-22T02:59:04.407Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrvhu5cf007qto063uiyddb3",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrvhu5cf007qto063uiyddb3",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-22T02:59:04.719Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrvhu5kd0080to062o06rwxw",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrvhu5kd0080to062o06rwxw",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-22T02:59:05.005Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrvhu5pv008ato06jenoiz46",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrvhu5pv008ato06jenoiz46",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-22T02:59:05.202Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrvhu5w0008kto06sbpq9hby",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrvhu5w0008kto06sbpq9hby",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-22T02:59:05.422Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrvhu5zo008uto06hpobzci6",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrvhu5zo008uto06hpobzci6",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-22T02:59:05.556Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrvhu68n0094to06uo3nyrp4",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrvhu68n0094to06uo3nyrp4",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-22T02:59:05.879Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrvhu6cq009eto0608ad6p37",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrvhu6cq009eto0608ad6p37",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-22T02:59:06.026Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrvhu6hz009oto06kdgsq7bd",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrvhu6hz009oto06kdgsq7bd",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-22T02:59:06.214Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrvhu6su009yto06448wlbse",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrvhu6su009yto06448wlbse",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-22T02:59:06.606Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrvhu6ub00a8to06hb8zrcgu",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrvhu6ub00a8to06hb8zrcgu",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-22T02:59:06.658Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrvhu7gy00aito06xsf9ommx",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrvhu7gy00aito06xsf9ommx",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-22T02:59:07.474Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrvhu85m00asto06rvg58hn3",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrvhu85m00asto06rvg58hn3",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-22T02:59:08.361Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrvhu8c500b2to068pxvlg42",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrvhu8c500b2to068pxvlg42",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-22T02:59:08.597Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrvhu8n300bcto060lketyjz",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrvhu8n300bcto060lketyjz",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-22T02:59:08.991Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrvhu8r100bmto061jub2p26",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrvhu8r100bmto061jub2p26",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-22T02:59:09.133Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrvhu97700bwto06qzv7au1v",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrvhu97700bwto06qzv7au1v",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-22T02:59:09.715Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrvhu9ha00c6to060uv2s1m4",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrvhu9ha00c6to060uv2s1m4",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-22T02:59:10.076Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrvhu9ol00cgto06zxjzg127",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrvhu9ol00cgto06zxjzg127",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-22T02:59:10.340Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrvhu9u400cqto06cupcqpxr",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrvhu9u400cqto06cupcqpxr",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-22T02:59:10.539Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrvhua1q00d0to06cvb7cfuq",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrvhua1q00d0to06cvb7cfuq",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-22T02:59:10.813Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrvhuae400dato06yxx6syhh",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrvhuae400dato06yxx6syhh",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-22T02:59:11.260Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrvhuaq200dkto06mf9evte7",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrvhuaq200dkto06mf9evte7",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-22T02:59:11.689Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrvhuazu00duto06ottcs91q",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrvhuazu00duto06ottcs91q",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-22T02:59:12.042Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrvhub3k00e4to06qhrplns9",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrvhub3k00e4to06qhrplns9",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-22T02:59:12.176Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrvhubha00eeto066md6e1mz",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrvhubha00eeto066md6e1mz",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-22T02:59:12.670Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrvhubhx00eoto06hp98b9cn",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrvhubhx00eoto06hp98b9cn",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-22T02:59:12.693Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrvhubus00eyto06ef0r8fp3",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrvhubus00eyto06ef0r8fp3",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-22T02:59:13.155Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrvhuc2x00f8to06h3chmtob",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrvhuc2x00f8to06h3chmtob",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-22T02:59:13.448Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrvhucfs00fito06yrhgtme9",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrvhucfs00fito06yrhgtme9",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-22T02:59:13.911Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrvhucig00fsto06lxkhoed7",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrvhucig00fsto06lxkhoed7",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-22T02:59:14.007Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrvhucvo00g2to06nb8xzq12",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrvhucvo00g2to06nb8xzq12",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-22T02:59:14.484Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrvhucwo00gcto066nmbfsil",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrvhucwo00gcto066nmbfsil",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-22T02:59:14.520Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrvhud8800gmto06zw5iy9dy",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrvhud8800gmto06zw5iy9dy",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-22T02:59:14.935Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrvhudcl00gwto0638rog7us",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrvhudcl00gwto0638rog7us",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-22T02:59:15.093Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrvhudkq00h6to06boc1wgtn",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrvhudkq00h6to06boc1wgtn",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-22T02:59:15.385Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrvhudxx00hoto0606dzqp7p",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrvhudxx00hoto0606dzqp7p",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-22T02:59:15.860Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrvhueh700i6to06c9662ewt",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrvhueh700i6to06c9662ewt",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-22T02:59:16.554Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrvhuel200igto06a7avr8dm",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrvhuel200igto06a7avr8dm",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-22T02:59:16.693Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrvhuexm00iqto06fh22fhif",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrvhuexm00iqto06fh22fhif",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-22T02:59:17.144Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrvhuezt00j0to06blf60phf",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrvhuezt00j0to06blf60phf",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-22T02:59:17.224Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrvhufe600jato06qtmgc5m7",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrvhufe600jato06qtmgc5m7",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-22T02:59:17.742Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrvhuffe00jkto06yqr6lobp",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrvhuffe00jkto06yqr6lobp",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-22T02:59:17.785Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrvhufs000juto0669s0ykcl",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrvhufs000juto0669s0ykcl",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-22T02:59:18.240Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrvhufz400k4to06dz9fkdoj",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrvhufz400k4to06dz9fkdoj",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-22T02:59:18.495Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrwd3o9500llto064bq1rp2o",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrwd3o9500llto064bq1rp2o",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-22T17:34:17.224Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrwd4sbu00lvto066wv41ac3",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrwd4sbu00lvto066wv41ac3",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-22T17:35:09.162Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrwd5nal00m5to069ziyjvax",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrwd5nal00m5to069ziyjvax",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-22T17:35:49.292Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrwd62c900mfto06v4t0l03b",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrwd62c900mfto06v4t0l03b",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-22T17:36:08.792Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrwhnvem00msto06kvhn0q8j",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrwhnvem00msto06kvhn0q8j",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-22T19:41:58.077Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmryq63ok0006toxbpuu9b286",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmryq63ok0006toxbpuu9b286",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-24T09:15:37.892Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrzpd70b000ntoxbnili44rk",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrzpd70b000ntoxbnili44rk",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-25T01:40:55.354Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrzpd735000xtoxbzf15uab3",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrzpd735000xtoxbzf15uab3",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-25T01:40:55.457Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrzpd7hd0017toxb66tfj0cp",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrzpd7hd0017toxb66tfj0cp",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-25T01:40:55.968Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrzpd7q5001htoxb4e0jl948",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrzpd7q5001htoxb4e0jl948",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-25T01:40:56.284Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrzpd826001rtoxbwwlw79tk",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrzpd826001rtoxbwwlw79tk",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-25T01:40:56.716Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrzpd8cj0021toxbwt3rypr0",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrzpd8cj0021toxbwt3rypr0",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-25T01:40:57.091Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrzpd8jh002btoxb21dh1yvj",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrzpd8jh002btoxb21dh1yvj",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-25T01:40:57.340Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrzpd8xz002ltoxbwq64mb51",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrzpd8xz002ltoxbwq64mb51",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-25T01:40:57.863Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrzpd94a002vtoxbpzfpwmha",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrzpd94a002vtoxbpzfpwmha",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-25T01:40:58.090Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrzpd9gl0035toxbunjvgn9o",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrzpd9gl0035toxbunjvgn9o",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-25T01:40:58.533Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrzpd9mi003ftoxbxgcpdc1n",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrzpd9mi003ftoxbxgcpdc1n",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-25T01:40:58.746Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrzpdab5003ptoxbqntsx1dm",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrzpdab5003ptoxbqntsx1dm",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-25T01:40:59.633Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrzpdadt003ztoxbg7laxwj8",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrzpdadt003ztoxbg7laxwj8",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-25T01:40:59.729Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrzpdatq0049toxbx0w6cpmp",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrzpdatq0049toxbx0w6cpmp",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-25T01:41:00.301Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrzpdb1i004jtoxbtsx3c3nq",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrzpdb1i004jtoxbtsx3c3nq",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-25T01:41:00.581Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrzpdbfi004ttoxbxuj11ueq",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrzpdbfi004ttoxbxuj11ueq",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-25T01:41:01.085Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrzpdbqb0053toxb43az064r",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrzpdbqb0053toxb43az064r",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-25T01:41:01.475Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrzpdbz4005dtoxb3f96x77o",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrzpdbz4005dtoxb3f96x77o",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-25T01:41:01.791Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrzpdcay005ntoxbozg1trsg",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrzpdcay005ntoxbozg1trsg",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-25T01:41:02.217Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrzpdck1005xtoxbt6314ctf",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrzpdck1005xtoxbt6314ctf",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-25T01:41:02.544Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrzpdcub0067toxbdlngjqxz",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrzpdcub0067toxbdlngjqxz",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-25T01:41:02.914Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrzpdd1z006htoxbkaqs5gl3",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrzpdd1z006htoxbkaqs5gl3",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-25T01:41:03.190Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrzpddc2006rtoxb6p8k7ruv",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrzpddc2006rtoxb6p8k7ruv",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-25T01:41:03.553Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrzpddmb0071toxb1qu8r1i1",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrzpddmb0071toxb1qu8r1i1",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-25T01:41:03.922Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrzpddwy007btoxbogwh2elx",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrzpddwy007btoxbogwh2elx",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-25T01:41:04.305Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrzpde74007ltoxbrv6ly9ka",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrzpde74007ltoxbrv6ly9ka",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-25T01:41:04.671Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrzpdei9007vtoxb98b8ys9q",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrzpdei9007vtoxb98b8ys9q",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-25T01:41:05.073Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrzpdepe0085toxblkct0dmd",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrzpdepe0085toxblkct0dmd",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-25T01:41:05.330Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrzpdf17008ftoxb3l641fpp",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrzpdf17008ftoxb3l641fpp",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-25T01:41:05.755Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrzpdfcx008ptoxb8z61ajf0",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrzpdfcx008ptoxb8z61ajf0",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-25T01:41:06.176Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrzpdflt008ztoxbgfzcdyjb",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrzpdflt008ztoxbgfzcdyjb",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-25T01:41:06.496Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrzpdfy10099toxbq5gtsqb9",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrzpdfy10099toxbq5gtsqb9",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-25T01:41:06.937Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrzpdg4a009jtoxb0vbffm45",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrzpdg4a009jtoxb0vbffm45",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-25T01:41:07.161Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrzpdgbj009ttoxblxb86sji",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrzpdgbj009ttoxblxb86sji",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-25T01:41:07.423Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrzpdghu00a3toxb0sl5ok7j",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrzpdghu00a3toxb0sl5ok7j",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-25T01:41:07.650Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrzpdgre00adtoxbrjruzpyw",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrzpdgre00adtoxbrjruzpyw",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-25T01:41:07.993Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrzpdgzp00antoxbxsvxq3w7",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrzpdgzp00antoxbxsvxq3w7",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-25T01:41:08.293Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrzpdh6h00axtoxbyrbjkwsl",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrzpdh6h00axtoxbyrbjkwsl",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-25T01:41:08.536Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrzpdhek00b7toxbex58gagb",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrzpdhek00b7toxbex58gagb",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-25T01:41:08.828Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrzpdhne00bhtoxbqkslw6xc",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrzpdhne00bhtoxbqkslw6xc",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-25T01:41:09.146Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrzpdhx000brtoxbs5z8m0zq",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrzpdhx000brtoxbs5z8m0zq",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-25T01:41:09.492Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrzpdi5p00c1toxb5nxd62s1",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrzpdi5p00c1toxb5nxd62s1",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-25T01:41:09.804Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrzpdid000cbtoxb3pd0n9wn",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrzpdid000cbtoxb3pd0n9wn",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-25T01:41:10.065Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrzpdipa00cltoxbby6d141i",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrzpdipa00cltoxbby6d141i",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-25T01:41:10.509Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrzpdiuv00cvtoxb0lf8bjg9",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrzpdiuv00cvtoxb0lf8bjg9",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-25T01:41:10.711Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrzpdj2500d5toxb3n6d5yft",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrzpdj2500d5toxb3n6d5yft",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-25T01:41:10.973Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrzpdj9g00dftoxb4mlfa9ab",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrzpdj9g00dftoxb4mlfa9ab",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-25T01:41:11.236Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrzpdjhz00dptoxbuy0zbghx",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrzpdjhz00dptoxbuy0zbghx",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-25T01:41:11.543Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrzpdjpb00dztoxbsep117nd",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrzpdjpb00dztoxbsep117nd",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-25T01:41:11.806Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrzpdjxe00e9toxbz1wypnpn",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrzpdjxe00e9toxbz1wypnpn",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-25T01:41:12.097Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrzpdk5q00ejtoxbd5scwa0a",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrzpdk5q00ejtoxbd5scwa0a",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-25T01:41:12.397Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrzpdkeg00ettoxbvr00seo6",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrzpdkeg00ettoxbvr00seo6",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-25T01:41:12.711Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrzpdkmv00f3toxbu3zvsmng",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrzpdkmv00f3toxbu3zvsmng",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-25T01:41:13.014Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrzpdkya00fdtoxbn8c8y9n2",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrzpdkya00fdtoxbn8c8y9n2",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-25T01:41:13.425Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrzpdl8l00fntoxbwgja50kx",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrzpdl8l00fntoxbwgja50kx",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-25T01:41:13.796Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrzpdlh800fxtoxbnt9ql60f",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrzpdlh800fxtoxbnt9ql60f",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-25T01:41:14.107Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrzpdlrh00g7toxbij2f9t4q",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrzpdlrh00g7toxbij2f9t4q",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-25T01:41:14.475Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrzpdm1700ghtoxbhk67c11n",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrzpdm1700ghtoxbhk67c11n",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-25T01:41:14.826Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrzpdm9p00grtoxbu3pd832y",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrzpdm9p00grtoxbu3pd832y",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-25T01:41:15.132Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrzpdmle00h1toxbnyryoild",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrzpdmle00h1toxbnyryoild",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-25T01:41:15.554Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrzpdmxa00hbtoxb6l5uszu4",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrzpdmxa00hbtoxb6l5uszu4",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-25T01:41:15.982Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrzpdn7000hltoxb4t4jzz39",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrzpdn7000hltoxb4t4jzz39",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-25T01:41:16.332Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrzpdngq00hvtoxbt17i3nsb",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrzpdngq00hvtoxbt17i3nsb",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-25T01:41:16.681Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrzpdnr300i5toxbp4a0g8ni",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrzpdnr300i5toxbp4a0g8ni",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-25T01:41:17.055Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrzpdo3b00iftoxbnr36lrig",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrzpdo3b00iftoxbnr36lrig",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-25T01:41:17.495Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrzpdop900iptoxbcjuer924",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrzpdop900iptoxbcjuer924",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-25T01:41:18.284Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrzpdot100iztoxbaid69vz0",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrzpdot100iztoxbaid69vz0",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-25T01:41:18.420Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrzpdpae00j9toxbwxtmw4ob",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrzpdpae00j9toxbwxtmw4ob",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-25T01:41:19.045Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrzpdpf600jjtoxbpcgbsfpm",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrzpdpf600jjtoxbpcgbsfpm",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-25T01:41:19.218Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrzpdprn00jttoxb95eekorb",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrzpdprn00jttoxb95eekorb",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-25T01:41:19.667Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrzpdq0i00k3toxbczo5deso",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrzpdq0i00k3toxbczo5deso",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-25T01:41:19.986Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrzpdqo400kdtoxbw6ceya5p",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrzpdqo400kdtoxbw6ceya5p",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-25T01:41:20.835Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrzpdqtv00kntoxbi5ly9ek5",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrzpdqtv00kntoxbi5ly9ek5",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-25T01:41:21.043Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmrzpdr9900kxtoxby81dv3bp",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmrzpdr9900kxtoxby81dv3bp",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-25T01:41:21.596Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cms0ecip800l7toxbu0pwm42y",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cms0ecip800l7toxbu0pwm42y",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-25T13:20:14.252Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cms0vyum600lhtoxbtr6e6jyi",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cms0vyum600lhtoxbtr6e6jyi",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-25T21:33:29.596Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cms5dhimp0006tofpv8dxq9n8",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cms5dhimp0006tofpv8dxq9n8",
+        "status": "CLASSIFIED",
+        "progress": 100,
+        "completedAt": "2026-07-29T00:54:58.704Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmset9k4w001etoal1a6byd4d",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmset9k4w001etoal1a6byd4d",
+        "status": "CLASSIFIED",
+        "progress": 90,
+        "completedAt": "2026-08-04T15:26:36.847Z"
+      }
+    },
+    {
+      "issue": "UP-001",
+      "recordId": "cmsetne9h001vtoal8j83gymt",
+      "proposal": "status CLASSIFIED→READY, progress→100, completedAt→createdAt (work already finished)",
+      "before": {
+        "table": "UploadSession",
+        "id": "cmsetne9h001vtoal8j83gymt",
+        "status": "CLASSIFIED",
+        "progress": 90,
+        "completedAt": "2026-08-04T15:37:22.421Z"
+      }
+    }
+  ]
+}
