@@ -3,7 +3,7 @@
 import Link from "next/link"
 import { useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { ChevronRight } from "lucide-react"
+import { ChevronRight, HardDrive } from "lucide-react"
 
 import { getStorageSettings } from "@/lib/api/settings"
 import { queryKeys } from "@/lib/api/query-keys"
@@ -11,13 +11,6 @@ import { useLibraries } from "@/hooks/use-libraries"
 import { formatBytes } from "@/lib/utils/format-bytes"
 import { resolveStorageUsagePercent } from "@/lib/utils/storage-usage"
 import { Badge } from "@/components/ui/badge"
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { cn } from "@/lib/utils"
 
@@ -31,7 +24,7 @@ const LIBRARY_ROUTES: Record<string, string> = {
   documents: "/documents",
 }
 
-/** Storage card: orange donut + library breakdown (orange dot · name · count). */
+/** Full-width storage overview: donut + library breakdown. */
 export function StorageDonutCard({ className }: { className?: string }) {
   const storageQuery = useQuery({
     queryKey: queryKeys.storageSettings,
@@ -54,21 +47,24 @@ export function StorageDonutCard({ className }: { className?: string }) {
   )
 
   if (storageQuery.isLoading) {
-    return <Skeleton className={cn("h-full min-h-[22rem] rounded-3xl", className)} />
+    return <Skeleton className={cn("h-[13.5rem] w-full rounded-3xl", className)} />
   }
 
   if (storageQuery.isError || !storage) {
     return (
-      <Card className={cn("border-red-500/20 bg-red-500/5", className)}>
-        <CardHeader>
-          <CardTitle className="text-red-900">Storage is unavailable</CardTitle>
-          <CardDescription className="text-red-800">
-            {storageQuery.error instanceof Error
-              ? storageQuery.error.message
-              : "Could not load storage status."}
-          </CardDescription>
-        </CardHeader>
-      </Card>
+      <div
+        className={cn(
+          "rounded-3xl border border-red-500/20 bg-red-500/5 px-5 py-6",
+          className,
+        )}
+      >
+        <p className="text-sm font-semibold text-red-900">Storage is unavailable</p>
+        <p className="mt-1 text-sm text-red-800">
+          {storageQuery.error instanceof Error
+            ? storageQuery.error.message
+            : "Could not load storage status."}
+        </p>
+      </div>
     )
   }
 
@@ -78,116 +74,139 @@ export function StorageDonutCard({ className }: { className?: string }) {
 
   const capacityLabel =
     storage.totalBytes && storage.totalBytes > 0
-      ? `of ${formatBytes(storage.totalBytes)} used`
-      : "used on disk"
+      ? `of ${formatBytes(storage.totalBytes)}`
+      : "on disk"
 
   return (
-    <Card className={cn("flex h-full min-h-[18rem] flex-col overflow-hidden border-zinc-200/80 bg-card shadow-sm sm:min-h-[20rem] lg:min-h-0", className)}>
-      <CardHeader className="space-y-1 border-b border-zinc-100/80 pb-4">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0 space-y-0.5 border-l-2 border-primary pl-3">
-            <CardTitle className="font-heading text-base font-semibold tracking-tight text-zinc-900">
-              Storage
-            </CardTitle>
-            <CardDescription className="text-sm text-zinc-600">
-              Local object storage on this server.
-            </CardDescription>
-          </div>
-          <Badge
-            className={
-              storage.writable
-                ? "shrink-0 border-0 bg-emerald-600 px-2.5 text-xs font-semibold text-white shadow-none hover:bg-emerald-600"
-                : "shrink-0 border-0 bg-red-600 px-2.5 text-xs font-semibold text-white shadow-none hover:bg-red-600"
-            }
-          >
-            {storage.writable ? "Writable" : "Read only"}
-          </Badge>
-        </div>
-      </CardHeader>
-      <CardContent className="flex min-h-0 flex-1 flex-col px-4 py-3 sm:px-5">
-        <div className="flex flex-1 items-center gap-5">
-          <svg viewBox="0 0 40 40" className="size-32 shrink-0" role="img" aria-label={`Storage ${percent}% used`}>
-            <circle cx="20" cy="20" r={r} fill="none" stroke="#f0f0f0" strokeWidth="4.5" />
-            <circle
-              cx="20"
-              cy="20"
-              r={r}
-              fill="none"
-              stroke="var(--arciin-accent, #ff4f12)"
-              strokeWidth="4.5"
-              strokeLinecap="round"
-              strokeDasharray={`${(percent / 100) * circumference} ${circumference}`}
-              transform="rotate(-90 20 20)"
-            />
-            <text
-              x="20"
-              y="18.6"
-              textAnchor="middle"
-              dominantBaseline="middle"
-              fill="#111111"
-              fontSize="7"
-              fontWeight="700"
+    <section
+      className={cn(
+        "relative overflow-hidden rounded-3xl border border-zinc-200/90 bg-gradient-to-br from-white via-zinc-50/50 to-[#fff8f5]/70",
+        "shadow-sm ring-1 ring-inset ring-zinc-200/50",
+        className,
+      )}
+    >
+      <div
+        className="pointer-events-none absolute -right-16 -top-20 size-56 rounded-full bg-primary/[0.06] blur-2xl"
+        aria-hidden
+      />
+
+      <div className="relative flex flex-col gap-5 px-5 py-5 sm:px-6 sm:py-6 lg:flex-row lg:items-center lg:gap-8 lg:px-7">
+        <div className="flex min-w-0 flex-1 items-center gap-5 sm:gap-6">
+          <div className="relative shrink-0">
+            <svg
+              viewBox="0 0 40 40"
+              className="size-[7.25rem] sm:size-[8rem]"
+              role="img"
+              aria-label={`Storage ${percent}% used`}
             >
-              {percent}%
-            </text>
-            <text x="20" y="26" textAnchor="middle" fill="#a0a0a0" fontSize="2.9">
-              {capacityLabel}
-            </text>
-          </svg>
+              <circle cx="20" cy="20" r={r} fill="none" stroke="#eeeef0" strokeWidth="4.25" />
+              <circle
+                cx="20"
+                cy="20"
+                r={r}
+                fill="none"
+                stroke="var(--arciin-accent, #ff4f12)"
+                strokeWidth="4.25"
+                strokeLinecap="round"
+                strokeDasharray={`${(percent / 100) * circumference} ${circumference}`}
+                transform="rotate(-90 20 20)"
+              />
+              <text
+                x="20"
+                y="18.2"
+                textAnchor="middle"
+                dominantBaseline="middle"
+                fill="#111111"
+                fontSize="7.2"
+                fontWeight="700"
+              >
+                {percent}%
+              </text>
+              <text x="20" y="25.5" textAnchor="middle" fill="#a1a1aa" fontSize="2.7">
+                used
+              </text>
+            </svg>
+          </div>
 
           <div className="min-w-0 flex-1">
-            {librariesQuery.isLoading ? (
-              <div className="space-y-2.5">
-                {Array.from({ length: 5 }).map((_, i) => (
-                  <Skeleton key={i} className="h-5 w-full rounded-md" />
-                ))}
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="flex size-8 items-center justify-center rounded-xl border border-zinc-200/90 bg-white text-primary shadow-sm">
+                <HardDrive className="size-4" aria-hidden />
+              </span>
+              <div className="min-w-0">
+                <h3 className="font-heading text-base font-semibold tracking-tight text-zinc-900">
+                  Storage
+                </h3>
+                <p className="text-[12px] text-zinc-500">Local object storage on this server</p>
               </div>
-            ) : (
-              <ul className="space-y-1">
-                {libraries.map((lib) => {
-                  const href = LIBRARY_ROUTES[lib.slug] ?? "/files"
+              <Badge
+                className={
+                  storage.writable
+                    ? "ml-auto shrink-0 border-0 bg-emerald-600 px-2.5 text-[10px] font-semibold text-white shadow-none hover:bg-emerald-600 sm:ml-2"
+                    : "ml-auto shrink-0 border-0 bg-red-600 px-2.5 text-[10px] font-semibold text-white shadow-none hover:bg-red-600 sm:ml-2"
+                }
+              >
+                {storage.writable ? "Writable" : "Read only"}
+              </Badge>
+            </div>
 
-                  return (
-                    <li key={lib.id}>
-                      <Link
-                        href={href}
-                        className={cn(
-                          "flex items-center gap-2.5 rounded-md px-0.5 py-1",
-                          "transition-colors hover:bg-zinc-50",
-                        )}
-                      >
-                        <span
-                          className="size-2 shrink-0 rounded-full bg-primary"
-                          aria-hidden
-                        />
-                        <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-zinc-800">
-                          {lib.name}
-                        </span>
-                        <span className="shrink-0 tabular-nums text-[13px] font-medium text-zinc-500">
-                          {(lib.assetCount ?? 0).toLocaleString()}
-                        </span>
-                      </Link>
-                    </li>
-                  )
-                })}
-              </ul>
-            )}
+            <p className="mt-3 text-sm font-medium text-zinc-800">
+              {formatBytes(storage.usageBytes)}{" "}
+              <span className="font-normal text-zinc-500">{capacityLabel}</span>
+            </p>
+            <p className="mt-0.5 text-[12px] text-zinc-500">
+              {storage.objectCount.toLocaleString()} objects on disk
+            </p>
           </div>
         </div>
 
-        <div className="mt-4 flex items-center justify-between border-t border-zinc-100 pt-3">
-          <p className="text-xs text-zinc-600">
-            {formatBytes(storage.usageBytes)} · {storage.objectCount.toLocaleString()} objects
-          </p>
-          <Link
-            href="/settings/storage"
-            className="inline-flex items-center gap-0.5 text-sm font-medium text-primary hover:text-primary/80"
-          >
-            Storage settings
-            <ChevronRight className="size-4" />
-          </Link>
+        <div className="min-w-0 flex-1 border-t border-zinc-200/80 pt-4 lg:border-l lg:border-t-0 lg:pl-8 lg:pt-0">
+          {librariesQuery.isLoading ? (
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <Skeleton key={i} className="h-14 rounded-xl" />
+              ))}
+            </div>
+          ) : (
+            <ul className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+              {libraries.map((lib) => {
+                const href = LIBRARY_ROUTES[lib.slug] ?? "/files"
+                return (
+                  <li key={lib.id}>
+                    <Link
+                      href={href}
+                      className={cn(
+                        "flex h-full flex-col justify-center rounded-xl border border-zinc-200/90 bg-white/80 px-3 py-2.5",
+                        "shadow-sm transition-colors hover:border-primary/30 hover:bg-[#fff8f5]",
+                      )}
+                    >
+                      <span className="flex items-center gap-1.5">
+                        <span className="size-1.5 shrink-0 rounded-full bg-primary" aria-hidden />
+                        <span className="truncate text-[12px] font-semibold text-zinc-800">
+                          {lib.name}
+                        </span>
+                      </span>
+                      <span className="mt-1 pl-3 tabular-nums text-[13px] font-medium text-zinc-500">
+                        {(lib.assetCount ?? 0).toLocaleString()}
+                      </span>
+                    </Link>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+
+          <div className="mt-3 flex justify-end">
+            <Link
+              href="/settings/storage"
+              className="inline-flex items-center gap-0.5 text-[13px] font-medium text-primary hover:text-primary/80"
+            >
+              Storage settings
+              <ChevronRight className="size-4" />
+            </Link>
+          </div>
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </section>
   )
 }

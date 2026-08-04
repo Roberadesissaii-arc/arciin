@@ -5,12 +5,9 @@ import { flushSync } from "react-dom"
 import Link from "next/link"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { prefetchOllamaAvailableModels } from "@/lib/hooks/use-ollama-available-models"
-import {
-  ArrowUp, Clock, Square, X,
-} from "lucide-react"
+import { Clock, X } from "lucide-react"
 import { toast } from "@/lib/notifications/arciin-toast"
 
-import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet"
 import { getOllamaModelShow } from "@/lib/api/models"
 import { fetchApi } from "@/lib/api/client"
@@ -35,12 +32,18 @@ import { queryKeys } from "@/lib/api/query-keys"
 import { DEFAULT_AI_SETTINGS } from "@arciin/shared"
 import { cn } from "@/lib/utils"
 import { createId } from "@/lib/utils/create-id"
-import { ChatModelPicker, type ChatProfilePicker } from "@/components/chat/chat-model-picker"
+import { type ChatProfilePicker } from "@/components/chat/chat-model-picker"
 import {
   CHAT_SELECTED_MODEL_KEY,
   CHAT_SELECTED_PROFILE_ID_KEY,
 } from "@/lib/chat/chat-selection-storage"
 import { isOllamaProvider, ollamaCapabilitiesIncludeVision } from "@/lib/ollama-providers"
+import {
+  modelNameLooksVision,
+  providerIsMultimodal,
+} from "@/lib/chat/asset-chat-model"
+import { PROVIDER_MODELS } from "@/lib/chat/provider-models"
+import { getAvailableModels } from "@/lib/api/models"
 import { useLicense } from "@/lib/license/use-license"
 
 import {
@@ -58,6 +61,20 @@ import { ARCIIN_DEFAULT_SYSTEM_INSTRUCTION, SYSTEM_INSTRUCTION_KEY, buildContext
 import { MessageBubble } from "@/components/chat/chat-message-bubble"
 import { WelcomeState } from "@/components/chat/chat-welcome-state"
 import { HistorySidebar } from "@/components/chat/chat-history-sidebar"
+import {
+  ChatPromptBox,
+  type ChatPromptToolId,
+} from "@/components/chat/chat-prompt-box"
+import {
+  type ChatComposerAttachment,
+  isImageMediaType,
+} from "@/components/chat/chat-composer-attachments"
+import {
+  buildPromptToolsSystemAppend,
+  promptToolsForceThinking,
+  promptToolsForceVision,
+} from "@/components/chat/chat-prompt-tools"
+import { expandSlashMessage } from "@/components/chat/chat-slash-commands"
 
 type ChatProfile = ChatProfilePicker
 
@@ -76,12 +93,27 @@ export function ChatPage() {
   const [conversationId, setConversationId] = useState<string | null>(null)
   const [historyOpen, setHistoryOpen] = useState(false)
   const [mobileHistoryOpen, setMobileHistoryOpen] = useState(false)
+  const [promptTools, setPromptTools] = useState<ChatPromptToolId[]>([])
+  const [attachments, setAttachments] = useState<ChatComposerAttachment[]>([])
+  const thinkChipSynced = useRef(false)
   const aiSettingsQuery = useQuery({
     queryKey: queryKeys.aiSettings,
     queryFn: ({ signal }) => getAiSettings(signal),
     staleTime: 30_000,
   })
   const showThinking = aiSettingsQuery.data?.showThinking ?? DEFAULT_AI_SETTINGS.showThinking
+
+  // Seed Think chip from Settings once so users who enabled “Show thinking” start with it on.
+  // Turning the chip off hides the reasoning panel for that turn (chip is the real control).
+  useEffect(() => {
+    if (thinkChipSynced.current || aiSettingsQuery.isLoading) return
+    thinkChipSynced.current = true
+    if (showThinking) {
+      setPromptTools((prev) =>
+        prev.includes("thinking") ? prev : [...prev, "thinking"],
+      )
+    }
+  }, [showThinking, aiSettingsQuery.isLoading])
 
   const systemInstruction = typeof window !== "undefined"
     ? (localStorage.getItem(SYSTEM_INSTRUCTION_KEY) ?? ARCIIN_DEFAULT_SYSTEM_INSTRUCTION)
@@ -90,8 +122,7 @@ export function ChatPage() {
   const messagesScrollRef = useRef<HTMLDivElement>(null)
   const messagesInnerRef = useRef<HTMLDivElement>(null)
   const stickToBottomRef = useRef(true)
-  const textareaRef    = useRef<HTMLTextAreaElement>(null)
-  const abortRef       = useRef<AbortController | null>(null)
+  const abortRef = useRef<AbortController | null>(null)
 
   // ── Queries ────────────────────────────────────────────────────────────────
 
@@ -114,6 +145,105 @@ export function ChatPage() {
 
   const profiles      = useMemo(() => profilesQuery.data ?? [], [profilesQuery.data])
   const conversations = useMemo(() => historyQuery.data ?? [], [historyQuery.data])
+
+  /**
+   * When Vision is toggled on, switch the model picker to a vision-capable model.
+   * Does not attach any image — user adds their own via “Add image”.
+   */
+  const ensureVisionModel = useCallback(async () => {
+    const current =
+      selectedModel || selectedProfile?.defaultModel || ""
+    if (
+      current &&
+      (modelNameLooksVision(current) ||
+        (selectedProfile && providerIsMultimodal(selectedProfile.provider, current)))
+    ) {
+      return
+    }
+
+    const list = profiles.length > 0 ? profiles : []
+    // Prefer current profile’s vision tag, then any profile.
+    const order = selectedProfile
+      ? [selectedProfile, ...list.filter((p) => p.id !== selectedProfile.id)]
+      : list
+
+    for (const profile of order) {
+      if (isOllamaProvider(profile.provider)) {
+        try {
+          const data = await queryClient.fetchQuery({
+            queryKey: queryKeys.availableModels(profile.id),
+            queryFn: ({ signal }) => getAvailableModels(profile.id, { signal }),
+            staleTime: 60_000,
+          })
+          const models = data?.models ?? []
+          const visionTag =
+            models.find((m) => modelNameLooksVision(m)) ??
+            (profile.defaultModel && modelNameLooksVision(profile.defaultModel)
+              ? profile.defaultModel
+              : null)
+          if (visionTag) {
+            setSelectedProfile(profile)
+            setSelectedModel(visionTag)
+            try {
+              localStorage.setItem(CHAT_SELECTED_PROFILE_ID_KEY, profile.id)
+              localStorage.setItem(CHAT_SELECTED_MODEL_KEY, visionTag)
+            } catch {
+              /* private mode */
+            }
+            void setChatSelection({ profileId: profile.id, model: visionTag }).catch(() => {})
+            toast.info("Switched to a vision model", {
+              description: visionTag,
+            })
+            return
+          }
+        } catch {
+          /* try next profile */
+        }
+      } else {
+        const catalogue = PROVIDER_MODELS[profile.provider] ?? []
+        const visionTag =
+          catalogue.find((m) => providerIsMultimodal(profile.provider, m) || modelNameLooksVision(m)) ??
+          (profile.defaultModel &&
+          (providerIsMultimodal(profile.provider, profile.defaultModel) ||
+            modelNameLooksVision(profile.defaultModel))
+            ? profile.defaultModel
+            : null)
+        if (visionTag) {
+          setSelectedProfile(profile)
+          setSelectedModel(visionTag)
+          try {
+            localStorage.setItem(CHAT_SELECTED_PROFILE_ID_KEY, profile.id)
+            localStorage.setItem(CHAT_SELECTED_MODEL_KEY, visionTag)
+          } catch {
+            /* private mode */
+          }
+          void setChatSelection({ profileId: profile.id, model: visionTag }).catch(() => {})
+          toast.info("Switched to a vision model", {
+            description: visionTag,
+          })
+          return
+        }
+      }
+    }
+
+    toast.warning("No vision model found", {
+      description: "Connect a vision-capable model under Models (eye icon).",
+    })
+  }, [profiles, queryClient, selectedModel, selectedProfile])
+
+  const handlePromptToolsChange = useCallback(
+    (next: ChatPromptToolId[]) => {
+      const wasVision = promptTools.includes("vision")
+      const nowVision = next.includes("vision")
+      setPromptTools(next)
+      if (nowVision && !wasVision) {
+        // Keep only image attachments when entering Vision mode.
+        setAttachments((prev) => prev.filter((a) => isImageMediaType(a.mediaType)))
+        void ensureVisionModel()
+      }
+    },
+    [promptTools, ensureVisionModel],
+  )
 
   useEffect(() => {
     for (const profile of profiles) {
@@ -272,16 +402,6 @@ export function ChatPage() {
     setMessages([])
     setInput("")
   }
-
-  // ── Input ──────────────────────────────────────────────────────────────────
-
-  function handleInputChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
-    setInput(e.target.value)
-    const el = e.target
-    el.style.height = "auto"
-    el.style.height = `${Math.min(el.scrollHeight, 160)}px`
-  }
-
 
   async function handleMessageFeedback(msg: Message, rating: ChatMessageFeedbackRating | null) {
     const persistId = messagePersistId(msg)
@@ -561,15 +681,16 @@ export function ChatPage() {
 
   // ── Send ───────────────────────────────────────────────────────────────────
 
-  async function sendMessage() {
+  async function sendMessage(overrideText?: string) {
     if (chatLocked) {
       toast.error(`${chatPlanLabel} required`, {
         description: `Activate ${chatPlanLabel} to send messages.`,
       })
       return
     }
-    const text = input.trim()
-    if (!text || streaming) return
+    let text = (overrideText ?? input).trim()
+    if (streaming) return
+    if (!text && attachments.length === 0) return
 
     const profile = selectedProfile ?? profiles[0]
     if (!profile) {
@@ -577,19 +698,68 @@ export function ChatPage() {
       return
     }
 
-    const userMsg: Message = { id: createId(), role: "user", content: text }
+    // Slash commands (/summarize …) expand to full prompts + tool chips.
+    let activeTools: ChatPromptToolId[] = overrideText ? [] : [...promptTools]
+    if (!overrideText && text) {
+      const slash = expandSlashMessage(text)
+      if (slash) {
+        text = slash.text
+        activeTools = Array.from(new Set([...activeTools, ...slash.tools]))
+        setPromptTools(activeTools)
+      }
+    }
+
+    const forceVision = promptToolsForceVision(activeTools)
+    const forceThinking = promptToolsForceThinking(activeTools)
+    // Think chip gates the reasoning panel — off means answer-only for this turn.
+    const turnReasoningUi = forceThinking
+
+    const imageAttachments = attachments.filter(
+      (a) => isImageMediaType(a.mediaType) && a.imageBase64,
+    )
+    const docAttachments = attachments.filter((a) => !isImageMediaType(a.mediaType))
+
+    // Vision chip requires a user-chosen image before send (no auto library attach).
+    if (forceVision && imageAttachments.length === 0) {
+      toast.warning("Attach an image first", {
+        description: "Vision is on — use the paperclip to pick an image from your library.",
+      })
+      return
+    }
+
+    // Empty text + attachments only: invent a minimal prompt for the model.
+    if (!text) {
+      if (imageAttachments.length > 0) {
+        text = "Describe the attached image(s) in detail."
+      } else if (docAttachments.length > 0) {
+        text = `Read and explain the attached file(s): ${docAttachments.map((d) => d.filename).join(", ")}.`
+      }
+    }
+
+    // Display bubble: keep the human-typed slash line if we expanded.
+    // Snapshot tray images so the bubble shows what was sent; tray stays
+    // for follow-ups until the user removes attachments themselves.
+    const displayUserText = (overrideText ?? input).trim() || text
+    const attachedForBubble = imageAttachments
+      .map((a) => a.imageBase64!)
+      .slice(0, 3)
+    const userMsg: Message = {
+      id: createId(),
+      role: "user",
+      content: displayUserText,
+      ...(attachedForBubble.length > 0 ? { images: attachedForBubble } : {}),
+    }
     const pendingMsg: Message = {
       id: createId(),
       role: "assistant",
       content: "",
       pending: true,
-      ...(reasoningUiEnabled ? { thinking: "" } : {}),
+      ...(turnReasoningUi ? { thinking: "" } : {}),
     }
 
     stickToBottomRef.current = true
     setMessages((prev) => [...prev, userMsg, pendingMsg])
     setInput("")
-    if (textareaRef.current) textareaRef.current.style.height = "auto"
     setStreaming(true)
 
     type OutboundMsg = {
@@ -598,23 +768,39 @@ export function ChatPage() {
       images?: string[]
     }
 
-    const history: OutboundMsg[] = [...messages, userMsg].map((m) => ({
-      role: m.role,
-      content: m.content,
-    }))
+    // Send expanded slash text to the model; keep the bubble as what the user typed.
+    const history: OutboundMsg[] = [
+      ...messages.map((m) => ({ role: m.role as "user" | "assistant", content: m.content })),
+      { role: "user" as const, content: text },
+    ]
     const sysPrompt = systemInstruction.trim()
 
     const instanceBlock = contextQuery.data ? "\n\n" + buildContextBlock(contextQuery.data) : ""
     const caps = ollamaShowQuery.data?.capabilities
-    const visionCapable =
-      ollamaChat &&
-      (ollamaCapabilitiesIncludeVision(caps) !== false ||
-        /qwen3\.5|llava|gemma.*vision|minicpm-v|moondream|bakllava/i.test(activeModelLabel))
-
     const modelToSend = selectedModel || profile.defaultModel || undefined
+    const visionCapable =
+      Boolean(modelToSend && modelNameLooksVision(modelToSend)) ||
+      Boolean(profile && modelToSend && providerIsMultimodal(profile.provider, modelToSend)) ||
+      (ollamaChat &&
+        (ollamaCapabilitiesIncludeVision(caps) === true ||
+          /qwen3\.5|llava|gemma.*vision|minicpm-v|moondream|bakllava|ministral/i.test(
+            activeModelLabel,
+          )))
 
+    // Vision chip: only user-added tray images (never auto-pick from the library).
+    // Always attach tray bytes when present — do not drop them if capability heuristic is lagging.
     let visionImages: string[] | undefined
-    if (visionCapable && shouldAttachVisionToUserMessage(text, messages)) {
+
+    if (forceVision && !visionCapable) {
+      toast.warning("Vision needs a vision model", {
+        description: "Pick a model with the eye icon (Vision chip auto-switches when possible).",
+      })
+    }
+
+    if (forceVision || imageAttachments.length > 0) {
+      // User-chosen library/upload attachments only — always send pixels when present.
+      visionImages = imageAttachments.map((a) => a.imageBase64!).slice(0, 3)
+    } else if (visionCapable && shouldAttachVisionToUserMessage(text, messages)) {
       try {
         const limit: 1 | 2 | 3 = /\b(compare|both|all three|each of)\b/i.test(text) ? 2 : 1
         const vision = await getChatVisionRecent(limit)
@@ -632,7 +818,31 @@ export function ChatPage() {
       }
     }
 
-    let sysTail = instanceBlock
+    // Keep tray attachments for follow-ups until the user removes them.
+    // If images came from auto library attach (no tray), still show them on the bubble.
+    if (visionImages?.length) {
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === userMsg.id
+            ? { ...m, images: m.images?.length ? m.images : visionImages }
+            : m,
+        ),
+      )
+    }
+
+    // Document attachments: steer the model at those files (no vision pixels).
+    if (docAttachments.length > 0) {
+      const names = docAttachments.map((d) => `"${d.filename}" (id=${d.assetId})`).join(", ")
+      text =
+        `${text}\n\n[Attached library file(s) for this turn: ${names}. ` +
+        `Read with read_text_asset or read_pdf_asset. Answer only about these files — ` +
+        `do not list the whole library.]`
+      if (!activeTools.includes("files")) {
+        activeTools = [...activeTools, "files"]
+      }
+    }
+
+    let sysTail = instanceBlock + buildPromptToolsSystemAppend(activeTools)
     if (visionImages?.length) {
       sysTail +=
         visionImages.length === 1
@@ -738,8 +948,10 @@ export function ChatPage() {
           }
         }
 
-        const derived = deriveStreamingThinkingAndAnswer(accumulated, thinkingAccum, showThinking)
-        const displayThinking = displayThinkingDuringStream(reasoningUiEnabled, derived)
+        // Think chip gates reasoning UI for this turn (off = answer only).
+        const showReasoningPanel = forceThinking
+        const derived = deriveStreamingThinkingAndAnswer(accumulated, thinkingAccum, showReasoningPanel)
+        const displayThinking = displayThinkingDuringStream(turnReasoningUi, derived)
         const displayContent = finalizeAssistantContent(derived.answer, text, messages)
 
         flushSync(() => {
@@ -765,8 +977,8 @@ export function ChatPage() {
       const resolved = resolveFinalAssistantMessage(
         accumulated,
         thinkingAccum,
-        showThinking,
-        reasoningUiEnabled,
+        forceThinking,
+        turnReasoningUi,
       )
       finalContent = finalizeAssistantContent(resolved.content, text, messages)
       const finalThinking = resolved.thinking
@@ -801,7 +1013,7 @@ export function ChatPage() {
           const saved = await saveChatMessages({
             conversationId: convoId,
             messages: [
-              { role: "user", content: text },
+              { role: "user", content: displayUserText },
               {
                 role: "assistant",
                 content: finalContent,
@@ -845,21 +1057,6 @@ export function ChatPage() {
     abortRef.current?.abort()
   }
 
-  function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault()
-      if (streaming) {
-        stopGeneration()
-      } else {
-        sendMessage()
-      }
-    }
-  }
-
-  const canSend =
-    !chatLocked && input.trim().length > 0 && !streaming && profiles.length > 0
-  const canStop = streaming && profiles.length > 0
-
   return (
     <div className="flex min-h-0 flex-1 overflow-hidden bg-background">
       {/* ── History sidebar ──────────────────────────────────────────────── */}
@@ -885,7 +1082,7 @@ export function ChatPage() {
       </div>
 
       {/* ── Chat area ────────────────────────────────────────────────────── */}
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
         <div
           ref={messagesScrollRef}
           onScroll={handleMessagesScroll}
@@ -936,13 +1133,24 @@ export function ChatPage() {
           </div>
 
           {messages.length === 0 ? (
-            <WelcomeState
-              hasProfiles={profiles.length > 0}
-              locked={chatLocked}
-              planLabel={chatPlanLabel}
-            />
+            /* Extra bottom pad so welcome content clears the floating composer */
+            <div className="flex min-h-0 flex-1 flex-col pb-36 sm:pb-40">
+              <WelcomeState
+                hasProfiles={profiles.length > 0}
+                locked={chatLocked}
+                planLabel={chatPlanLabel}
+                onSelectTemplate={(template) => {
+                  if (chatLocked || streaming) return
+                  void sendMessage(template.prompt)
+                }}
+              />
+            </div>
           ) : (
-            <div ref={messagesInnerRef} className="relative flex flex-col gap-4 px-4 py-6 pb-8 sm:px-8 lg:px-16 xl:px-24">
+            /* pb clears floating composer — messages scroll fully underneath empty air */
+            <div
+              ref={messagesInnerRef}
+              className="relative flex flex-col gap-4 px-4 py-6 pb-40 sm:px-8 sm:pb-44 lg:px-16 xl:px-24"
+            >
               {(() => {
                 const lastAssistantId = [...messages].reverse().find((m) => m.role === "assistant")?.id
                 return messages.map((msg) => (
@@ -978,82 +1186,52 @@ export function ChatPage() {
           )}
         </div>
 
-        {/* Input pill — always visible; disabled when plan is Free */}
-        <div className="shrink-0 px-4 pb-4 pt-2 sm:px-6">
-          <div className="mx-auto max-w-3xl">
-            <div
-              className={cn(
-                "flex min-h-[54px] items-center gap-0 rounded-2xl border border-border bg-card shadow-sm focus-within:ring-2 focus-within:ring-primary/20",
-                chatLocked && "opacity-90",
-              )}
-            >
-              <ChatModelPicker
-                profiles={profiles}
-                selectedProfile={selectedProfile}
-                selectedModel={selectedModel}
-                lightSurface
-                onChange={(profile, model) => {
-                  if (chatLocked) return
-                  setSelectedProfile(profile)
-                  setSelectedModel(model)
-                  try {
-                    localStorage.setItem(CHAT_SELECTED_PROFILE_ID_KEY, profile.id)
-                    localStorage.setItem(CHAT_SELECTED_MODEL_KEY, model)
-                  } catch {
-                    /* private mode */
-                  }
-                  void setChatSelection({ profileId: profile.id, model }).catch(() => {
-                    /* offline */
-                  })
-                }}
-                ollamaShow={ollamaShowQuery.data}
-                ollamaShowLoading={ollamaShowQuery.isFetching && !ollamaShowQuery.data}
-              />
-              <div className="h-5 w-px shrink-0 bg-border" />
-              <textarea
-                ref={textareaRef}
-                rows={1}
-                value={input}
-                onChange={handleInputChange}
-                onKeyDown={handleKeyDown}
-                placeholder={
-                  chatLocked
-                    ? `Activate ${chatPlanLabel} to send messages…`
-                    : streaming
-                      ? "Generating… press Stop to interrupt"
-                      : "Message…"
+        {/*
+          Floating composer only — no solid bottom dock.
+          Outer shell is pointer-events-none so message text under empty space
+          stays visible and scrollable; only the prompt card captures clicks.
+        */}
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 px-4 pb-4 sm:px-6">
+          <div className="pointer-events-auto mx-auto max-w-3xl">
+            <ChatPromptBox
+              value={input}
+              onValueChange={setInput}
+              onSend={() => void sendMessage()}
+              onStop={stopGeneration}
+              streaming={streaming}
+              locked={chatLocked}
+              disabled={profiles.length === 0}
+              placeholder={
+                chatLocked
+                  ? `Activate ${chatPlanLabel} to send messages…`
+                  : streaming
+                    ? "Generating… press Stop to interrupt"
+                    : "Message Arciin…  Try /summarize"
+              }
+              profiles={profiles}
+              selectedProfile={selectedProfile}
+              selectedModel={selectedModel}
+              onModelChange={(profile, model) => {
+                if (chatLocked) return
+                setSelectedProfile(profile)
+                setSelectedModel(model)
+                try {
+                  localStorage.setItem(CHAT_SELECTED_PROFILE_ID_KEY, profile.id)
+                  localStorage.setItem(CHAT_SELECTED_MODEL_KEY, model)
+                } catch {
+                  /* private mode */
                 }
-                disabled={chatLocked || profiles.length === 0}
-                readOnly={chatLocked}
-                className="min-h-[54px] flex-1 resize-none bg-transparent px-3 py-4 text-[14px] leading-snug text-foreground placeholder:text-muted-foreground focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
-              />
-              <div className="flex shrink-0 items-center px-2">
-                {canStop ? (
-                  <Button
-                    type="button"
-                    size="icon"
-                    onClick={stopGeneration}
-                    title="Stop generating"
-                    aria-label="Stop generating"
-                    className="size-8 rounded-xl bg-destructive text-white hover:bg-destructive/90"
-                  >
-                    <Square className="size-3.5 fill-current" />
-                  </Button>
-                ) : (
-                  <Button
-                    type="button"
-                    size="icon"
-                    disabled={!canSend}
-                    onClick={sendMessage}
-                    title={chatLocked ? `Requires ${chatPlanLabel}` : "Send message"}
-                    aria-label="Send message"
-                    className="size-8 rounded-xl bg-primary text-white hover:bg-primary/90 disabled:opacity-40"
-                  >
-                    <ArrowUp className="size-4" />
-                  </Button>
-                )}
-              </div>
-            </div>
+                void setChatSelection({ profileId: profile.id, model }).catch(() => {
+                  /* offline */
+                })
+              }}
+              ollamaShow={ollamaShowQuery.data}
+              ollamaShowLoading={ollamaShowQuery.isFetching && !ollamaShowQuery.data}
+              tools={promptTools}
+              onToolsChange={handlePromptToolsChange}
+              attachments={attachments}
+              onAttachmentsChange={setAttachments}
+            />
             {chatLocked ? (
               <p className="mt-2 text-center text-[11px] text-muted-foreground">
                 Free plan keeps this workspace visible.{" "}

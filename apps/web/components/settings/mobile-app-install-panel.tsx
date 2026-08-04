@@ -166,10 +166,15 @@ export function MobileAppInstallPanel({
               <p className="truncate font-mono text-[12px] text-foreground">{data.mobileUrl}</p>
             </div>
             {data.installed ? (
-              <Button type="button" variant="outline" size="sm" asChild>
+              <Button
+                type="button"
+                size="sm"
+                className="h-8 border-0 bg-primary px-3 font-semibold text-white shadow-none hover:bg-primary/90"
+                asChild
+              >
                 <a href={data.mobileUrl} target="_blank" rel="noopener noreferrer">
                   Open
-                  <ExternalLink className="size-3.5 opacity-70" />
+                  <ExternalLink className="size-3.5 opacity-90" />
                 </a>
               </Button>
             ) : null}

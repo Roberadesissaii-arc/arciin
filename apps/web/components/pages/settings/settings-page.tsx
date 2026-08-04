@@ -28,6 +28,7 @@ import {
 } from "@/components/settings/settings-nav-config"
 import { SettingsShell } from "@/components/settings/settings-shell"
 import { StorageSettingsForm } from "@/components/settings/storage-settings-form"
+import { TrashPanel } from "@/components/settings/trash-panel"
 import { UpdatesPanel } from "@/components/settings/updates-panel"
 
 export function SettingsPage() {
@@ -72,6 +73,7 @@ export function SettingsPage() {
     license: <LicensePanel />,
     updates: <UpdatesPanel />,
     passwords: <PasswordsPanel />,
+    trash: <TrashPanel />,
     "data-reset": <ClearDataPanel />,
     "access-control": <AccessControlPanel />,
     session: <SessionSecurityPanel />,
@@ -89,7 +91,7 @@ export function SettingsPage() {
         title="Settings"
         subtitle="Instance · security · intelligence · personalization"
         cornerDecoration={<IntroCornerIcon icon={Settings2} />}
-        description="Storage, domain, license, passwords, sessions, access control, API protection, AI planning, and account-level preferences."
+        description="Storage, domain, license, passwords, trash, sessions, access control, API protection, AI planning, and account-level preferences."
         stats={settingsIntroStats()}
         statsGridClassName="grid-cols-2 xl:grid-cols-4"
       />

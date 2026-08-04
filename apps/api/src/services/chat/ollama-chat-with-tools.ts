@@ -385,6 +385,13 @@ export async function streamOllamaWithArciinTools(opts: {
       const result = await executeArciinChatTool(syntheticCall, toolCtx)
       messages.push({ role: "assistant", content: " ", tool_calls: [syntheticCall] })
       messages.push({ role: "tool", content: JSON.stringify(result) })
+      messages.push({
+        role: "system",
+        content:
+          "The file contents are already in the tool result above. Answer completely now using that text. " +
+          "Do not stop after saying you will open the file. " +
+          "Discuss ONLY this file. Do not list other library documents. Do not emit [[ASSET_LIST:…]] or [[ASSETS:…]] tags.",
+      })
       await streamFinalAnswer(raw, baseUrl, model, messages, totalIn, totalOut, apiKey, thinkingSupported)
       return
     }
@@ -402,6 +409,15 @@ export async function streamOllamaWithArciinTools(opts: {
       const result = await executeArciinChatTool(syntheticCall, toolCtx)
       messages.push({ role: "assistant", content: " ", tool_calls: [syntheticCall] })
       messages.push({ role: "tool", content: JSON.stringify(result) })
+      // Models often emit "let me open the book…" and stop — force a full answer pass.
+      messages.push({
+        role: "system",
+        content:
+          "The PDF text is already in the tool result above. Answer the user completely now " +
+          "(summary, explanation, or page answer). Do not say you will open or read the file next — " +
+          "write the full response using the tool content. Prefer multi-paragraph substance over a one-liner. " +
+          "Discuss ONLY this document. Do not list other library files. Do not emit [[ASSET_LIST:…]] or [[ASSETS:…]] tags.",
+      })
       await streamFinalAnswer(raw, baseUrl, model, messages, totalIn, totalOut, apiKey, thinkingSupported)
       return
     }

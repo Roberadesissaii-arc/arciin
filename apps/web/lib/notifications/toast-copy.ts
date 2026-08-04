@@ -129,11 +129,11 @@ export function deleteCopy(options?: { kind?: DeleteToastKind; count?: number })
   switch (kind) {
     case "files":
       return {
-        title: count === 1 ? "File deleted" : `${count} files deleted`,
+        title: count === 1 ? "Moved to Trash" : `${count} files moved to Trash`,
         description:
           count === 1
-            ? "The file was removed from your library. It is no longer visible in Arciin."
-            : `${count} files were removed from your library. They are no longer visible in Arciin.`,
+            ? "The file is in Settings → Trash for 30 days. Restore it anytime, or it deletes itself after that."
+            : `${count} files are in Settings → Trash for 30 days. Restore them anytime, or they delete themselves after that.`,
       }
     case "folder":
       return {
@@ -163,9 +163,9 @@ export function deleteCopy(options?: { kind?: DeleteToastKind; count?: number })
       }
     default:
       return {
-        title: "File deleted",
+        title: "Moved to Trash",
         description:
-          "The file was removed from your library. It is no longer visible in Arciin.",
+          "The file is in Settings → Trash for 30 days. Restore it anytime, or it deletes itself after that.",
       }
   }
 }
@@ -228,6 +228,22 @@ export function folderRenamedCopy(folderName: string) {
   return {
     title: "Folder renamed",
     description: `The folder is now called ${name}. Links and paths were updated.`,
+  }
+}
+
+export function folderHiddenFromAllFilesCopy(folderName: string) {
+  const name = truncateFolderName(folderName)
+  return {
+    title: "Hidden from All Files",
+    description: `${name} and its subfolders stay in your library — open the folder to browse. They no longer appear in All Files or Overview.`,
+  }
+}
+
+export function folderShownInAllFilesCopy(folderName: string) {
+  const name = truncateFolderName(folderName)
+  return {
+    title: "Shown in All Files",
+    description: `${name} and its subfolders appear again in All Files and Overview recent uploads.`,
   }
 }
 

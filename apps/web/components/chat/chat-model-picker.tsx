@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState, type RefObject } from "react"
 import { createPortal } from "react-dom"
 import { Brain, ChevronDown, Cloud, Eye, Info, Loader2, Sparkles } from "lucide-react"
 
@@ -367,10 +367,10 @@ function ScrollFadeList({
       {showMore ? (
         <div
           className={cn(
-            "pointer-events-none absolute inset-x-0 bottom-0 flex justify-center pb-1.5 pt-10",
+            "pointer-events-none absolute inset-x-0 bottom-0 flex justify-center rounded-b-xl pb-1.5 pt-10",
             className?.includes("bg-white")
-              ? "bg-gradient-to-t from-white via-white/95 to-transparent"
-              : "bg-gradient-to-t from-card via-card/95 to-transparent",
+              ? "bg-gradient-to-t from-white via-white/90 to-transparent"
+              : "bg-gradient-to-t from-card via-card/90 to-transparent",
           )}
           aria-hidden
         >
@@ -559,6 +559,12 @@ export function ChatModelPicker({
   menuPortal,
   lightSurface = true,
   menuGap = 10,
+  /**
+   * Optional outer surface (e.g. full prompt card). When set, the menu opens
+   * above this element with `menuGap` px of clear air — not flush on the trigger
+   * (which would cover the textarea inside the same card).
+   */
+  menuAnchorRef,
 }: {
   profiles: ChatProfilePicker[]
   selectedProfile: ChatProfilePicker | null
@@ -576,8 +582,10 @@ export function ChatModelPicker({
   menuPortal?: boolean
   /** Force light dropdown (PDF preview side panel on dark chrome) */
   lightSurface?: boolean
-  /** Px gap between trigger and portaled menu (opens above) */
+  /** Px gap between anchor (or trigger) top and portaled menu bottom */
   menuGap?: number
+  /** Prefer positioning above this surface instead of the trigger button */
+  menuAnchorRef?: RefObject<HTMLElement | null>
 }) {
   const [open, setOpen] = useState(false)
   const [prefetchCaps, setPrefetchCaps] = useState(false)
@@ -589,11 +597,23 @@ export function ChatModelPicker({
   const usePortal = menuPortal ?? true
 
   const updateMenuPos = useCallback(() => {
-    const el = triggerRef.current
-    if (!el) return
-    const rect = el.getBoundingClientRect()
-    setMenuPos({ left: rect.left, bottom: window.innerHeight - rect.top + menuGap })
-  }, [menuGap])
+    const trigger = triggerRef.current
+    if (!trigger) return
+    const triggerRect = trigger.getBoundingClientRect()
+    // Anchor to the full prompt/card: open above it with a parting gap,
+    // and align the menu's left edge with the input card (not the trigger).
+    const anchor = menuAnchorRef?.current
+    const anchorRect = anchor?.getBoundingClientRect()
+    const topEdge = anchorRect?.top ?? triggerRect.top
+    // p-2 on the prompt card ≈ 8px; keep menu flush with the text area inset.
+    const leftEdge = anchorRect ? anchorRect.left + 8 : triggerRect.left
+    const menuWidth = 288 // w-72
+    const maxLeft = Math.max(8, window.innerWidth - menuWidth - 8)
+    setMenuPos({
+      left: Math.min(leftEdge, maxLeft),
+      bottom: window.innerHeight - topEdge + menuGap,
+    })
+  }, [menuGap, menuAnchorRef])
 
   useEffect(() => {
     if (!open || !usePortal) return
@@ -628,26 +648,32 @@ export function ChatModelPicker({
   const enabledProfiles = profiles.filter((p) => p.isEnabled !== false)
   const capabilitiesEnabled = open || prefetchCaps
 
+  // Outer shell owns border + full rounded-xl (top and bottom). Scroll list is
+  // clipped inside so the bottom corner never looks square / cut off.
   const menuPanel = open ? (
-    <ScrollFadeList
-      maxHeightClass="max-h-80 rounded-xl border"
+    <div
       className={cn(
-        "shadow-sm",
-        lightSurface ? LIGHT_MENU : "border-border bg-card shadow-md",
+        "overflow-hidden rounded-xl border shadow-md",
+        lightSurface ? LIGHT_MENU : "border-border bg-card",
       )}
     >
-      <ModelPickerMenu
-        enabledProfiles={enabledProfiles}
-        selectedProfile={selectedProfile}
-        selectedModel={selectedModel}
-        onChange={onChange}
-        onPick={() => setOpen(false)}
-        filterOllamaModels={filterOllamaModels}
-        assetModelNeed={assetModelNeed}
-        capabilitiesEnabled={capabilitiesEnabled}
-        lightSurface={lightSurface}
-      />
-    </ScrollFadeList>
+      <ScrollFadeList
+        maxHeightClass="max-h-80"
+        className={lightSurface ? "bg-white" : "bg-card"}
+      >
+        <ModelPickerMenu
+          enabledProfiles={enabledProfiles}
+          selectedProfile={selectedProfile}
+          selectedModel={selectedModel}
+          onChange={onChange}
+          onPick={() => setOpen(false)}
+          filterOllamaModels={filterOllamaModels}
+          assetModelNeed={assetModelNeed}
+          capabilitiesEnabled={capabilitiesEnabled}
+          lightSurface={lightSurface}
+        />
+      </ScrollFadeList>
+    </div>
   ) : null
 
   const portaledMenu =
@@ -655,7 +681,10 @@ export function ChatModelPicker({
       ? createPortal(
           <div
             ref={menuRef}
-            className={cn("dashboard-main fixed z-[300] w-72", lightSurface && "text-zinc-900")}
+            className={cn(
+              "dashboard-main fixed z-[300] w-72 overflow-hidden rounded-xl",
+              lightSurface && "text-zinc-900",
+            )}
             style={{ left: menuPos.left, bottom: menuPos.bottom }}
           >
             {menuPanel}
@@ -701,7 +730,11 @@ export function ChatModelPicker({
       </div>
 
       {open && !usePortal ? (
-        <div ref={menuRef} className="absolute bottom-full left-0 z-50 mb-2 w-72">
+        <div
+          ref={menuRef}
+          className="absolute bottom-full left-0 z-50 w-72"
+          style={{ marginBottom: menuGap }}
+        >
           {menuPanel}
         </div>
       ) : null}

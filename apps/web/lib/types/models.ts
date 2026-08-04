@@ -204,6 +204,10 @@ export type FolderSummary = {
   slug: string
   pathCache: string
   assetCount: number
+  /** Folder created via API or received API-key uploads. */
+  isRemote?: boolean
+  /** When true, assets in this folder are hidden from All Files. */
+  hideFromAllFiles?: boolean
   isLocked?: boolean
   accessGranted?: boolean
   createdAt: string
@@ -233,7 +237,7 @@ export type AssetSummary = {
   status: AssetStatus
   processingError?: string | null
   importSourceUrl?: string | null
-  /** Device channel the upload came from ("web" | "mobile") — fallback badge when there's no import source. */
+  /** Device channel the upload came from ("web" | "mobile" | "api") — fallback badge when there's no import source. */
   uploadClient?: string | null
   badgeLabel?: string | null
   badgeColor?: string | null

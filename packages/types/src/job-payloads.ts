@@ -33,6 +33,11 @@ export type CleanupTempFilesPayload = {
   olderThanHours?: number
 }
 
+export type PurgeExpiredTrashPayload = {
+  /** Optional: override retention for tests. Defaults to TRASH_RETENTION_DAYS. */
+  retentionDays?: number
+}
+
 export type CalculateStorageUsagePayload = {
   requestedByUserId?: string
 }

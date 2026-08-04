@@ -16,6 +16,7 @@ export type ResolvedAssetBadge = {
 function deviceBadge(uploadClient: string | null | undefined): { key: string; label: string; color: string } | null {
   if (uploadClient === "mobile") return { key: "device-mobile", label: "Phone", color: "#52525b" }
   if (uploadClient === "web") return { key: "device-web", label: "Computer", color: "#52525b" }
+  if (uploadClient === "api") return { key: "device-api", label: "API", color: "#FF4F12" }
   return null
 }
 

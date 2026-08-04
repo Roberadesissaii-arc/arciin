@@ -148,12 +148,15 @@ export function PasswordsPanel() {
 
   const importMutation = useMutation({
     mutationFn: importPasswordVault,
-    onSuccess: (data) => {
+    onSuccess: async (data) => {
       notifyPasswordSaved(data.imported)
       setPasteText("")
       setManualEntry(EMPTY_MANUAL_ENTRY)
       setShowManualPassword(false)
-      void queryClient.invalidateQueries({ queryKey: queryKeys.passwordVault })
+      // Defer heavy vault refetch so the settings UI does not freeze after large imports.
+      window.setTimeout(() => {
+        void queryClient.invalidateQueries({ queryKey: queryKeys.passwordVault })
+      }, 0)
     },
     onError: (err: Error) => {
       notifyPasswordVaultError(err.message || "Import failed.")
@@ -195,7 +198,7 @@ export function PasswordsPanel() {
     const count = countImportable(text, fileName)
     if (count === 0) {
       notifyPasswordVaultError(
-        "No password entries found. Try CSV (title,username,password,url), pipe-separated rows, or Bitwarden JSON.",
+        "No password entries found. Export CSV from Edge, Chrome, or Firefox (name,url,username,password), or use Bitwarden JSON.",
       )
       return
     }
@@ -270,7 +273,7 @@ export function PasswordsPanel() {
                 title="Password vault"
                 description={
                   tab === "import"
-                    ? "Import from CSV or JSON, paste an export, or add credentials manually."
+                    ? "Import Edge, Chrome, Firefox, or Bitwarden exports (CSV/JSON), paste text, or add credentials manually."
                     : tab === "display"
                       ? "Control columns, masking, and sidebar unlock behavior."
                       : "Set a 6-digit PIN for the Passwords page (account password required to change)."
@@ -478,13 +481,32 @@ export function PasswordsPanel() {
 
               <div className="space-y-3">
                 <p className="text-[13px] font-medium text-foreground">Import from file or paste</p>
+                <p className="text-[12px] leading-relaxed text-muted-foreground">
+                  Export CSV from Edge, Chrome, or Firefox (or Bitwarden JSON), then import below.
+                  Entries are encrypted on this server — delete the export file after upload.
+                </p>
+
+                <div className="flex flex-wrap gap-2 text-[11px] font-medium text-zinc-600">
+                  <span className="rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-1.5">
+                    Edge CSV
+                  </span>
+                  <span className="rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-1.5">
+                    Chrome CSV
+                  </span>
+                  <span className="rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-1.5">
+                    Firefox CSV
+                  </span>
+                  <span className="rounded-lg border border-zinc-200 bg-zinc-50 px-2.5 py-1.5">
+                    Bitwarden JSON
+                  </span>
+                </div>
 
                 <textarea
-                  placeholder={`Paste CSV or JSON…\nGitHub Personal,rdesissa_dev,secret,https://github.com/login\n\nOr Bitwarden export with "login": { "username", "password", "uris" }`}
+                  placeholder={`Paste Edge/Chrome CSV or JSON…\nname,url,username,password\nGitHub,https://github.com/login,you@email.com,secret`}
                   value={pasteText}
                   disabled={busy}
-                  rows={4}
-                  className="border-input bg-background ring-offset-background placeholder:text-muted-foreground focus-visible:ring-ring flex min-h-[88px] w-full resize-y rounded-md border px-3 py-2 font-mono text-xs leading-snug focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                  rows={5}
+                  className="border-input bg-background ring-offset-background placeholder:text-muted-foreground focus-visible:ring-ring flex min-h-[7.5rem] w-full resize-y rounded-xl border px-3.5 py-3 font-mono text-xs leading-snug focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
                   onChange={(e) => setPasteText(e.target.value)}
                 />
 
@@ -492,7 +514,7 @@ export function PasswordsPanel() {
                   <Button
                     type="button"
                     variant="outline"
-                    className="border-border"
+                    className="h-10 border-border px-4 text-[13px] font-semibold"
                     disabled={busy || !pasteText.trim()}
                     onClick={() => runImport(pasteText, "paste.txt")}
                   >
@@ -502,7 +524,7 @@ export function PasswordsPanel() {
                   <Button
                     type="button"
                     variant="outline"
-                    className="border-border"
+                    className="h-10 border-border px-4 text-[13px] font-semibold"
                     disabled={busy}
                     onClick={() => inputRef.current?.click()}
                   >

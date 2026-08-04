@@ -67,7 +67,7 @@ function UploadTilePreview({ asset }: { asset: AssetSummary }) {
       <VideoHoverThumb
         asset={asset}
         showDuration
-        className="absolute inset-0 bg-gradient-to-br from-zinc-50 to-zinc-100"
+        className="absolute inset-0 bg-gradient-to-br from-zinc-50 to-zinc-100 transition-transform duration-300 ease-out group-hover:scale-[1.03]"
       />
     )
   }
@@ -75,7 +75,7 @@ function UploadTilePreview({ asset }: { asset: AssetSummary }) {
   if (thumbFailed) {
     return (
       <>
-        <div className="absolute inset-0">
+        <div className="absolute inset-0 transition-transform duration-300 ease-out group-hover:scale-[1.03]">
           <UploadPlaceholder asset={asset} />
         </div>
         <TypeLabelBadge label={typeLabel} />
@@ -89,7 +89,7 @@ function UploadTilePreview({ asset }: { asset: AssetSummary }) {
       <img
         src={thumbSrc}
         alt=""
-        className="absolute inset-0 size-full object-cover"
+        className="absolute inset-0 size-full object-cover transition-transform duration-300 ease-out group-hover:scale-[1.03]"
         loading="lazy"
         onError={() => setThumbFailed(true)}
       />
@@ -112,14 +112,16 @@ function UploadGridTile({
       href={href}
       title={asset.originalFilename}
       className={cn(
-        "group relative block aspect-square overflow-hidden rounded-lg",
+        "group relative block size-full min-h-0 overflow-hidden rounded-lg",
         "border border-zinc-300/90 bg-zinc-50 shadow-sm ring-1 ring-inset ring-zinc-200/80",
-        "transition-all hover:border-primary/40 hover:shadow-md hover:ring-primary/15",
+        "transition-all duration-200 ease-out",
+        "hover:-translate-y-0.5 hover:border-primary/45 hover:shadow-md hover:shadow-primary/10 hover:ring-primary/20",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/35",
       )}
     >
       <UploadTilePreview asset={asset} />
       <div className="absolute left-1 top-1 z-10 flex flex-col items-start gap-1">
-        <AssetSourceBadge asset={asset} className="scale-90 origin-top-left" />
+        <AssetSourceBadge asset={asset} link={false} className="scale-90 origin-top-left" />
         {asset.status !== "READY" ? (
           <div className="scale-90 origin-top-left">
             <AssetStatusBadge status={asset.status} />
@@ -131,6 +133,7 @@ function UploadGridTile({
 }
 
 export function RecentUploadsPanel({ className }: { className?: string }) {
+  // Same list as All Files — API excludes folders marked "Hide from All Files".
   const assetsQuery = useAssets()
   const librariesQuery = useLibraries()
 
@@ -146,7 +149,7 @@ export function RecentUploadsPanel({ className }: { className?: string }) {
       <div className={cn(dashboardOverviewUploadsBody, className)}>
         <div className={dashboardUploadsGrid}>
           {Array.from({ length: DASHBOARD_UPLOADS_LIMIT }).map((_, i) => (
-            <Skeleton key={i} className="aspect-square rounded-lg border border-zinc-200/80" />
+            <Skeleton key={i} className="size-full rounded-lg border border-zinc-200/80" />
           ))}
         </div>
       </div>

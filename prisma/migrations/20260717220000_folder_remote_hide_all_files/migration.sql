@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE "Folder" ADD COLUMN "isRemote" BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE "Folder" ADD COLUMN "hideFromAllFiles" BOOLEAN NOT NULL DEFAULT false;

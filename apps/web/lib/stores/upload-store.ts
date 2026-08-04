@@ -162,13 +162,36 @@ export const useUploadStore = create<UploadStoreState>((set) => ({
     })),
   addOrUpdate: (item) =>
     set((state) => {
-      const existing = state.queue.findIndex(
+      let existing = state.queue.findIndex(
         (queueItem) =>
           queueItem.id === item.id ||
           (item.uploadId != null &&
             queueItem.uploadId != null &&
             queueItem.uploadId === item.uploadId),
       )
+
+      /**
+       * The API publishes `upload.started` before it sends the HTTP response,
+       * so the server event can arrive while this file's queue item still only
+       * has its client-generated id. Matching on id or uploadId alone misses
+       * it and adds a second row for one file — which then double-counts in the
+       * batch tally and leaves an orphan stuck on "Uploading".
+       *
+       * Adopt the in-flight local entry for the same file instead. Only items
+       * that have not yet been linked to a server id are eligible, so each
+       * server event claims at most one.
+       */
+      let adopted = false
+      if (existing === -1 && item.uploadId != null) {
+        existing = state.queue.findIndex(
+          (queueItem) =>
+            queueItem.uploadId == null &&
+            queueItem.fileName === item.fileName &&
+            queueItem.sizeBytes === item.sizeBytes &&
+            (queueItem.status === "QUEUED" || queueItem.status === "UPLOADING"),
+        )
+        adopted = existing !== -1
+      }
 
       if (existing === -1) {
         const nextItem: UploadQueueItem = {
@@ -197,6 +220,10 @@ export const useUploadStore = create<UploadStoreState>((set) => ({
       nextQueue[existing] = {
         ...previous,
         ...item,
+        // On adoption keep the client id: the orchestrator still refers to this
+        // item by it when the HTTP response lands. The server id is attached as
+        // uploadId, and lookups match on either.
+        ...(adopted ? { id: previous.id } : {}),
         progress: mergedProgress,
         destination: mergedDestination,
         status: mergeQueueStatus(previous.status, item.status),

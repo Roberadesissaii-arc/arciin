@@ -3,6 +3,8 @@ import {
   CircleCheck,
   CloudUpload,
   Download,
+  Eye,
+  EyeOff,
   FingerprintPattern,
   FolderLock,
   FolderOpen,
@@ -44,6 +46,8 @@ export const TOAST_SURFACE = {
   folderUnlocked: "arciin-action-toast arciin-action-toast--folder-unlocked",
   folderLockRemoved: "arciin-action-toast arciin-action-toast--folder-lock-removed",
   folderRenamed: "arciin-action-toast arciin-action-toast--folder-renamed",
+  folderHidden: "arciin-action-toast arciin-action-toast--folder-hidden",
+  folderShown: "arciin-action-toast arciin-action-toast--folder-shown",
   welcome: "arciin-action-toast arciin-action-toast--welcome",
   password: "arciin-action-toast arciin-action-toast--password",
   account: "arciin-action-toast arciin-action-toast--account",
@@ -71,6 +75,8 @@ export const FOLDER_TOAST_ICONS = {
   lockRemoved: LockOpen,
   renamed: Pencil,
   credentialError: TriangleAlert,
+  hidden: EyeOff,
+  shown: Eye,
 } as const
 
 export const ACCOUNT_TOAST_CLASS: Record<AccountToastKind, string> = {

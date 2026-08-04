@@ -9,9 +9,10 @@ import { cn } from "@/lib/utils"
 /**
  * Shared horizontal padding for all dashboard pages (sidebar → content edge).
  * Pages must NOT add their own p-4/p-6 outer padding or spacing doubles unevenly.
+ * Do not use flex-1 here — that clamps page height to the viewport and can
+ * squash the intro / other natural-flow sections (chat opts into flex-1 separately).
  */
-export const DASHBOARD_PAGE_PAD =
-  "flex-1 px-4 pb-14 pt-2 sm:px-5 lg:px-6 lg:pb-16"
+export const DASHBOARD_PAGE_PAD = "px-4 pb-14 pt-2 sm:px-5 lg:px-6 lg:pb-16"
 
 /** Scroll wrapper for dashboard pages; chat uses a fixed column layout instead. */
 export function DashboardContentArea({ children }: { children: React.ReactNode }) {

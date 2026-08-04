@@ -11,9 +11,13 @@ const HEADER_ALIASES: Record<string, keyof PasswordImportEntry | "username2" | "
   name: "name",
   title: "name",
   site: "name",
+  /** Chrome / Edge / Firefox export headers */
   website: "url",
   url: "url",
   uri: "url",
+  loginurl: "url",
+  origin: "url",
+  hostname: "url",
   login: "username",
   user: "username",
   username: "username",
@@ -26,6 +30,7 @@ const HEADER_ALIASES: Record<string, keyof PasswordImportEntry | "username2" | "
   note: "notes",
   notes: "notes",
   category: "category",
+  folder: "category",
   otpsecret: "otp",
   otp: "otp",
 }

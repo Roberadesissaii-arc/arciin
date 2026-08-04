@@ -3,6 +3,10 @@
 import { cn } from "@/lib/utils"
 import type { ImageHighlightRegion } from "@/lib/files/image-highlight-types"
 
+/**
+ * Google Photos–style fit: image stays inside the preview pane (no page scroll
+ * at default zoom). Zoom-in allows panning via overflow scroll.
+ */
 export function ImageAssetViewer({
   src,
   alt,
@@ -16,27 +20,59 @@ export function ImageAssetViewer({
   highlightRegions?: ImageHighlightRegion[]
   className?: string
 }) {
-  const widthPct = Math.round(zoom * 100)
+  const zoomedIn = zoom > 1
+  /** At ≤100% fit: use viewport box. Zoom multiplies the fit box when > 1. */
+  const fitScale = Math.min(1, zoom)
+  const fitPct = Math.round(fitScale * 100)
 
   return (
     <div
       className={cn(
-        "scrollbar-hide min-h-0 flex-1 overflow-auto overscroll-contain bg-zinc-50",
+        "relative flex min-h-0 w-full flex-1 items-center justify-center bg-zinc-50",
+        zoomedIn ? "overflow-auto overscroll-contain" : "overflow-hidden",
+        "p-4 sm:p-6",
         className,
       )}
     >
-      <div className="flex min-h-min w-full justify-center p-4 sm:p-6">
+      <div
+        className={cn(
+          "relative flex items-center justify-center",
+          zoomedIn
+            ? "my-auto shrink-0"
+            : "h-full max-h-full w-full max-w-full",
+        )}
+        style={
+          zoomedIn
+            ? {
+                width: `${Math.round(zoom * 100)}%`,
+                maxWidth: "none",
+                minHeight: "min-content",
+              }
+            : {
+                maxWidth: `${fitPct}%`,
+                maxHeight: `${fitPct}%`,
+              }
+        }
+      >
         <div
-          className="relative shrink-0 transition-[width] duration-200 ease-out"
-          style={{ width: `${widthPct}%`, maxWidth: "none" }}
+          className={cn(
+            "relative overflow-hidden rounded-xl shadow-[0_4px_24px_rgba(0,0,0,0.12)]",
+            "ring-1 ring-black/5",
+            !zoomedIn && "max-h-full max-w-full",
+          )}
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             key={src}
             src={src}
             alt={alt}
-            className="block h-auto w-full max-w-none object-contain shadow-[0_4px_24px_rgba(0,0,0,0.12)]"
             draggable={false}
+            className={cn(
+              "block rounded-xl object-contain",
+              zoomedIn
+                ? "h-auto w-full max-w-none"
+                : "mx-auto h-auto max-h-[min(100%,calc(100dvh-9rem))] w-auto max-w-full",
+            )}
           />
           {highlightRegions && highlightRegions.length > 0 ? (
             <div className="pointer-events-none absolute inset-0 z-10" aria-hidden>
@@ -49,7 +85,12 @@ export function ImageAssetViewer({
                   <div
                     key={`${region.label ?? "box"}-${region.x1}-${region.y1}-${i}`}
                     className="absolute animate-in fade-in zoom-in-95 duration-300"
-                    style={{ left: `${left}%`, top: `${top}%`, width: `${width}%`, height: `${height}%` }}
+                    style={{
+                      left: `${left}%`,
+                      top: `${top}%`,
+                      width: `${width}%`,
+                      height: `${height}%`,
+                    }}
                   >
                     <div className="absolute inset-0 rounded-md border-[3px] border-[#ff4f12] bg-[#ff4f12]/30 shadow-[0_0_0_2px_rgba(255,79,18,0.35),0_0_20px_rgba(255,79,18,0.25)]" />
                     {region.label ? (

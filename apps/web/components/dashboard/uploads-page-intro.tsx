@@ -20,7 +20,7 @@ export function UploadsPageIntro() {
       title="Uploads"
       subtitle="Upload queue · recent sessions · classification"
       cornerDecoration={<IntroCornerIcon icon={Upload} />}
-      description="Every file dropped into Arciin becomes an upload session that moves through classification and routing into the right library. Track in-progress transfers, review recent uploads, and spot anything that failed here."
+      description="Every file dropped into Arciin becomes an upload session — classification, library routing, and progress live in this log. Use All Files to browse the finished library; use this table to watch the queue and catch failures."
       stats={[
         {
           label: "Total sessions",

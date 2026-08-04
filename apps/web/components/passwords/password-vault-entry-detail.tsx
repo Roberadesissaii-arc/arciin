@@ -81,10 +81,14 @@ export function PasswordVaultEntryDetail({
       display.maskStyle,
     )
 
+  const urlDisplay = entry.url
+    ? entry.url.replace(/^https?:\/\//i, "")
+    : null
+
   return (
     <div
       className={cn(
-        "relative flex min-h-[min(420px,70vh)] flex-col overflow-hidden rounded-2xl",
+        "relative flex min-h-[32rem] flex-col overflow-hidden rounded-2xl lg:min-h-full",
         "border border-border bg-card shadow-sm",
       )}
     >
@@ -133,11 +137,11 @@ export function PasswordVaultEntryDetail({
           <div className="flex items-start gap-4">
             <VaultBrandMark entry={entry} size="lg" fallbackToVault />
             <div className="min-w-0 flex-1 pt-0.5">
-              <h3 className="font-heading text-xl font-semibold tracking-tight text-foreground">
+              <h3 className="truncate font-heading text-xl font-semibold tracking-tight text-foreground">
                 {entry.name}
               </h3>
               {brand ? (
-                <p className="mt-1 text-xs font-medium text-muted-foreground">{brand.label}</p>
+                <p className="mt-1 truncate text-xs font-medium text-muted-foreground">{brand.label}</p>
               ) : null}
             </div>
           </div>
@@ -145,14 +149,14 @@ export function PasswordVaultEntryDetail({
           <div className="mt-6 space-y-4">
             {display.showUsername ? (
               <FieldRow label="Username">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-medium">{entry.username ?? "—"}</span>
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                  <span className="min-w-0 truncate font-medium">{entry.username ?? "—"}</span>
                   {entry.username && secretsVisible ? (
                     <Button
                       type="button"
                       variant="outline"
                       size="sm"
-                      className="h-7 gap-1 text-[11px]"
+                      className="h-7 shrink-0 gap-1 text-[11px]"
                       onClick={onCopyUsername}
                     >
                       <Copy className="size-3" />
@@ -167,7 +171,7 @@ export function PasswordVaultEntryDetail({
               <FieldRow label="Password">
                 {hasPwd ? (
                   <div className="flex flex-wrap items-center gap-2">
-                    <code className="rounded-lg border border-border bg-muted/50 px-2.5 py-1.5 font-mono text-[12px] text-foreground">
+                    <code className="max-w-full truncate rounded-lg border border-border bg-muted/50 px-2.5 py-1.5 font-mono text-[12px] text-foreground">
                       {pwdShown && entry.password ? entry.password : masked}
                     </code>
                     <Button
@@ -199,13 +203,14 @@ export function PasswordVaultEntryDetail({
 
             {display.showUrl ? (
               <FieldRow label="Website">
-                {entry.url ? (
+                {entry.url && urlDisplay ? (
                   <button
                     type="button"
-                    className="break-all text-left font-mono text-[12px] text-primary hover:underline"
+                    className="block w-full max-w-full truncate text-left font-mono text-[12px] text-primary hover:underline"
+                    title={entry.url}
                     onClick={onOpenUrl}
                   >
-                    {entry.url}
+                    {urlDisplay}
                   </button>
                 ) : (
                   <span className="text-muted-foreground">—</span>
@@ -215,43 +220,54 @@ export function PasswordVaultEntryDetail({
 
             {display.showNotes && entry.notes ? (
               <FieldRow label="Notes">
-                <p className="whitespace-pre-wrap text-muted-foreground">{entry.notes}</p>
+                <p className="line-clamp-2 text-muted-foreground" title={entry.notes}>
+                  {entry.notes}
+                </p>
               </FieldRow>
             ) : null}
 
             {display.showCategory && entry.category ? (
               <FieldRow label="Category">
-                <span>{entry.category}</span>
+                <span className="truncate">{entry.category}</span>
               </FieldRow>
             ) : null}
           </div>
+        </div>
 
-          <div className="mt-6 flex flex-wrap gap-2 border-t border-border pt-4">
-            <Button type="button" variant="outline" size="sm" className="gap-1.5" onClick={onEdit}>
-              <Pencil className="size-3.5" />
-              Edit
-            </Button>
-            {entry.url ? (
-              <Button type="button" variant="outline" size="sm" className="gap-1.5" onClick={onOpenUrl}>
-                <ExternalLink className="size-3.5" />
-                Open site
-              </Button>
-            ) : null}
+        <div className="mt-auto flex flex-wrap gap-2 border-t border-border px-5 py-4 sm:px-8">
+          <Button
+            type="button"
+            variant="outline"
+            className="h-10 gap-1.5 px-4 text-[13px] font-semibold"
+            onClick={onEdit}
+          >
+            <Pencil className="size-3.5" />
+            Edit
+          </Button>
+          {entry.url ? (
             <Button
               type="button"
               variant="outline"
-              size="sm"
-              className="gap-1.5 text-destructive hover:bg-destructive/10 hover:text-destructive"
-              onClick={onDelete}
+              className="h-10 gap-1.5 px-4 text-[13px] font-semibold"
+              onClick={onOpenUrl}
             >
-              <Trash2 className="size-3.5" />
-              Delete
+              <ExternalLink className="size-3.5" />
+              Open website
             </Button>
-          </div>
+          ) : null}
+          <Button
+            type="button"
+            variant="outline"
+            className="h-10 gap-1.5 px-4 text-[13px] font-semibold text-destructive hover:bg-destructive/10 hover:text-destructive"
+            onClick={onDelete}
+          >
+            <Trash2 className="size-3.5" />
+            Delete
+          </Button>
         </div>
       </div>
 
-      <p className="border-t border-border px-5 py-2.5 text-center text-[11px] tabular-nums text-muted-foreground">
+      <p className="truncate border-t border-border px-5 py-2.5 text-center text-[11px] tabular-nums text-muted-foreground">
         {entry.name}
         {entry.username ? ` · ${entry.username}` : ""}
       </p>

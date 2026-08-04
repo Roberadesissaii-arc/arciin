@@ -29,9 +29,9 @@ export const API_KEY_SCOPES = [
   "admin",
 ] as const
 
-/** Identifies which Arciin client initiated a request (web dashboard vs mobile PWA). */
+/** Identifies which Arciin client initiated a request (web dashboard, mobile PWA, or API key). */
 export const ARCIIN_CLIENT_CHANNEL_HEADER = "x-arciin-client"
-export const ARCIIN_CLIENT_CHANNELS = ["web", "mobile"] as const
+export const ARCIIN_CLIENT_CHANNELS = ["web", "mobile", "api"] as const
 export type ArciinClientChannel = (typeof ARCIIN_CLIENT_CHANNELS)[number]
 
 export const SOCKET_EVENT_CHANNEL = "arciin:events"
@@ -45,6 +45,12 @@ export const JOB_QUEUE_NAMES = {
 
 export const MEDIA_LIBRARY_SLUGS = ["videos", "images", "music"] as const
 
+/**
+ * Soft-deleted assets stay in Trash this long (like iOS Recently Deleted),
+ * then are permanently removed from disk and the database.
+ */
+export const TRASH_RETENTION_DAYS = 30
+
 export const JOB_TYPES = {
   analyzeFile: "analyze_file",
   extractMetadata: "extract_metadata",
@@ -57,4 +63,5 @@ export const JOB_TYPES = {
   plexSyncPlaceholder: "plex_sync_placeholder",
   stageUpdate: "stage_update",
   applyUpdate: "apply_update",
+  purgeExpiredTrash: "purge_expired_trash",
 } as const

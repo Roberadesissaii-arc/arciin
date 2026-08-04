@@ -151,10 +151,16 @@ export function MessageBubble({
 }) {
   const isUser = msg.role === "user"
   const hasThinkingText = Boolean((msg.thinking ?? "").length > 0)
-  /** When Show thinking is on, always show the reasoning panel for assistant replies (streaming or stored). */
+  /**
+   * Reasoning panel only when this message has a thinking field
+   * (Think chip on for that turn, or stored reasoning from history).
+   * Settings alone no longer force an empty “thinking” shell on every reply.
+   */
+  const reasoningActive =
+    !isUser && (hasThinkingText || msg.thinking !== undefined)
   const showThinkingRow =
-    !isUser && reasoningUiEnabled && (hasThinkingText || isStreaming || Boolean(msg.thinking !== undefined))
-  const liveThinking = Boolean(!isUser && reasoningUiEnabled && isStreaming)
+    reasoningActive && (hasThinkingText || isStreaming || msg.thinking !== undefined)
+  const liveThinking = Boolean(reasoningActive && isStreaming)
 
   const hasVisibleAnswer = hasVisibleAssistantAnswer(msg.content ?? "")
 
@@ -165,12 +171,12 @@ export function MessageBubble({
   const hideMainAnswerBubble =
     !isUser &&
     !hasVisibleAnswer &&
-    reasoningUiEnabled &&
+    reasoningActive &&
     (hasThinkingText || isStreaming || Boolean(msg.pending))
 
   const showNeutralGenerating =
     !isUser &&
-    !reasoningUiEnabled &&
+    !reasoningActive &&
     isStreaming &&
     !hasVisibleAnswer
 
@@ -215,7 +221,24 @@ export function MessageBubble({
               {msg.streamStatus ?? "Working on it…"}
             </span>
           ) : isUser ? (
-            <span className="whitespace-pre-wrap">{msg.content}</span>
+            <div className="space-y-2">
+              {msg.images && msg.images.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5">
+                  {msg.images.map((b64, i) => (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      key={i}
+                      src={`data:image/jpeg;base64,${b64}`}
+                      alt={`Attached image ${i + 1}`}
+                      className="max-h-36 max-w-[min(100%,12rem)] rounded-lg border border-white/25 object-cover shadow-sm"
+                    />
+                  ))}
+                </div>
+              ) : null}
+              {msg.content.trim() ? (
+                <span className="whitespace-pre-wrap">{msg.content}</span>
+              ) : null}
+            </div>
           ) : isLive ? (
             <span className="whitespace-pre-wrap">
               {msg.content}

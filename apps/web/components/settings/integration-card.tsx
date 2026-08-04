@@ -58,11 +58,10 @@ export function IntegrationCard({ integration }: { integration: IntegrationSumma
             <CardDescription className="text-zinc-600">{typeBlurb(integration.type)}</CardDescription>
           </div>
           <Badge
-            variant="outline"
             className={
               integration.enabled
-                ? "shrink-0 border-emerald-500/40 bg-emerald-500/10 text-emerald-800"
-                : "shrink-0 border-border bg-muted/40 text-zinc-600"
+                ? "shrink-0 border-0 bg-emerald-600 text-white shadow-none hover:bg-emerald-600"
+                : "shrink-0 border-0 bg-zinc-800 text-white shadow-none hover:bg-zinc-800"
             }
           >
             {integration.enabled ? "Connected" : "Not connected"}
@@ -78,10 +77,13 @@ export function IntegrationCard({ integration }: { integration: IntegrationSumma
 
         <div className="flex flex-wrap gap-2">
           {integration.type === "WEBHOOK" ? (
-            <Button asChild variant="outline" className="border-border">
+            <Button
+              asChild
+              className="border-0 bg-primary font-semibold text-white shadow-none hover:bg-primary/90"
+            >
               <Link href="/developer/webhooks">
                 Open Webhooks
-                <ExternalLink className="ml-2 size-3.5 opacity-70" aria-hidden />
+                <ExternalLink className="ml-2 size-3.5 opacity-90" aria-hidden />
               </Link>
             </Button>
           ) : (

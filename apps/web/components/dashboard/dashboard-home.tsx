@@ -3,9 +3,7 @@
 import Link from "next/link"
 import { ChevronRight } from "lucide-react"
 
-import { DashboardActivityPanel } from "@/components/dashboard/dashboard-activity-panel"
 import { DashboardHomeIntro } from "@/components/dashboard/dashboard-home-intro"
-import { DashboardMediaSpotlight } from "@/components/dashboard/dashboard-media-spotlight"
 import { DashboardSectionDivider } from "@/components/dashboard/dashboard-section"
 import { RecentUploadsPanel } from "@/components/dashboard/recent-uploads-panel"
 import { StorageDonutCard } from "@/components/dashboard/storage-donut-card"
@@ -19,9 +17,6 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
-
-const DASHBOARD_SPLIT =
-  "grid gap-5 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)] lg:items-stretch"
 
 function DashboardListPanel({
   title,
@@ -66,8 +61,8 @@ function DashboardListPanel({
       </CardHeader>
       <CardContent
         className={cn(
-          "flex min-h-0 flex-col px-4 sm:px-5",
-          overview ? "flex-1 py-2.5" : "flex-1 py-3",
+          "flex flex-col px-4 sm:px-5",
+          overview ? "shrink-0 py-3" : "min-h-0 flex-1 py-3",
         )}
       >
         {children}
@@ -81,31 +76,18 @@ export function DashboardHome() {
     <div className="flex flex-col gap-10 md:gap-8">
       <DashboardHomeIntro />
 
-      <div className={DASHBOARD_SPLIT}>
-        <StorageDonutCard className="h-full" />
-        <DashboardMediaSpotlight className="h-full" />
-      </div>
+      <StorageDonutCard />
 
       <DashboardSectionDivider />
 
-      <div className={DASHBOARD_SPLIT}>
-        <DashboardListPanel
-          title="Recent uploads"
-          description="Latest files saved on this server."
-          href="/uploads"
-          overview
-        >
-          <RecentUploadsPanel />
-        </DashboardListPanel>
-        <DashboardListPanel
-          title="Recent activity"
-          description="Latest events on this instance."
-          href="/activity"
-          overview
-        >
-          <DashboardActivityPanel />
-        </DashboardListPanel>
-      </div>
+      <DashboardListPanel
+        title="Recent uploads"
+        description="Latest files saved on this server."
+        href="/files"
+        overview
+      >
+        <RecentUploadsPanel />
+      </DashboardListPanel>
 
       <DashboardSectionDivider />
 

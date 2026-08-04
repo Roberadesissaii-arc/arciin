@@ -44,7 +44,9 @@ export function DashboardPageIntro({
   return (
     <div
       className={cn(
-        "relative overflow-hidden rounded-3xl border border-zinc-200/90 bg-gradient-to-br from-zinc-50 via-white to-zinc-50/95 p-5 shadow-sm ring-1 ring-inset ring-zinc-200/60 md:p-6 lg:p-7",
+        // overflow-x only — vertical overflow:hidden was clipping the description
+        // when a parent flex layout squeezed this card.
+        "relative shrink-0 overflow-x-hidden rounded-3xl border border-zinc-200/90 bg-gradient-to-br from-zinc-50 via-white to-zinc-50/95 p-5 shadow-sm ring-1 ring-inset ring-zinc-200/60 md:p-6 lg:p-7",
         cornerDecoration && "pr-10 sm:pr-14",
         className,
       )}

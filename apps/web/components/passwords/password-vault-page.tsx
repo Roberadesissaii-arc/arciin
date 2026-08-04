@@ -70,7 +70,8 @@ const DEFAULT_DISPLAY: PasswordVaultDisplaySettings = {
   lockSidebarVault: true,
 }
 
-const PAGE_SIZE = 6
+/** First page of the credentials table — seven roomy rows. */
+const PAGE_SIZE = 7
 
 function openUrl(url: string) {
   const href = url.startsWith("http") ? url : `https://${url}`
@@ -125,7 +126,7 @@ function VaultEmptyPlaceholder({
   )
 }
 
-function truncateUrl(url: string, max = 40) {
+function truncateUrl(url: string, max = 28) {
   const stripped = url.replace(/^https?:\/\//i, "")
   if (stripped.length <= max) return stripped
   return `${stripped.slice(0, max)}…`
@@ -477,17 +478,20 @@ export function PasswordVaultPage() {
 
   const busyUnlock = unlockMutation.isPending
 
+  const vaultActionClass =
+    "h-10 gap-1.5 px-4 text-[13px] font-semibold"
+
   const vaultActions = (
     <div className="flex flex-wrap items-center gap-2">
-      <Button type="button" variant="outline" size="sm" asChild>
+      <Button type="button" variant="outline" className={vaultActionClass} asChild>
         <Link href="/settings?tab=passwords">
-          <FileUp className="mr-1.5 size-4" />
+          <FileUp className="size-4" />
           Import
         </Link>
       </Button>
       {lockRequired && !secretsVisible ? (
-        <Button type="button" size="sm" disabled={busyUnlock} onClick={openVaultUnlock}>
-          <Lock className="mr-1.5 size-4" />
+        <Button type="button" className={vaultActionClass} disabled={busyUnlock} onClick={openVaultUnlock}>
+          <Lock className="size-4" />
           Unlock vault
         </Button>
       ) : null}
@@ -495,11 +499,11 @@ export function PasswordVaultPage() {
         <Button
           type="button"
           variant="outline"
-          size="sm"
+          className={vaultActionClass}
           disabled={lockMutation.isPending}
           onClick={() => lockMutation.mutate()}
         >
-          <Lock className="mr-1.5 size-4" />
+          <Lock className="size-4" />
           Lock vault
         </Button>
       ) : null}
@@ -541,7 +545,7 @@ export function PasswordVaultPage() {
           !vaultLocked &&
             entries.length > 0 &&
             !vaultQuery.isLoading
-            ? "grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(300px,400px)] xl:grid-cols-[minmax(0,1fr)_minmax(340px,440px)]"
+            ? "grid items-stretch gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(300px,400px)] xl:grid-cols-[minmax(0,1fr)_minmax(340px,440px)]"
             : "grid-cols-1",
         )}
       >
@@ -552,44 +556,53 @@ export function PasswordVaultPage() {
         ) : entries.length === 0 ? (
           <VaultEmptyPlaceholder />
         ) : (
-        <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
-          <div className="flex h-14 items-center gap-2 border-b border-border bg-muted/30 px-5">
+        <div className="flex min-h-[32rem] flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
+          <div className="flex h-14 shrink-0 items-center gap-2 border-b border-border bg-muted/30 px-5">
             <FingerprintPattern className="size-4 text-primary" />
             <span className="text-sm font-semibold text-foreground">Credentials</span>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-max text-left">
+          <div className="min-h-0 flex-1 overflow-x-auto">
+            <table className="w-full min-w-max table-fixed text-left">
+              <colgroup>
+                <col style={{ width: "18%" }} />
+                {display.showUsername ? <col style={{ width: "18%" }} /> : null}
+                {display.showPasswordColumn ? <col style={{ width: "18%" }} /> : null}
+                {display.showUrl ? <col style={{ width: "18%" }} /> : null}
+                {display.showNotes ? <col style={{ width: "12%" }} /> : null}
+                {display.showCategory ? <col style={{ width: "10%" }} /> : null}
+                <col style={{ width: "16%" }} />
+              </colgroup>
               <thead>
                 <tr className="border-b border-border bg-muted/20">
-                  <th className="px-5 py-2.5 text-[10px] font-bold uppercase tracking-wider text-zinc-500">
+                  <th className="px-5 py-3.5 text-[10px] font-bold uppercase tracking-wider text-zinc-500">
                     Name
                   </th>
                   {display.showUsername ? (
-                    <th className="px-5 py-2.5 text-[10px] font-bold uppercase tracking-wider text-zinc-500">
+                    <th className="px-5 py-3.5 text-[10px] font-bold uppercase tracking-wider text-zinc-500">
                       Username
                     </th>
                   ) : null}
                   {display.showPasswordColumn ? (
-                    <th className="px-5 py-2.5 text-[10px] font-bold uppercase tracking-wider text-zinc-500">
+                    <th className="px-5 py-3.5 text-[10px] font-bold uppercase tracking-wider text-zinc-500">
                       Password
                     </th>
                   ) : null}
                   {display.showUrl ? (
-                    <th className="min-w-[160px] px-5 py-2.5 text-[10px] font-bold uppercase tracking-wider text-zinc-500">
+                    <th className="px-5 py-3.5 text-[10px] font-bold uppercase tracking-wider text-zinc-500">
                       Link
                     </th>
                   ) : null}
                   {display.showNotes ? (
-                    <th className="px-5 py-2.5 text-[10px] font-bold uppercase tracking-wider text-zinc-500">
+                    <th className="px-5 py-3.5 text-[10px] font-bold uppercase tracking-wider text-zinc-500">
                       Notes
                     </th>
                   ) : null}
                   {display.showCategory ? (
-                    <th className="px-5 py-2.5 text-[10px] font-bold uppercase tracking-wider text-zinc-500">
+                    <th className="px-5 py-3.5 text-[10px] font-bold uppercase tracking-wider text-zinc-500">
                       Category
                     </th>
                   ) : null}
-                  <th className="w-[120px] px-5 py-2.5 text-right text-[10px] font-bold uppercase tracking-wider text-zinc-500">
+                  <th className="px-5 py-3.5 text-right text-[10px] font-bold uppercase tracking-wider text-zinc-500">
                     Actions
                   </th>
                 </tr>
@@ -611,17 +624,21 @@ export function PasswordVaultPage() {
                         }
                       }}
                       className={cn(
-                        "cursor-pointer transition-colors hover:bg-muted/40",
+                        "h-[3.75rem] cursor-pointer transition-colors hover:bg-muted/40",
                         effectiveSelectedId === entry.id && "bg-primary/[0.06]",
                       )}
                     >
-                      <td className="px-5 py-3.5 align-middle text-[13px] font-medium text-foreground">
-                        {entry.name}
+                      <td className="px-5 py-4 align-middle text-[13px] font-medium text-foreground">
+                        <span className="block truncate" title={entry.name}>
+                          {entry.name}
+                        </span>
                       </td>
                       {display.showUsername ? (
-                        <td className="px-5 py-3.5 align-middle">
-                          <div className="flex items-center gap-1">
-                            <span className="text-[12px] text-zinc-600">{entry.username ?? "—"}</span>
+                        <td className="px-5 py-4 align-middle">
+                          <div className="flex min-w-0 items-center gap-1">
+                            <span className="min-w-0 truncate text-[12px] text-zinc-600">
+                              {entry.username ?? "—"}
+                            </span>
                             {entry.username ? (
                               <Button
                                 type="button"
@@ -641,9 +658,9 @@ export function PasswordVaultPage() {
                         </td>
                       ) : null}
                       {display.showPasswordColumn ? (
-                        <td className="px-5 py-3.5 align-middle">
-                          <div className="flex items-center gap-1">
-                            <span className="font-mono text-[11px] text-foreground">
+                        <td className="px-5 py-4 align-middle">
+                          <div className="flex min-w-0 items-center gap-1">
+                            <span className="min-w-0 truncate font-mono text-[11px] text-foreground">
                               {formatPassword(entry)}
                             </span>
                             {hasPwd ? (
@@ -684,7 +701,7 @@ export function PasswordVaultPage() {
                         </td>
                       ) : null}
                       {display.showUrl ? (
-                        <td className="max-w-xs px-5 py-3.5 align-middle">
+                        <td className="px-5 py-4 align-middle">
                           {entry.url ? (
                             <span
                               className="block truncate font-mono text-[11px] text-zinc-600"
@@ -698,16 +715,16 @@ export function PasswordVaultPage() {
                         </td>
                       ) : null}
                       {display.showNotes ? (
-                        <td className="max-w-[180px] truncate px-5 py-3.5 align-middle text-[12px] text-zinc-500">
+                        <td className="truncate px-5 py-4 align-middle text-[12px] text-zinc-500">
                           {entry.notes ?? "—"}
                         </td>
                       ) : null}
                       {display.showCategory ? (
-                        <td className="px-5 py-3.5 align-middle text-[12px] text-zinc-500">
+                        <td className="truncate px-5 py-4 align-middle text-[12px] text-zinc-500">
                           {entry.category ?? "—"}
                         </td>
                       ) : null}
-                      <td className="px-5 py-3.5 align-middle">
+                      <td className="px-5 py-4 align-middle">
                         <div className="flex items-center justify-end gap-0.5">
                           <Button
                             type="button"

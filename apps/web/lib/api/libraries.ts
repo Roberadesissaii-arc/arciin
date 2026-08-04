@@ -34,7 +34,10 @@ export function createFolder(input: CreateFolderInput) {
   })
 }
 
-export function updateFolder(folderId: string, body: { name: string }) {
+export function updateFolder(
+  folderId: string,
+  body: { name?: string; hideFromAllFiles?: boolean },
+) {
   return fetchApi<FolderSummary>(`/folders/${folderId}`, {
     method: "PATCH",
     body,

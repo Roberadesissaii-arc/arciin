@@ -153,6 +153,9 @@ function resolvePdfAssetId(
   return docs.length === 1 ? docs[0]!.id : null
 }
 
+const BARE_SUMMARIZE_RE =
+  /^(?:please\s+)?(?:summarize|summarise|sum\s*up|tl;?dr|give\s+me\s+a\s+summary)(?:\s+(?:it|that|this|the\s+(?:book|pdf|document|file|one|first|latest|most\s+recent)))?\s*[.!?]*$/i
+
 /** User wants PDF body / page / chapter content (not just a preview card). */
 export function isPdfContentQuestion(userText: string, priorUserTexts: string[] = []): boolean {
   const t = userText.trim()
@@ -161,10 +164,30 @@ export function isPdfContentQuestion(userText: string, priorUserTexts: string[] 
 
   const combined = `${userText}\n${priorUserTexts.join("\n")}`
 
+  // "summarize" / "summarize it" after listing documents — still a content read.
+  if (BARE_SUMMARIZE_RE.test(t) || /^(?:summarize|summarise)\b/i.test(t)) {
+    if (
+      DOC_REFERENT_RE.test(combined) ||
+      /\b(list|documents?|pdfs?|books?|files?)\b/i.test(combined) ||
+      /read_pdf_asset|Documents\s*\(/i.test(combined)
+    ) {
+      return true
+    }
+  }
+
+  // Explicit slash-style / summarize prompts from the web client.
+  if (
+    /\bMUST call read_pdf_asset\b/i.test(t) ||
+    /\bSummarize the document or file named\b/i.test(t)
+  ) {
+    return true
+  }
+
   if (PDF_CONTENT_QUESTION_RE.test(t)) {
     return (
       DOC_REFERENT_RE.test(combined) ||
-      /\b(that|this|the)\s+(book|pdf|document|essay)\b/i.test(t)
+      /\b(that|this|the)\s+(book|pdf|document|essay)\b/i.test(t) ||
+      BARE_SUMMARIZE_RE.test(t)
     )
   }
 
@@ -184,6 +207,29 @@ export function buildSyntheticReadPdfAssetArgsFromUser(
   messages: ChatMsg[] = [],
 ): { asset_id: string } | null {
   if (!isPdfContentQuestion(userText, priorUserTexts)) return null
+
+  const docs = parseDocumentsFromMessages(messages)
+  const t = userText.trim().toLowerCase()
+
+  // Ordinal / deictic after a list: first, latest, that one, it
+  if (docs.length > 0) {
+    if (/\b(first|1st|earliest)\b/.test(t)) {
+      return { asset_id: docs[0]!.id }
+    }
+    if (/\b(latest|last|most\s+recent|newest)\b/.test(t)) {
+      return { asset_id: docs[docs.length - 1]!.id }
+    }
+    if (
+      docs.length === 1 ||
+      BARE_SUMMARIZE_RE.test(userText.trim()) ||
+      /^(?:summarize|summarise)\b/i.test(userText.trim())
+    ) {
+      // Prefer filename match, else first/only document.
+      const byHint = resolvePdfAssetId(userText, priorUserTexts, messages)
+      if (byHint) return { asset_id: byHint }
+      return { asset_id: docs[0]!.id }
+    }
+  }
 
   const assetId = resolvePdfAssetId(userText, priorUserTexts, messages)
   if (!assetId) return null

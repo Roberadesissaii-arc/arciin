@@ -14,16 +14,21 @@ export const dashboardPanelBody =
 
 export const dashboardPanelCard = "flex h-full min-h-[28rem] flex-col md:min-h-[30rem] lg:min-h-[32rem]"
 
-/** Dashboard overview row — content-sized cards (no extra min-height gap). */
-export const dashboardOverviewPanelCard = "flex h-full min-h-0 flex-col"
+/** Dashboard overview row — natural height (do not stretch with h-full). */
+export const dashboardOverviewPanelCard = "flex shrink-0 flex-col"
 
-export const dashboardOverviewUploadsBody = "flex min-h-0 flex-col"
+/**
+ * Fixed body height for the 7×2 overview uploads grid
+ * (2 tile rows + gap). Keeps the section stable when loading/empty.
+ */
+export const dashboardOverviewUploadsBody =
+  "flex h-[17.75rem] shrink-0 flex-col sm:h-[18.75rem] lg:h-[20rem]"
 
 export const dashboardOverviewActivityBody =
   "flex min-h-0 flex-1 flex-col overflow-hidden"
 
-/** Dashboard uploads grid: 4 columns × 2 rows. */
-export const DASHBOARD_UPLOADS_GRID_COLS = 4
+/** Dashboard uploads grid: 7 columns × 2 rows on wide screens. */
+export const DASHBOARD_UPLOADS_GRID_COLS = 7
 export const DASHBOARD_UPLOADS_GRID_ROWS = 2
 export const DASHBOARD_UPLOADS_LIMIT =
   DASHBOARD_UPLOADS_GRID_COLS * DASHBOARD_UPLOADS_GRID_ROWS
@@ -34,8 +39,12 @@ export const DASHBOARD_ACTIVITY_LIMIT = 6
 /** Tablet overview — fewer rows so the feed never stretches past uploads. */
 export const DASHBOARD_ACTIVITY_LIMIT_TABLET = 5
 
+/**
+ * Full-width 7×2 grid. Tile rows are a touch taller than before so
+ * previews read more clearly inside the fixed body height.
+ */
 export const dashboardUploadsGrid =
-  "grid grid-cols-4 gap-2 content-start sm:gap-2.5"
+  "grid h-full grid-cols-3 gap-2 content-start [grid-auto-rows:8.5rem] sm:grid-cols-4 sm:gap-2.5 sm:[grid-auto-rows:9rem] md:grid-cols-5 lg:grid-cols-7 lg:grid-rows-2 lg:[grid-auto-rows:9.625rem]"
 
 /** Activity list on the dashboard — rows grow to fill height on large screens only. */
 export const dashboardActivityList =

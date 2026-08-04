@@ -21,13 +21,15 @@ export function PasswordVaultCredentialsSection({
         : "Select a row to preview the credential on the right. Copy, edit, or open the site from the detail panel."
 
   return (
-    <section className="space-y-2">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div className="min-w-0 space-y-1">
-          <h3 className="font-heading text-base font-semibold tracking-tight text-foreground">
+    <section>
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        <div className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-3 gap-y-1">
+          <h3 className="shrink-0 font-heading text-base font-semibold tracking-tight text-foreground">
             Saved credentials
           </h3>
-          <p className="max-w-2xl text-sm leading-relaxed text-muted-foreground">{description}</p>
+          <p className="min-w-0 flex-1 truncate text-sm text-muted-foreground" title={description}>
+            {description}
+          </p>
         </div>
         {actions ? (
           <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">{actions}</div>

@@ -4,8 +4,17 @@ import { useState } from "react"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import { useQuery } from "@tanstack/react-query"
-import { Folder, FolderLock, PencilLine, Share2, Trash2, X } from "lucide-react"
-import { notifyDeleted, notifyFolderActionError, notifyFolderLockRemoved, notifyFolderLocked, notifyFolderRenamed, notifyFolderUnlocked } from "@/lib/notifications/toast-actions"
+import { Folder, FolderLock, Eye, EyeOff, Cloud, PencilLine, Share2, Trash2, X } from "lucide-react"
+import {
+  notifyDeleted,
+  notifyFolderActionError,
+  notifyFolderHiddenFromAllFiles,
+  notifyFolderLockRemoved,
+  notifyFolderLocked,
+  notifyFolderRenamed,
+  notifyFolderShownInAllFiles,
+  notifyFolderUnlocked,
+} from "@/lib/notifications/toast-actions"
 
 import { FolderAccessDialog } from "@/components/libraries/folder-access-dialog"
 import { ShareDialog } from "@/components/shares/share-dialog"
@@ -85,6 +94,8 @@ export function FolderCard({ folder, librarySlug }: { folder: FolderSummary; lib
 
   const locked = Boolean(folder.isLocked)
   const needsUnlock = folderNeedsUnlock(folder)
+  const isRemote = Boolean(folder.isRemote)
+  const hideFromAllFiles = Boolean(folder.hideFromAllFiles)
   const accessBusy =
     lockMutation.isPending || unlockMutation.isPending || removeLockMutation.isPending
 
@@ -201,12 +212,32 @@ export function FolderCard({ folder, librarySlug }: { folder: FolderSummary; lib
                     {folder.assetCount} {folder.assetCount === 1 ? "file" : "files"}
                   </div>
                 )}
-                {locked ? (
-                  <div
-                    className="absolute bottom-3 right-3 flex size-8 items-center justify-center rounded-lg border border-zinc-200 bg-white text-zinc-500 shadow-sm transition-colors group-hover:text-primary"
-                    title={needsUnlock ? "Locked — password required" : "Locked — access granted"}
-                  >
-                    <FolderLock className="size-4" aria-hidden />
+                {isRemote || locked || hideFromAllFiles ? (
+                  <div className="absolute bottom-3 right-3 flex items-center gap-1.5">
+                    {isRemote ? (
+                      <div
+                        className="flex size-8 items-center justify-center rounded-lg border border-zinc-200 bg-white text-primary shadow-sm"
+                        title="Connected remotely — files arrive via API from another site or app"
+                      >
+                        <Cloud className="size-4" aria-hidden />
+                      </div>
+                    ) : null}
+                    {hideFromAllFiles ? (
+                      <div
+                        className="flex size-8 items-center justify-center rounded-lg border border-zinc-200 bg-white text-zinc-500 shadow-sm"
+                        title="Hidden from All Files — open this folder to browse"
+                      >
+                        <EyeOff className="size-4" aria-hidden />
+                      </div>
+                    ) : null}
+                    {locked ? (
+                      <div
+                        className="flex size-8 items-center justify-center rounded-lg border border-zinc-200 bg-white text-zinc-500 shadow-sm transition-colors group-hover:text-primary"
+                        title={needsUnlock ? "Locked — password required" : "Locked — access granted"}
+                      >
+                        <FolderLock className="size-4" aria-hidden />
+                      </div>
+                    ) : null}
                   </div>
                 ) : null}
                 <div className="relative">
@@ -215,7 +246,11 @@ export function FolderCard({ folder, librarySlug }: { folder: FolderSummary; lib
                   </span>
                   <div className="truncate text-[13px] font-semibold text-zinc-900">{folder.name}</div>
                   <div className="mt-0.5 text-[11px] font-medium text-zinc-500">
-                    {locked ? "Locked folder" : "Folder"}
+                    {locked
+                      ? "Locked folder"
+                      : isRemote
+                        ? "Remote folder"
+                        : "Folder"}
                   </div>
                 </div>
               </div>
@@ -273,6 +308,29 @@ export function FolderCard({ folder, librarySlug }: { folder: FolderSummary; lib
           >
             <Share2 className="size-4" />
             Share…
+          </ContextMenuItem>
+          <ContextMenuItem
+            disabled={updateMutation.isPending}
+            onSelect={async () => {
+              const next = !hideFromAllFiles
+              try {
+                await updateMutation.mutateAsync({
+                  folderId: folder.id,
+                  libraryId: folder.libraryId,
+                  hideFromAllFiles: next,
+                })
+                if (next) {
+                  notifyFolderHiddenFromAllFiles(folder.name)
+                } else {
+                  notifyFolderShownInAllFiles(folder.name)
+                }
+              } catch (e) {
+                notifyFolderActionError(e, "Could not update folder")
+              }
+            }}
+          >
+            {hideFromAllFiles ? <Eye className="size-4" /> : <EyeOff className="size-4" />}
+            {hideFromAllFiles ? "Show in All Files" : "Hide from All Files"}
           </ContextMenuItem>
           <ContextMenuSeparator />
           <ContextMenuItem variant="destructive" onSelect={() => setDeleteOpen(true)}>

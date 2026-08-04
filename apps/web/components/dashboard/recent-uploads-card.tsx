@@ -136,10 +136,10 @@ export function RecentUploadsCard({
       <div className={cn((tall || fill) && "flex min-h-0 flex-1 flex-col")}>{body}</div>
       {showLink && !tall && !uploadsQuery.isLoading && uploads.length > 0 ? (
         <Link
-          href="/uploads"
+          href="/files"
           className="mt-3 inline-flex items-center gap-1 text-sm font-medium text-primary hover:text-primary/80"
         >
-          Upload queue
+          View all files
           <ChevronRight className="size-4" />
         </Link>
       ) : null}

@@ -41,6 +41,32 @@ export function stripAssetListsWhenQueryingAppDatabases(content: string, userTex
   return content.replace(/\n*\[\[ASSET_LIST:[^\]]+\]\]\n*/gi, "\n").replace(/\n{3,}/g, "\n\n").trim()
 }
 
+/** Single-file open/read/summarize — never dump a full library list afterward. */
+export function isSingleFileContentRequest(userText: string): boolean {
+  const t = userText.trim()
+  if (!t) return false
+  if (/\binclude\s+\[\[ASSET_LIST:/i.test(t)) return false
+  if (/^list\s+my\s+(documents?|files?|images?|videos?)/i.test(t)) return false
+  if (/\bread_text_asset\b|\bread_pdf_asset\b|MUST call read_/i.test(t)) return true
+  if (/\bRead the file\s+"/i.test(t)) return true
+  if (/\bSummarize the document or file named\b/i.test(t)) return true
+  if (
+    /\b(read|open|summarize|summarise|explain|describe)\b/i.test(t) &&
+    /\b[\w.-]+\.(pdf|docx?|xlsx?|pptx?|odt|txt|md|py|js|ts|json|csv)\b/i.test(t)
+  ) {
+    return true
+  }
+  return false
+}
+
+function stripAllAssetTags(content: string): string {
+  return content
+    .replace(/\n*\[\[ASSET_LIST:[^\]]+\]\]\n*/gi, "\n")
+    .replace(/\n*\[\[ASSETS:[^\]]+\]\]\n*/gi, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim()
+}
+
 /** Recent chat turn mentioned a library type (for follow-ups like "show me"). */
 function conversationMentionsMediaType(
   priorMessages: Message[],
@@ -292,16 +318,39 @@ function stripUnrequestedAssetTags(
   return content
 }
 
+/** Remove [[ASSET_LIST:…]] unless the user actually asked for a filename list. */
+function stripUnrequestedFilenameLists(
+  content: string,
+  userText: string,
+  priorMessages: Message[],
+): string {
+  if (!/\[\[ASSET_LIST:/i.test(content)) return content
+  if (userWantsFilenameList(userText, priorMessages)) return content
+  if (/\binclude\s+\[\[ASSET_LIST:/i.test(userText)) return content
+  if (/\bList my (?:documents?|files?|recent files)/i.test(userText)) return content
+  return content
+    .replace(/\n*\[\[ASSET_LIST:[^\]]+\]\]\n*/gi, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim()
+}
+
 /** Post-process a finished assistant reply: enforce/strip asset tags for the user's actual intent. */
 export function finalizeAssistantContent(
   content: string,
   userText: string,
   priorMessages: Message[] = [],
 ): string {
+  // Single-file read/summarize: never pad with library dumps.
+  if (isSingleFileContentRequest(userText)) {
+    return stripAllAssetTags(content)
+  }
+
   let out = stripUnrequestedAssetTags(content, userText, priorMessages)
+  out = stripUnrequestedFilenameLists(out, userText, priorMessages)
   out = ensureFilenameListTag(out, userText, priorMessages)
   out = ensureAssetGalleryTag(out, userText, priorMessages)
   out = stripUnrequestedAssetTags(out, userText, priorMessages)
+  out = stripUnrequestedFilenameLists(out, userText, priorMessages)
   out = stripAssetListsWhenQueryingAppDatabases(out, userText)
   return out
 }

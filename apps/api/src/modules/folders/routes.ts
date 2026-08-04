@@ -8,6 +8,7 @@ import {
   grantFolderSessionAccess,
   verifyFolderAccessCredential,
 } from "@/services/folders/folder-lock"
+import { setFolderHideFromAllFilesCascade } from "@/services/folders/hidden-from-all-files"
 import { requireSessionRolesOrApiKeyScopes } from "@/services/security/auth"
 import { serializeFolder } from "@/services/serializers"
 import { slugify } from "@/services/slug"
@@ -30,9 +31,14 @@ const createFolderSchema = z.object({
   ),
 })
 
-const updateFolderSchema = z.object({
-  name: z.string().min(1).max(100),
-})
+const updateFolderSchema = z
+  .object({
+    name: z.string().min(1).max(100).optional(),
+    hideFromAllFiles: z.boolean().optional(),
+  })
+  .refine((body) => body.name !== undefined || body.hideFromAllFiles !== undefined, {
+    message: "Provide a name and/or hideFromAllFiles.",
+  })
 
 async function updateDescendantPaths(
   fastify: FastifyInstance,
@@ -137,6 +143,7 @@ export async function registerFolderRoutes(fastify: FastifyInstance) {
 
       const slug = slugify(parsed.data.name)
       const pathCache = parent ? `${parent.pathCache}/${slug}` : slug
+      const createdViaApi = Boolean(request.auth?.apiKeyId)
 
       const folder = await fastify.prisma.folder.create({
         data: {
@@ -145,6 +152,7 @@ export async function registerFolderRoutes(fastify: FastifyInstance) {
           name: parsed.data.name,
           slug,
           pathCache,
+          isRemote: createdViaApi,
         },
       })
 
@@ -204,31 +212,54 @@ export async function registerFolderRoutes(fastify: FastifyInstance) {
         return
       }
 
-      const slug = slugify(parsed.data.name)
-      const nextPath = existing.parentFolderId
-        ? (() => {
-            const index = existing.pathCache.lastIndexOf("/")
-            return `${existing.pathCache.slice(0, index)}/${slug}`
-          })()
-        : slug
+      const nextName = parsed.data.name?.trim()
+      const renameRequested = nextName !== undefined && nextName !== existing.name
 
-      const updated = await fastify.prisma.folder.update({
-        where: {
-          id: existing.id,
-        },
-        data: {
-          name: parsed.data.name,
-          slug,
-          pathCache: nextPath,
-        },
-      })
+      let slug = existing.slug
+      let nextPath = existing.pathCache
 
-      if (existing.pathCache !== nextPath) {
-        await updateDescendantPaths(fastify, existing.libraryId, existing.pathCache, nextPath)
+      if (renameRequested && nextName) {
+        slug = slugify(nextName)
+        nextPath = existing.parentFolderId
+          ? (() => {
+              const index = existing.pathCache.lastIndexOf("/")
+              return `${existing.pathCache.slice(0, index)}/${slug}`
+            })()
+          : slug
+      }
+
+      let working = existing
+
+      if (renameRequested && nextName) {
+        working = await fastify.prisma.folder.update({
+          where: { id: existing.id },
+          data: {
+            name: nextName,
+            slug,
+            pathCache: nextPath,
+          },
+        })
+
+        if (existing.pathCache !== nextPath) {
+          await updateDescendantPaths(fastify, existing.libraryId, existing.pathCache, nextPath)
+        }
+      }
+
+      // Hide/show cascades to every nested folder so All Files drops the whole tree.
+      if (parsed.data.hideFromAllFiles !== undefined) {
+        working = await setFolderHideFromAllFilesCascade(
+          fastify.prisma,
+          {
+            id: working.id,
+            libraryId: working.libraryId,
+            pathCache: working.pathCache,
+          },
+          parsed.data.hideFromAllFiles,
+        )
       }
 
       reply.send({
-        data: serializeFolder(updated),
+        data: serializeFolder(working),
       })
     }
   )

@@ -1,11 +1,11 @@
-import { RecentUploadsCard } from "@/components/dashboard/recent-uploads-card"
 import { UploadsPageIntro } from "@/components/dashboard/uploads-page-intro"
+import { UploadsSessionsTable } from "@/components/uploads/uploads-sessions-table"
 
 export default function UploadsPage() {
   return (
     <div className="space-y-6 pb-6">
       <UploadsPageIntro />
-      <RecentUploadsCard limit={200} showLink={false} />
+      <UploadsSessionsTable />
     </div>
   )
 }

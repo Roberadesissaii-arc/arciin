@@ -313,7 +313,9 @@
 [data-sonner-toast].arciin-action-toast--folder-locked,
 [data-sonner-toast].arciin-action-toast--folder-unlocked,
 [data-sonner-toast].arciin-action-toast--folder-lock-removed,
-[data-sonner-toast].arciin-action-toast--folder-renamed {
+[data-sonner-toast].arciin-action-toast--folder-renamed,
+[data-sonner-toast].arciin-action-toast--folder-hidden,
+[data-sonner-toast].arciin-action-toast--folder-shown {
   --arciin-orbit-a: var(--arciin-toast-orbit-a, #ff4f12);
   --arciin-orbit-b: var(--arciin-toast-orbit-b, #ff6a33);
 }
@@ -322,7 +324,9 @@
 [data-sonner-toast].arciin-action-toast--folder-locked .arciin-toast-icon-svg,
 [data-sonner-toast].arciin-action-toast--folder-unlocked .arciin-toast-icon-svg,
 [data-sonner-toast].arciin-action-toast--folder-lock-removed .arciin-toast-icon-svg,
-[data-sonner-toast].arciin-action-toast--folder-renamed .arciin-toast-icon-svg {
+[data-sonner-toast].arciin-action-toast--folder-renamed .arciin-toast-icon-svg,
+[data-sonner-toast].arciin-action-toast--folder-hidden .arciin-toast-icon-svg,
+[data-sonner-toast].arciin-action-toast--folder-shown .arciin-toast-icon-svg {
   color: #ffffff !important;
 }
 

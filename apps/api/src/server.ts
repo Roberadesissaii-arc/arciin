@@ -25,6 +25,7 @@ import { registerSettingsRoutes } from "@/modules/settings/routes"
 import { registerShareRoutes } from "@/modules/shares/routes"
 import { registerUploadRoutes } from "@/modules/uploads/routes"
 import { registerImportRoutes } from "@/modules/imports/routes"
+import { registerTrashRoutes } from "@/modules/trash/routes"
 import { registerWebhookRoutes } from "@/modules/webhooks/routes"
 import { registerLicenseRoutes } from "@/modules/license/routes"
 import { registerApiProtection } from "@/plugins/api-protection"
@@ -37,6 +38,7 @@ import { registerPrisma } from "@/plugins/prisma"
 import { registerRedis } from "@/plugins/redis"
 import { registerSocket } from "@/plugins/socket"
 import { registerHealthRoutes } from "@/routes/health.routes"
+import { purgeExpiredTrash } from "@/services/assets/trash"
 import { trimOversizedLogFiles } from "@/services/logs/log-files"
 import { registerCloudflareTunnelPersistence } from "@/services/remote-access/tunnel-boot"
 import { repairInstanceStorageRootsIfNeeded } from "@/services/storage/effective-storage-root"
@@ -126,8 +128,28 @@ export async function createServer() {
   const logTrimTimer = setInterval(() => {
     void trimOversizedLogFiles()
   }, logTrimIntervalMs)
+
+  // iOS-style trash: permanently remove soft-deleted assets after 30 days.
+  const trashPurgeIntervalMs = 6 * 60 * 60_000
+  const runTrashPurge = () => {
+    void purgeExpiredTrash(fastify.prisma)
+      .then((removed) => {
+        if (removed > 0) {
+          fastify.log.info({ removed }, "Purged expired trash assets")
+        }
+      })
+      .catch((error) => {
+        fastify.log.warn({ err: error }, "Trash purge failed")
+      })
+  }
+  // Defer first run slightly so startup isn't blocked by disk IO.
+  const trashPurgeBootTimer = setTimeout(runTrashPurge, 45_000)
+  const trashPurgeTimer = setInterval(runTrashPurge, trashPurgeIntervalMs)
+
   fastify.addHook("onClose", async () => {
     clearInterval(logTrimTimer)
+    clearTimeout(trashPurgeBootTimer)
+    clearInterval(trashPurgeTimer)
   })
 
   fastify.get("/", async (_request, reply) => {
@@ -147,6 +169,7 @@ export async function createServer() {
       await registerLibraryRoutes(api)
       await registerFolderRoutes(api)
       await registerAssetRoutes(api)
+      await registerTrashRoutes(api)
       await registerShareRoutes(api)
       await registerUploadRoutes(api)
       await registerImportRoutes(api)

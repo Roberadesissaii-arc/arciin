@@ -355,6 +355,10 @@ model Folder {
   name           String
   slug           String
   pathCache      String
+  /// True when this folder was created via API key or received API-key uploads.
+  isRemote       Boolean         @default(false)
+  /// When true, assets in this folder are excluded from the All Files view.
+  hideFromAllFiles Boolean       @default(false)
   lockedAt       DateTime?
   lockedByUserId String?
   createdAt      DateTime        @default(now())
@@ -412,7 +416,7 @@ model Asset {
   processingError  String?
   /// Original public link this asset was imported from (used to show a source badge).
   importSourceUrl  String?
-  /// Device channel the upload request came from ("web" | "mobile") — fallback badge when there's no import source.
+  /// Device channel the upload request came from ("web" | "mobile" | "api") — fallback badge when there's no import source.
   uploadClient     String?
   /// Custom badge label override (null = auto-detect from importSourceUrl).
   badgeLabel       String?

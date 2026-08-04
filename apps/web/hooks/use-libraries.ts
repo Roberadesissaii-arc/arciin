@@ -71,12 +71,18 @@ export function useUpdateFolder() {
   return useMutation<
     FolderSummary,
     Error,
-    { folderId: string; libraryId: string; name: string }
+    { folderId: string; libraryId: string; name?: string; hideFromAllFiles?: boolean }
   >({
     mutationFn: (variables) =>
-      updateFolder(variables.folderId, { name: variables.name }),
+      updateFolder(variables.folderId, {
+        ...(variables.name !== undefined ? { name: variables.name } : {}),
+        ...(variables.hideFromAllFiles !== undefined
+          ? { hideFromAllFiles: variables.hideFromAllFiles }
+          : {}),
+      }),
     onSuccess: (_, variables) => {
       invalidateLibraryFolderTree(queryClient, variables.libraryId)
+      void queryClient.invalidateQueries({ queryKey: ["assets"] })
     },
   })
 }

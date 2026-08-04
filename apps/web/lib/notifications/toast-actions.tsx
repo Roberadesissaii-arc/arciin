@@ -24,9 +24,11 @@ import {
   fileUpdatedCopy,
   folderCreatedCopy,
   folderCredentialErrorCopy,
+  folderHiddenFromAllFilesCopy,
   folderLockedCopy,
   folderLockRemovedCopy,
   folderRenamedCopy,
+  folderShownInAllFilesCopy,
   folderUnlockedCopy,
   assetsMovedCopy,
   importFailedCopy,
@@ -402,6 +404,26 @@ export function notifyFolderRenamed(folderName: string) {
     className: toastSurfaceClass("folderRenamed"),
     icon: toastIcon(FOLDER_TOAST_ICONS.renamed),
     duration: 4200,
+  })
+}
+
+export function notifyFolderHiddenFromAllFiles(folderName: string) {
+  const copy = folderHiddenFromAllFilesCopy(folderName)
+  return actionToast(copy.title, {
+    description: copy.description,
+    className: toastSurfaceClass("folderHidden"),
+    icon: toastIcon(FOLDER_TOAST_ICONS.hidden),
+    duration: 5200,
+  })
+}
+
+export function notifyFolderShownInAllFiles(folderName: string) {
+  const copy = folderShownInAllFilesCopy(folderName)
+  return actionToast(copy.title, {
+    description: copy.description,
+    className: toastSurfaceClass("folderShown"),
+    icon: toastIcon(FOLDER_TOAST_ICONS.shown),
+    duration: 4800,
   })
 }
 

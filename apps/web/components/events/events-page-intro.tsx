@@ -16,7 +16,7 @@ export function EventsPageIntro() {
         <>
           Watch realtime signals as they happen — uploads from mobile, desktop, or Python scripts.
           Keep this page open while you trigger activity; events are live only and do not replay from
-          before you arrived. External automation uses port{" "}
+          before you arrived. Use the pager at the bottom when the stream gets long. External automation uses port{" "}
           <span className="font-mono text-[13px] text-zinc-800">4000</span> with an API key — see{" "}
           <Link
             href="/developer/api-keys"

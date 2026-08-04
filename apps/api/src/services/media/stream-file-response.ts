@@ -51,6 +51,11 @@ export async function streamFileResponse(
 
   reply.header("Accept-Ranges", "bytes")
   reply.header("content-type", contentType)
+  // Private browser/HTTP cache — helps mobile reopen within a session without
+  // re-downloading every byte. ETag invalidates when the file changes on disk.
+  const etag = `"${Math.trunc(stats.mtimeMs)}-${fileSize}"`
+  reply.header("ETag", etag)
+  reply.header("Cache-Control", "private, max-age=86400")
   if (contentDisposition) {
     reply.header("content-disposition", contentDisposition)
   }

@@ -21,12 +21,12 @@ export function PasswordVaultPageIntro({
 }) {
   const description =
     entryCount === 0
-      ? "No credentials stored yet. Import from Settings when you are ready — nothing is locked until you add entries."
+      ? "No credentials yet — import from Settings when you are ready."
       : pinConfigured
-        ? "Saved credentials stay encrypted on disk. Unlock with your 6-digit PIN to view or copy secrets."
+        ? "Credentials are encrypted on this server. Unlock with your PIN to view or copy secrets."
         : lockRequired && !secretsVisible
-          ? "Unlock the vault once to browse every entry with the eye icon, or tap the eye on a single row to view that password only."
-          : "Vault is unlocked — use the eye on each row to show or hide that password. Lock the vault when you are done."
+          ? "Unlock once to browse entries, or use the eye on a single row."
+          : "Vault unlocked — use the eye on each row to show or hide passwords."
 
   return (
     <DashboardPageIntro

@@ -16,6 +16,12 @@ export type Message = {
   /** Persisted row id (same as id when loaded from history). */
   dbId?: string
   feedback?: ChatMessageFeedbackRating | null
+  /**
+   * Vision attachments for this user turn (base64, no data: prefix).
+   * Shown as thumbnails on the bubble so you can see which image was discussed.
+   * Not reloaded from history after refresh (session UI only).
+   */
+  images?: string[]
 }
 
 // ── Reasoning / streaming parsing ──────────────────────────────────────────────

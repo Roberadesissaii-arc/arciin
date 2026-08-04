@@ -8,14 +8,60 @@ const DEFAULT_MAX_CHARS = 12_000
 
 function isReadableTextAsset(filename: string, mimeType?: string | null): boolean {
   if (isCodeFilename(filename)) return true
+  const lower = filename.toLowerCase()
+  // Office/OpenDocument: we extract readable strings from the package XML/zip.
+  if (/\.(docx?|xlsx?|pptx?|odt|rtf|csv)$/i.test(lower)) return true
   const m = (mimeType ?? "").toLowerCase()
   return (
     m.startsWith("text/") ||
     m === "application/json" ||
     m === "application/javascript" ||
     m === "application/typescript" ||
-    m === "application/xml"
+    m === "application/xml" ||
+    m.includes("officedocument") ||
+    m.includes("opendocument") ||
+    m === "application/rtf" ||
+    m === "text/csv" ||
+    m === "application/zip" // some .docx uploaded as zip
   )
+}
+
+/** Pull human-readable strings from OOXML/ODF (zip) or plain text. */
+function extractReadableText(buf: Buffer, filename: string): string {
+  const lower = filename.toLowerCase()
+  const asUtf8 = buf.toString("utf8")
+
+  // Plain text / source / csv / rtf (rtf is noisy but usable).
+  if (/\.(txt|md|json|csv|py|js|ts|tsx|jsx|sh|ya?ml|rtf)$/i.test(lower)) {
+    return asUtf8
+  }
+
+  // Office packages store XML; pull tag-stripped runs of letters.
+  // Good enough for small test docs; not a full Word parser.
+  if (/\.(docx?|xlsx?|pptx?|odt)$/i.test(lower) || asUtf8.includes("word/") || asUtf8.includes("xl/")) {
+    const withoutTags = asUtf8
+      .replace(/<\?xml[\s\S]*?\?>/g, " ")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/&amp;/g, "&")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&quot;/g, '"')
+      .replace(/&#(\d+);/g, (_, n) => {
+        const code = Number(n)
+        return Number.isFinite(code) && code > 31 ? String.fromCharCode(code) : " "
+      })
+      .replace(/[^\S\n]+/g, " ")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim()
+    // Keep lines that look like real prose (filter zip binary noise).
+    const lines = withoutTags
+      .split(/\n/)
+      .map((l) => l.trim())
+      .filter((l) => l.length >= 3 && /[A-Za-z]{3,}/.test(l) && !/^[\x00-\x1f]+$/.test(l))
+    if (lines.length > 0) return lines.join("\n")
+  }
+
+  return asUtf8
 }
 
 export async function readTextAssetContent(
@@ -92,7 +138,7 @@ export async function readTextAssetContent(
       }
     }
     const buf = await fs.readFile(path)
-    const text = buf.toString("utf8")
+    const text = extractReadableText(buf, asset.originalFilename)
     const truncated = text.length > maxChars
     const content = truncated ? text.slice(0, maxChars) : text
 
@@ -105,6 +151,10 @@ export async function readTextAssetContent(
       sizeBytes: Number(stat.size),
       truncated,
       content,
+      note:
+        /\.(docx?|xlsx?|pptx?|odt)$/i.test(asset.originalFilename)
+          ? "Extracted plain text from office document package (best-effort)."
+          : undefined,
     }
   } catch {
     return { error: "read_failed", message: "Could not read file from storage." }

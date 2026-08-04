@@ -563,30 +563,39 @@ export async function registerPasswordVaultRoutes(fastify: FastifyInstance) {
         await fastify.prisma.passwordVaultEntry.deleteMany()
       }
 
-      const created = await fastify.prisma.$transaction(
-        entries.map((entry) => {
-          const enc = encryptVaultPayload({
-            name: entry.name,
-            username: entry.username,
-            password: entry.password,
-            url: entry.url,
-            notes: entry.notes,
-            category: entry.category,
-          })
-          return fastify.prisma.passwordVaultEntry.create({
-            data: {
-              ciphertext: enc.ciphertext,
-              iv: enc.iv,
-              authTag: enc.authTag,
-              importSource: parsed.data.fileName ?? "import",
-            },
-          })
-        }),
-      )
+      // Encrypt then insert in chunks — parallel create() of 100+ rows can stall the API
+      // and freeze the settings UI after a large Edge/Chrome export.
+      const source = parsed.data.fileName ?? "import"
+      const prepared = entries.map((entry) => {
+        const enc = encryptVaultPayload({
+          name: entry.name,
+          username: entry.username,
+          password: entry.password,
+          url: entry.url,
+          notes: entry.notes,
+          category: entry.category,
+        })
+        return {
+          ciphertext: enc.ciphertext,
+          iv: enc.iv,
+          authTag: enc.authTag,
+          importSource: source,
+        }
+      })
+
+      const CHUNK = 40
+      let imported = 0
+      for (let i = 0; i < prepared.length; i += CHUNK) {
+        const slice = prepared.slice(i, i + CHUNK)
+        const result = await fastify.prisma.passwordVaultEntry.createMany({
+          data: slice,
+        })
+        imported += result.count
+      }
 
       reply.send({
         data: {
-          imported: created.length,
+          imported,
         },
       })
     },

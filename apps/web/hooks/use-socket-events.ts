@@ -203,31 +203,41 @@ export function useSocketEvents(socket: Socket | null) {
                 : undefined
             refreshLibraryQueries(queryClient, libraryId)
 
-            const client =
-              payload.data?.client === "mobile" ? ("mobile" as const) : ("web" as const)
-            const destination =
-              typeof payload.data?.destination === "string"
-                ? payload.data.destination
-                : undefined
-            const entityId =
-              payload.data?.entityId != null ? String(payload.data.entityId) : undefined
-            let fileName =
-              typeof payload.data?.fileName === "string"
-                ? payload.data.fileName.trim()
-                : ""
-            if (!fileName && message) {
-              const match = message.match(/^(.+?)\s+routed to\s+/i)
-              if (match?.[1]) fileName = match[1].trim()
-            }
+            // The activity row is written as soon as the bytes land, but when a
+            // worker job still has to run the completion toast belongs to the
+            // worker's own upload.completed event. Toasting here too would show
+            // the user two "uploaded" notifications for one file. Cache
+            // invalidation below still runs — only the toast is deferred.
+            const awaitingWorker = payload.data?.pendingProcessing === true
 
-            notifyUploadCompleted({
-              dedupeKey: entityId || (activityId ? `activity:${activityId}` : "activity-upload"),
-              origin: "upload",
-              client,
-              fileName: fileName || undefined,
-              destination,
-              uploadId: entityId,
-            })
+            if (!awaitingWorker) {
+              const client =
+                payload.data?.client === "mobile" ? ("mobile" as const) : ("web" as const)
+              const destination =
+                typeof payload.data?.destination === "string"
+                  ? payload.data.destination
+                  : undefined
+              const entityId =
+                payload.data?.entityId != null ? String(payload.data.entityId) : undefined
+              let fileName =
+                typeof payload.data?.fileName === "string"
+                  ? payload.data.fileName.trim()
+                  : ""
+              if (!fileName && message) {
+                const match = message.match(/^(.+?)\s+routed to\s+/i)
+                if (match?.[1]) fileName = match[1].trim()
+              }
+
+              notifyUploadCompleted({
+                dedupeKey:
+                  entityId || (activityId ? `activity:${activityId}` : "activity-upload"),
+                origin: "upload",
+                client,
+                fileName: fileName || undefined,
+                destination,
+                uploadId: entityId,
+              })
+            }
           }
           /* no generic activity toast */
         } else if (

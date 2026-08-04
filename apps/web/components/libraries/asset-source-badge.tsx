@@ -12,6 +12,11 @@ type AssetBadgeProps = {
     "importSourceUrl" | "uploadClient" | "badgeLabel" | "badgeColor" | "showBadge"
   >
   className?: string
+  /**
+   * When false, never wrap the chip in an <a> (required when nested inside a parent Link).
+   * Default true.
+   */
+  link?: boolean
   /** Live preview overrides (edit dialog). */
   preview?: {
     label?: string
@@ -23,7 +28,7 @@ type AssetBadgeProps = {
 /**
  * Brand-colored chip on asset cards — auto-detected from import link or customized per file.
  */
-export function AssetSourceBadge({ asset, className, preview }: AssetBadgeProps) {
+export function AssetSourceBadge({ asset, className, link = true, preview }: AssetBadgeProps) {
   const resolved = resolveAssetBadge(asset)
   if (preview?.show === false) return null
 
@@ -39,9 +44,10 @@ export function AssetSourceBadge({ asset, className, preview }: AssetBadgeProps)
       style={{ backgroundColor: color }}
       className={cn(
         "inline-flex max-w-[9rem] items-center gap-1 rounded-md px-2 py-[3px] text-[11px] font-semibold leading-[1.35] text-white shadow-sm ring-1 ring-black/10",
-        href && "transition-opacity hover:opacity-90",
+        href && link && "transition-opacity hover:opacity-90",
         className,
       )}
+      title={href ? `Imported from ${label}` : undefined}
     >
       {key === "web" || key === "custom" ? <Globe className="size-2.5 shrink-0" /> : null}
       {key === "device-web" ? <Monitor className="size-2.5 shrink-0" /> : null}
@@ -50,7 +56,7 @@ export function AssetSourceBadge({ asset, className, preview }: AssetBadgeProps)
     </span>
   )
 
-  if (!href) return chip
+  if (!href || !link) return chip
 
   return (
     <a

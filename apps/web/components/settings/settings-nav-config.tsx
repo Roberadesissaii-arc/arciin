@@ -15,6 +15,7 @@ import {
   Shield,
   ShieldAlert,
   Sparkles,
+  Trash2,
 } from "lucide-react"
 
 export type SettingsTab =
@@ -24,6 +25,7 @@ export type SettingsTab =
   | "license"
   | "updates"
   | "passwords"
+  | "trash"
   | "data-reset"
   | "access-control"
   | "session"
@@ -41,6 +43,7 @@ export const SETTINGS_VALID_TABS: SettingsTab[] = [
   "license",
   "updates",
   "passwords",
+  "trash",
   "data-reset",
   "access-control",
   "session",
@@ -78,6 +81,7 @@ export const SETTINGS_NAV: SettingsNavItem[][] = [
   ],
   [
     { id: "passwords", label: "Passwords", icon: FingerprintPattern },
+    { id: "trash", label: "Trash", icon: Trash2 },
     { id: "access-control", label: "Access control", icon: Shield },
     { id: "session", label: "Session", icon: LogOut },
     { id: "api-protection", label: "API protection", icon: Gauge },

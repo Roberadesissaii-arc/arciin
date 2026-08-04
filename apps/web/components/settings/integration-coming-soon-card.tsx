@@ -21,7 +21,7 @@ export function IntegrationComingSoonCard() {
               one toggle, folder status, and docs link.
             </CardDescription>
           </div>
-          <Badge variant="outline" className="shrink-0 border-border bg-muted/40 text-zinc-500">
+          <Badge className="shrink-0 border-0 bg-primary text-white shadow-none hover:bg-primary">
             Planned
           </Badge>
         </div>

@@ -103,11 +103,10 @@ export function PlexIntegrationCard({ integration }: { integration: IntegrationS
             </CardDescription>
           </div>
           <Badge
-            variant="outline"
             className={
               enabled
-                ? "shrink-0 border-emerald-500/40 bg-emerald-500/10 text-emerald-800"
-                : "shrink-0 border-border bg-muted/40 text-zinc-600"
+                ? "shrink-0 border-0 bg-emerald-600 text-white shadow-none hover:bg-emerald-600"
+                : "shrink-0 border-0 bg-zinc-800 text-white shadow-none hover:bg-zinc-800"
             }
           >
             {enabled ? "Connected" : "Off"}
@@ -160,10 +159,14 @@ export function PlexIntegrationCard({ integration }: { integration: IntegrationS
                   <span className="font-medium text-foreground">{f.libraryName}</span>
                   <span className="font-mono text-xs text-muted-foreground">{f.folderPath}</span>
                   {f.ready && f.folderId ? (
-                    <Button asChild variant="ghost" size="sm" className="h-8 text-primary">
+                    <Button
+                      asChild
+                      size="sm"
+                      className="h-8 border-0 bg-primary px-3 font-semibold text-white shadow-none hover:bg-primary/90"
+                    >
                       <Link href={`/${f.librarySlug}/plex`}>
                         Open
-                        <ExternalLink className="ml-1.5 size-3.5 opacity-70" />
+                        <ExternalLink className="ml-1.5 size-3.5 opacity-90" />
                       </Link>
                     </Button>
                   ) : (
