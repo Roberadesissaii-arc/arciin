@@ -1,6 +1,9 @@
 /** Domain helpers shared across API, worker, and web. */
 export * from "./client-device"
 export * from "./media"
+export * from "./office-documents"
+export * from "./temp-cleanup-policy"
+export * from "./upload-lifecycle"
 export * from "./password-import"
 export * from "./password-chat"
 export * from "./security-activity"

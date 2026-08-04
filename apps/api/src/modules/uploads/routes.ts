@@ -3,13 +3,28 @@ import path from "node:path"
 import type { FastifyInstance } from "fastify"
 import { z } from "zod"
 
-import { JOB_TYPES, assetSupportsDocumentThumbnail } from "@arciin/shared"
+import {
+  JOB_TYPES,
+  UPLOAD_ACCEPTED_PROGRESS,
+  apiOwnsCompletionEvent,
+  assetSupportsDocumentThumbnail,
+  initialUploadSessionState,
+  requiresWorkerProcessing,
+} from "@arciin/shared"
 
 import { buildRealtimeEvent } from "@/services/events/publish-event"
 import { recordAndBroadcastActivity } from "@/services/activity/record-and-broadcast-activity"
 import { mediaQueue } from "@/services/jobs/queues"
 import { enqueueGenerateThumbnailJob } from "@/services/media/thumbnail-jobs"
 import { loadUserPreferences } from "@/services/user/preferences"
+import { folderAccessGranted } from "@/services/folders/folder-lock"
+import {
+  UPLOAD_READ_SCOPES,
+  canMutateUploadSession,
+  canReadUploadSession,
+  uploadListWhere,
+  type UploadPrincipal,
+} from "@/services/uploads/upload-access"
 import { requireSessionRolesOrApiKeyScopes } from "@/services/security/auth"
 import { serializeUpload } from "@/services/serializers"
 import { analyzeStoredFile } from "@/services/classification/media-classification"
@@ -30,6 +45,20 @@ import {
   removeTempFile,
   writeMultipartToTemp,
 } from "@/services/storage/local-storage"
+
+/** Map the authenticated request onto the shared upload-access principal. */
+function principalFromRequest(request: {
+  auth?: { user: { id: string; role: string }; apiKeyScopes?: string[] | null; session?: unknown }
+}): UploadPrincipal {
+  const auth = request.auth!
+  return {
+    userId: auth.user.id,
+    role: auth.user.role as UploadPrincipal["role"],
+    // A browser session is governed by role alone; an API key is additionally
+    // capped by its own scopes.
+    apiKeyScopes: auth.session ? null : (auth.apiKeyScopes ?? []),
+  }
+}
 
 function libraryKindForMediaType(mediaType: string) {
   switch (mediaType) {
@@ -126,6 +155,40 @@ export async function registerUploadRoutes(fastify: FastifyInstance) {
 
       const { targetLibraryId, targetFolderId } = queryParsed.data
 
+      // Validate the destination folder before a single byte is committed to
+      // permanent storage. An unchecked id previously produced either an
+      // invisible asset (deleted / foreign folder) or an FK violation *after*
+      // the object was already written.
+      let targetFolder: Awaited<
+        ReturnType<typeof fastify.prisma.folder.findFirst>
+      > = null
+
+      if (targetFolderId) {
+        targetFolder = await fastify.prisma.folder.findFirst({
+          where: { id: targetFolderId, deletedAt: null },
+        })
+
+        if (!targetFolder) {
+          reply.status(404).send({
+            error: {
+              code: "FOLDER_NOT_FOUND",
+              message: "The destination folder does not exist or has been deleted.",
+            },
+          })
+          return
+        }
+
+        if (!folderAccessGranted(request, request.auth.user.id, targetFolder, request.auth.session ?? null)) {
+          reply.status(403).send({
+            error: {
+              code: "FOLDER_LOCKED",
+              message: "You do not have access to the destination folder.",
+            },
+          })
+          return
+        }
+      }
+
       let tempPath: string | null = null
 
       try {
@@ -137,7 +200,8 @@ export async function registerUploadRoutes(fastify: FastifyInstance) {
       const analysis = await analyzeStoredFile(
         tempResult.tempPath,
         file.filename,
-        file.mimetype
+        file.mimetype,
+        request.log,
       )
 
       const targetLibrary = await resolveUploadTargetLibrary(
@@ -152,6 +216,20 @@ export async function registerUploadRoutes(fastify: FastifyInstance) {
           error: {
             code: "LIBRARY_NOT_CONFIGURED",
             message: "No destination library is configured for uploads.",
+          },
+        })
+        return
+      }
+
+      // The folder must belong to the library the asset is actually filed
+      // under, or the asset becomes unreachable from both library views.
+      if (targetFolder && targetFolder.libraryId !== targetLibrary.id) {
+        await removeTempFile(tempResult.tempPath)
+        reply.status(400).send({
+          error: {
+            code: "FOLDER_LIBRARY_MISMATCH",
+            message:
+              "The destination folder belongs to a different library than this upload's target library.",
           },
         })
         return
@@ -196,7 +274,15 @@ export async function registerUploadRoutes(fastify: FastifyInstance) {
         targetFolderId,
       )
 
-      const requiresProcessing = analysis.mediaType === "VIDEO" || analysis.mediaType === "IMAGE" || analysis.mediaType === "AUDIO"
+      if (clientChannel === "api" && resolvedFolderId) {
+        await fastify.prisma.folder.updateMany({
+          where: { id: resolvedFolderId, isRemote: false },
+          data: { isRemote: true },
+        })
+      }
+
+      const requiresProcessing = requiresWorkerProcessing(analysis.mediaType)
+      const lifecycle = initialUploadSessionState(analysis.mediaType)
 
       const asset = await fastify.prisma.asset.create({
         data: {
@@ -226,12 +312,17 @@ export async function registerUploadRoutes(fastify: FastifyInstance) {
           originalFilename: file.filename,
           mimeType: analysis.mimeType,
           sizeBytes: BigInt(tempResult.sizeBytes),
-          status: requiresProcessing ? "PROCESSING" : "READY",
-          progress: 100,
+          // Bytes are safely on disk either way; the remaining span is worker
+          // processing. `completedAt` stays null until the worker finishes —
+          // setting it here made the worker's completion branch unreachable and
+          // stranded every image/video upload at CLASSIFIED.
+          status: lifecycle.status,
+          progress: lifecycle.progress,
+          completedAt: lifecycle.completedAt,
           targetLibraryId: targetLibrary.id,
+          targetFolderId: resolvedFolderId ?? null,
           detectedMediaType: analysis.mediaType,
           assetId: asset.id,
-          completedAt: new Date(),
         },
         include: {
           targetLibrary: true,
@@ -324,6 +415,10 @@ export async function registerUploadRoutes(fastify: FastifyInstance) {
           destination: targetLibrary.name,
           fileName: file.filename,
           client: clientChannel,
+          // The activity row is written now so the feed is accurate, but the
+          // completion toast belongs to whoever finishes the work. Without this
+          // flag the user gets one toast here and a second from the worker.
+          pendingProcessing: requiresProcessing,
         },
       })
 
@@ -332,7 +427,7 @@ export async function registerUploadRoutes(fastify: FastifyInstance) {
           userId: request.auth.user.id,
           libraryId: targetLibrary.id,
           uploadId: upload.id,
-          progress: requiresProcessing ? 88 : 100,
+          progress: requiresProcessing ? UPLOAD_ACCEPTED_PROGRESS : 100,
           message: `${file.filename} received on the server.`,
           data: {
             fileName: file.filename,
@@ -360,25 +455,29 @@ export async function registerUploadRoutes(fastify: FastifyInstance) {
         })
       )
 
-      await fastify.publishRealtimeEvent(
-        buildRealtimeEvent("upload.completed", {
-          userId: request.auth.user.id,
-          libraryId: targetLibrary.id,
-          uploadId: upload.id,
-          assetId: asset.id,
-          progress: requiresProcessing ? 88 : 100,
-          message: requiresProcessing
-            ? `${file.filename} uploaded — finishing media processing…`
-            : `${file.filename} uploaded successfully.`,
-          data: {
-            fileName: file.filename,
-            sizeBytes: tempResult.sizeBytes,
-            destination: targetLibrary.name,
-            origin: "upload",
-            client: clientChannel,
-          },
-        })
-      )
+      // Exactly one `upload.completed` per upload. When a worker job still has
+      // to run, the worker owns that event — emitting a second one here is what
+      // produced duplicate completion toasts once the two were more than the
+      // 20s toast-dedupe window apart.
+      if (apiOwnsCompletionEvent(analysis.mediaType)) {
+        await fastify.publishRealtimeEvent(
+          buildRealtimeEvent("upload.completed", {
+            userId: request.auth.user.id,
+            libraryId: targetLibrary.id,
+            uploadId: upload.id,
+            assetId: asset.id,
+            progress: 100,
+            message: `${file.filename} uploaded successfully.`,
+            data: {
+              fileName: file.filename,
+              sizeBytes: tempResult.sizeBytes,
+              destination: targetLibrary.name,
+              origin: "upload",
+              client: clientChannel,
+            },
+          })
+        )
+      }
 
       reply.status(201).send({
         data: serializeUpload(upload),
@@ -425,13 +524,33 @@ export async function registerUploadRoutes(fastify: FastifyInstance) {
   fastify.get(
     "/uploads",
     {
+      // uploads:create is intentionally NOT accepted here: permission to
+      // upload is not permission to read other people's upload history.
       preHandler: requireSessionRolesOrApiKeyScopes(
         ["OWNER", "ADMIN", "MEMBER", "VIEWER"],
-        ["assets:read", "activity:read", "uploads:create"],
+        [...UPLOAD_READ_SCOPES],
       ),
     },
-    async (_request, reply) => {
+    async (request, reply) => {
+      if (!request.auth) return
+
+      // Scoped by the shared policy: OWNER/ADMIN see the instance, everyone
+      // else sees only their own. An API key without a read scope is refused
+      // even though it passed the preHandler (which accepts uploads:create).
+      const where = uploadListWhere(principalFromRequest(request))
+
+      if (!where) {
+        reply.status(403).send({
+          error: {
+            code: "FORBIDDEN",
+            message: "This API key is missing a required scope.",
+          },
+        })
+        return
+      }
+
       const uploads = await fastify.prisma.uploadSession.findMany({
+        where,
         include: {
           targetLibrary: true,
         },
@@ -450,12 +569,15 @@ export async function registerUploadRoutes(fastify: FastifyInstance) {
   fastify.get(
     "/uploads/:uploadId",
     {
+      // uploads:create is intentionally NOT accepted here: permission to
+      // upload is not permission to read other people's upload history.
       preHandler: requireSessionRolesOrApiKeyScopes(
         ["OWNER", "ADMIN", "MEMBER", "VIEWER"],
-        ["assets:read", "activity:read", "uploads:create"],
+        [...UPLOAD_READ_SCOPES],
       ),
     },
     async (request, reply) => {
+      if (!request.auth) return
       const params = z.object({ uploadId: z.string() }).parse(request.params)
       const upload = await fastify.prisma.uploadSession.findUnique({
         where: {
@@ -466,7 +588,9 @@ export async function registerUploadRoutes(fastify: FastifyInstance) {
         },
       })
 
-      if (!upload) {
+      // 404 for both "absent" and "not yours" — a 403 would confirm the id
+      // exists and turn this endpoint into an existence oracle.
+      if (!upload || !canReadUploadSession(principalFromRequest(request), upload)) {
         reply.status(404).send({
           error: {
             code: "UPLOAD_NOT_FOUND",
@@ -512,9 +636,7 @@ export async function registerUploadRoutes(fastify: FastifyInstance) {
         return
       }
 
-      // Only the uploader, admins, or owners may act on a session.
-      const role = request.auth.user.role
-      if (upload.userId !== request.auth.user.id && role !== "OWNER" && role !== "ADMIN") {
+      if (!canMutateUploadSession(principalFromRequest(request), upload)) {
         reply.status(403).send({
           error: { code: "FORBIDDEN", message: "You do not have access to this upload." },
         })
@@ -550,9 +672,7 @@ export async function registerUploadRoutes(fastify: FastifyInstance) {
         return
       }
 
-      // Only the uploader, admins, or owners may cancel a session.
-      const role = request.auth.user.role
-      if (upload.userId !== request.auth.user.id && role !== "OWNER" && role !== "ADMIN") {
+      if (!canMutateUploadSession(principalFromRequest(request), upload)) {
         reply.status(403).send({
           error: { code: "FORBIDDEN", message: "You do not have access to this upload." },
         })

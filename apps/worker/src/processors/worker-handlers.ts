@@ -1,7 +1,8 @@
-import { access, mkdir, readdir, rm, stat, unlink } from "node:fs/promises"
+import { access, lstat, mkdir, readdir, readlink, rm, stat, unlink } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 
+import { UnrecoverableError } from "bullmq"
 import { execa } from "execa"
 import { fileTypeFromFile } from "file-type"
 import type Redis from "ioredis"
@@ -14,6 +15,10 @@ import {
   VIDEO_THUMBNAIL_PLACEHOLDER_SVG,
   assetSupportsDocumentThumbnail,
   inferMediaType,
+  planTempCleanup,
+  isIsoMediaContainerMime,
+  refineIsoMediaClassification,
+  summarizeMediaStreams,
   type AnalyzeFilePayload,
   type ApplyUpdatePayload,
   type CalculateStorageUsagePayload,
@@ -34,6 +39,11 @@ import { workerConfig } from "@/config"
 import { runApplyUpdate, runStageUpdate } from "@/services/auto-update"
 import { syncConnectorMirrorsForAsset } from "@/services/connector-mirror"
 import { createRealtimeEvent, publishRealtimeEvent } from "@/services/realtime"
+import {
+  completeUploadSession as runCompleteUploadSession,
+  failUploadSession,
+  type CompletionDeps,
+} from "@/services/upload-completion"
 
 async function markJob(
   jobRecordId: string | undefined,
@@ -70,6 +80,53 @@ export async function markJobFailure(jobRecordId: string | undefined, error: unk
   })
 }
 
+/** Bind the injectable completion helpers to the real Prisma client and Redis. */
+function completionDeps(redis: Redis): CompletionDeps {
+  return {
+    findUploadSession: async ({ uploadId, assetId }) =>
+      uploadId
+        ? prisma.uploadSession.findUnique({
+            where: { id: uploadId },
+            include: { targetLibrary: { select: { name: true } } },
+          })
+        : assetId
+          ? prisma.uploadSession.findFirst({
+              where: { assetId },
+              include: { targetLibrary: { select: { name: true } } },
+            })
+          : null,
+    promoteUploadSession: async ({ id, unlessStatusIn, data }) => {
+      const result = await prisma.uploadSession.updateMany({
+        where: {
+          id,
+          status: { notIn: unlessStatusIn as Prisma.EnumUploadStatusFilter["notIn"] },
+        },
+        data: data as Prisma.UploadSessionUpdateManyMutationInput,
+      })
+      return result.count
+    },
+    markAssetFailed: async (assetId, message) => {
+      await prisma.asset.update({
+        where: { id: assetId },
+        data: { status: "FAILED", processingError: message },
+      })
+    },
+    publish: async (event) => {
+      const { type, ...rest } = event
+      await publishRealtimeEvent(redis, createRealtimeEvent(type, rest))
+    },
+  }
+}
+
+/** Surface a failed media job to the user rather than leaving it "Processing". */
+export async function failUploadForJob(
+  redis: Redis,
+  data: { uploadId?: string; assetId?: string },
+  error: unknown,
+) {
+  await failUploadSession(completionDeps(redis), data, error)
+}
+
 async function readWithFfprobe(filePath: string) {
   try {
     const { stdout } = await execa("ffprobe", [
@@ -103,10 +160,12 @@ function parseDurationSeconds(
   return raw
 }
 
-async function detectMetadata(filePath: string) {
+async function detectMetadata(filePath: string, originalFilename: string) {
   const detected = await fileTypeFromFile(filePath)
-  const mimeType = detected?.mime
-  const extension = detected?.ext
+
+  let mimeType = detected?.mime
+  let extension = detected?.ext
+  let mediaTypeOverride: string | undefined
 
   let width: number | undefined
   let height: number | undefined
@@ -126,10 +185,25 @@ async function detectMetadata(filePath: string) {
 
   if (mimeType?.startsWith("video/") || mimeType?.startsWith("audio/")) {
     const ffprobe = await readWithFfprobe(filePath)
+
+    // Same stream-aware rule the API applies at upload time, so both sides
+    // reach the same verdict for audio-only MP4/M4A containers.
+    if (isIsoMediaContainerMime(mimeType)) {
+      const refined = refineIsoMediaClassification({
+        mediaType: inferMediaType(mimeType, originalFilename),
+        mimeType,
+        extension: extension ?? "",
+        originalFilename,
+        streams: summarizeMediaStreams(ffprobe?.streams),
+      })
+      mimeType = refined.mimeType
+      extension = refined.extension || extension
+      mediaTypeOverride = refined.mediaType
+    }
+
+    const wantsVideoStream = mimeType.startsWith("video/")
     const stream = ffprobe?.streams?.find((item) =>
-      mimeType.startsWith("video/")
-        ? item.codec_type === "video"
-        : item.codec_type === "audio",
+      wantsVideoStream ? item.codec_type === "video" : item.codec_type === "audio",
     )
     durationSeconds = parseDurationSeconds(ffprobe?.format, stream)
     width = typeof stream?.width === "number" ? stream.width : width
@@ -140,6 +214,7 @@ async function detectMetadata(filePath: string) {
   return {
     mimeType,
     extension,
+    mediaTypeOverride,
     width,
     height,
     durationSeconds,
@@ -303,25 +378,29 @@ export async function handleMediaJob(
   }
 
   if (!objectFilePath) {
-    await markJobFailure(data.jobRecordId, new Error("Original file missing on disk."))
-    return
+    // Throw rather than return: returning marked the BullMQ job successful, so
+    // the upload sat at "Processing" forever with nothing reported.
+    // Unrecoverable — a missing file will still be missing on the next attempt,
+    // so this fails once instead of burning the whole retry budget.
+    throw new UnrecoverableError("Original file missing on disk.")
   }
 
   const storageRoot = resolveArciinStorageRoot(instance?.storageRoot, objectFilePath)
 
   if (name === JOB_TYPES.analyzeFile || name === JOB_TYPES.extractMetadata) {
-    const metadata = await detectMetadata(objectFilePath)
+    const metadata = await detectMetadata(objectFilePath, asset.originalFilename)
 
     const mimeType = metadata.mimeType || asset.mimeType
     const extension = metadata.extension || asset.extension
-    const mediaType = inferMediaType(mimeType, asset.originalFilename)
+    const mediaType =
+      metadata.mediaTypeOverride ?? inferMediaType(mimeType, asset.originalFilename)
 
     await prisma.asset.update({
       where: { id: asset.id },
       data: {
         mimeType,
         extension,
-        mediaType,
+        mediaType: mediaType as typeof asset.mediaType,
         width: metadata.width ?? asset.width,
         height: metadata.height ?? asset.height,
         durationSeconds: metadata.durationSeconds ?? asset.durationSeconds,
@@ -330,11 +409,13 @@ export async function handleMediaJob(
     })
 
     if ("uploadId" in data && data.uploadId) {
-      await prisma.uploadSession.update({
-        where: { id: data.uploadId },
+      // Never walk a finished upload back to CLASSIFIED: the thumbnail job may
+      // have already promoted it to READY (job order is not guaranteed).
+      await prisma.uploadSession.updateMany({
+        where: { id: data.uploadId, status: { notIn: ["READY", "FAILED"] } },
         data: {
           status: "CLASSIFIED",
-          progress: 100,
+          progress: 90,
         },
       })
     }
@@ -349,7 +430,10 @@ export async function handleMediaJob(
       })
     )
 
-    if (name === JOB_TYPES.extractMetadata && asset.mediaType === "AUDIO") {
+    // Audio never gets a thumbnail job, so metadata extraction is the last
+    // required step — finish the upload here. Use the freshly detected type,
+    // not the stale row read before the update above.
+    if (name === JOB_TYPES.extractMetadata && mediaType === "AUDIO") {
       await prisma.asset.update({
         where: { id: asset.id },
         data: {
@@ -357,16 +441,13 @@ export async function handleMediaJob(
         },
       })
 
-      if ("uploadId" in data && data.uploadId) {
-        await prisma.uploadSession.update({
-          where: { id: data.uploadId },
-          data: {
-            status: "READY",
-            progress: 100,
-            completedAt: new Date(),
-          },
-        })
-      }
+      await runCompleteUploadSession(completionDeps(redis), {
+        uploadId: "uploadId" in data ? data.uploadId : undefined,
+        assetId: asset.id,
+        libraryId: asset.libraryId,
+        originalFilename: asset.originalFilename,
+        importSourceUrl: asset.importSourceUrl,
+      })
     }
   }
 
@@ -395,52 +476,13 @@ export async function handleMediaJob(
       })
     }
 
-    const upload = await prisma.uploadSession.findFirst({
-      where: {
-        assetId: asset.id,
-      },
-      include: {
-        targetLibrary: { select: { name: true } },
-      },
+    await runCompleteUploadSession(completionDeps(redis), {
+      uploadId: "uploadId" in data ? data.uploadId : undefined,
+      assetId: asset.id,
+      libraryId: asset.libraryId,
+      originalFilename: asset.originalFilename,
+      importSourceUrl: asset.importSourceUrl,
     })
-
-    /** PDFs are often READY before thumbnail jobs run — do not re-emit upload.completed (Sonner spam). */
-    const uploadNotYetAnnounced =
-      upload && upload.status !== "READY" && upload.completedAt == null
-
-    if (uploadNotYetAnnounced) {
-      const origin = asset.importSourceUrl ? "url" : "upload"
-      const destination = upload.targetLibrary?.name
-
-      await prisma.uploadSession.update({
-        where: { id: upload.id },
-        data: {
-          status: "READY",
-          progress: 100,
-          completedAt: new Date(),
-        },
-      })
-
-      await publishRealtimeEvent(
-        redis,
-        createRealtimeEvent("upload.completed", {
-          userId: upload.userId,
-          libraryId: asset.libraryId,
-          uploadId: upload.id,
-          assetId: asset.id,
-          progress: 100,
-          message:
-            origin === "url"
-              ? `${asset.originalFilename} imported from link.`
-              : `${asset.originalFilename} uploaded.`,
-          data: {
-            fileName: asset.originalFilename,
-            destination,
-            origin,
-          },
-        }),
-      )
-    }
 
     if (thumbnailPath) {
       await publishRealtimeEvent(
@@ -514,31 +556,91 @@ export async function handleStorageJob(
   )
 
   if (name === JOB_TYPES.cleanupTempFiles) {
-    const tempDir = path.join(storageRoot, "temp")
+    const startedAt = Date.now()
+    const tempDir = path.resolve(storageRoot, "temp")
     const olderThanHours = "olderThanHours" in data ? data.olderThanHours : undefined
-    const cutoff = Date.now() - (olderThanHours ?? 24) * 60 * 60 * 1000
+
+    let examined = 0
     let deleted = 0
+    let bytesRecovered = 0
+    let retained = 0
+    let errors = 0
 
     try {
-      const entries = await readdir(tempDir)
+      const entries = await readdir(tempDir, { withFileTypes: true })
+      const candidates = []
 
       for (const entry of entries) {
-        const entryPath = path.join(tempDir, entry)
-        const fileStat = await stat(entryPath)
+        examined += 1
+        const entryPath = path.join(tempDir, entry.name)
 
-        if (fileStat.mtimeMs < cutoff) {
-          await rm(entryPath, { force: true })
+        try {
+          // lstat, not stat: a symlink must be judged as a link, not followed.
+          const linkStat = await lstat(entryPath)
+          if (linkStat.isSymbolicLink()) {
+            const target = path.resolve(tempDir, await readlink(entryPath))
+            candidates.push({
+              path: entryPath,
+              mtimeMs: linkStat.mtimeMs,
+              sizeBytes: 0,
+              escapesRoot: !target.startsWith(`${tempDir}/`),
+            })
+            continue
+          }
+          if (!linkStat.isFile()) {
+            retained += 1
+            continue
+          }
+          candidates.push({
+            path: entryPath,
+            mtimeMs: linkStat.mtimeMs,
+            sizeBytes: linkStat.size,
+          })
+        } catch {
+          errors += 1
+        }
+      }
+
+      // The decision is made by a pure, unit-tested policy; this loop only
+      // carries it out.
+      const plan = planTempCleanup(candidates, {
+        tempRoot: tempDir,
+        now: Date.now(),
+        maxAgeHours: olderThanHours,
+      })
+
+      retained += plan.retained.length
+
+      for (const file of plan.deletable) {
+        try {
+          await rm(file.path, { force: true })
           deleted += 1
+          bytesRecovered += file.sizeBytes
+        } catch {
+          errors += 1
         }
       }
     } catch {
-      deleted = 0
+      // A missing temp directory is not a failure — nothing to clean.
+      errors += 1
     }
+
+    const result = {
+      examined,
+      deleted,
+      retained,
+      bytesRecovered,
+      errors,
+      durationMs: Date.now() - startedAt,
+    }
+
+    // Counts and bytes only — never private filenames.
+    console.log("[cleanup] temp files", JSON.stringify(result))
 
     await markJob(data.jobRecordId, {
       status: "COMPLETED",
       progress: 100,
-      result: { deleted },
+      result,
     })
     return
   }

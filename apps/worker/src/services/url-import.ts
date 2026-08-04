@@ -16,11 +16,14 @@ import type Redis from "ioredis"
 import type { Prisma } from "@prisma/client"
 import { prisma } from "@arciin/database"
 import {
+  DEFAULT_MEDIA_JOB_OPTIONS,
   JOB_QUEUE_NAMES,
   JOB_TYPES,
   assetSupportsDocumentThumbnail,
   inferMediaType,
   type ImportUrlPayload,
+  apiOwnsCompletionEvent,
+  initialUploadSessionState,
 } from "@arciin/shared"
 import { normalizeConfiguredStorageRoot } from "@arciin/storage"
 
@@ -65,6 +68,9 @@ function getMediaQueue(): Queue {
       tls: redisUrl.protocol === "rediss:" ? {} : undefined,
       maxRetriesPerRequest: null,
     },
+    // Same retry budget and Redis retention as the API's producers.
+    defaultJobOptions: DEFAULT_MEDIA_JOB_OPTIONS,
+    prefix: workerConfig.queuePrefix,
   })
   return mediaQueue
 }
@@ -936,9 +942,9 @@ export async function handleImportUrl(
         detectedMediaType: mediaType,
         targetLibraryId: targetLibrary.id,
         assetId: asset.id,
-        status: requiresProcessing ? "PROCESSING" : "READY",
-        progress: requiresProcessing ? 88 : 100,
-        completedAt: new Date(),
+        // Same rule as a direct upload: `completedAt` marks the end of worker
+        // processing, so it stays null while media jobs are still queued.
+        ...initialUploadSessionState(mediaType),
       },
     })
 
@@ -973,7 +979,14 @@ export async function handleImportUrl(
       title: "Link imported",
       message: `${download.filename} imported to ${targetLibrary.name}.`,
       entityId: asset.id,
-      metadata: { mediaType, libraryId: targetLibrary.id, destination: targetLibrary.name, source: "url" },
+      metadata: {
+        mediaType,
+        libraryId: targetLibrary.id,
+        destination: targetLibrary.name,
+        source: "url",
+        // The completion toast belongs to whoever finishes the work.
+        pendingProcessing: requiresProcessing,
+      },
       redis,
     })
 
@@ -988,25 +1001,27 @@ export async function handleImportUrl(
       }),
     )
 
-    await publishRealtimeEvent(
-      redis,
-      createRealtimeEvent("upload.completed", {
-        userId,
-        libraryId: targetLibrary.id,
-        uploadId,
-        assetId: asset.id,
-        progress: requiresProcessing ? 88 : 100,
-        message: requiresProcessing
-          ? `${download.filename} imported — finishing media processing…`
-          : `${download.filename} imported successfully.`,
-        data: {
-          fileName: download.filename,
-          sizeBytes: size,
-          destination: targetLibrary.name,
-          origin: "url",
-        },
-      }),
-    )
+    // Exactly one upload.completed per import: when media jobs are still queued
+    // the worker's own completion emits it, so this one is skipped.
+    if (apiOwnsCompletionEvent(mediaType)) {
+      await publishRealtimeEvent(
+        redis,
+        createRealtimeEvent("upload.completed", {
+          userId,
+          libraryId: targetLibrary.id,
+          uploadId,
+          assetId: asset.id,
+          progress: 100,
+          message: `${download.filename} imported successfully.`,
+          data: {
+            fileName: download.filename,
+            sizeBytes: size,
+            destination: targetLibrary.name,
+            origin: "url",
+          },
+        }),
+      )
+    }
   } catch (error) {
     const message =
       error instanceof Error && error.message ? error.message : "The link could not be imported."

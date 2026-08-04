@@ -306,6 +306,127 @@ export function inferMediaType(mimeType?: string | null, filename?: string | nul
   return "OTHER"
 }
 
+/**
+ * ISO base media file format containers (MP4/MOV/M4A/3GP). One container can
+ * hold audio-only, video-only, or both, and magic-byte sniffing reports the
+ * *container*, not the payload — an audio-only .m4a with an `ftyp` brand of
+ * `dash`/`isom`/`mp42` sniffs as `video/mp4`. Classification for these must be
+ * settled by inspecting the stream list, never by the container MIME alone.
+ */
+const isoMediaContainerMimeTypes = new Set([
+  "video/mp4",
+  "video/quicktime",
+  "video/x-m4v",
+  "video/3gpp",
+  "video/3gpp2",
+  "audio/mp4",
+  "audio/x-m4a",
+  "audio/m4a",
+])
+
+export function isIsoMediaContainerMime(mimeType?: string | null): boolean {
+  return isoMediaContainerMimeTypes.has((mimeType ?? "").toLowerCase())
+}
+
+/** What ffprobe found in the container. Null means inspection failed. */
+export type MediaStreamSummary = {
+  hasVideoStream: boolean
+  hasAudioStream: boolean
+}
+
+/**
+ * Reduce an ffprobe stream list to the audio/video question classification
+ * asks. Shared so the API and the worker apply identical rules.
+ *
+ * Embedded cover art is carried as a still video stream with
+ * `disposition.attached_pic = 1`; counting it as video is what makes an
+ * album-art MP3/M4A look like a movie, so it is deliberately ignored.
+ */
+export function summarizeMediaStreams(
+  streams: Array<Record<string, unknown>> | undefined | null,
+): MediaStreamSummary | null {
+  if (!streams) return null
+
+  return {
+    hasVideoStream: streams.some((stream) => {
+      if (stream.codec_type !== "video") return false
+      const disposition = stream.disposition as Record<string, unknown> | undefined
+      return disposition?.attached_pic !== 1
+    }),
+    hasAudioStream: streams.some((stream) => stream.codec_type === "audio"),
+  }
+}
+
+/** Audio extensions that stay meaningful when we relabel a container as audio. */
+const preservableAudioExtensions = new Set(["m4a", "m4b", "aac", "mp4a"])
+
+const audioMimeByExtension: Record<string, string> = {
+  m4a: "audio/mp4",
+  m4b: "audio/mp4",
+  aac: "audio/aac",
+  mp4a: "audio/mp4",
+}
+
+export type IsoMediaClassification = {
+  mediaType: ReturnType<typeof inferMediaType>
+  mimeType: string
+  extension: string
+}
+
+/**
+ * Settle VIDEO-vs-AUDIO for an ISO media container using its stream list.
+ *
+ * Pure and synchronous: the caller runs ffprobe (API and worker each have their
+ * own copy) and passes the summary in, so both sides reach the same verdict
+ * from the same rules. Returns the input unchanged whenever the container is
+ * not ISO media, inspection failed, or the streams are inconclusive — a probe
+ * failure must never reclassify a file.
+ */
+export function refineIsoMediaClassification(input: {
+  mediaType: string
+  mimeType: string
+  extension: string
+  originalFilename?: string | null
+  streams: MediaStreamSummary | null
+}): IsoMediaClassification {
+  const unchanged = {
+    mediaType: input.mediaType as IsoMediaClassification["mediaType"],
+    mimeType: input.mimeType,
+    extension: input.extension,
+  }
+
+  if (!isIsoMediaContainerMime(input.mimeType)) return unchanged
+  if (!input.streams) return unchanged
+
+  const { hasVideoStream, hasAudioStream } = input.streams
+
+  // A video stream is decisive — even a container labelled audio/* is video.
+  if (hasVideoStream) {
+    return { ...unchanged, mediaType: "VIDEO" }
+  }
+
+  // Audio-only: relabel so it routes to Music and keeps a playable audio MIME.
+  if (hasAudioStream) {
+    const nameExtension = input.originalFilename
+      ? getFileExtension(input.originalFilename)
+      : ""
+    const extension = preservableAudioExtensions.has(nameExtension)
+      ? nameExtension
+      : preservableAudioExtensions.has(input.extension)
+        ? input.extension
+        : "m4a"
+
+    return {
+      mediaType: "AUDIO",
+      mimeType: audioMimeByExtension[extension] ?? "audio/mp4",
+      extension,
+    }
+  }
+
+  // Neither stream type (corrupt or unreadable) — keep the original verdict.
+  return unchanged
+}
+
 /** PDFs eligible for first-page thumbnail generation (ffmpeg). */
 export function assetSupportsDocumentThumbnail(
   mediaType: string,
