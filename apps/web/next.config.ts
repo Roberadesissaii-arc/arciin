@@ -1,14 +1,17 @@
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 
-import { config as loadEnv } from "dotenv"
 import type { NextConfig } from "next"
+
+import { loadArciinEnv } from "@arciin/config"
 
 const webRoot = path.dirname(fileURLToPath(import.meta.url))
 const repoRoot = path.resolve(webRoot, "../..")
 
-// Ensure install.sh / PM2 .env at the repo root is visible when building and at `next start`.
-loadEnv({ path: path.join(repoRoot, ".env") })
+// Ensure install.sh / PM2 .env at the repo root is visible when building and at
+// `next start`, then layer .env.development so a dev server picks up the
+// isolated ports, API URL and NEXT_DIST_DIR instead of production's.
+loadArciinEnv(repoRoot)
 
 const apiUrl =
   process.env.ARCIIN_API_URL ||
@@ -47,6 +50,12 @@ function resolveAllowedDevOrigins(): string[] {
 }
 
 const nextConfig: NextConfig = {
+  /**
+   * Development writes to .next-dev so `next dev` can never overwrite the
+   * production build in .next — which is how the production BUILD_ID once
+   * ended up being a dev artifact.
+   */
+  distDir: process.env.NEXT_DIST_DIR || ".next",
   allowedDevOrigins: resolveAllowedDevOrigins(),
   poweredByHeader: false,
   /** Socket.IO polling uses `/socket.io/?EIO=…` — do not 308-strip the slash before the query. */

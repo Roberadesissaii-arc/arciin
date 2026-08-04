@@ -67,3 +67,9 @@ __pycache__/
 *.pyc
 .env.docker.test
 docker-compose.smoke.yml
+
+# Development Next.js output (kept separate from the production .next)
+.next-dev/
+
+# Deployment lock (runtime state, never committed)
+.arciin-deploy.lock

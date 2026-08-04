@@ -2,7 +2,7 @@ import { parse } from "cookie"
 import type { FastifyInstance } from "fastify"
 import { Server } from "socket.io"
 
-import { isSelfHostedLanOrigin, SOCKET_EVENT_CHANNEL, type RealtimeEvent } from "@arciin/shared"
+import { isSelfHostedLanOrigin, type RealtimeEvent } from "@arciin/shared"
 
 import { apiConfig } from "@/config"
 import { hashApiKey, hashToken, scopeAllows } from "@/services/security/auth"
@@ -89,7 +89,7 @@ export async function registerSocket(fastify: FastifyInstance) {
   })
 
   const subscriber = fastify.redis.duplicate()
-  await subscriber.subscribe(SOCKET_EVENT_CHANNEL)
+  await subscriber.subscribe(apiConfig.socketChannel)
 
   subscriber.on("message", (_channel, message) => {
     try {
@@ -214,7 +214,7 @@ export async function registerSocket(fastify: FastifyInstance) {
 
   fastify.decorate("io", io)
   fastify.decorate("publishRealtimeEvent", async (event: RealtimeEvent) => {
-    await fastify.redis.publish(SOCKET_EVENT_CHANNEL, JSON.stringify(event))
+    await fastify.redis.publish(apiConfig.socketChannel, JSON.stringify(event))
   })
 
   fastify.addHook("onClose", async () => {

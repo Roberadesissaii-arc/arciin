@@ -3,6 +3,17 @@ import { z } from "zod"
 /** Shared environment fields used by API, worker, and install scripts. */
 export const coreEnvSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
+  /**
+   * Which instance this process belongs to. "production" keeps the original
+   * ports, database, Redis db, storage root and BullMQ prefix; any other value
+   * (conventionally "dev") must isolate all of them — enforced at startup by
+   * assertEnvironmentIsolation.
+   */
+  ARCIIN_ENV_NAMESPACE: z.string().optional(),
+  /** Overrides the BullMQ key prefix derived from the namespace. */
+  ARCIIN_QUEUE_PREFIX: z.string().optional(),
+  /** Overrides the Redis pub/sub channel prefix derived from the namespace. */
+  ARCIIN_SOCKET_CHANNEL_PREFIX: z.string().optional(),
   ARCIIN_DATA_DIR: z.string().default("/srv/arciin-storage/arciin"),
   /**
    * URL of a small JSON manifest ({ latest, channel, changelogUrl, notes })
@@ -79,6 +90,12 @@ export const workerEnvSchema = coreEnvSchema.extend({
   MAX_UPLOAD_SIZE_MB: z.coerce.number().int().positive().default(20 * 1024),
   /** Concurrent media jobs per worker process. Keep low — transcodes are heavy. */
   ARCIIN_WORKER_CONCURRENCY: z.coerce.number().int().positive().max(16).default(2),
+  /**
+   * How old a temp file must be before scheduled cleanup may remove it.
+   * Deliberately generous: a retained stale file costs disk, a wrongly deleted
+   * one costs a user's upload.
+   */
+  ARCIIN_TEMP_MAX_AGE_HOURS: z.coerce.number().int().positive().default(24),
 })
 
 export type CoreEnv = z.infer<typeof coreEnvSchema>

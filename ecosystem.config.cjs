@@ -67,6 +67,9 @@ const runWorker = path.join(ROOT, "scripts/run-worker-prod.sh")
 const sharedEnv = {
   ...dotenv,
   NODE_ENV: "production",
+  // Pins PM2 to the production namespace so .env.development is never layered
+  // in and the isolation guards treat these as the production instance.
+  ARCIIN_ENV_NAMESPACE: "production",
   PORT: String(port),
   HOSTNAME: bindHost,
   API_PORT: apiPort,

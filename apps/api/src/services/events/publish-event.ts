@@ -1,6 +1,8 @@
 import { nanoid } from "nanoid"
 
-import { SOCKET_EVENT_CHANNEL, type RealtimeEvent, type SocketEventType } from "@arciin/shared"
+import { type RealtimeEvent, type SocketEventType } from "@arciin/shared"
+
+import { apiConfig } from "@/config"
 
 export function buildRealtimeEvent(
   type: SocketEventType,
@@ -18,5 +20,5 @@ export async function publishRealtimeEvent(
   publisher: { publish: (channel: string, message: string) => Promise<number> | number },
   event: RealtimeEvent
 ) {
-  await publisher.publish(SOCKET_EVENT_CHANNEL, JSON.stringify(event))
+  await publisher.publish(apiConfig.socketChannel, JSON.stringify(event))
 }

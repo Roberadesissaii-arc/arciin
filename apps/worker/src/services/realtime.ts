@@ -1,7 +1,9 @@
 import { nanoid } from "nanoid"
 import type Redis from "ioredis"
 
-import { SOCKET_EVENT_CHANNEL, type RealtimeEvent, type SocketEventType } from "@arciin/shared"
+import { type RealtimeEvent, type SocketEventType } from "@arciin/shared"
+
+import { workerConfig } from "@/config"
 
 export function createRealtimeEvent(
   type: SocketEventType,
@@ -16,5 +18,5 @@ export function createRealtimeEvent(
 }
 
 export async function publishRealtimeEvent(redis: Redis, event: RealtimeEvent) {
-  await redis.publish(SOCKET_EVENT_CHANNEL, JSON.stringify(event))
+  await redis.publish(workerConfig.socketChannel, JSON.stringify(event))
 }

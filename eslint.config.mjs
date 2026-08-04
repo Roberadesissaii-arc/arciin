@@ -9,6 +9,8 @@ const eslintConfig = defineConfig([
   globalIgnores([
     // Default ignores of eslint-config-next:
     "apps/web/.next/**",
+    // Development build output — generated bundles, not source.
+    "apps/web/.next-dev/**",
     "out/**",
     "build/**",
     "apps/web/next-env.d.ts",

@@ -1,11 +1,44 @@
 import path from "node:path"
+import { fileURLToPath } from "node:url"
 
-import { config as loadEnv } from "dotenv"
-import { APP_VERSION, apiEnvSchema } from "@arciin/config"
+import {
+  APP_VERSION,
+  SOCKET_EVENT_CHANNEL,
+  WORKER_HEARTBEAT_KEY,
+  apiEnvSchema,
+  assertEnvironmentIsolation,
+  isProductionNamespace,
+  loadArciinEnv,
+  resolveEnvNamespace,
+  resolveNamespacedKey,
+  resolveQueuePrefix,
+  resolveSocketChannel,
+} from "@arciin/config"
 
-loadEnv()
+// Loads .env, then layers .env.development for non-production namespaces.
+// ESM: __dirname does not exist, so derive the repo root from import.meta.url.
+loadArciinEnv(path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../.."))
 
 const parsed = apiEnvSchema.parse(process.env)
+
+const envNamespace = resolveEnvNamespace()
+const queuePrefix = resolveQueuePrefix(envNamespace, parsed.ARCIIN_QUEUE_PREFIX)
+const resolvedDataDir = path.resolve(parsed.ARCIIN_DATA_DIR)
+
+/**
+ * Refuse to start a development API that would reach into production state —
+ * the production database, Redis db 0, the production storage root, the
+ * production BullMQ prefix, or port 4000. Production is never blocked.
+ */
+assertEnvironmentIsolation({
+  namespace: envNamespace,
+  nodeEnv: parsed.NODE_ENV,
+  databaseUrl: parsed.DATABASE_URL,
+  redisUrl: parsed.REDIS_URL,
+  dataDir: resolvedDataDir,
+  apiPort: parsed.API_PORT,
+  queuePrefix,
+})
 
 const defaultSetupToken =
   parsed.NODE_ENV !== "production" ? parsed.ARCIIN_SETUP_TOKEN || "dev-token" : parsed.ARCIIN_SETUP_TOKEN
@@ -41,9 +74,18 @@ export const apiConfig = {
   appVersion: APP_VERSION,
   updateManifestUrl: parsed.ARCIIN_UPDATE_MANIFEST_URL,
   isProduction: parsed.NODE_ENV === "production",
+  envNamespace,
+  isProductionInstance: isProductionNamespace(envNamespace),
+  queuePrefix,
+  socketChannel: resolveSocketChannel(
+    envNamespace,
+    SOCKET_EVENT_CHANNEL,
+    parsed.ARCIIN_SOCKET_CHANNEL_PREFIX,
+  ),
+  workerHeartbeatKey: resolveNamespacedKey(envNamespace, WORKER_HEARTBEAT_KEY),
   trustProxy: resolveTrustProxy(),
   maxUploadSizeBytes: parsed.MAX_UPLOAD_SIZE_MB * 1024 * 1024,
-  dataDir: path.resolve(parsed.ARCIIN_DATA_DIR),
+  dataDir: resolvedDataDir,
   storage: {
     objectsDir: path.resolve(parsed.ARCIIN_DATA_DIR, "objects"),
     librariesDir: path.resolve(parsed.ARCIIN_DATA_DIR, "libraries"),

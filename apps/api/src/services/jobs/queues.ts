@@ -1,6 +1,6 @@
 import { Queue } from "bullmq"
 
-import { JOB_QUEUE_NAMES } from "@arciin/shared"
+import { DEFAULT_MEDIA_JOB_OPTIONS, JOB_QUEUE_NAMES } from "@arciin/shared"
 
 import { apiConfig } from "@/config"
 
@@ -17,6 +17,26 @@ const connection = {
   maxRetriesPerRequest: null as null,
 }
 
-export const mediaQueue = new Queue(JOB_QUEUE_NAMES.media, { connection })
-export const storageQueue = new Queue(JOB_QUEUE_NAMES.storage, { connection })
-export const integrationsQueue = new Queue(JOB_QUEUE_NAMES.integrations, { connection })
+// Retry budget and Redis retention are set once here so every producer
+// inherits them — see DEFAULT_MEDIA_JOB_OPTIONS for why.
+const defaultJobOptions = DEFAULT_MEDIA_JOB_OPTIONS
+
+// `prefix` is what isolates dev from production: it namespaces every BullMQ
+// key — jobs, queue events, schedulers and repeatable jobs — in one setting.
+const prefix = apiConfig.queuePrefix
+
+export const mediaQueue = new Queue(JOB_QUEUE_NAMES.media, {
+  connection,
+  defaultJobOptions,
+  prefix,
+})
+export const storageQueue = new Queue(JOB_QUEUE_NAMES.storage, {
+  connection,
+  defaultJobOptions,
+  prefix,
+})
+export const integrationsQueue = new Queue(JOB_QUEUE_NAMES.integrations, {
+  connection,
+  defaultJobOptions,
+  prefix,
+})
