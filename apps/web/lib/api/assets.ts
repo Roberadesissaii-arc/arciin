@@ -5,6 +5,8 @@ import type { PdfPageLabel } from "@arciin/shared"
 export type AssetFilters = {
   libraryId?: string
   folderId?: string
+  /** When true, only assets at the library root (not inside a folder). */
+  rootOnly?: boolean
   mediaType?: string
   /** Server-side filter: code (scripts) or applications (installers). */
   category?: "code" | "applications"
@@ -15,14 +17,52 @@ export function getAssets(filters: AssetFilters = {}, signal?: AbortSignal) {
   const params = new URLSearchParams()
 
   Object.entries(filters).forEach(([key, value]) => {
-    if (value) {
-      params.set(key, value)
+    if (value === undefined || value === null || value === "") return
+    if (typeof value === "boolean") {
+      if (value) params.set(key, "true")
+      return
     }
+    params.set(key, String(value))
   })
 
   const query = params.size ? `?${params.toString()}` : ""
 
   return fetchApi<AssetSummary[]>(`/assets${query}`, {
+    method: "GET",
+    signal,
+  })
+}
+
+export type AssetPageFilters = AssetFilters & {
+  cursor?: string
+  limit?: number
+  withTotal?: boolean
+}
+
+export type AssetPage = {
+  items: AssetSummary[]
+  nextCursor: string | null
+  hasMore: boolean
+  /** Only present when withTotal was requested (first page). */
+  total?: number
+}
+
+/** Cursor-paginated listing used by library and folder browsing. */
+export function getAssetsPage(filters: AssetPageFilters = {}, signal?: AbortSignal) {
+  const params = new URLSearchParams()
+
+  Object.entries(filters).forEach(([key, value]) => {
+    if (value === undefined || value === null || value === "") return
+    if (typeof value === "boolean") {
+      if (value) params.set(key, "true")
+      return
+    }
+    params.set(key, String(value))
+  })
+
+  const query = params.size ? `?${params.toString()}` : ""
+
+  return fetchApi<AssetPage>(`/assets/page${query}`, {
     method: "GET",
     signal,
   })
@@ -49,6 +89,40 @@ export function moveAsset(
 export function deleteAsset(assetId: string) {
   return fetchApi<{ success: true }>(`/assets/${assetId}`, {
     method: "DELETE",
+  })
+}
+
+export type TrashAssetSummary = AssetSummary & {
+  libraryName: string
+  librarySlug: string
+  expiresAt: string
+  daysRemaining: number
+  retentionDays: number
+}
+
+/** Trash API lives under /trash (not /assets/trash) to avoid id collisions. */
+export function getTrashAssets(signal?: AbortSignal) {
+  return fetchApi<TrashAssetSummary[]>("/trash", {
+    method: "GET",
+    signal,
+  })
+}
+
+export function restoreTrashAsset(assetId: string) {
+  return fetchApi<TrashAssetSummary>(`/trash/${assetId}/restore`, {
+    method: "POST",
+  })
+}
+
+export function permanentlyDeleteTrashAsset(assetId: string) {
+  return fetchApi<{ success: true }>(`/trash/${assetId}`, {
+    method: "DELETE",
+  })
+}
+
+export function emptyTrash() {
+  return fetchApi<{ removed: number }>("/trash/empty", {
+    method: "POST",
   })
 }
 

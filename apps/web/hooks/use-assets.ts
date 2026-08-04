@@ -1,8 +1,21 @@
 "use client"
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query"
 
-import { deleteAsset, getAssets, moveAsset, updateAsset, type AssetFilters } from "@/lib/api/assets"
+import {
+  deleteAsset,
+  getAssets,
+  getAssetsPage,
+  moveAsset,
+  updateAsset,
+  type AssetFilters,
+  type AssetPageFilters,
+} from "@/lib/api/assets"
 import { queryKeys } from "@/lib/api/query-keys"
 import { useSocketStore } from "@/lib/stores/socket-store"
 
@@ -15,6 +28,38 @@ export function useAssets(filters: AssetFilters = {}) {
     placeholderData: (previous) => previous,
     refetchOnWindowFocus: true,
     // When Socket.IO is down (common after API restarts), poll so phone uploads still appear.
+    refetchInterval: socketConnected ? false : 12_000,
+    refetchIntervalInBackground: false,
+  })
+}
+
+/**
+ * Cursor-paginated assets for library and folder browsing.
+ *
+ * The query key carries every filter, so changing search, scope, folder,
+ * library, or category starts a fresh pagination run rather than appending to
+ * the previous one — no stale first page, no duplicates across pages.
+ */
+export function useAssetsPage(filters: AssetPageFilters = {}) {
+  const socketConnected = useSocketStore((state) => state.connected)
+
+  return useInfiniteQuery({
+    queryKey: queryKeys.assetsPage(filters as Record<string, unknown>),
+    queryFn: ({ pageParam, signal }) =>
+      getAssetsPage(
+        {
+          ...filters,
+          cursor: pageParam ?? undefined,
+          // The total only needs computing once per filter set.
+          withTotal: !pageParam,
+        },
+        signal,
+      ),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
+    placeholderData: (previous) => previous,
+    refetchOnWindowFocus: true,
+    // Matches useAssets: poll when the socket is down so uploads still appear.
     refetchInterval: socketConnected ? false : 12_000,
     refetchIntervalInBackground: false,
   })

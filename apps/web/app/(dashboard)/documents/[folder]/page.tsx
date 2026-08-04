@@ -11,7 +11,6 @@ export default async function DocumentsFolderPage({
     <FolderBrowser
       librarySlug="documents"
       folderSlug={folder}
-      mediaType="DOCUMENT"
     />
   )
 }

@@ -6,7 +6,6 @@ export default function DocumentsPage() {
       title="Documents"
       description="Receipts, notes, PDFs, and structured documents routed into the archive."
       librarySlug="documents"
-      mediaType="DOCUMENT"
     />
   )
 }

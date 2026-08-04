@@ -11,7 +11,6 @@ export default async function VideosFolderPage({
     <FolderBrowser
       librarySlug="videos"
       folderSlug={folder}
-      mediaType="VIDEO"
     />
   )
 }

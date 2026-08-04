@@ -1,6 +1,10 @@
 import type { FastifyInstance } from "fastify"
 import { z } from "zod"
 
+import {
+  countVisibleAssetsByLibrary,
+  countVisibleAssetsForLibrary,
+} from "@/services/libraries/visible-assets"
 import { requireSessionRolesOrApiKeyScopes } from "@/services/security/auth"
 import { serializeLibrary } from "@/services/serializers"
 import { slugify } from "@/services/slug"
@@ -25,8 +29,7 @@ export async function registerLibraryRoutes(fastify: FastifyInstance) {
         include: {
           _count: {
             select: {
-              assets: { where: { deletedAt: null } },
-              folders: true,
+              folders: { where: { deletedAt: null } },
             },
           },
         },
@@ -36,8 +39,14 @@ export async function registerLibraryRoutes(fastify: FastifyInstance) {
         take: 100,
       })
 
+      // Counted with the same rules the library page lists by, so the sidebar
+      // number always matches what opening the library shows.
+      const visibleCounts = await countVisibleAssetsByLibrary(fastify.prisma)
+
       reply.send({
-        data: libraries.map(serializeLibrary),
+        data: libraries.map((library) =>
+          serializeLibrary(library, visibleCounts.get(library.id) ?? 0),
+        ),
       })
     }
   )
@@ -77,8 +86,7 @@ export async function registerLibraryRoutes(fastify: FastifyInstance) {
         include: {
           _count: {
             select: {
-              assets: { where: { deletedAt: null } },
-              folders: true,
+              folders: { where: { deletedAt: null } },
             },
           },
         },
@@ -95,7 +103,10 @@ export async function registerLibraryRoutes(fastify: FastifyInstance) {
       }
 
       reply.send({
-        data: serializeLibrary(library),
+        data: serializeLibrary(
+          library,
+          await countVisibleAssetsForLibrary(fastify.prisma, library.id),
+        ),
       })
     }
   )
@@ -131,15 +142,17 @@ export async function registerLibraryRoutes(fastify: FastifyInstance) {
         include: {
           _count: {
             select: {
-              assets: { where: { deletedAt: null } },
-              folders: true,
+              folders: { where: { deletedAt: null } },
             },
           },
         },
       })
 
       reply.send({
-        data: serializeLibrary(library),
+        data: serializeLibrary(
+          library,
+          await countVisibleAssetsForLibrary(fastify.prisma, library.id),
+        ),
       })
     }
   )
@@ -156,6 +169,8 @@ export async function registerLibraryRoutes(fastify: FastifyInstance) {
           id: params.libraryId,
         },
         include: {
+          // Deletion guards on *every* remaining asset and folder, not just the
+          // visible ones — a hidden or deleted-folder asset still blocks it.
           _count: {
             select: {
               assets: { where: { deletedAt: null } },

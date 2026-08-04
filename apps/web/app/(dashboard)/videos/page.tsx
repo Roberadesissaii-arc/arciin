@@ -6,7 +6,6 @@ export default function VideosPage() {
       title="Videos"
       description="Manage films, captures, and long-form media stored in your video library."
       librarySlug="videos"
-      mediaType="VIDEO"
     />
   )
 }

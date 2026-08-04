@@ -20,11 +20,15 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty"
-import { Skeleton } from "@/components/ui/skeleton"
-import { useAssets } from "@/hooks/use-assets"
+import {
+  AssetGridSkeleton,
+  AssetTableSkeleton,
+  LibraryBrowserSkeleton,
+} from "@/components/libraries/library-browser-skeleton"
+import { LoadMoreAssets } from "@/components/libraries/load-more-assets"
+import { useAssetsPage } from "@/hooks/use-assets"
 import { useLibraryBrowserFilters } from "@/hooks/use-library-browser-filters"
 import { useFolders, useLibraries } from "@/hooks/use-libraries"
-import type { MediaType } from "@/lib/types/models"
 import { useUploadStore } from "@/lib/stores/upload-store"
 import {
   collectBadgeFilterOptions,
@@ -36,11 +40,9 @@ import { cn } from "@/lib/utils"
 export function FolderBrowser({
   librarySlug,
   folderSlug,
-  mediaType,
 }: {
   librarySlug: string
   folderSlug: string
-  mediaType?: MediaType
 }) {
   const { search, setSearch, view, setView, badgeFilter, setBadgeFilter } =
     useLibraryBrowserFilters()
@@ -77,13 +79,20 @@ export function FolderBrowser({
     [allFolders, folder?.id]
   )
 
-  const assetsQuery = useAssets({
+  // No mediaType filter: the folder is already the scope, and filtering on top
+  // of it hid files whose type did not match the parent library — which is what
+  // made a folder card's count disagree with the files the folder actually
+  // showed.
+  const assetsQuery = useAssetsPage({
     libraryId: library?.id,
     folderId: folder?.id,
-    mediaType,
     search: search || undefined,
   })
-  const rawAssets = assetsQuery.data ?? []
+  const rawAssets = useMemo(
+    () => assetsQuery.data?.pages.flatMap((page) => page.items) ?? [],
+    [assetsQuery.data],
+  )
+  const matchingTotal = assetsQuery.data?.pages[0]?.total
   const badgeOptions = useMemo(() => collectBadgeFilterOptions(rawAssets), [rawAssets])
   const assets = useMemo(
     () => filterAssetsByBadge(rawAssets, badgeFilter),
@@ -134,7 +143,11 @@ export function FolderBrowser({
         />
 
         {assetsBootLoading ? (
-          <Skeleton className="h-80 rounded-2xl" />
+          view === "table" ? (
+            <AssetTableSkeleton />
+          ) : (
+            <AssetGridSkeleton />
+          )
         ) : assets.length > 0 ? (
           <div className={cn(assetsRefetching && "opacity-70 transition-opacity")}>
             <SelectableAssetsContainer assets={assets} defaultLibraryId={library?.id}>
@@ -144,6 +157,13 @@ export function FolderBrowser({
                 <AssetTable assets={assets} title="Files" />
               )}
             </SelectableAssetsContainer>
+            <LoadMoreAssets
+              hasMore={assetsQuery.hasNextPage}
+              isLoading={assetsQuery.isFetchingNextPage}
+              onLoadMore={() => void assetsQuery.fetchNextPage()}
+              loadedCount={assets.length}
+              total={matchingTotal}
+            />
           </div>
         ) : (
           <Empty className="border border-border bg-card py-16">
@@ -167,12 +187,7 @@ export function FolderBrowser({
   )
 
   if (librariesLoading || foldersBootLoading) {
-    return (
-      <div className="space-y-5 pb-10">
-        <Skeleton className="h-16 rounded-2xl" />
-        <Skeleton className="h-80 rounded-2xl" />
-      </div>
-    )
+    return <LibraryBrowserSkeleton showFolders view={view} />
   }
 
   if (folder) {

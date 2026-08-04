@@ -17,6 +17,18 @@ import { apiConfig } from "@/config"
 import { buildRealtimeEvent } from "@/services/events/publish-event"
 import { recordAndBroadcastActivity } from "@/services/activity/record-and-broadcast-activity"
 import { assertAssetFolderAccess, assertFolderAccess } from "@/services/folders/folder-lock"
+import { resolveHiddenFromAllFilesFolderIds } from "@/services/folders/hidden-from-all-files"
+import {
+  buildVisibleAssetWhere,
+  type AssetScope,
+} from "@/services/libraries/visible-assets"
+import {
+  ASSET_PAGE_ORDER_BY,
+  buildAssetPage,
+  buildCursorWhere,
+  clampPageSize,
+  decodeAssetCursor,
+} from "@/services/libraries/asset-pagination"
 import {
   ensureThumbnailWritten,
   renderImageWebpThumbnailBuffer,
@@ -90,6 +102,26 @@ const assetMoveSchema = z.object({
 
 const assetIdParamsSchema = z.object({ assetId: z.string() })
 
+/** Upper bound on a single asset listing. The UI reports truncation explicitly. */
+const ASSET_LIST_LIMIT = 1000
+
+/** Map the list-query parameters onto the shared visible-asset scopes. */
+function resolveAssetScope(query: {
+  libraryId?: string
+  folderId?: string
+  rootOnly?: boolean
+}): AssetScope {
+  if (query.folderId !== undefined) {
+    return { kind: "folder", folderId: query.folderId }
+  }
+  if (query.libraryId) {
+    return query.rootOnly
+      ? { kind: "libraryRoot", libraryId: query.libraryId }
+      : { kind: "library", libraryId: query.libraryId }
+  }
+  return { kind: "all" }
+}
+
 const deleteAssetPreHandler = requireSessionRolesOrApiKeyScopes(
   ["OWNER", "ADMIN", "MEMBER"],
   ["assets:write"],
@@ -129,8 +161,8 @@ async function handleSoftDeleteAsset(
     await recordAndBroadcastActivity(fastify, {
       userId: request.auth.user.id,
       type: "asset.deleted",
-      title: "Asset deleted",
-      message: `${asset.originalFilename} was moved to deleted state.`,
+      title: "Moved to Trash",
+      message: `${asset.originalFilename} was moved to Trash. It will be permanently deleted after 30 days.`,
       entityType: "asset",
       entityId: asset.id,
     })
@@ -139,7 +171,7 @@ async function handleSoftDeleteAsset(
         userId: request.auth.user.id,
         libraryId: asset.libraryId,
         assetId: asset.id,
-        message: `${asset.originalFilename} deleted.`,
+        message: `${asset.originalFilename} moved to Trash.`,
       }),
     )
   }
@@ -165,6 +197,11 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
         .object({
           libraryId: z.string().optional(),
           folderId: z.string().optional(),
+          /** Library root browse: only assets not inside a folder (avoids folder uploads crowding out the take window). */
+          rootOnly: z
+            .union([z.literal("true"), z.literal("1"), z.literal("false"), z.literal("0")])
+            .optional()
+            .transform((v) => v === "true" || v === "1"),
           mediaType: z.string().optional(),
           category: z.enum(["code", "applications"]).optional(),
           search: z.string().optional(),
@@ -181,55 +218,128 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
         ? query.ids.split(",").map((s) => s.trim()).filter(Boolean).slice(0, 20)
         : undefined
 
+      // All Files + Overview (no folder scope): exclude assets in hidden folders
+      // and every nested folder under them. Open the folder itself to browse.
+      const excludeHiddenRemoteFolders =
+        !query.folderId && !query.rootOnly && !idList?.length
+
+      const hiddenFolderIds = excludeHiddenRemoteFolders
+        ? await resolveHiddenFromAllFilesFolderIds(fastify.prisma)
+        : []
+
       const assets = await fastify.prisma.asset.findMany({
         where: idList?.length
           ? {
               deletedAt: null,
               id: { in: idList },
             }
-          : {
-              deletedAt: null,
-              ...(query.libraryId ? { libraryId: query.libraryId } : {}),
-              ...(query.folderId !== undefined ? { folderId: query.folderId } : {}),
-              ...(query.mediaType ? { mediaType: query.mediaType as never } : {}),
-              ...(query.search
-                ? {
-                    OR: [
-                      {
-                        originalFilename: {
-                          contains: query.search,
-                          mode: "insensitive",
-                        },
-                      },
-                      {
-                        title: {
-                          contains: query.search,
-                          mode: "insensitive",
-                        },
-                      },
-                    ],
-                  }
-                : {}),
-            },
+          : buildVisibleAssetWhere({
+              scope: resolveAssetScope(query),
+              hiddenFolderIds,
+              mediaType: query.mediaType,
+              category: query.category,
+              search: query.search,
+            }),
         orderBy: {
           createdAt: "desc",
         },
-        take: query.category ? 500 : 200,
+        // Library views browse recursively so the list can be reconciled with
+        // the sidebar count; a 200-row cap silently truncated any library
+        // larger than that and reintroduced the count/list mismatch. Still
+        // bounded — real pagination is tracked separately.
+        take: query.category ? 500 : ASSET_LIST_LIMIT,
       })
 
-      const resultAssets =
-        query.category === "code"
-          ? assets
-              .filter(
-                (a) => a.mediaType === "CODE" || isCodeFilename(a.originalFilename),
-              )
-              .slice(0, 200)
-          : query.category === "applications"
-            ? assets.filter((a) => a.mediaType === "APPLICATION").slice(0, 200)
-            : assets
+      reply.send({
+        data: assets.map(serializeAsset),
+      })
+    }
+  )
+
+  /**
+   * Cursor-paginated asset listing.
+   *
+   * A separate route from `GET /assets` so the documented array response other
+   * clients (chat context, share pages, the mobile app) depend on stays exactly
+   * as it was. Library and folder browsing use this one.
+   */
+  fastify.get(
+    "/assets/page",
+    {
+      preHandler: requireSessionRolesOrApiKeyScopes(
+        ["OWNER", "ADMIN", "MEMBER", "VIEWER"],
+        ["assets:read"],
+      ),
+    },
+    async (request, reply) => {
+      const query = z
+        .object({
+          libraryId: z.string().optional(),
+          folderId: z.string().optional(),
+          rootOnly: z
+            .union([z.literal("true"), z.literal("1"), z.literal("false"), z.literal("0")])
+            .optional()
+            .transform((v) => v === "true" || v === "1"),
+          mediaType: z.string().optional(),
+          category: z.enum(["code", "applications"]).optional(),
+          search: z.string().optional(),
+          cursor: z.string().optional(),
+          limit: z.coerce.number().int().positive().optional(),
+          /** Total is a second query; ask for it only on the first page. */
+          withTotal: z
+            .union([z.literal("true"), z.literal("1"), z.literal("false"), z.literal("0")])
+            .optional()
+            .transform((v) => v === "true" || v === "1"),
+        })
+        .parse(request.query)
+
+      if (query.folderId) {
+        const allowed = await assertFolderAccess(fastify, request, reply, query.folderId)
+        if (!allowed) return
+      }
+
+      const scope = resolveAssetScope(query)
+
+      const hiddenFolderIds =
+        !query.folderId && !query.rootOnly
+          ? await resolveHiddenFromAllFilesFolderIds(fastify.prisma)
+          : []
+
+      // The count and the page share one where-builder, minus the cursor —
+      // that is what keeps "showing X of Y" honest.
+      const filters = {
+        scope,
+        hiddenFolderIds,
+        mediaType: query.mediaType,
+        category: query.category,
+        search: query.search,
+      }
+
+      const limit = clampPageSize(query.limit)
+
+      const rows = await fastify.prisma.asset.findMany({
+        where: buildVisibleAssetWhere({
+          ...filters,
+          cursor: buildCursorWhere(decodeAssetCursor(query.cursor)),
+        }),
+        orderBy: ASSET_PAGE_ORDER_BY,
+        // One extra row is the cheapest reliable hasMore signal.
+        take: limit + 1,
+      })
+
+      const page = buildAssetPage(rows, limit)
+
+      const total = query.withTotal
+        ? await fastify.prisma.asset.count({ where: buildVisibleAssetWhere(filters) })
+        : undefined
 
       reply.send({
-        data: resultAssets.map(serializeAsset),
+        data: {
+          items: page.items.map(serializeAsset),
+          nextCursor: page.nextCursor,
+          hasMore: page.hasMore,
+          ...(total !== undefined ? { total } : {}),
+        },
       })
     }
   )
@@ -685,8 +795,9 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
     },
     async (request, reply) => {
       const params = z.object({ assetId: z.string() }).parse(request.params)
+      // Allow soft-deleted assets so Settings → Trash can show previews.
       const asset = await fastify.prisma.asset.findFirst({
-        where: { id: params.assetId, deletedAt: null },
+        where: { id: params.assetId },
         include: {
           storageObject: true,
           library: { select: { storageLocation: { select: { rootPath: true } } } },
@@ -703,8 +814,11 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
         return
       }
 
-      if (!(await assertAssetFolderAccess(fastify, request, reply, asset.folderId))) {
-        return
+      // Folder lock only applies to live library assets; Trash previews skip it.
+      if (!asset.deletedAt) {
+        if (!(await assertAssetFolderAccess(fastify, request, reply, asset.folderId))) {
+          return
+        }
       }
 
       const userPrefs = request.auth?.user?.id

@@ -51,7 +51,14 @@ export function serializeLibrary(
       assets?: number
       folders?: number
     }
-  }
+  },
+  /**
+   * Visible asset total. Pass the value from `countVisibleAssetsByLibrary` so
+   * the count agrees with what the library page lists; the `_count.assets`
+   * fallback counts every non-deleted asset and is only used where an exact
+   * visible total is not required.
+   */
+  visibleAssetCount?: number,
 ) {
   return {
     id: library.id,
@@ -62,7 +69,7 @@ export function serializeLibrary(
     icon: library.icon,
     color: library.color,
     storageLocationId: library.storageLocationId,
-    assetCount: library._count?.assets ?? 0,
+    assetCount: visibleAssetCount ?? library._count?.assets ?? 0,
     folderCount: library._count?.folders ?? 0,
     createdAt: library.createdAt.toISOString(),
     updatedAt: library.updatedAt.toISOString(),
@@ -84,6 +91,8 @@ export function serializeFolder(
     slug: folder.slug,
     pathCache: folder.pathCache,
     assetCount,
+    isRemote: Boolean(folder.isRemote),
+    hideFromAllFiles: Boolean(folder.hideFromAllFiles),
     isLocked,
     accessGranted,
     createdAt: folder.createdAt.toISOString(),
