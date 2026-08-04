@@ -34,6 +34,18 @@ export function useLogout() {
       queryClient.removeQueries({
         queryKey: queryKeys.authMe,
       })
+      // Entitlement must not survive the session: leaving it cached let the
+      // next user's first render inherit the previous user's plan.
+      queryClient.removeQueries({ queryKey: ["license"] })
+      if (typeof window !== "undefined") {
+        try {
+          for (const key of Object.keys(window.localStorage)) {
+            if (key.startsWith("arciin-license-status")) window.localStorage.removeItem(key)
+          }
+        } catch {
+          /* private mode — nothing cached to clear */
+        }
+      }
     },
   })
 }

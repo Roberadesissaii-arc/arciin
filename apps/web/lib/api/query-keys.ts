@@ -11,6 +11,9 @@ export const queryKeys = {
   /** Prefix for invalidating every assets query (library grids, search, etc.). */
   assetsRoot: ["assets"] as const,
   assets: (filters: Record<string, unknown> = {}) => ["assets", filters] as const,
+  /** Paginated library/folder browsing. Shares the "assets" prefix so realtime invalidation reaches it. */
+  assetsPage: (filters: Record<string, unknown> = {}) => ["assets", "page", filters] as const,
+  trash: ["assets", "trash"] as const,
   /** Prefix for invalidating every activity query. */
   activityRoot: ["activity"] as const,
   activity: (filters: Record<string, unknown> = {}) =>
@@ -20,6 +23,11 @@ export const queryKeys = {
   jobs: ["jobs"] as const,
   job: (jobId: string) => ["job", jobId] as const,
   licenseStatus: ["license", "status"] as const,
+  /**
+   * Entitlement is scoped by user: an unscoped key let one account's plan seed
+   * the next account's first render after a logout/login.
+   */
+  licenseStatusFor: (userId: string | null) => ["license", "status", userId ?? "anonymous"] as const,
   generalSettings: ["settings", "general"] as const,
   storageSettings: ["settings", "storage"] as const,
   storageVolumes: ["settings", "storage", "volumes"] as const,

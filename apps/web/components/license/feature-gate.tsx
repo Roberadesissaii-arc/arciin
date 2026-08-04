@@ -22,17 +22,23 @@ export function FeatureGate({
 }) {
   const license = useLicense()
 
-  if (license.loading && !license.status) {
+  if (license.hasFeature(feature)) {
+    return <>{children}</>
+  }
+
+  /**
+   * The paywall requires an authoritative Free answer. While we are still
+   * verifying — or the entitlement request failed — show a layout-stable shell
+   * instead. Rendering the upgrade screen here is what flashed "Upgrade to
+   * Pro" at paying users whenever the request was slow or failed.
+   */
+  if (!license.shouldPaywall(feature)) {
     return (
       <div className="space-y-3 p-6">
         <Skeleton className="h-8 w-48" />
         <Skeleton className="h-40 w-full" />
       </div>
     )
-  }
-
-  if (license.hasFeature(feature)) {
-    return <>{children}</>
   }
 
   if (fallback) return <>{fallback}</>
