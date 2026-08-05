@@ -3,6 +3,8 @@ import { randomBytes } from "node:crypto"
 import type { Asset, Folder, ShareLink, ShareResourceType } from "@prisma/client"
 import type { FastifyInstance } from "fastify"
 
+import { checkShareAvailability } from "@arciin/shared"
+
 import { hashToken } from "@/services/security/auth"
 import { recordAndBroadcastActivity } from "@/services/activity/record-and-broadcast-activity"
 
@@ -41,23 +43,29 @@ export async function resolveShareByToken(
     },
   })
 
-  if (!share) {
-    return { ok: false, code: "NOT_FOUND" }
+  // One policy, including the check that was missing: a share whose root has
+  // been deleted must stop serving. Deleting a folder is how a person revokes
+  // access to it — the link outliving the delete is a data-exposure bug.
+  const availability = checkShareAvailability({
+    exists: Boolean(share),
+    revokedAt: share?.revokedAt,
+    expiresAt: share?.expiresAt,
+    maxViews: share?.maxViews,
+    viewCount: share?.viewCount,
+    resourceType: share?.resourceType,
+    target:
+      share?.resourceType === "FOLDER"
+        ? share.folder
+        : share?.resourceType === "ASSET"
+          ? share.asset
+          : null,
+  })
+
+  if (!availability.available) {
+    return { ok: false, code: availability.code }
   }
 
-  if (share.revokedAt) {
-    return { ok: false, code: "REVOKED" }
-  }
-
-  if (share.expiresAt && share.expiresAt.getTime() <= Date.now()) {
-    return { ok: false, code: "EXPIRED" }
-  }
-
-  if (share.maxViews != null && share.viewCount >= share.maxViews) {
-    return { ok: false, code: "VIEW_LIMIT" }
-  }
-
-  return { ok: true, share }
+  return { ok: true, share: share! }
 }
 
 export function folderWithinShareRoot(folder: Folder, root: Folder) {
