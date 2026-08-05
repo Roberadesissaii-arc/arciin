@@ -451,6 +451,7 @@ export async function executeArciinChatTool(
     return readPdfAssetContent(ctx.prisma, {
       assetId,
       maxChars: Number(r.max_chars ?? r.maxChars) || undefined,
+      maxPages: Number(r.max_pages ?? r.maxPages) || undefined,
     })
   }
 

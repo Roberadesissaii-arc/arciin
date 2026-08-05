@@ -3,11 +3,16 @@
 import { useEffect, useMemo, useState } from "react"
 import { Loader2 } from "lucide-react"
 
+import { MarkdownContent } from "@/components/chat/chat-markdown"
 import { SyntaxHighlightedCode } from "@/components/libraries/syntax-highlighted-code"
 import { highlightLanguageFromFilename } from "@/lib/files/code-highlight-language"
 import { cn } from "@/lib/utils"
 
 const MAX_CHARS = 512_000
+
+function isMarkdownFilename(filename: string): boolean {
+  return /\.(md|markdown|mdx)$/i.test(filename)
+}
 
 export function TextAssetViewer({
   fileUrl,
@@ -24,7 +29,8 @@ export function TextAssetViewer({
   const [loading, setLoading] = useState(true)
 
   const language = useMemo(() => highlightLanguageFromFilename(filename), [filename])
-  const isCode = language !== "plaintext"
+  const isMarkdown = isMarkdownFilename(filename)
+  const isCode = !isMarkdown && language !== "plaintext"
 
   useEffect(() => {
     let cancelled = false
@@ -92,7 +98,11 @@ export function TextAssetViewer({
     >
       <div className="flex shrink-0 items-center justify-between gap-2 border-b border-zinc-200/90 bg-zinc-100/80 px-4 py-2">
         <span className="truncate font-mono text-[11px] font-medium text-zinc-600">{filename}</span>
-        {isCode ? (
+        {isMarkdown ? (
+          <span className="shrink-0 rounded-md bg-zinc-200/80 px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wide text-zinc-600">
+            markdown
+          </span>
+        ) : isCode ? (
           <span className="shrink-0 rounded-md bg-zinc-200/80 px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wide text-zinc-600">
             {language}
           </span>
@@ -103,11 +113,15 @@ export function TextAssetViewer({
           Showing first {MAX_CHARS.toLocaleString()} characters of {filename}.
         </p>
       ) : null}
-      <div className="scrollbar-hide min-h-0 flex-1 overflow-auto">
-        {content != null && isCode ? (
+      <div className="scrollbar-hide min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
+        {content != null && isMarkdown ? (
+          <article className="prose prose-zinc mx-auto max-w-3xl px-5 py-6 text-[14px] leading-relaxed text-zinc-800 prose-headings:scroll-mt-4 prose-headings:font-semibold prose-h1:text-[1.5rem] prose-h2:text-[1.15rem] prose-p:my-3 prose-p:leading-[1.7] prose-li:my-1">
+            <MarkdownContent content={content} />
+          </article>
+        ) : content != null && isCode ? (
           <SyntaxHighlightedCode code={content} language={language} />
         ) : (
-          <pre className="m-0 p-4 font-mono text-[13px] leading-relaxed whitespace-pre-wrap break-words text-zinc-800">
+          <pre className="m-0 max-w-full whitespace-pre-wrap break-words p-4 font-sans text-[14px] leading-[1.7] text-zinc-800">
             {content}
           </pre>
         )}

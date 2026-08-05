@@ -5,8 +5,6 @@ import { useQuery } from "@tanstack/react-query"
 import {
   ArrowUp,
   Brain,
-  ChevronDown,
-  ChevronUp,
   Eye,
   FileText,
   FolderOpen,
@@ -14,6 +12,7 @@ import {
   Loader2,
   Mic,
   Paperclip,
+  PenLine,
   Square,
   X,
 } from "lucide-react"
@@ -31,7 +30,6 @@ import {
 import {
   filterSlashCommands,
   getActiveSlashQuery,
-  insertSlashCommandToken,
   splitTextForSlashHighlight,
   type ChatSlashCommand,
 } from "@/components/chat/chat-slash-commands"
@@ -51,7 +49,7 @@ import type { OllamaModelShowData } from "@/lib/types/models"
 import type { AssetSummary } from "@/lib/types/models"
 import { fmtBytes } from "@/components/chat/chat-format"
 
-export type ChatPromptToolId = "library" | "vision" | "thinking" | "files"
+export type ChatPromptToolId = "library" | "files" | "vision" | "thinking" | "canvas"
 
 type ChatPromptBoxProps = {
   value: string
@@ -106,6 +104,12 @@ const TOOLS: {
     icon: Brain,
     hint: "On: show the reasoning panel for this turn. Off: answer only.",
   },
+  {
+    id: "canvas",
+    label: "Canvas",
+    icon: PenLine,
+    hint: "On: long-form writing (essays, drafts) opens in Canvas. Chat shows progress only.",
+  },
 ]
 
 const ACCENT = "text-[color:var(--arciin-accent,#FF4F12)]"
@@ -149,8 +153,6 @@ export function ChatPromptBox({
   const speechBaseRef = useRef(value)
   const [localTools, setLocalTools] = useState<ChatPromptToolId[]>(tools)
   const [slashIndex, setSlashIndex] = useState(0)
-  const [slashCanScrollUp, setSlashCanScrollUp] = useState(false)
-  const [slashCanScrollDown, setSlashCanScrollDown] = useState(false)
   const [attachOpen, setAttachOpen] = useState(false)
   const [attachBusyId, setAttachBusyId] = useState<string | null>(null)
   const activeTools = onToolsChange ? tools : localTools
@@ -213,34 +215,12 @@ export function ChatPromptBox({
     setSlashIndex(0)
   }
 
-  const updateSlashScrollHints = () => {
-    const el = slashListRef.current
-    if (!el) {
-      setSlashCanScrollUp(false)
-      setSlashCanScrollDown(false)
-      return
-    }
-    const { scrollTop, scrollHeight, clientHeight } = el
-    setSlashCanScrollUp(scrollTop > 2)
-    setSlashCanScrollDown(scrollTop + clientHeight < scrollHeight - 2)
-  }
-
-  useEffect(() => {
-    if (!slashOpen) return
-    const id = requestAnimationFrame(() => updateSlashScrollHints())
-    return () => cancelAnimationFrame(id)
-  }, [slashOpen, slashMatches.length, slashActive?.query])
-
-  const showScrollUpHint = slashOpen && slashCanScrollUp
-  const showScrollDownHint = slashOpen && slashCanScrollDown
-
   useEffect(() => {
     if (!slashOpen) return
     const el = slashListRef.current
     if (!el) return
     const item = el.querySelector<HTMLElement>(`[data-slash-index="${slashIndex}"]`)
     item?.scrollIntoView({ block: "nearest" })
-    updateSlashScrollHints()
   }, [slashIndex, slashOpen])
 
   // Library picker — images when Vision is on; images + documents otherwise (no audio).
@@ -279,20 +259,20 @@ export function ChatPromptBox({
 
   const applySlash = (cmd: ChatSlashCommand) => {
     if (!slashActive) return
-    const next = insertSlashCommandToken(
-      value,
-      slashActive.replaceStart,
-      slashActive.replaceEnd,
-      cmd,
-    )
-    onValueChange(next)
+    // Guarantee exactly one space after the command so the caret is ready for args.
+    const token = `/${cmd.name} `
+    const before = value.slice(0, slashActive.replaceStart)
+    const afterRaw = value.slice(slashActive.replaceEnd).replace(/^\s*/, "")
+    const normalized = `${before}${token}${afterRaw}`
+    onValueChange(normalized)
     const merged = Array.from(new Set([...activeTools, ...cmd.tools]))
     setTools(merged)
     requestAnimationFrame(() => {
       const el = textareaRef.current
       if (!el) return
       el.focus()
-      const pos = slashActive.replaceStart + cmd.name.length + 2
+      // Caret after "/name " — not inside the orange function token.
+      const pos = before.length + token.length
       el.setSelectionRange(pos, pos)
       setCursor(pos)
     })
@@ -395,11 +375,12 @@ export function ChatPromptBox({
         imageBase64,
       }
       onAttachmentsChange([...attachments, next].slice(0, 4))
-      // Vision mode: images are the point. Files mode helps doc reads.
-      if (isImageMediaType(asset.mediaType) && !activeTools.includes("vision")) {
-        // don't auto-enable vision unless already on — user chooses Vision chip
-      }
-      if (!isImageMediaType(asset.mediaType) && !activeTools.includes("files")) {
+      // Image → Vision; documents/code → Files so follow-ups (/summarize, describe) work.
+      if (isImageMediaType(asset.mediaType)) {
+        if (!activeTools.includes("vision")) {
+          setTools([...activeTools.filter((t) => t !== "files"), "vision"])
+        }
+      } else if (!activeTools.includes("files")) {
         setTools([...activeTools, "files"])
       }
       setAttachOpen(false)
@@ -436,22 +417,13 @@ export function ChatPromptBox({
               Commands · type to filter
             </p>
 
-            {showScrollUpHint ? (
-              <div className="flex justify-center pb-0.5" aria-hidden>
-                <ChevronUp className="size-4 text-muted-foreground/80" />
-              </div>
-            ) : (
-              <div className="h-1" aria-hidden />
-            )}
-
             <div
               ref={slashListRef}
-              onScroll={updateSlashScrollHints}
               className={cn(
-                // ~4 medium-round command rows
-                "max-h-[15.5rem] space-y-1 overflow-y-auto overflow-x-hidden px-2 pb-1",
-                "scrollbar-hide [scrollbar-width:none] [-ms-overflow-style:none]",
-                "[&::-webkit-scrollbar]:hidden",
+                // Fixed-height rows; no scrollbar chrome / no up-down chevrons
+                "max-h-[17rem] space-y-1.5 overflow-y-auto overflow-x-hidden px-2 py-1.5",
+                "[scrollbar-width:none] [-ms-overflow-style:none]",
+                "[&::-webkit-scrollbar]:w-0 [&::-webkit-scrollbar]:h-0 [&::-webkit-scrollbar]:bg-transparent",
               )}
             >
               {slashMatches.map((cmd, i) => (
@@ -462,7 +434,8 @@ export function ChatPromptBox({
                   data-slash-index={i}
                   aria-selected={i === slashIndex}
                   className={cn(
-                    "flex w-full flex-col gap-0.5 rounded-xl px-3 py-2 text-left transition-colors",
+                    // Fixed card height so long descriptions don't stretch the row
+                    "flex h-[3.85rem] w-full flex-col justify-center gap-0.5 rounded-xl px-3 py-2 text-left transition-colors",
                     i === slashIndex
                       ? "bg-primary/15 text-foreground"
                       : "text-foreground hover:bg-primary/10",
@@ -470,22 +443,18 @@ export function ChatPromptBox({
                   onMouseEnter={() => setSlashIndex(i)}
                   onClick={() => applySlash(cmd)}
                 >
-                  <span className={cn("font-mono text-[12px] font-semibold", ACCENT)}>
+                  <span className={cn("shrink-0 text-[12px] font-semibold", ACCENT)}>
                     /{cmd.name}
                   </span>
-                  <span className="text-[11px] text-muted-foreground">{cmd.description}</span>
-                  <span className={cn("text-[10px] opacity-80", ACCENT)}>{cmd.hint}</span>
+                  <span className="line-clamp-1 text-[11px] leading-snug text-muted-foreground">
+                    {cmd.description}
+                  </span>
+                  <span className={cn("line-clamp-1 text-[10px] leading-snug opacity-80", ACCENT)}>
+                    {cmd.hint}
+                  </span>
                 </button>
               ))}
             </div>
-
-            {showScrollDownHint ? (
-              <div className="flex justify-center pb-1.5 pt-0.5" aria-hidden>
-                <ChevronDown className="size-4 text-muted-foreground/80" />
-              </div>
-            ) : (
-              <div className="h-1.5" aria-hidden />
-            )}
           </div>
         ) : null}
 
@@ -635,11 +604,13 @@ export function ChatPromptBox({
             {value.length === 0 ? (
               <span className="text-transparent">.</span>
             ) : (
+              // Same font metrics as the textarea (no mono/bold) so the caret
+              // stays aligned after /summarize␠ when typing the filename.
               highlightParts.map((part, i) =>
                 part.isCommand ? (
                   <span
                     key={i}
-                    className="font-mono font-semibold text-[color:var(--arciin-accent,#FF4F12)]"
+                    className="font-medium text-[color:var(--arciin-accent,#FF4F12)]"
                   >
                     {part.text}
                   </span>
@@ -678,7 +649,7 @@ export function ChatPromptBox({
 
         <div className="flex flex-wrap items-center gap-1.5 px-1 pb-1 pt-0.5">
           <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
-            {/* Attach — always left of Library */}
+            {/* Attach — outside the tool-chip rail (no divider around paperclip). */}
             <Tooltip>
               <TooltipTrigger asChild>
                 <button
@@ -713,6 +684,8 @@ export function ChatPromptBox({
               </TooltipContent>
             </Tooltip>
 
+            {/* Tool rail: | Library · Files · Vision · Think · Canvas | */}
+            <OrangeDivider />
             {TOOLS.map((tool) => {
               const Icon = tool.icon
               const on = activeTools.includes(tool.id)
@@ -724,16 +697,18 @@ export function ChatPromptBox({
                       disabled={disabled || locked}
                       onClick={() => toggleTool(tool.id)}
                       className={cn(
-                        "inline-flex h-8 items-center gap-1.5 rounded-full border px-2.5 text-[11px] font-semibold transition-colors",
+                        "inline-flex h-8 items-center justify-center rounded-full border text-[11px] font-semibold transition-all",
+                        // Active: expand to icon + label. Inactive: icon only.
                         on
-                          ? "border-primary/40 bg-primary/10 text-primary"
-                          : "border-transparent bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground",
+                          ? "gap-1.5 border-primary/40 bg-primary/10 px-2.5 text-primary"
+                          : "size-8 border-transparent bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground",
                         (disabled || locked) && "pointer-events-none opacity-50",
                       )}
                       aria-pressed={on}
+                      aria-label={tool.label}
                     >
                       <Icon className="size-3.5 shrink-0" />
-                      <span className="hidden sm:inline">{tool.label}</span>
+                      {on ? <span className="max-w-[5.5rem] truncate">{tool.label}</span> : null}
                     </button>
                   </TooltipTrigger>
                   <TooltipContent
@@ -746,14 +721,16 @@ export function ChatPromptBox({
                       "ring-1 ring-white/10",
                     )}
                   >
-                    {tool.hint}
+                    {on ? tool.hint : `${tool.label} — ${tool.hint}`}
                   </TooltipContent>
                 </Tooltip>
               )
             })}
+            <OrangeDivider />
           </div>
 
           <div className="ml-auto flex shrink-0 items-center gap-1.5">
+            {/* Straight line in front of model selection (same style as tool rail). */}
             <OrangeDivider />
 
             <div className="min-w-0">

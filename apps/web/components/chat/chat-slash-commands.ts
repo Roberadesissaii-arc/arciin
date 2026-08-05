@@ -17,6 +17,28 @@ export type ChatSlashCommand = {
   expand: (args: string) => string
 }
 
+/**
+ * Strong vision prompt so the UI can draw an orange border around an object.
+ * Used by /highlight and /border (chat + image Ask AI panel).
+ */
+export function expandHighlightSlashArgs(args: string): string {
+  const target = args.trim()
+  const objectPart = target
+    ? `Find and highlight this object on the image: **${target}**.`
+    : "Find and highlight the **main subject** of this image (the most important person, vehicle, product, or object)."
+
+  return (
+    `${objectPart} ` +
+    `You can see the image pixels. ` +
+    `1) Briefly say in plain language where it is (position / description). ` +
+    `2) You MUST draw a border around it by appending ONE hidden marker at the end of your reply (the UI hides the marker and shows an orange box): ` +
+    `prefer **[point-box:"label",x1,y1,x2,y2]** with 0–1000 coordinates that tightly wrap the object (not empty background), ` +
+    `or **[point-grid:"label",row,col,rows,cols]** for grid/poster layouts. ` +
+    `Do not refuse. Do not only describe without a marker — without the marker no border appears. ` +
+    `Do not dump raw JSON in the visible answer beyond the required marker.`
+  )
+}
+
 export const CHAT_SLASH_COMMANDS: ChatSlashCommand[] = [
   {
     id: "summarize",
@@ -83,7 +105,7 @@ export const CHAT_SLASH_COMMANDS: ChatSlashCommand[] = [
     id: "list-images",
     name: "list-images",
     label: "List images",
-    description: "Show recent images",
+    description: "Show recent images from the library (main chat)",
     hint: "/list-images",
     tools: ["library", "vision"],
     expand: () =>
@@ -103,7 +125,7 @@ export const CHAT_SLASH_COMMANDS: ChatSlashCommand[] = [
     id: "describe",
     name: "describe",
     label: "Describe image",
-    description: "Vision: describe attached / latest library image",
+    description: "Vision: describe attached / open image",
     hint: "/describe",
     tools: ["vision"],
     expand: (args) => {
@@ -114,6 +136,42 @@ export const CHAT_SLASH_COMMANDS: ChatSlashCommand[] = [
         ` You can see the pixels — never claim you cannot view images.`
       )
     },
+  },
+  {
+    id: "objects",
+    name: "objects",
+    label: "List objects",
+    description: "List what is visible on this image (then use /highlight)",
+    hint: "/objects",
+    tools: ["vision"],
+    expand: (args) => {
+      const focus = args.trim()
+      return (
+        `Look at the open/attached image and list every distinct object, person, vehicle, animal, product, and notable item you can see` +
+        (focus ? ` (focus on: ${focus})` : "") +
+        `. Number them in a short bullet list with clear short labels I can use next (e.g. "red car", "person in blue shirt"). ` +
+        `Do NOT browse the library or list other files. Do NOT emit [[ASSETS:…]] or [[ASSET_LIST:…]] tags. ` +
+        `You can see the pixels — answer only from this image. Do not draw highlight boxes unless I ask.`
+      )
+    },
+  },
+  {
+    id: "highlight",
+    name: "highlight",
+    label: "Highlight object",
+    description: "Vision: find an object and draw an orange border around it",
+    hint: "/highlight car",
+    tools: ["vision"],
+    expand: (args) => expandHighlightSlashArgs(args),
+  },
+  {
+    id: "border",
+    name: "border",
+    label: "Border object",
+    description: "Same as /highlight — draw a border around an object",
+    hint: "/border the red car",
+    tools: ["vision"],
+    expand: (args) => expandHighlightSlashArgs(args),
   },
   {
     id: "search",
@@ -169,6 +227,29 @@ export function filterSlashCommands(query: string): ChatSlashCommand[] {
   const q = query.trim().toLowerCase()
   if (!q) return CHAT_SLASH_COMMANDS
   return CHAT_SLASH_COMMANDS.filter(
+    (c) =>
+      c.name.startsWith(q) ||
+      c.label.toLowerCase().startsWith(q) ||
+      c.name.includes(q),
+  )
+}
+
+/**
+ * Slash commands for the **image Ask AI** panel (single open image).
+ * No library browse commands — only actions that make sense on this image.
+ */
+export const IMAGE_PANEL_SLASH_COMMANDS: ChatSlashCommand[] = CHAT_SLASH_COMMANDS.filter(
+  (c) =>
+    c.name === "describe" ||
+    c.name === "objects" ||
+    c.name === "highlight" ||
+    c.name === "border",
+)
+
+export function filterImagePanelSlashCommands(query: string): ChatSlashCommand[] {
+  const q = query.trim().toLowerCase()
+  if (!q) return IMAGE_PANEL_SLASH_COMMANDS
+  return IMAGE_PANEL_SLASH_COMMANDS.filter(
     (c) =>
       c.name.startsWith(q) ||
       c.label.toLowerCase().startsWith(q) ||

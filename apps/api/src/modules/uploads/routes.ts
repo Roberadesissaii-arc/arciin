@@ -8,14 +8,15 @@ import {
   UPLOAD_ACCEPTED_PROGRESS,
   apiOwnsCompletionEvent,
   assetSupportsDocumentThumbnail,
-  initialUploadSessionState,
   requiresWorkerProcessing,
 } from "@arciin/shared"
+
+import { commitUpload } from "@/services/uploads/commit-upload"
+import { dispatchPendingForUpload } from "@/services/uploads/outbox-dispatch"
 
 import { buildRealtimeEvent } from "@/services/events/publish-event"
 import { recordAndBroadcastActivity } from "@/services/activity/record-and-broadcast-activity"
 import { mediaQueue } from "@/services/jobs/queues"
-import { enqueueGenerateThumbnailJob } from "@/services/media/thumbnail-jobs"
 import { loadUserPreferences } from "@/services/user/preferences"
 import { folderAccessGranted } from "@/services/folders/folder-lock"
 import {
@@ -240,11 +241,16 @@ export async function registerUploadRoutes(fastify: FastifyInstance) {
           checksumSha256: tempResult.checksumSha256,
           storageLocationId: targetLibrary.storageLocationId,
         },
+        select: { id: true },
       })
 
-      let storageObject = existingStorageObject
+      // The bytes are moved into place here, but the StorageObject *row* is
+      // created inside the commit transaction below. Writing the row first was
+      // how a failed asset insert left an object nothing referenced.
+      let objectKey = ""
+      let physicalPath = ""
 
-      if (!storageObject) {
+      if (!existingStorageObject) {
         const objectPath = createObjectStoragePath(
           tempResult.checksumSha256,
           analysis.extension || path.extname(file.filename),
@@ -252,19 +258,15 @@ export async function registerUploadRoutes(fastify: FastifyInstance) {
         )
 
         await moveTempToObject(tempResult.tempPath, objectPath.physicalPath)
-
-        storageObject = await fastify.prisma.storageObject.create({
-          data: {
-            storageLocationId: targetLibrary.storageLocationId,
-            objectKey: objectPath.objectKey,
-            physicalPath: objectPath.physicalPath,
-            sizeBytes: BigInt(tempResult.sizeBytes),
-            checksumSha256: tempResult.checksumSha256,
-            mimeType: analysis.mimeType,
-          },
-        })
+        tempPath = null
+        objectKey = objectPath.objectKey
+        physicalPath = objectPath.physicalPath
       } else {
+        // Content-addressed: identical bytes are already stored under this
+        // checksum. Only the redundant temp copy is removed — never the object,
+        // which existing assets reference.
         await removeTempFile(tempResult.tempPath)
+        tempPath = null
       }
 
       const resolvedFolderId = await resolveUploadFolderId(
@@ -282,89 +284,13 @@ export async function registerUploadRoutes(fastify: FastifyInstance) {
       }
 
       const requiresProcessing = requiresWorkerProcessing(analysis.mediaType)
-      const lifecycle = initialUploadSessionState(analysis.mediaType)
 
-      const asset = await fastify.prisma.asset.create({
-        data: {
-          libraryId: targetLibrary.id,
-          folderId: resolvedFolderId ?? null,
-          storageObjectId: storageObject.id,
-          ownerId: request.auth.user.id,
-          filename: `${tempResult.checksumSha256}.${analysis.extension || "bin"}`,
-          originalFilename: file.filename,
-          mimeType: analysis.mimeType,
-          mediaType: analysis.mediaType,
-          extension: analysis.extension || "bin",
-          sizeBytes: BigInt(tempResult.sizeBytes),
-          checksumSha256: tempResult.checksumSha256,
-          durationSeconds: analysis.durationSeconds,
-          width: analysis.width,
-          height: analysis.height,
-          codec: analysis.codec,
-          status: requiresProcessing ? "PROCESSING" : "READY",
-          uploadClient: clientChannel,
-        },
-      })
-
-      const upload = await fastify.prisma.uploadSession.create({
-        data: {
-          userId: request.auth.user.id,
-          originalFilename: file.filename,
-          mimeType: analysis.mimeType,
-          sizeBytes: BigInt(tempResult.sizeBytes),
-          // Bytes are safely on disk either way; the remaining span is worker
-          // processing. `completedAt` stays null until the worker finishes —
-          // setting it here made the worker's completion branch unreachable and
-          // stranded every image/video upload at CLASSIFIED.
-          status: lifecycle.status,
-          progress: lifecycle.progress,
-          completedAt: lifecycle.completedAt,
-          targetLibraryId: targetLibrary.id,
-          targetFolderId: resolvedFolderId ?? null,
-          detectedMediaType: analysis.mediaType,
-          assetId: asset.id,
-        },
-        include: {
-          targetLibrary: true,
-        },
-      })
-
-      if (requiresProcessing) {
-        const extractMetadataJob = await fastify.prisma.job.create({
-          data: {
-            type: JOB_TYPES.extractMetadata,
-            status: "QUEUED",
-            progress: 0,
-            payload: {
-              assetId: asset.id,
-              uploadId: upload.id,
-              userId: request.auth.user.id,
-            },
-          },
-        })
-
-        await mediaQueue.add(JOB_TYPES.extractMetadata, {
-          assetId: asset.id,
-          uploadId: upload.id,
-          userId: request.auth.user.id,
-          jobRecordId: extractMetadataJob.id,
-        })
-
-        if (analysis.mediaType === "VIDEO" || analysis.mediaType === "IMAGE") {
-          await enqueueGenerateThumbnailJob(fastify.prisma, mediaQueue, {
-            assetId: asset.id,
-            uploadId: upload.id,
-            userId: request.auth.user.id,
-          })
-        }
-      }
-
+      // Document thumbnails are a user preference, so the decision is made here
+      // and handed to the planner rather than discovered inside it.
+      let wantsDocumentThumbnail = false
       if (!requiresProcessing) {
-        const prefs = await loadUserPreferences(
-          fastify.prisma,
-          request.auth.user.id,
-        )
-        if (
+        const prefs = await loadUserPreferences(fastify.prisma, request.auth.user.id)
+        wantsDocumentThumbnail =
           prefs.media.documentThumbnails &&
           assetSupportsDocumentThumbnail(
             analysis.mediaType,
@@ -372,14 +298,67 @@ export async function registerUploadRoutes(fastify: FastifyInstance) {
             analysis.extension,
             file.filename,
           )
-        ) {
-          await enqueueGenerateThumbnailJob(fastify.prisma, mediaQueue, {
-            assetId: asset.id,
-            uploadId: upload.id,
-            userId: request.auth.user.id,
-          })
-        }
       }
+
+      // One transaction for the object reference, the asset, the session, the
+      // Job rows and the outbox entries. Before this, a failure between any two
+      // of those left an upload nobody could interpret — and a `queue.add` that
+      // threw stranded the asset in PROCESSING forever, which is how 1,278
+      // sessions were lost. The queue is now written to Postgres first and
+      // handed to Redis afterwards, where failing is recoverable.
+      const committed = await commitUpload(fastify.prisma, {
+        storage: {
+          existingStorageObjectId: existingStorageObject?.id ?? null,
+          storageLocationId: targetLibrary.storageLocationId,
+          objectKey,
+          physicalPath,
+          sizeBytes: tempResult.sizeBytes,
+          checksumSha256: tempResult.checksumSha256,
+          mimeType: analysis.mimeType,
+        },
+        asset: {
+          libraryId: targetLibrary.id,
+          folderId: resolvedFolderId ?? null,
+          ownerId: request.auth.user.id,
+          filename: `${tempResult.checksumSha256}.${analysis.extension || "bin"}`,
+          originalFilename: file.filename,
+          mimeType: analysis.mimeType,
+          mediaType: analysis.mediaType,
+          extension: analysis.extension || "bin",
+          durationSeconds: analysis.durationSeconds,
+          width: analysis.width,
+          height: analysis.height,
+          codec: analysis.codec,
+          uploadClient: clientChannel,
+        },
+        uploadSession: {
+          userId: request.auth.user.id,
+          originalFilename: file.filename,
+          targetLibraryId: targetLibrary.id,
+          targetFolderId: resolvedFolderId ?? null,
+        },
+        jobNames: {
+          extractMetadata: JOB_TYPES.extractMetadata,
+          generateThumbnail: JOB_TYPES.generateThumbnail,
+        },
+        wantsDocumentThumbnail,
+      })
+
+      const asset = { id: committed.assetId }
+
+      const upload = (await fastify.prisma.uploadSession.findUniqueOrThrow({
+        where: { id: committed.uploadSessionId },
+        include: { targetLibrary: true },
+      }))!
+
+      // Best-effort: the jobs are already durable, so a Redis failure here only
+      // delays processing until the reconciler runs.
+      await dispatchPendingForUpload(
+        fastify.prisma,
+        { media: mediaQueue },
+        committed.pendingJobs,
+        request.log,
+      )
 
       try {
         const folderForMirror = resolvedFolderId

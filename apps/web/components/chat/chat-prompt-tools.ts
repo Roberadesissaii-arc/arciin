@@ -29,9 +29,8 @@ export function buildPromptToolsSystemAppend(tools: ChatPromptToolId[]): string 
   if (tools.includes("files")) {
     lines.push(
       "[Files ON — REQUIRED] Focus on files already stored on this instance. " +
-        "When the user wants a summary, explanation, or contents of a document/PDF/code file, " +
-        "you MUST call read_pdf_asset or read_text_asset and then answer from the tool result. " +
-        "Never stop after saying you will open a file — complete the answer using tool output. " +
+        "When a file is attached or named, Arciin loads its text for you — use that source text. " +
+        "Never stop after saying you will open a file. Never narrate tool calls. " +
         "If they named one file, answer about that file only — do not list the whole library " +
         "and do not emit [[ASSET_LIST:…]] / [[ASSETS:…]] unless they explicitly asked to list files.",
     )
@@ -53,6 +52,46 @@ export function buildPromptToolsSystemAppend(tools: ChatPromptToolId[]): string 
       "[Think OFF] Prefer a direct final answer. Skip lengthy chain-of-thought preambles in the visible reply.",
     )
   }
+  if (tools.includes("canvas")) {
+    lines.push(
+      "[Canvas ON — finished document body only] The user enabled Canvas for a long-form deliverable " +
+        "(essay, documentation, exam, quiz, study questions, outline, story, report, etc.). " +
+        "If the user message includes [USER ATTACHED FILE(S) — REQUIRED CONTEXT], base the document on THAT file only — " +
+        "never ask which book. Use the tool result text when available; do not invent chapters. " +
+        "Your ENTIRE assistant message must be ONLY the finished document — nothing else. " +
+        "Never print tool_call XML, function JSON, or <tool_call> blocks.\n\n" +
+        "## Markdown style rules (important for Canvas rendering)\n" +
+        "- Use **# Title** once at the top, then **## Section** and **### Subsection** only (max 3 levels).\n" +
+        "- Do **not** use #### or deeper headings — they render poorly.\n" +
+        "- Use **bold** for emphasis, not bare hashtags.\n" +
+        "- Use normal Markdown lists (- item or 1. item). Blank lines between paragraphs.\n" +
+        "- Use fenced ```code``` **only for real programming code**. Never wrap ordinary paragraphs, " +
+        "numbered questions, or bullet lists in code fences — that makes them look like a terminal.\n" +
+        "- Prefer clean document layout over ASCII art or mono dumps.\n\n" +
+        "## Pick the format from the user request\n" +
+        "### A) Essay / paper / report\n" +
+        "1. # Title\n2. Optional Author / Course / Date\n3. ## Introduction (thesis)\n" +
+        "4. ## Body sections (2–4)\n5. ## Conclusion\n6. ## References\n" +
+        "Aim ~800–1500 words unless they asked short.\n\n" +
+        "### B) Documentation / manual / how-to (\"documentation\", \"docs\", \"manual\", \"guide\")\n" +
+        "1. # Document title\n2. ## Overview\n3. ## Prerequisites (if any)\n" +
+        "4. ## Sections for each topic/feature with ### subheads\n" +
+        "5. Numbered steps for procedures; bullets for options\n" +
+        "6. ## Notes / Warnings where useful\n7. ## References (source book)\n" +
+        "Write like product documentation: clear, scannable, professional — not a code dump.\n\n" +
+        "### C) Outline\n" +
+        "# Title then hierarchical ## / ### with bullets (no code fences).\n\n" +
+        "### D) Exam / quiz / practice test\n" +
+        "Title, instructions, Section A MCQ, Section B short answer, Section C long questions, optional Answer key.\n\n" +
+        "### E) Study / discussion questions\n" +
+        "Title, numbered questions by theme, optional suggested answers.\n\n" +
+        "### F) Story\n" +
+        "Title, narrative paragraphs (dialogue if needed). Minimal headings.\n\n" +
+        "STRICTLY FORBIDDEN: preambles, process talk (\"I need to read the PDF…\", \"[Attempting to read PDF: …]\"), " +
+        "tool XML/JSON, listing the library, asking which book, wrapping prose in ``` fences, " +
+        "[[ASSET_LIST:…]] / [[ASSETS:…]] tags. Start with the document title heading immediately.",
+    )
+  }
 
   lines.push("---")
   return lines.join("\n")
@@ -64,6 +103,10 @@ export function promptToolsForceVision(tools: ChatPromptToolId[]): boolean {
 
 export function promptToolsForceThinking(tools: ChatPromptToolId[]): boolean {
   return tools.includes("thinking")
+}
+
+export function promptToolsForceCanvas(tools: ChatPromptToolId[]): boolean {
+  return tools.includes("canvas")
 }
 
 export function promptToolsForceFiles(tools: ChatPromptToolId[]): boolean {

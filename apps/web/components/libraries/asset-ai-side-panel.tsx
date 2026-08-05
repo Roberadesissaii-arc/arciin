@@ -10,6 +10,13 @@ import {
   ChatModelPicker,
   type ChatProfilePicker,
 } from "@/components/chat/chat-model-picker"
+import {
+  expandSlashMessage,
+  filterImagePanelSlashCommands,
+  getActiveSlashQuery,
+  splitTextForSlashHighlight,
+  type ChatSlashCommand,
+} from "@/components/chat/chat-slash-commands"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
   getChatSelection,
@@ -77,9 +84,9 @@ function suggestionsFor(
   if (asset.mediaType === "IMAGE") {
     return [
       "Describe this image",
-      "What are the main subjects in this image?",
+      "/objects",
+      "/highlight the main subject",
       "What text is visible?",
-      "Summarize this image briefly",
     ]
   }
   return [
@@ -196,7 +203,9 @@ export function AssetAiSidePanel({
   const [messages, setMessages] = useState<PanelMessage[]>([])
   const [input, setInput] = useState("")
   const [streaming, setStreaming] = useState(false)
+  const [slashIndex, setSlashIndex] = useState(0)
   const scrollRef = useRef<HTMLDivElement>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
   const abortRef = useRef<AbortController | null>(null)
   const speechBaseRef = useRef("")
   const lastGotoRef = useRef<number | null>(null)
@@ -313,6 +322,76 @@ export function AssetAiSidePanel({
     }
   }, [stopSpeech])
 
+  /**
+   * /highlight and /border need vision. Clear a non-vision manual pick so the
+   * panel auto-selects a vision-capable model (same path as opening an image).
+   */
+  const ensureVisionModelForHighlight = useCallback(() => {
+    if (!isImageAsset || !profile) return
+    setImageModelUserPicked(false)
+    const visionModel = resolveModelForProfile({
+      provider: profile.provider,
+      defaultModel: profile.defaultModel,
+      override: null,
+      need: "vision",
+    })
+    if (visionModel) {
+      setPickedModel(visionModel)
+      setPickedProfileId(profile.id)
+      try {
+        localStorage.setItem(CHAT_SELECTED_MODEL_KEY, visionModel)
+        localStorage.setItem(CHAT_SELECTED_PROFILE_ID_KEY, profile.id)
+      } catch {
+        /* private mode */
+      }
+      void setChatSelection({ profileId: profile.id, model: visionModel }).catch(() => {})
+    } else {
+      // Ollama: let useAssetChatModel re-pick the best vision tag.
+      setPickedModel(null)
+    }
+  }, [isImageAsset, profile])
+
+  const slashActive = useMemo(() => {
+    if (!isImageAsset) return null
+    return getActiveSlashQuery(input)
+  }, [input, isImageAsset])
+
+  const slashMatches = useMemo(() => {
+    if (!slashActive) return [] as ChatSlashCommand[]
+    return filterImagePanelSlashCommands(slashActive.query)
+  }, [slashActive])
+
+  const slashOpen = Boolean(slashActive && slashMatches.length > 0)
+  const highlightParts = useMemo(
+    () => (isImageAsset ? splitTextForSlashHighlight(input) : [{ text: input, isCommand: false }]),
+    [input, isImageAsset],
+  )
+
+  useEffect(() => {
+    setSlashIndex(0)
+  }, [slashActive?.query])
+
+  const applySlashCommand = useCallback(
+    (cmd: ChatSlashCommand) => {
+      if (!slashActive) return
+      const token = `/${cmd.name} `
+      const before = input.slice(0, slashActive.replaceStart)
+      const afterRaw = input.slice(slashActive.replaceEnd).replace(/^\s*/, "")
+      setInput(`${before}${token}${afterRaw}`)
+      if (cmd.tools.includes("vision")) {
+        ensureVisionModelForHighlight()
+      }
+      requestAnimationFrame(() => {
+        const el = textareaRef.current
+        if (!el) return
+        el.focus()
+        const pos = before.length + token.length
+        el.setSelectionRange(pos, pos)
+      })
+    },
+    [ensureVisionModelForHighlight, input, slashActive],
+  )
+
   const handleModelSelect = useCallback(
     (p: ChatProfilePicker, model: string) => {
       if (isImageAsset) setImageModelUserPicked(true)
@@ -365,14 +444,21 @@ export function AssetAiSidePanel({
         images?: string[]
       }
 
-      const history: OutboundMsg[] = historyMessages.map((m) => ({
-        role: m.role,
-        content: m.content,
-      }))
+      const history: OutboundMsg[] = historyMessages.map((m, i, arr) => {
+        let content = m.content
+        // Expand /highlight · /border (etc.) so the model always gets the full vision prompt.
+        if (m.role === "user" && i === arr.length - 1) {
+          const slash = expandSlashMessage(content)
+          if (slash) content = slash.text
+        }
+        return { role: m.role, content }
+      })
 
       let systemContent = assetPreviewChatSystem(asset)
       const lastUserText =
-        [...historyMessages].reverse().find((m) => m.role === "user")?.content ?? ""
+        history.filter((m) => m.role === "user").at(-1)?.content ??
+        [...historyMessages].reverse().find((m) => m.role === "user")?.content ??
+        ""
       const wantsPointing = userWantsImagePointing(lastUserText)
 
       if (need === "vision" && visionCapable) {
@@ -533,18 +619,27 @@ export function AssetAiSidePanel({
 
   const sendMessage = useCallback(
     async (text: string) => {
-      const trimmed = text.trim()
-      if (!trimmed || streaming) return
+      const raw = text.trim()
+      if (!raw || streaming) return
+
+      // /highlight · /border auto-switch to a vision model.
+      const slash = expandSlashMessage(raw)
+      if (slash?.tools.includes("vision")) {
+        ensureVisionModelForHighlight()
+      }
+
+      // Bubble shows the short slash line; runChatStream expands for the model.
+      const modelPreview = slash?.text ?? raw
 
       lastGotoRef.current = null
       lastHighlightSigRef.current = ""
       lastImageRegionSigRef.current = ""
 
-      if (need === "vision" && userWantsImagePointing(trimmed)) {
+      if (need === "vision" && userWantsImagePointing(modelPreview)) {
         onClearImageHighlight?.()
       }
 
-      const userMsg: PanelMessage = { id: `u-${Date.now()}`, role: "user", content: trimmed }
+      const userMsg: PanelMessage = { id: `u-${Date.now()}`, role: "user", content: raw }
       const assistantId = `a-${Date.now()}`
       const history = [...messages, userMsg]
       setMessages([...history, { id: assistantId, role: "assistant", content: "" }])
@@ -552,7 +647,14 @@ export function AssetAiSidePanel({
       setStreaming(true)
       await runChatStream(history, assistantId)
     },
-    [messages, need, onClearImageHighlight, runChatStream, streaming],
+    [
+      ensureVisionModelForHighlight,
+      messages,
+      need,
+      onClearImageHighlight,
+      runChatStream,
+      streaming,
+    ],
   )
 
   const regenerateAssistant = useCallback(
@@ -778,26 +880,122 @@ export function AssetAiSidePanel({
             <div className="mb-2 px-0.5">{statusHint}</div>
           ) : null}
           <form
-            className="overflow-visible rounded-2xl border border-zinc-200 bg-zinc-50/30 focus-within:border-[#ff4f12]/35 focus-within:ring-1 focus-within:ring-[#ff4f12]/10"
+            className="relative overflow-visible rounded-2xl border border-zinc-200 bg-zinc-50/30 focus-within:border-[#ff4f12]/35 focus-within:ring-1 focus-within:ring-[#ff4f12]/10"
             onSubmit={(e) => {
               e.preventDefault()
               void sendMessage(input)
             }}
           >
-            <textarea
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault()
-                  if (canSend && !streaming && input.trim()) void sendMessage(input)
+            {slashOpen ? (
+              <div
+                className="absolute bottom-full left-0 right-0 z-40 mb-2 overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-lg ring-1 ring-black/5"
+                role="listbox"
+                aria-label="Slash commands"
+              >
+                <p className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-400">
+                  Commands
+                </p>
+                {/* Fixed list — no scrollbar chrome / no up-down chevrons */}
+                <div
+                  className={cn(
+                    "space-y-1 px-2 pb-2",
+                    "max-h-[14.5rem] overflow-y-auto",
+                    "[scrollbar-width:none] [-ms-overflow-style:none]",
+                    "[&::-webkit-scrollbar]:w-0 [&::-webkit-scrollbar]:h-0",
+                  )}
+                >
+                  {slashMatches.map((cmd, i) => (
+                    <button
+                      key={cmd.id}
+                      type="button"
+                      role="option"
+                      aria-selected={i === slashIndex}
+                      className={cn(
+                        "flex h-[3.35rem] w-full flex-col justify-center gap-0.5 rounded-xl px-3 py-1.5 text-left transition-colors",
+                        i === slashIndex
+                          ? "bg-[#ff4f12]/12 text-zinc-900"
+                          : "text-zinc-800 hover:bg-zinc-50",
+                      )}
+                      onMouseEnter={() => setSlashIndex(i)}
+                      onClick={() => applySlashCommand(cmd)}
+                    >
+                      <span className="text-[12px] font-semibold text-[#ff4f12]">/{cmd.name}</span>
+                      <span className="line-clamp-1 text-[11px] text-zinc-500">{cmd.description}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+            <div className="relative">
+              {/* Orange /command highlight (same idea as main chat) */}
+              {isImageAsset ? (
+                <div
+                  aria-hidden
+                  className="pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words px-4 pt-3 pb-1 text-[13px] leading-relaxed"
+                >
+                  {highlightParts.map((part, i) =>
+                    part.isCommand ? (
+                      <span key={i} className="font-medium text-[#ff4f12]">
+                        {part.text}
+                      </span>
+                    ) : (
+                      <span key={i} className="text-zinc-900">
+                        {part.text}
+                      </span>
+                    ),
+                  )}
+                </div>
+              ) : null}
+              <textarea
+                ref={textareaRef}
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (slashOpen) {
+                    if (e.key === "ArrowDown") {
+                      e.preventDefault()
+                      setSlashIndex((i) => Math.min(i + 1, slashMatches.length - 1))
+                      return
+                    }
+                    if (e.key === "ArrowUp") {
+                      e.preventDefault()
+                      setSlashIndex((i) => Math.max(i - 1, 0))
+                      return
+                    }
+                    if (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey)) {
+                      e.preventDefault()
+                      const cmd = slashMatches[slashIndex] ?? slashMatches[0]
+                      if (cmd) applySlashCommand(cmd)
+                      return
+                    }
+                    if (e.key === "Escape") {
+                      e.preventDefault()
+                      setInput((v) => v.replace(/\/[a-zA-Z0-9_-]*$/, ""))
+                      return
+                    }
+                  }
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault()
+                    if (canSend && !streaming && input.trim()) void sendMessage(input)
+                  }
+                }}
+                rows={3}
+                placeholder={
+                  streaming
+                    ? "Generating…"
+                    : isImageAsset
+                      ? "Ask about this image…  Try /objects or /highlight car"
+                      : "Ask about this file…"
                 }
-              }}
-              rows={3}
-              placeholder={streaming ? "Generating…" : "Ask about this file…"}
-              disabled={streaming || !canSend}
-              className="block w-full resize-none rounded-t-2xl bg-transparent px-4 pt-3 pb-1 text-[13px] leading-relaxed text-zinc-900 outline-none placeholder:text-zinc-400 disabled:cursor-not-allowed disabled:opacity-50"
-            />
+                disabled={streaming || !canSend}
+                className={cn(
+                  "block w-full resize-none rounded-t-2xl bg-transparent px-4 pt-3 pb-1 text-[13px] leading-relaxed outline-none placeholder:text-zinc-400 disabled:cursor-not-allowed disabled:opacity-50",
+                  isImageAsset
+                    ? "caret-zinc-900 text-transparent"
+                    : "text-zinc-900",
+                )}
+              />
+            </div>
             <div className="flex items-center justify-between gap-2 px-2 pb-2">
               <ChatModelPicker
                 profiles={pickerProfiles}

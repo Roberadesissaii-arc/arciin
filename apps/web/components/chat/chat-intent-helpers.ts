@@ -1,3 +1,5 @@
+import { stripAssistantStreamMarkup } from "@arciin/shared"
+
 import type { Message } from "@/components/chat/chat-message-model"
 
 /**
@@ -81,7 +83,7 @@ function conversationMentionsMediaType(
         : kind === "music"
           ? /\bmusic|audio\b/i
           : kind === "documents"
-            ? /\bdocuments?\b/i
+            ? /\b(documents?|books?|pdfs?|story\s*books?|ebooks?)\b/i
             : kind === "code"
               ? /\b(python|py\s+files?|\.py\b|scripts?|source\s*code|code\s+files?)\b/i
               : /\bfiles?\b/i
@@ -91,11 +93,17 @@ function conversationMentionsMediaType(
 
 /** User explicitly asked to see/browse files this turn (not just counts or greetings). */
 function userWantsAssetGallery(userText: string, priorMessages: Message[] = []): boolean {
-  const t = userText.trim()
+  const t = normalizeDocumentListQuery(userText).trim()
   if (!t) return false
 
   if (userRequestsCodeFiles(userText)) return false
-  if (userWantsFilenameList(userText, priorMessages)) return false
+  // Cover gallery for books/docs always wins over bare filename list.
+  if (userWantsDocumentCovers(userText, priorMessages)) return true
+  // Code / non-document filename lists stay text-only (no image cards).
+  if (userWantsFilenameList(userText, priorMessages)) {
+    const media = resolveAssetListMediaType(userText, priorMessages)
+    if (media !== "documents") return false
+  }
 
   if (
     /^(?:hi|hello|hey|howdy|yo|sup|good\s+(?:morning|afternoon|evening)|thanks|thank\s+you|thx|ok(?:ay)?|cool|nice|bye|goodbye)[\s!.,?]*$/i.test(
@@ -109,14 +117,18 @@ function userWantsAssetGallery(userText: string, priorMessages: Message[] = []):
     /\b(show\s+me|let\s+me\s+see|can\s+i\s+see|display|browse|view\s+my|see\s+my|open\s+my|pull\s+up|look\s+at\s+my|preview)\b/i.test(
       t,
     ) ||
-    /\b(show|see|view|open)\s+(?:all\s+)?(?:my\s+)?(?:the\s+)?(?:recent\s+)?/i.test(t)
+    /\b(show|see|view|open)\s+(?:all\s+)?(?:my\s+)?(?:the\s+)?(?:recent\s+)?/i.test(t) ||
+    /\b(preview|cover|thumbnail)\b/i.test(t)
   const mentionsVisualMedia =
-    /\b(images?|pictures?|photos?|videos?|music|documents?|library|libraries|media|assets?|uploads?)\b/i.test(
+    /\b(images?|pictures?|photos?|videos?|music|documents?|books?|pdfs?|ebooks?|library|libraries|media|assets?|uploads?)\b/i.test(
       t,
     )
   const mentionsGenericFiles = /\bfiles?\b/i.test(t) && !userRequestsCodeFiles(userText)
 
   if (wantsSee && (mentionsVisualMedia || mentionsGenericFiles)) return true
+
+  // "list my books / documents" → cover gallery (not bare text)
+  if (userWantsDocumentCovers(userText, priorMessages)) return true
 
   if (
     /\b(show|see|display)\b/i.test(t) &&
@@ -126,9 +138,9 @@ function userWantsAssetGallery(userText: string, priorMessages: Message[] = []):
     return true
   }
 
-  // Follow-up after a count or list: "show me", "show them", "let me see"
+  // Follow-up after a count or list: "show me", "show them", "let me see", "show me the preview"
   const shortShowRequest =
-    /^(?:show\s+me|show\s+them|show\s+those|show\s+it|let\s+me\s+see|display\s+them|see\s+them|preview\s+them)[\s!.,?]*$/i.test(
+    /^(?:show\s+me(?:\s+the\s+preview)?|show\s+them|show\s+those|show\s+it|let\s+me\s+see|display\s+them|see\s+them|preview(?:\s+them)?|the\s+preview|show\s+previews?)[\s!.,?]*$/i.test(
       t,
     ) || /^show[\s!.,?]*$/i.test(t)
 
@@ -144,6 +156,56 @@ function userWantsAssetGallery(userText: string, priorMessages: Message[] = []):
     if (conversationMentionsMediaType(priorMessages, "videos")) return true
     if (conversationMentionsMediaType(priorMessages, "music")) return true
     if (conversationMentionsMediaType(priorMessages, "documents")) return true
+  }
+
+  return false
+}
+
+/** Normalize common typos so "list all bookd" still means books. */
+function normalizeDocumentListQuery(userText: string): string {
+  return userText
+    .replace(/\bbookds?\b/gi, "books")
+    .replace(/\bboks?\b/gi, "books")
+    .replace(/\bdocumnets?\b/gi, "documents")
+    .replace(/\bpdfs\b/gi, "pdfs")
+}
+
+/** Books / PDFs / documents should render cover previews, not name-only rows. */
+function userWantsDocumentCovers(userText: string, priorMessages: Message[] = []): boolean {
+  const t = normalizeDocumentListQuery(userText).trim().toLowerCase()
+  if (!t) return false
+  if (userRequestsCodeFiles(userText)) return false
+  if (userMeansAppDataDatabases(userText)) return false
+
+  // "list all books", "list bookd", "show my documents", "what books do I have"
+  if (/\b(books?|pdfs?|ebooks?|story\s*books?|documents?)\b/.test(t)) {
+    if (
+      /\b(list|show|see|preview|browse|display|cover|thumbnail|what|which|all\s+my|my\s+all|enumerate|name)\b/.test(
+        t,
+      )
+    ) {
+      return true
+    }
+    // "all books" / "every pdf" without an explicit list verb
+    if (/\b(all|every|entire)\b/.test(t)) return true
+  }
+
+  // Follow-up after talking about books/documents: list/show them, previews, etc.
+  if (
+    /^(?:show\s+me(?:\s+the\s+preview)?|show\s+them(?:\s+all)?|list\s+them(?:\s+all)?|list\s+all|show\s+all|name\s+them|preview(?:\s+them)?|the\s+preview|show\s+previews?|covers?)[\s!.,?]*$/i.test(
+      t,
+    ) &&
+    conversationMentionsMediaType(priorMessages, "documents")
+  ) {
+    return true
+  }
+
+  // "list them all" / "list all" after a books/documents turn
+  if (
+    /\b(list|show|name|enumerate)\s+(?:them|those|these|all)(?:\s+all)?\b/i.test(t) &&
+    conversationMentionsMediaType(priorMessages, "documents")
+  ) {
+    return true
   }
 
   return false
@@ -176,9 +238,9 @@ function inferGalleryCountFromContext(priorMessages: Message[], media: string): 
 }
 
 function resolveGalleryMediaType(userText: string, priorMessages: Message[]): string {
-  const t = userText.toLowerCase()
+  const t = normalizeDocumentListQuery(userText).toLowerCase()
   if (userRequestsCodeFiles(userText)) return "code"
-  if (/\bdocuments?\b/.test(t)) return "documents"
+  if (/\b(documents?|books?|pdfs?|ebooks?|story\s*books?)\b/.test(t)) return "documents"
   if (/\bimages?|pictures?|photos?\b/.test(t)) return "images"
   if (/\bvideos?\b/.test(t)) return "videos"
   if (/\bmusic|audio\b/.test(t)) return "music"
@@ -189,9 +251,10 @@ function resolveGalleryMediaType(userText: string, priorMessages: Message[]): st
     if (/\bimages?|pictures?|photos?\b/.test(c)) return "images"
     if (/\bvideos?\b/.test(c)) return "videos"
     if (/\bmusic|audio|tracks?\b/.test(c)) return "music"
-    if (/\bdocuments?\b/.test(c)) return "documents"
+    if (/\b(documents?|books?|pdfs?|harry\s*potter|\.pdf)\b/.test(c)) return "documents"
     const tag = m.content.match(/\[\[ASSETS:([a-z]+)/i)?.[1]
     if (tag && tag !== "ids") return tag
+    if (/\[\[ASSET_LIST:documents\]\]/i.test(m.content)) return "documents"
   }
 
   return "images"
@@ -207,6 +270,15 @@ function ensureAssetGalleryTag(
   if (/\[\[ASSETS:/i.test(content)) return content
 
   const media = resolveGalleryMediaType(userText, priorMessages)
+  const wantsAll = /\b(all|every|entire|full\s+list)\b/i.test(
+    normalizeDocumentListQuery(userText),
+  )
+  // Prefer a higher limit for "list all books" so covers aren't capped at 9.
+  if (media === "documents" && (wantsAll || userWantsDocumentCovers(userText, priorMessages))) {
+    const tag = wantsAll ? "[[ASSETS:documents:24]]" : "[[ASSETS:documents]]"
+    const trimmed = content.trim()
+    return trimmed ? `${trimmed}\n\n${tag}` : tag
+  }
   const count = inferGalleryCountFromContext(priorMessages, media)
   const tag = count != null ? `[[ASSETS:${media}:${count}]]` : `[[ASSETS:${media}]]`
   const trimmed = content.trim()
@@ -220,7 +292,7 @@ function assistantRecentlyShowedAssets(priorMessages: Message[]): boolean {
 }
 
 function userWantsFilenameList(userText: string, priorMessages: Message[]): boolean {
-  const t = userText.trim().toLowerCase()
+  const t = normalizeDocumentListQuery(userText).trim().toLowerCase()
   if (!t) return false
 
   if (userMeansAppDataDatabases(userText)) return false
@@ -232,9 +304,10 @@ function userWantsFilenameList(userText: string, priorMessages: Message[]): bool
 
   const listIntent =
     /\b(list|enumerate|filenames?|file\s+names?|name\s+them)\b/.test(t) ||
-    /^list\s+(?:them|those|these|it|my)\b/.test(t) ||
-    /\blist\s+(?:them\s+)?(?:here|again|in\s+chat)\b/.test(t) ||
-    /\bno,?\s*list\b/.test(t)
+    /^list\s+(?:them|those|these|it|my|all)\b/.test(t) ||
+    /\blist\s+(?:them\s+)?(?:here|again|in\s+chat|all)\b/.test(t) ||
+    /\bno,?\s*list\b/.test(t) ||
+    /^(?:list\s+all|list\s+them(?:\s+all)?|show\s+all|name\s+them)[\s!.,?]*$/i.test(t)
 
   if (!listIntent) {
     const shortShow =
@@ -245,14 +318,18 @@ function userWantsFilenameList(userText: string, priorMessages: Message[]): bool
   }
 
   if (
-    /\b(documents?|files?|images?|pictures?|photos?|videos?|music|python|scripts?|code|\.py|assets?|them|those|these)\b/.test(
+    /\b(documents?|books?|pdfs?|files?|images?|pictures?|photos?|videos?|music|python|scripts?|code|\.py|assets?|them|those|these|all)\b/.test(
       t,
     )
   ) {
     return true
   }
 
-  if (/\b(list|name)\s+(?:them|those|it)\b/.test(t) && assistantRecentlyShowedAssets(priorMessages)) {
+  if (
+    /\b(list|name)\s+(?:them|those|it|all)\b/.test(t) &&
+    (assistantRecentlyShowedAssets(priorMessages) ||
+      conversationMentionsMediaType(priorMessages, "documents"))
+  ) {
     return true
   }
 
@@ -260,9 +337,11 @@ function userWantsFilenameList(userText: string, priorMessages: Message[]): bool
 }
 
 function resolveAssetListMediaType(userText: string, priorMessages: Message[]): string {
-  const t = userText.toLowerCase()
+  const t = normalizeDocumentListQuery(userText).toLowerCase()
   if (/\b(python|py\s+files?|\.py|scripts?|source\s*code|code\s+files?)\b/.test(t)) return "code"
-  if (/\bdocuments?\b/.test(t) && !/\b(python|\.py|scripts?)\b/.test(t)) return "documents"
+  if (/\b(documents?|books?|pdfs?)\b/.test(t) && !/\b(python|\.py|scripts?)\b/.test(t)) {
+    return "documents"
+  }
   if (/\bimages?|pictures?|photos?\b/.test(t)) return "images"
   if (/\bvideos?\b/.test(t)) return "videos"
   if (/\bmusic|audio\b/.test(t)) return "music"
@@ -281,9 +360,31 @@ function resolveAssetListMediaType(userText: string, priorMessages: Message[]): 
 
 function ensureFilenameListTag(content: string, userText: string, priorMessages: Message[]): string {
   if (userMeansAppDataDatabases(userText)) return content
-  if (!userWantsFilenameList(userText, priorMessages)) return content
-  if (/\[\[ASSET_LIST:/i.test(content)) return content
+  if (!userWantsFilenameList(userText, priorMessages) && !userWantsDocumentCovers(userText, priorMessages)) {
+    return content
+  }
   const media = resolveAssetListMediaType(userText, priorMessages)
+  const wantsAll =
+    /\b(all|every|entire|full\s+list)\b/i.test(normalizeDocumentListQuery(userText)) ||
+    userWantsDocumentCovers(userText, priorMessages)
+
+  // Books / documents → cover gallery (thumbnails), not a bare name list.
+  if (media === "documents" || userWantsDocumentCovers(userText, priorMessages)) {
+    let out = content
+    // Prefer cover cards; demote plain document lists when covers are better.
+    if (/\[\[ASSET_LIST:documents\]\]/i.test(out) && !/\[\[ASSETS:documents/i.test(out)) {
+      out = out.replace(
+        /\[\[ASSET_LIST:documents\]\]/gi,
+        wantsAll ? "[[ASSETS:documents:24]]" : "[[ASSETS:documents]]",
+      )
+    }
+    if (/\[\[ASSETS:documents/i.test(out) || /\[\[ASSETS:ids:/i.test(out)) return out
+    const tag = wantsAll ? "[[ASSETS:documents:24]]" : "[[ASSETS:documents]]"
+    const trimmed = out.trim()
+    return trimmed ? `${trimmed}\n\n${tag}` : tag
+  }
+
+  if (/\[\[ASSET_LIST:/i.test(content)) return content
   const trimmed = content.trim()
   return trimmed ? `${trimmed}\n\n[[ASSET_LIST:${media}]]` : `[[ASSET_LIST:${media}]]`
 }
@@ -310,8 +411,17 @@ function stripUnrequestedAssetTags(
   if (responseUsesCodeFilenameList(content) && !userWantsAssetGallery(userText, priorMessages)) {
     return stripGallery()
   }
+  // Always keep document/book cover galleries — never strip after "list books".
+  if (
+    /\[\[ASSETS:documents/i.test(content) ||
+    userWantsDocumentCovers(userText, priorMessages)
+  ) {
+    return content
+  }
   if (/\[\[ASSET_LIST:/i.test(content) && userWantsFilenameList(userText, priorMessages)) {
-    return stripGallery()
+    // Prefer list over gallery only for non-document media.
+    const media = resolveAssetListMediaType(userText, priorMessages)
+    if (media !== "documents") return stripGallery()
   }
   if (!userWantsAssetGallery(userText, priorMessages)) return stripGallery()
 
@@ -340,19 +450,32 @@ export function finalizeAssistantContent(
   userText: string,
   priorMessages: Message[] = [],
 ): string {
-  // Single-file read/summarize: never pad with library dumps.
-  if (isSingleFileContentRequest(userText)) {
-    return stripAllAssetTags(content)
+  // Always strip leaked tool markup first (never show <tool_call> to users).
+  let out = stripAssistantStreamMarkup(content)
+
+  // Canvas / long-form write: never inject library gallery or asset lists.
+  if (
+    /\b(essay|exam|quiz|documentation|outline|study\s+guide|worksheet|create\s+an?\s+essay|prepare\s+an?\s+exam)\b/i.test(
+      userText,
+    ) ||
+    /USER ATTACHED FILE/i.test(userText)
+  ) {
+    return stripAllAssetTags(out)
   }
 
-  let out = stripUnrequestedAssetTags(content, userText, priorMessages)
+  // Single-file read/summarize: never pad with library dumps.
+  if (isSingleFileContentRequest(userText)) {
+    return stripAllAssetTags(out)
+  }
+
+  out = stripUnrequestedAssetTags(out, userText, priorMessages)
   out = stripUnrequestedFilenameLists(out, userText, priorMessages)
   out = ensureFilenameListTag(out, userText, priorMessages)
   out = ensureAssetGalleryTag(out, userText, priorMessages)
   out = stripUnrequestedAssetTags(out, userText, priorMessages)
   out = stripUnrequestedFilenameLists(out, userText, priorMessages)
   out = stripAssetListsWhenQueryingAppDatabases(out, userText)
-  return out
+  return stripAssistantStreamMarkup(out)
 }
 
 function assistantRecentlyShowedImages(priorMessages: Message[]): boolean {

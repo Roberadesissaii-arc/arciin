@@ -22,6 +22,7 @@ import { registerMobileRoutes } from "@/modules/mobile/routes"
 import { registerLibraryRoutes } from "@/modules/libraries/routes"
 import { registerPasswordVaultRoutes } from "@/modules/password-vault/routes"
 import { registerSettingsRoutes } from "@/modules/settings/routes"
+import { registerFileRequestRoutes } from "@/modules/file-requests/routes"
 import { registerShareRoutes } from "@/modules/shares/routes"
 import { registerUploadRoutes } from "@/modules/uploads/routes"
 import { registerImportRoutes } from "@/modules/imports/routes"
@@ -43,6 +44,12 @@ import { trimOversizedLogFiles } from "@/services/logs/log-files"
 import { registerCloudflareTunnelPersistence } from "@/services/remote-access/tunnel-boot"
 import { repairInstanceStorageRootsIfNeeded } from "@/services/storage/effective-storage-root"
 import { initUploadLimits } from "@/services/config/upload-limits"
+import { integrationsQueue, mediaQueue, storageQueue } from "@/services/jobs/queues"
+import {
+  pruneDispatchedOutbox,
+  reconcileOutbox,
+} from "@/services/uploads/outbox-dispatch"
+import { pruneExpiredIdempotencyRecords } from "@/services/uploads/idempotency-store"
 import { ensureStorageDirectories } from "@/services/storage/local-storage"
 
 const REDACTED_QUERY_PARAMS = ["access_token"]
@@ -146,10 +153,45 @@ export async function createServer() {
   const trashPurgeBootTimer = setTimeout(runTrashPurge, 45_000)
   const trashPurgeTimer = setInterval(runTrashPurge, trashPurgeIntervalMs)
 
+  // Outbox reconciliation: the guarantee behind UP-007. An upload's background
+  // jobs are committed as durable rows; if Redis was unreachable when the
+  // request finished, this is what eventually gets them queued. Without it, a
+  // brief Redis outage strands uploads permanently — which is exactly how 1,278
+  // sessions were lost before.
+  const outboxIntervalMs = 60_000
+  const runOutboxReconcile = () => {
+    void reconcileOutbox(fastify.prisma, {
+      media: mediaQueue,
+      storage: storageQueue,
+      integrations: integrationsQueue,
+    })
+      .then((result) => {
+        if (result.dispatched > 0 || result.deferred > 0) {
+          fastify.log.info(result, "Reconciled upload outbox")
+        }
+      })
+      .catch((error) => {
+        fastify.log.warn({ err: error }, "Outbox reconciliation failed")
+      })
+  }
+  const outboxBootTimer = setTimeout(runOutboxReconcile, 15_000)
+  const outboxTimer = setInterval(runOutboxReconcile, outboxIntervalMs)
+
+  const outboxPruneTimer = setInterval(
+    () => {
+      void pruneDispatchedOutbox(fastify.prisma).catch(() => {})
+      void pruneExpiredIdempotencyRecords(fastify.prisma).catch(() => {})
+    },
+    6 * 60 * 60_000,
+  )
+
   fastify.addHook("onClose", async () => {
     clearInterval(logTrimTimer)
     clearTimeout(trashPurgeBootTimer)
     clearInterval(trashPurgeTimer)
+    clearTimeout(outboxBootTimer)
+    clearInterval(outboxTimer)
+    clearInterval(outboxPruneTimer)
   })
 
   fastify.get("/", async (_request, reply) => {
@@ -171,6 +213,7 @@ export async function createServer() {
       await registerAssetRoutes(api)
       await registerTrashRoutes(api)
       await registerShareRoutes(api)
+      await registerFileRequestRoutes(api)
       await registerUploadRoutes(api)
       await registerImportRoutes(api)
       await registerActivityRoutes(api)

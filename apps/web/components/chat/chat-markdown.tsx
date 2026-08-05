@@ -204,18 +204,28 @@ export function MarkdownContent({ content }: { content: string }) {
       flushTable()
     }
 
-    const h2 = line.match(/^#{1,2}\s+(.+)/)
-    const h3 = !h2 && line.match(/^###\s+(.+)/)
-    const hr = /^---+$/.test(line.trim())
+    // Support # through ###### (models often emit #### which previously showed as raw text)
+    const heading = line.match(/^(#{1,6})\s+(.+)$/)
+    const hr = /^(-{3,}|\*{3,}|_{3,})$/.test(line.trim())
     const ul = line.match(/^[-*]\s+(.+)/)
     const ol = line.match(/^\d+\.\s+(.+)/)
 
-    if (h2) {
+    if (heading) {
       flushList()
-      nodes.push(<p key={k++} className="mb-0.5 mt-3 text-[13px] font-bold text-foreground first:mt-0">{parseInline(h2[1])}</p>)
-    } else if (h3) {
-      flushList()
-      nodes.push(<p key={k++} className="mb-0.5 mt-2 text-[13px] font-semibold text-foreground">{parseInline(h3[1])}</p>)
+      const level = heading[1]!.length
+      const cls =
+        level === 1
+          ? "mb-1 mt-3 text-[15px] font-bold text-foreground first:mt-0"
+          : level === 2
+            ? "mb-0.5 mt-3 text-[14px] font-bold text-foreground first:mt-0"
+            : level === 3
+              ? "mb-0.5 mt-2 text-[13px] font-semibold text-foreground"
+              : "mb-0.5 mt-2 text-[13px] font-semibold text-foreground"
+      nodes.push(
+        <p key={k++} className={cls}>
+          {parseInline(heading[2]!)}
+        </p>,
+      )
     } else if (hr) {
       flushList()
       nodes.push(<hr key={k++} className="my-2 border-zinc-200" />)

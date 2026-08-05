@@ -19,6 +19,13 @@ import { recordAndBroadcastActivity } from "@/services/activity/record-and-broad
 import { assertAssetFolderAccess } from "@/services/folders/folder-lock"
 import { streamFileResponse } from "@/services/media/stream-file-response"
 import { requireRole } from "@/services/security/auth"
+import {
+  ASSET_PAGE_ORDER_BY,
+  buildAssetPage,
+  buildCursorWhere,
+  clampPageSize,
+  decodeAssetCursor,
+} from "@/services/libraries/asset-pagination"
 import { serializeShareLink } from "@/services/serializers"
 import {
   assertAssetInShareScope,
@@ -267,6 +274,8 @@ export async function registerShareRoutes(fastify: FastifyInstance) {
       .object({
         folderId: z.string().optional(),
         meta: z.string().optional(),
+        cursor: z.string().optional(),
+        limit: z.coerce.number().int().optional(),
       })
       .parse(request.query ?? {})
 
@@ -348,7 +357,23 @@ export async function registerShareRoutes(fastify: FastifyInstance) {
       activeFolder = nested
     }
 
-    const [childFolders, assets] = await Promise.all([
+    // Keyset pagination, not `take: 500`. The old fixed limit silently
+    // truncated any shared folder holding more than 500 files: the recipient
+    // saw a page that looked complete and was not. The cursor never widens the
+    // filter — `folderId` is pinned to the folder already proven in-scope, so a
+    // recipient cannot page their way out of the shared subtree.
+    const limit = clampPageSize(query.limit)
+    const cursor = decodeAssetCursor(query.cursor)
+    const cursorWhere = buildCursorWhere(cursor)
+
+    const assetWhere = {
+      folderId: activeFolder.id,
+      deletedAt: null,
+      status: { not: "DELETED" as const },
+      ...(cursorWhere ? { AND: [cursorWhere] } : {}),
+    }
+
+    const [childFolders, rows, assetCount] = await Promise.all([
       fastify.prisma.folder.findMany({
         where: {
           parentFolderId: activeFolder.id,
@@ -360,15 +385,22 @@ export async function registerShareRoutes(fastify: FastifyInstance) {
         },
       }),
       fastify.prisma.asset.findMany({
+        where: assetWhere,
+        orderBy: ASSET_PAGE_ORDER_BY,
+        take: limit + 1,
+      }),
+      // The count the recipient is shown must describe the same set they can
+      // navigate, so it uses the filter without the cursor.
+      fastify.prisma.asset.count({
         where: {
           folderId: activeFolder.id,
           deletedAt: null,
           status: { not: "DELETED" },
         },
-        orderBy: { originalFilename: "asc" },
-        take: 500,
       }),
     ])
+
+    const page = buildAssetPage(rows, limit)
 
     reply.send({
       data: {
@@ -384,7 +416,10 @@ export async function registerShareRoutes(fastify: FastifyInstance) {
           folders: childFolders.map((f) =>
             serializePublicFolder(f, f._count.assets),
           ),
-          assets: assets.map(serializePublicAsset),
+          assets: page.items.map(serializePublicAsset),
+          assetCount,
+          nextCursor: page.nextCursor,
+          hasMore: page.hasMore,
         },
       },
     })

@@ -238,6 +238,16 @@ export function userWantsImagePointing(query: string): boolean {
   const q = query.toLowerCase().trim()
   if (!q) return false
 
+  // Slash commands / expanded prompts for highlight & border
+  if (/^\s*\/(?:highlight|border)\b/i.test(query)) return true
+  if (
+    /\b(?:draw a border|draw an orange border|tightly wrap the object|point-box:|point-grid:|hidden marker)\b/i.test(
+      query,
+    )
+  ) {
+    return true
+  }
+
   // General Q&A — never draw boxes unless they also ask to point/highlight.
   if (
     /\b(?:how many|how much|count the|list the|describe|summarize|summary|what text|explain|tell me about|what do you see|what's in|what is in)\b/.test(

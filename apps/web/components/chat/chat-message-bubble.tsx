@@ -1,7 +1,17 @@
 "use client"
 
 import {
-  Copy, Loader2, RotateCcw, Sparkles, Square, ThumbsDown, ThumbsUp, User, Volume2,
+  Copy,
+  FileText,
+  Loader2,
+  PenLine,
+  RotateCcw,
+  Sparkles,
+  Square,
+  ThumbsDown,
+  ThumbsUp,
+  User,
+  Volume2,
 } from "lucide-react"
 
 import { useChatTextToSpeech } from "@/hooks/use-chat-text-to-speech"
@@ -13,8 +23,10 @@ import type { ChatMessageFeedbackRating } from "@/lib/api/chat"
 
 import { MarkdownContent } from "@/components/chat/chat-markdown"
 import { ThinkingBlock } from "@/components/chat/thinking-block"
+import { attachmentThumbUrl } from "@/components/chat/chat-composer-attachments"
 import {
   hasVisibleAssistantAnswer,
+  isAssistantPlaceholderContent,
   type Message,
   type TokenUsage,
 } from "@/components/chat/chat-message-model"
@@ -138,6 +150,7 @@ export function MessageBubble({
   canRegenerate = false,
   onRegenerate,
   onFeedback,
+  onOpenCanvasDraft,
   profileId,
 }: {
   msg: Message
@@ -147,6 +160,8 @@ export function MessageBubble({
   canRegenerate?: boolean
   onRegenerate?: () => void
   onFeedback?: (rating: ChatMessageFeedbackRating | null) => void
+  /** Re-open a Canvas draft that was written for this assistant message. */
+  onOpenCanvasDraft?: (draft: NonNullable<Message["canvasDraft"]>) => void
   profileId?: string | null
 }) {
   const isUser = msg.role === "user"
@@ -162,30 +177,40 @@ export function MessageBubble({
     reasoningActive && (hasThinkingText || isStreaming || msg.thinking !== undefined)
   const liveThinking = Boolean(reasoningActive && isStreaming)
 
-  const hasVisibleAnswer = hasVisibleAssistantAnswer(msg.content ?? "")
+  const streamingUi = isStreaming || Boolean(msg.pending)
+  const hasVisibleAnswer = hasVisibleAssistantAnswer(msg.content ?? "", {
+    streaming: streamingUi,
+  })
+  // Process talk only — library [[ASSETS]] / [[ASSET_LIST]] tags are real answers.
+  const contentIsPlaceholder =
+    !isUser &&
+    isAssistantPlaceholderContent(msg.content ?? "") &&
+    !hasVisibleAnswer
+  const canShowAnswerBody = hasVisibleAnswer && !contentIsPlaceholder
 
   /**
-   * With reasoning enabled: hide the answer card until reply text (or asset tags) appears,
-   * so reasoning streams first; answer then streams in its own bubble below.
+   * Keep a status row under reasoning while tools/model run.
+   * Only hide the answer area after the stream ends with thinking-only residue.
    */
   const hideMainAnswerBubble =
     !isUser &&
-    !hasVisibleAnswer &&
+    !canShowAnswerBody &&
     reasoningActive &&
-    (hasThinkingText || isStreaming || Boolean(msg.pending))
+    !streamingUi &&
+    !msg.streamStatus
 
   const showNeutralGenerating =
     !isUser &&
     !reasoningActive &&
-    isStreaming &&
-    !hasVisibleAnswer
+    streamingUi &&
+    !canShowAnswerBody
 
+  /** Spinner + friendly status under reasoning (or alone) until real prose arrives. */
   const showComposingInBubble =
     !hideMainAnswerBubble &&
     !showNeutralGenerating &&
-    ((msg.pending && !hasVisibleAnswer && !hasThinkingText && !isStreaming) ||
-      (isStreaming && !hasVisibleAnswer && !hasThinkingText && !showThinkingRow) ||
-      (isStreaming && Boolean(msg.streamStatus) && !hasVisibleAnswer))
+    !canShowAnswerBody &&
+    (streamingUi || Boolean(msg.streamStatus) || Boolean(msg.pending))
 
   return (
     <div className={`flex gap-3 ${isUser ? "flex-row-reverse" : "flex-row"}`}>
@@ -218,7 +243,7 @@ export function MessageBubble({
           ) : showComposingInBubble ? (
             <span className="flex items-center gap-1.5 text-muted-foreground">
               <Loader2 className="size-3.5 animate-spin" />
-              {msg.streamStatus ?? "Working on it…"}
+              {msg.streamStatus?.trim() || "Working on it…"}
             </span>
           ) : isUser ? (
             <div className="space-y-2">
@@ -235,27 +260,84 @@ export function MessageBubble({
                   ))}
                 </div>
               ) : null}
+              {msg.fileAttachments && msg.fileAttachments.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5">
+                  {msg.fileAttachments.map((f) => (
+                    <div
+                      key={f.assetId}
+                      className="flex max-w-full items-center gap-2 rounded-lg border border-white/25 bg-white/10 px-1.5 py-1 pr-2.5"
+                      title={f.filename}
+                    >
+                      <div className="relative size-10 shrink-0 overflow-hidden rounded-md bg-black/20">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={`${attachmentThumbUrl(f.assetId)}?v=${encodeURIComponent(f.updatedAt)}`}
+                          alt=""
+                          className="h-full w-full object-cover object-top"
+                          onError={(e) => {
+                            e.currentTarget.style.display = "none"
+                            const fallback = e.currentTarget.nextElementSibling as HTMLElement | null
+                            if (fallback) fallback.hidden = false
+                          }}
+                        />
+                        <div
+                          hidden
+                          className="flex h-full w-full items-center justify-center text-white/70"
+                        >
+                          <FileText className="size-4" />
+                        </div>
+                      </div>
+                      <span className="min-w-0 max-w-[12rem] truncate text-[11px] font-medium leading-snug">
+                        {f.filename}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
               {msg.content.trim() ? (
                 <span className="whitespace-pre-wrap">{msg.content}</span>
               ) : null}
             </div>
-          ) : isLive ? (
-            <span className="whitespace-pre-wrap">
-              {msg.content}
-              {isStreaming ? (
+          ) : canShowAnswerBody ? (
+            // Always markdown so [[ASSETS]] / [[ASSET_LIST]] render as cards while streaming.
+            <div className="relative">
+              <MarkdownContent content={msg.content} />
+              {isLive && isStreaming ? (
                 <span
                   className="ml-0.5 inline-block h-[1em] w-0.5 translate-y-px animate-pulse bg-primary/80 align-middle"
                   aria-hidden
                 />
               ) : null}
-            </span>
+            </div>
           ) : (
-            <MarkdownContent content={msg.content} />
+            <span className="flex items-center gap-1.5 text-muted-foreground">
+              <Loader2 className="size-3.5 animate-spin" />
+              {msg.streamStatus?.trim() || "Working on it…"}
+            </span>
           )}
         </div>
         )}
 
-        {!isUser && !msg.pending && !isStreaming && hasVisibleAnswer && onFeedback && (
+        {!isUser && msg.canvasDraft && !msg.pending && onOpenCanvasDraft ? (
+          <button
+            type="button"
+            onClick={() => onOpenCanvasDraft(msg.canvasDraft!)}
+            className="mt-1.5 inline-flex max-w-full items-center gap-2 rounded-xl border border-border bg-card px-2.5 py-1.5 text-left text-[11px] font-medium text-foreground shadow-sm transition-colors hover:border-primary/35 hover:bg-primary/[0.06]"
+            title="Open this draft in Canvas"
+          >
+            <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+              <PenLine className="size-3.5" />
+            </span>
+            <span className="min-w-0">
+              <span className="block truncate font-semibold">{msg.canvasDraft.title}</span>
+              <span className="block text-[10px] font-normal text-muted-foreground">
+                Open in Canvas
+              </span>
+            </span>
+          </button>
+        ) : null}
+
+        {!isUser && !msg.pending && !isStreaming && canShowAnswerBody && onFeedback && (
           <MessageActions
             content={msg.content}
             usage={msg.usage}

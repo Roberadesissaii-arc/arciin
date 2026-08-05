@@ -3,7 +3,7 @@
 import Link from "next/link"
 import { useEffect, useMemo, useRef } from "react"
 import { usePathname } from "next/navigation"
-import { CloudUpload, Command, Search } from "lucide-react"
+import { Clock, CloudUpload, Command, Search } from "lucide-react"
 
 import { CommandPalettePanel } from "@/components/app-shell/command-palette-panel"
 import { ImportLinkDialog } from "@/components/uploads/import-link-dialog"
@@ -38,6 +38,8 @@ export function DashboardHeader() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const commandOpen = useUiStore((state) => state.commandOpen)
   const setCommandOpen = useUiStore((state) => state.setCommandOpen)
+  const chatHistoryOpen = useUiStore((state) => state.chatHistoryOpen)
+  const toggleChatHistory = useUiStore((state) => state.toggleChatHistory)
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -71,56 +73,90 @@ export function DashboardHeader() {
   const isChatPage = pathname === "/chat" || pathname.startsWith("/chat/")
 
   return (
-    <header className="sticky top-0 z-30 shrink-0 bg-transparent pointer-events-none">
+    <header
+      className={cn(
+        "z-30 bg-transparent pointer-events-none",
+        // Chat is a full-height workspace (canvas + messages). Keep the breadcrumb
+        // floating so it does not reserve a white strip above the canvas panel.
+        isChatPage ? "absolute inset-x-0 top-0" : "sticky top-0 shrink-0",
+      )}
+    >
       <div className="flex flex-row items-center gap-2 px-3 py-2.5 md:gap-2 lg:gap-3 lg:px-5 lg:py-3">
         {!isMobile ? (
-          <div
-            className={cn(
-              "flex min-w-0 shrink-0 items-center",
-              floatChip,
-              headerControlH,
-              "max-w-[42%] px-2.5 md:max-w-[9.5rem] lg:max-w-[13rem] xl:max-w-[16rem]",
-            )}
-          >
-            <Breadcrumb className="min-w-0 w-full">
-              <BreadcrumbList className="flex-nowrap text-muted-foreground">
-                <BreadcrumbItem className="shrink-0">
-                  <BreadcrumbLink asChild>
-                    <Link
-                      href="/dashboard"
-                      className="font-medium text-foreground transition-colors hover:text-primary"
-                    >
-                      Arciin
-                    </Link>
-                  </BreadcrumbLink>
-                </BreadcrumbItem>
-                {parentCrumb ? (
-                  <>
-                    <BreadcrumbSeparator className="hidden lg:block" />
-                    <BreadcrumbItem className="hidden min-w-0 max-w-[7rem] truncate lg:block">
-                      <BreadcrumbLink asChild>
-                        <Link
-                          href={parentCrumb.href}
-                          className="transition-colors hover:text-primary"
-                        >
-                          {parentCrumb.label}
-                        </Link>
-                      </BreadcrumbLink>
-                    </BreadcrumbItem>
-                  </>
-                ) : null}
-                {leafCrumb ? (
-                  <>
-                    <BreadcrumbSeparator />
-                    <BreadcrumbItem className="min-w-0 truncate">
-                      <BreadcrumbPage className="truncate font-medium text-foreground">
-                        {leafCrumb.label}
-                      </BreadcrumbPage>
-                    </BreadcrumbItem>
-                  </>
-                ) : null}
-              </BreadcrumbList>
-            </Breadcrumb>
+          <div className="pointer-events-auto flex min-w-0 shrink-0 items-center gap-1.5">
+            <div
+              className={cn(
+                "flex min-w-0 items-center",
+                floatChip,
+                headerControlH,
+                // Chat: compact breadcrumb; History chip sits beside it (original placement).
+                isChatPage
+                  ? "max-w-[11rem] px-2.5 lg:max-w-[13rem]"
+                  : "max-w-[42%] px-2.5 md:max-w-[9.5rem] lg:max-w-[13rem] xl:max-w-[16rem]",
+              )}
+            >
+              <Breadcrumb className="min-w-0 w-full">
+                <BreadcrumbList className="flex-nowrap text-muted-foreground">
+                  <BreadcrumbItem className="shrink-0">
+                    <BreadcrumbLink asChild>
+                      <Link
+                        href="/dashboard"
+                        className="font-medium text-foreground transition-colors hover:text-primary"
+                      >
+                        Arciin
+                      </Link>
+                    </BreadcrumbLink>
+                  </BreadcrumbItem>
+                  {parentCrumb ? (
+                    <>
+                      <BreadcrumbSeparator className="hidden lg:block" />
+                      <BreadcrumbItem className="hidden min-w-0 max-w-[7rem] truncate lg:block">
+                        <BreadcrumbLink asChild>
+                          <Link
+                            href={parentCrumb.href}
+                            className="transition-colors hover:text-primary"
+                          >
+                            {parentCrumb.label}
+                          </Link>
+                        </BreadcrumbLink>
+                      </BreadcrumbItem>
+                    </>
+                  ) : null}
+                  {leafCrumb ? (
+                    <>
+                      <BreadcrumbSeparator />
+                      <BreadcrumbItem className="min-w-0 truncate">
+                        <BreadcrumbPage className="truncate font-medium text-foreground">
+                          {leafCrumb.label}
+                        </BreadcrumbPage>
+                      </BreadcrumbItem>
+                    </>
+                  ) : null}
+                </BreadcrumbList>
+              </Breadcrumb>
+            </div>
+
+            {isChatPage ? (
+              <button
+                type="button"
+                onClick={() => toggleChatHistory()}
+                className={cn(
+                  floatChip,
+                  headerControlH,
+                  "inline-flex shrink-0 items-center gap-1.5 px-2.5 text-[11px] font-medium transition-colors",
+                  chatHistoryOpen
+                    ? "border-primary/30 bg-primary/10 text-primary"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+                title={chatHistoryOpen ? "Hide history" : "Show history"}
+                aria-pressed={chatHistoryOpen}
+              >
+                <Clock className="size-3.5 shrink-0" />
+                <span className="hidden sm:inline">
+                  {chatHistoryOpen ? "Hide history" : "History"}
+                </span>
+              </button>
+            ) : null}
           </div>
         ) : null}
 

@@ -114,14 +114,65 @@ function extractFilenameHintFromAssistant(text: string): string | null {
   return null
 }
 
-function extractAssetIdFromMessages(messages: ChatMsg[]): string | null {
-  for (const m of [...messages].reverse()) {
-    const inline = m.content.match(ASSET_ID_RE)
-    if (inline?.[1]) return inline[1]
-    const tagMatch = [...m.content.matchAll(ASSET_TAG_ID_RE)]
-    if (tagMatch.length > 0) return tagMatch[tagMatch.length - 1]![1]!
+
+/** Prefer an exact quoted filename from slash / summarize prompts. */
+export function extractQuotedOrNamedFilename(text: string): string | null {
+  const patterns = [
+    /(?:named|file)\s+"([^"]+)"/i,
+    /Read ONLY the file\s+"([^"]+)"/i,
+    /"([^"]+\.(?:pdf|docx?|xlsx?|pptx?|odt|txt|md|csv))"/i,
+    // /summarize Arcellite.pdf (raw slash, before expansion)
+    /^\/(?:summarize|summarise|read)\s+(.+?\.(?:pdf|docx?|xlsx?|pptx?|odt|txt|md))\s*$/i,
+    /\b([\w][\w .'-]*\.(?:pdf|docx?|xlsx?|pptx?|odt))\b/i,
+  ]
+  for (const re of patterns) {
+    const m = text.match(re)
+    if (m?.[1]?.trim()) return m[1].trim().replace(/^["']|["']$/g, "")
   }
   return null
+}
+
+function findDocumentByExactFilename(
+  name: string,
+  docs: Array<{ id: string; filename: string }>,
+): string | null {
+  const n = name.toLowerCase().trim()
+  if (!n) return null
+  const exact = docs.find((d) => d.filename.toLowerCase() === n)
+  if (exact) return exact.id
+  // Partial: user typed stem without full book title noise
+  const byIncludes = docs.filter(
+    (d) =>
+      d.filename.toLowerCase().includes(n) ||
+      n.includes(d.filename.toLowerCase().replace(/\.[^.]+$/, "")),
+  )
+  if (byIncludes.length === 1) return byIncludes[0]!.id
+  // Prefer PDF when the user named a .pdf
+  if (n.endsWith(".pdf")) {
+    const pdf = byIncludes.find((d) => d.filename.toLowerCase().endsWith(".pdf"))
+    if (pdf) return pdf.id
+  }
+  return null
+}
+
+/** Composer attaches books as: "Name.pdf" (id=cmxxxx) */
+const ATTACHED_ID_RE = /\(id\s*=\s*(c[a-z0-9]{20,})\)/gi
+const ATTACHED_FILE_RE =
+  /"([^"]+\.(?:pdf|docx?|xlsx?|pptx?|odt|txt|md))"\s*\(id\s*=\s*(c[a-z0-9]{20,})\)/gi
+
+function parseAttachedFilesFromUserText(
+  userText: string,
+): Array<{ id: string; filename: string }> {
+  const out: Array<{ id: string; filename: string }> = []
+  for (const m of userText.matchAll(ATTACHED_FILE_RE)) {
+    out.push({ filename: m[1]!.trim(), id: m[2]! })
+  }
+  if (out.length === 0) {
+    for (const m of userText.matchAll(ATTACHED_ID_RE)) {
+      out.push({ filename: "", id: m[1]! })
+    }
+  }
+  return out
 }
 
 function resolvePdfAssetId(
@@ -129,28 +180,65 @@ function resolvePdfAssetId(
   priorUserTexts: string[],
   messages: ChatMsg[],
 ): string | null {
-  const docs = parseDocumentsFromMessages(messages)
-  if (docs.length === 0) return null
+  // 0) Composer attachment block — trust the explicit id the client sent.
+  const attached = parseAttachedFilesFromUserText(userText)
+  if (attached.length === 1) return attached[0]!.id
+  if (attached.length > 1) {
+    // Prefer a PDF when multiple are attached.
+    const pdf = attached.find((a) => /\.pdf$/i.test(a.filename))
+    return (pdf ?? attached[0])!.id
+  }
 
+  const docs = [
+    ...parseDocumentsFromMessages(messages),
+    ...parseAttachedFilesFromUserText(userText),
+  ]
+  // Deduplicate by id
+  const byId = new Map(docs.map((d) => [d.id, d]))
+  const uniqueDocs = [...byId.values()]
+
+  // 1) Explicit asset id in the user message (attachment / paste).
   const explicitId = userText.match(ASSET_ID_RE)?.[1]
-  if (explicitId && docs.some((d) => d.id === explicitId)) return explicitId
+  if (explicitId) {
+    if (uniqueDocs.some((d) => d.id === explicitId)) return explicitId
+    // Client-attached ids are authoritative even when not in the short snapshot.
+    if (/\(id\s*=/.test(userText) || /USER ATTACHED FILE/i.test(userText)) {
+      return explicitId
+    }
+  }
 
-  const taggedId = extractAssetIdFromMessages(messages)
-  if (taggedId && docs.some((d) => d.id === taggedId)) return taggedId
+  if (uniqueDocs.length === 0) return null
 
-  const combined = [userText, ...priorUserTexts].join("\n")
-  const fromQuery = findDocumentByHint(combined, docs)
+  // 2) Exact / quoted filename from this turn (slash commands).
+  const named = extractQuotedOrNamedFilename(userText)
+  if (named) {
+    const exact = findDocumentByExactFilename(named, uniqueDocs)
+    if (exact) return exact
+  }
+
+  // 3) [[ASSETS:ids:…]] tags from prior assistant turns only — never scan system context.
+  for (const m of [...messages].reverse()) {
+    if (m.role !== "assistant") continue
+    const tagMatch = [...m.content.matchAll(ASSET_TAG_ID_RE)]
+    if (tagMatch.length > 0) {
+      const id = tagMatch[tagMatch.length - 1]![1]!
+      if (uniqueDocs.some((d) => d.id === id)) return id
+    }
+  }
+
+  // 4) Fuzzy match on this user turn only (not entire history — avoids wrong docs).
+  const fromQuery = findDocumentByHint(userText, uniqueDocs)
   if (fromQuery) return fromQuery
 
   for (const m of [...messages].reverse()) {
     if (m.role !== "assistant" || !m.content) continue
     const hint = extractFilenameHintFromAssistant(m.content)
     if (!hint) continue
-    const fromHint = findDocumentByHint(`${hint}\n${userText}`, docs)
+    const fromHint = findDocumentByHint(`${hint}\n${userText}`, uniqueDocs)
     if (fromHint) return fromHint
   }
 
-  return docs.length === 1 ? docs[0]!.id : null
+  return uniqueDocs.length === 1 ? uniqueDocs[0]!.id : null
 }
 
 const BARE_SUMMARIZE_RE =
@@ -177,8 +265,44 @@ export function isPdfContentQuestion(userText: string, priorUserTexts: string[] 
 
   // Explicit slash-style / summarize prompts from the web client.
   if (
+    /\bread_pdf_asset\b/i.test(t) ||
     /\bMUST call read_pdf_asset\b/i.test(t) ||
-    /\bSummarize the document or file named\b/i.test(t)
+    /\bSummarize(?:\s+ONLY)?\s+the document or file named\b/i.test(t) ||
+    /\bSummarize ONLY\b/i.test(t) ||
+    /^\/(?:summarize|summarise)\b/i.test(t)
+  ) {
+    return true
+  }
+
+  // Essay / exam / quiz / study questions / docs from a book need the PDF body.
+  if (
+    /\b(essay|exam|quiz|test|assessment|worksheet|homework|study\s+guide|questions?|documentation|outline)\b/i.test(
+      t,
+    ) &&
+    (DOC_REFERENT_RE.test(combined) ||
+      /\b(this|that|the)\s+(book|pdf|document|paper|file)\b/i.test(t) ||
+      /\.pdf\b/i.test(t) ||
+      /USER ATTACHED FILE/i.test(t) ||
+      /\(id\s*=\s*c[a-z0-9]+\)/i.test(t) ||
+      /create\s+an?\s+essay\b/i.test(t))
+  ) {
+    return true
+  }
+
+  // Attached PDF + any write/create intent
+  if (
+    /USER ATTACHED FILE/i.test(t) &&
+    /\b(write|create|generate|prepare|compose|draft|essay|exam|quiz|summar)\b/i.test(t)
+  ) {
+    return true
+  }
+
+  // Any message that names a concrete .pdf and asks to summarize/read it.
+  if (
+    /\.pdf\b/i.test(t) &&
+    /\b(summarize|summarise|summary|read|explain|describe|contents?|essay|exam|quiz|questions?)\b/i.test(
+      t,
+    )
   ) {
     return true
   }
@@ -210,29 +334,36 @@ export function buildSyntheticReadPdfAssetArgsFromUser(
 
   const docs = parseDocumentsFromMessages(messages)
   const t = userText.trim().toLowerCase()
+  const named = extractQuotedOrNamedFilename(userText)
 
-  // Ordinal / deictic after a list: first, latest, that one, it
-  if (docs.length > 0) {
+  // Ordinal / deictic after a list: first, latest — only when no explicit filename.
+  if (docs.length > 0 && !named) {
     if (/\b(first|1st|earliest)\b/.test(t)) {
       return { asset_id: docs[0]!.id }
     }
     if (/\b(latest|last|most\s+recent|newest)\b/.test(t)) {
       return { asset_id: docs[docs.length - 1]!.id }
     }
-    if (
-      docs.length === 1 ||
-      BARE_SUMMARIZE_RE.test(userText.trim()) ||
-      /^(?:summarize|summarise)\b/i.test(userText.trim())
-    ) {
-      // Prefer filename match, else first/only document.
-      const byHint = resolvePdfAssetId(userText, priorUserTexts, messages)
-      if (byHint) return { asset_id: byHint }
-      return { asset_id: docs[0]!.id }
-    }
   }
 
+  // Always prefer exact resolve (quoted name first). Never guess docs[0] when a
+  // specific filename was provided and we couldn't match it.
   const assetId = resolvePdfAssetId(userText, priorUserTexts, messages)
-  if (!assetId) return null
+  if (assetId) return { asset_id: assetId }
 
-  return { asset_id: assetId }
+  if (named) {
+    // Named file not in the short snapshot — still null so the model can call tools with filename.
+    return null
+  }
+
+  // Bare "summarize" / "summarize it" with a single doc in context.
+  if (
+    docs.length === 1 &&
+    (BARE_SUMMARIZE_RE.test(userText.trim()) ||
+      /^(?:summarize|summarise)\b/i.test(userText.trim()))
+  ) {
+    return { asset_id: docs[0]!.id }
+  }
+
+  return null
 }

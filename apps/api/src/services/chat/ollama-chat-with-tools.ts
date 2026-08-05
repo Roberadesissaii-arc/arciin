@@ -18,7 +18,10 @@ import {
   extractBracketPseudoToolCalls,
   extractProseLibraryFolderMutations,
 } from "@/services/chat/folder-tool-synthetic"
-import { buildSyntheticReadPdfAssetArgsFromUser } from "@/services/chat/read-pdf-asset-synthetic"
+import {
+  buildSyntheticReadPdfAssetArgsFromUser,
+  extractQuotedOrNamedFilename,
+} from "@/services/chat/read-pdf-asset-synthetic"
 import { buildSyntheticReadTextAssetArgsFromUser } from "@/services/chat/read-text-asset-synthetic"
 import { normalizeOllamaCloudModelId } from "@/services/chat/ollama-cloud-models"
 import { formatOllamaProviderError, ollamaAuthHeaders } from "@/services/chat/ollama-http"
@@ -81,6 +84,99 @@ type OllamaMessage = {
 
 const MAX_TOOL_ROUNDS = 4
 
+/** Strip "you must call read_pdf_asset" instructions once the server already loaded the file. */
+function stripPendingToolInstructions(text: string): string {
+  return text
+    .replace(
+      /You MUST use read_pdf_asset or read_text_asset[\s\S]*?(?=\n\n|$)/gi,
+      "The file text has already been loaded by Arciin for this turn.",
+    )
+    .replace(/\bMUST call read_pdf_asset\b/gi, "use the loaded source text")
+    .replace(/\buse read_pdf_asset or read_text_asset with that exact filename\/id before\b/gi, "use the already-loaded source text when")
+    .replace(/Never print tool_call XML or JSON in the user-visible answer\./gi, "")
+    .trim()
+}
+
+function isEssayOrLongFormRequest(userText: string): boolean {
+  return /\b(essay|article|report|exam|quiz|study\s+guide|documentation|outline|write\s+(?:me\s+)?(?:an?\s+)?(?:essay|article)|what\s+this\s+book\s+is\s+about|what\s+(?:is\s+)?(?:this|the)\s+book\s+about)\b/i.test(
+    userText,
+  )
+}
+
+/**
+ * After a PDF/text read tool runs, rebuild the message list so the model sees
+ * clear SOURCE TEXT and never plans another tool call.
+ */
+function buildMessagesAfterFileRead(opts: {
+  messages: ChatMsg[]
+  toolName: "read_pdf_asset" | "read_text_asset"
+  toolResult: Record<string, unknown>
+  userRequest: string
+}): ChatMsg[] {
+  const { toolResult, toolName, userRequest } = opts
+  const out: ChatMsg[] = []
+
+  for (const m of opts.messages) {
+    if (m.role === "tool") continue
+    if (m.role === "assistant" && m.tool_calls?.length) continue
+    if (m.role === "system" && /tool result above|PDF text is already|file contents are already/i.test(m.content)) {
+      continue
+    }
+    if (m.role === "user") {
+      out.push({ role: "user", content: stripPendingToolInstructions(m.content) })
+      continue
+    }
+    out.push({ ...m, content: (m.content ?? "").trim() || " " })
+  }
+
+  const filename =
+    typeof toolResult.filename === "string" ? toolResult.filename : "attached file"
+  const err =
+    typeof toolResult.error === "string"
+      ? String(toolResult.message ?? toolResult.error)
+      : null
+  const body =
+    typeof toolResult.content === "string"
+      ? toolResult.content
+      : err
+        ? `(Could not read file: ${err})`
+        : JSON.stringify(toolResult)
+
+  const essay = isEssayOrLongFormRequest(userRequest)
+  const task = essay
+    ? [
+        "Write a FULL multi-section essay about this book (what it is about, main themes, and takeaways).",
+        "Required structure:",
+        "# Title",
+        "## Introduction",
+        "## What the book is about",
+        "## Main themes (2–4 ## or ### sections)",
+        "## Conclusion",
+        "## References",
+        "Aim for roughly 800–1500 words. Ground every claim in the SOURCE TEXT below.",
+        "Start immediately with `# Title`. Do NOT say you will read the PDF. Do NOT print tool calls.",
+      ].join("\n")
+    : [
+        "Answer the user completely using the SOURCE TEXT below.",
+        "Do NOT say you will open or read the file — it is already loaded.",
+        "Do NOT print tool_call XML/JSON or [[ASSETS:…]] tags.",
+      ].join("\n")
+
+  out.push({
+    role: "user",
+    content:
+      `[SOURCE ${toolName === "read_pdf_asset" ? "PDF" : "FILE"} TEXT — ALREADY LOADED BY ARCIIN]\n` +
+      `Filename: ${filename}\n` +
+      `The following text was extracted from the attached file. Use it as your only source.\n\n` +
+      `${body.slice(0, 28_000)}\n\n` +
+      `---\n` +
+      `User request:\n${stripPendingToolInstructions(userRequest).split("[USER ATTACHED FILE")[0]!.trim()}\n\n` +
+      `${task}`,
+  })
+
+  return out
+}
+
 /** Ollama final answer pass uses tools:false — collapse tool history into plain messages. */
 function flattenToolMessagesForFinalAnswer(messages: ChatMsg[]): ChatMsg[] {
   const out: ChatMsg[] = []
@@ -108,9 +204,10 @@ function flattenToolMessagesForFinalAnswer(messages: ChatMsg[]): ChatMsg[] {
       if (toolPayloads.length > 0) {
         out.push({
           role: "user",
-          content: `Tool results (use these to answer the user — report findings in your final answer; do not say you will search or read):\n\n${toolPayloads
-            .map((p, idx) => `--- Result ${idx + 1} ---\n${p}`)
-            .join("\n\n")}`,
+          content:
+            `Tool results are ALREADY LOADED below. Write the final answer now. ` +
+            `Do not plan to search, open, or read anything else.\n\n` +
+            toolPayloads.map((p, idx) => `--- Result ${idx + 1} ---\n${p}`).join("\n\n"),
         })
       }
       i = j - 1
@@ -118,7 +215,10 @@ function flattenToolMessagesForFinalAnswer(messages: ChatMsg[]): ChatMsg[] {
     }
     if (m.role === "tool") continue
     const content = (m.content ?? "").trim()
-    out.push({ ...m, content: content || " " })
+    out.push({
+      ...m,
+      content: m.role === "user" ? stripPendingToolInstructions(content) || " " : content || " ",
+    })
   }
 
   return out
@@ -375,50 +475,92 @@ export async function streamOllamaWithArciinTools(opts: {
   const lastUser = [...messages].reverse().find((m) => m.role === "user")
   const priorUserTexts = messages.filter((m) => m.role === "user").map((m) => m.content)
 
-  if (lastUser && agentEnabled && !requireApproval) {
+  // Read-only synthetic file loads ALWAYS run (even when Agent is off / approval is on).
+  // Attached books + "write an essay" must never depend on the model inventing tool_call XML.
+  if (lastUser) {
     const readArgs = buildSyntheticReadTextAssetArgsFromUser(lastUser.content, priorUserTexts)
     if (readArgs) {
       writeSseEvent(raw, { libraryAction: "read_text_asset", status: "Reading file…" })
       const syntheticCall = {
         function: { name: "read_text_asset" as const, arguments: readArgs },
       }
-      const result = await executeArciinChatTool(syntheticCall, toolCtx)
-      messages.push({ role: "assistant", content: " ", tool_calls: [syntheticCall] })
-      messages.push({ role: "tool", content: JSON.stringify(result) })
-      messages.push({
-        role: "system",
-        content:
-          "The file contents are already in the tool result above. Answer completely now using that text. " +
-          "Do not stop after saying you will open the file. " +
-          "Discuss ONLY this file. Do not list other library documents. Do not emit [[ASSET_LIST:…]] or [[ASSETS:…]] tags.",
+      const result = (await executeArciinChatTool(syntheticCall, toolCtx)) as Record<string, unknown>
+      const finalMessages = buildMessagesAfterFileRead({
+        messages,
+        toolName: "read_text_asset",
+        toolResult: result,
+        userRequest: lastUser.content,
       })
-      await streamFinalAnswer(raw, baseUrl, model, messages, totalIn, totalOut, apiKey, thinkingSupported)
+      await streamFinalAnswer(raw, baseUrl, model, finalMessages, totalIn, totalOut, apiKey, thinkingSupported)
       return
     }
 
-    const pdfArgs = buildSyntheticReadPdfAssetArgsFromUser(
+    let pdfArgs = buildSyntheticReadPdfAssetArgsFromUser(
       lastUser.content,
       priorUserTexts,
       messages,
     )
+
+    // Snapshot miss: resolve the named PDF directly from the database.
+    if (!pdfArgs) {
+      const named = extractQuotedOrNamedFilename(lastUser.content)
+      if (named && /\.pdf$/i.test(named)) {
+        const hit = await toolCtx.prisma.asset.findFirst({
+          where: {
+            deletedAt: null,
+            mediaType: "DOCUMENT",
+            originalFilename: { equals: named, mode: "insensitive" },
+          },
+          select: { id: true },
+          orderBy: { updatedAt: "desc" },
+        })
+        if (hit) pdfArgs = { asset_id: hit.id }
+      }
+    }
+
+    // Attached id fallback when content-question heuristics missed.
+    if (!pdfArgs) {
+      const attachedId = lastUser.content.match(/\(id\s*=\s*(c[a-z0-9]{20,})\)/i)?.[1]
+      if (
+        attachedId &&
+        (/\.pdf\b/i.test(lastUser.content) || /USER ATTACHED FILE/i.test(lastUser.content)) &&
+        isEssayOrLongFormRequest(lastUser.content)
+      ) {
+        pdfArgs = { asset_id: attachedId }
+      }
+    }
+
     if (pdfArgs) {
       writeSseEvent(raw, { libraryAction: "read_pdf_asset", status: "Reading PDF…" })
+      const essay = isEssayOrLongFormRequest(lastUser.content)
       const syntheticCall = {
-        function: { name: "read_pdf_asset" as const, arguments: pdfArgs },
+        function: {
+          name: "read_pdf_asset" as const,
+          // Longer extract for essays so the model has enough book substance.
+          arguments: {
+            ...pdfArgs,
+            max_chars: essay ? 24_000 : 14_000,
+            max_pages: essay ? 80 : 60,
+          },
+        },
       }
-      const result = await executeArciinChatTool(syntheticCall, toolCtx)
-      messages.push({ role: "assistant", content: " ", tool_calls: [syntheticCall] })
-      messages.push({ role: "tool", content: JSON.stringify(result) })
-      // Models often emit "let me open the book…" and stop — force a full answer pass.
-      messages.push({
-        role: "system",
-        content:
-          "The PDF text is already in the tool result above. Answer the user completely now " +
-          "(summary, explanation, or page answer). Do not say you will open or read the file next — " +
-          "write the full response using the tool content. Prefer multi-paragraph substance over a one-liner. " +
-          "Discuss ONLY this document. Do not list other library files. Do not emit [[ASSET_LIST:…]] or [[ASSETS:…]] tags.",
+      const result = (await executeArciinChatTool(syntheticCall, toolCtx)) as Record<
+        string,
+        unknown
+      >
+      if (result.error) {
+        writeSseEvent(raw, {
+          status: `Could not read PDF (${String(result.message ?? result.error)})`,
+        })
+      }
+      // Rebuild history with clear SOURCE TEXT — models ignore vague "tool already ran" notes.
+      const finalMessages = buildMessagesAfterFileRead({
+        messages,
+        toolName: "read_pdf_asset",
+        toolResult: result,
+        userRequest: lastUser.content,
       })
-      await streamFinalAnswer(raw, baseUrl, model, messages, totalIn, totalOut, apiKey, thinkingSupported)
+      await streamFinalAnswer(raw, baseUrl, model, finalMessages, totalIn, totalOut, apiKey, thinkingSupported)
       return
     }
   }

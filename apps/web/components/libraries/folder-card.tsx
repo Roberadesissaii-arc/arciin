@@ -4,7 +4,7 @@ import { useState } from "react"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import { useQuery } from "@tanstack/react-query"
-import { Folder, FolderLock, Eye, EyeOff, Cloud, PencilLine, Share2, Trash2, X } from "lucide-react"
+import { Folder, FolderLock, Eye, EyeOff, Cloud, Inbox, PencilLine, Share2, Trash2, X } from "lucide-react"
 import {
   notifyDeleted,
   notifyFolderActionError,
@@ -18,6 +18,7 @@ import {
 
 import { FolderAccessDialog } from "@/components/libraries/folder-access-dialog"
 import { ShareDialog } from "@/components/shares/share-dialog"
+import { FileRequestDialog } from "@/components/file-requests/file-request-dialog"
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -77,6 +78,7 @@ export function FolderCard({ folder, librarySlug }: { folder: FolderSummary; lib
   const [renameError, setRenameError] = useState<string | undefined>()
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [shareOpen, setShareOpen] = useState(false)
+  const [requestOpen, setRequestOpen] = useState(false)
   const [accessOpen, setAccessOpen] = useState(false)
   const [accessMode, setAccessMode] = useState<"open" | "lock" | "remove-lock">("open")
 
@@ -309,6 +311,16 @@ export function FolderCard({ folder, librarySlug }: { folder: FolderSummary; lib
             <Share2 className="size-4" />
             Share…
           </ContextMenuItem>
+          {/* Separate action, not a mode of Share: Share lets someone read this
+              folder, Request files lets someone write into it without reading. */}
+          <ContextMenuItem
+            disabled={needsUnlock}
+            onSelect={() => setRequestOpen(true)}
+            data-testid="folder-request-files"
+          >
+            <Inbox className="size-4" />
+            Request files…
+          </ContextMenuItem>
           <ContextMenuItem
             disabled={updateMutation.isPending}
             onSelect={async () => {
@@ -344,6 +356,12 @@ export function FolderCard({ folder, librarySlug }: { folder: FolderSummary; lib
         open={shareOpen}
         onOpenChange={setShareOpen}
         target={{ resourceType: "FOLDER", folder }}
+      />
+
+      <FileRequestDialog
+        open={requestOpen}
+        onOpenChange={setRequestOpen}
+        folder={folder}
       />
 
       <FolderAccessDialog

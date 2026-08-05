@@ -94,6 +94,32 @@ enum ShareFeedbackSentiment {
   DISLIKE
 }
 
+enum FileRequestStatus {
+  ACTIVE
+  EXPIRED
+  REVOKED
+  LIMIT_REACHED
+}
+
+enum FileRequestSubmissionStatus {
+  UPLOADING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum OutboxStatus {
+  PENDING
+  DISPATCHED
+  FAILED
+}
+
+enum IdempotencyStatus {
+  IN_FLIGHT
+  COMPLETED
+  FAILED
+}
+
 /// Opaque public link to a single asset or folder (token hash at rest).
 model ShareLink {
   id            String             @id @default(cuid())
@@ -218,6 +244,7 @@ model User {
   appDatabases      AppDatabase[]
   chatConversations ChatConversation[]
   shareLinks        ShareLink[]
+  fileRequests      FileRequest[]
 }
 
 /// Logical app database for API/automation: metadata + JSON in PostgreSQL (not library file storage).
@@ -346,6 +373,7 @@ model Library {
   folders           Folder[]
   assets            Asset[]
   uploadSessions    UploadSession[]
+  fileRequests      FileRequest[]
 }
 
 model Folder {
@@ -370,6 +398,7 @@ model Folder {
   assets         Asset[]
   uploadSessions UploadSession[]
   shareLinks     ShareLink[]
+  fileRequests   FileRequest[]
 
   @@unique([libraryId, pathCache])
   @@index([libraryId])
@@ -426,6 +455,10 @@ model Asset {
   showBadge        Boolean         @default(true)
   /// Relative path under storage root for Plex-visible library mirror (e.g. libraries/videos/plex/file.mp4).
   libraryMirrorPath String?
+  /// Set when this asset arrived through a File Request rather than an owner
+  /// upload. Drives the "File Request" badge and the owner's submission view.
+  fileRequestId     String?
+  fileRequestSubmissionId String?
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
   deletedAt        DateTime?
@@ -438,7 +471,13 @@ model Asset {
   shareLinks       ShareLink[]
   shareLinkAssets  ShareLinkAsset[]
   shareFeedback    ShareFeedback[]
+  // SetNull, not Cascade: deleting a File Request must never delete the files
+  // it collected. The owner keeps the uploads; only the provenance link goes.
+  fileRequest      FileRequest?    @relation(fields: [fileRequestId], references: [id], onDelete: SetNull)
+  fileRequestSubmission FileRequestSubmission? @relation(fields: [fileRequestSubmissionId], references: [id], onDelete: SetNull)
 
+  @@index([fileRequestId])
+  @@index([fileRequestSubmissionId])
   @@index([libraryId])
   @@index([folderId])
   @@index([ownerId])
@@ -633,4 +672,148 @@ model ChatMessage {
   conversation ChatConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 
   @@index([conversationId, createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// File Requests — inbound uploads from outsiders
+// ---------------------------------------------------------------------------
+
+/// An opaque public link that lets an outsider upload *into* a folder without
+/// being able to read it. The destination is stored here and nowhere else:
+/// the public client never supplies a folder, library or instance id, because
+/// a public client that can name its own destination can write anywhere.
+model FileRequest {
+  id                   String            @id @default(cuid())
+  instanceId           String
+  createdByUserId      String
+  destinationLibraryId String
+  destinationFolderId  String
+
+  /// SHA-256 of the public token. The token itself is shown once, at creation.
+  tokenHash            String            @unique
+  /// Leading characters of the token, for the owner to recognise a link by.
+  tokenPrefix          String
+  title                String
+  message              String?
+  status               FileRequestStatus @default(ACTIVE)
+
+  expiresAt            DateTime?
+  revokedAt            DateTime?
+
+  allowAnonymous       Boolean           @default(true)
+  requireName          Boolean           @default(false)
+  requireEmail         Boolean           @default(false)
+  allowSubmitterViewOwn Boolean          @default(false)
+  notifyOwner          Boolean           @default(true)
+
+  /// Argon2 hash. Never the code itself.
+  accessCodeHash       String?
+
+  allowedMediaTypes    String[]
+  allowedExtensions    String[]
+
+  maxFileSizeBytes     BigInt?
+  maxTotalBytes        BigInt?
+  maxFileCount         Int?
+
+  currentBytes         BigInt            @default(0)
+  currentFileCount     Int               @default(0)
+
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+
+  createdBy            User              @relation(fields: [createdByUserId], references: [id], onDelete: Cascade)
+  destinationLibrary   Library           @relation(fields: [destinationLibraryId], references: [id], onDelete: Cascade)
+  // Deleting the destination folder must not orphan the row silently: the
+  // request is resolved with its folder loaded, and a cascade removes the link
+  // outright, which is the behaviour the owner intends by deleting the folder.
+  destinationFolder    Folder            @relation(fields: [destinationFolderId], references: [id], onDelete: Cascade)
+
+  submissions          FileRequestSubmission[]
+  assets               Asset[]
+
+  @@index([tokenHash])
+  @@index([createdByUserId])
+  @@index([status, expiresAt])
+  @@index([destinationFolderId])
+  @@index([createdAt])
+}
+
+/// One recipient's upload session against a File Request. Addressed only by its
+/// own id, which is handed back to the submitter — never listed publicly.
+model FileRequestSubmission {
+  id                  String                      @id @default(cuid())
+  fileRequestId       String
+  status              FileRequestSubmissionStatus @default(UPLOADING)
+
+  submitterName       String?
+  submitterEmail      String?
+  /// Salted hash of the client IP. Enough to rate-limit and to recognise a
+  /// repeat abuser; not enough to recover the address.
+  abuseIdentifierHash String?
+
+  fileCount           Int                         @default(0)
+  totalBytes          BigInt                      @default(0)
+
+  createdAt           DateTime                    @default(now())
+  updatedAt           DateTime                    @updatedAt
+  completedAt         DateTime?
+  /// Set once the owner has been told about this submission. Guarantees one
+  /// notification per submission rather than one per uploaded file.
+  notifiedAt          DateTime?
+
+  fileRequest         FileRequest                 @relation(fields: [fileRequestId], references: [id], onDelete: Cascade)
+  assets              Asset[]
+
+  @@index([fileRequestId, createdAt])
+  @@index([status])
+  @@index([notifiedAt])
+}
+
+// ---------------------------------------------------------------------------
+// Transactional upload support (UP-007)
+// ---------------------------------------------------------------------------
+
+/// Durable record of a background job an upload owes.
+///
+/// Written inside the same transaction as the Asset it belongs to, so the
+/// intent to process survives Redis being unreachable, the API crashing after
+/// commit, or a BullMQ add failing. A reconciliation pass drains anything still
+/// pending. `jobId` is derived from the work, so re-dispatch is a no-op.
+model UploadOutbox {
+  id           String       @id @default(cuid())
+  jobId        String       @unique
+  queue        String
+  jobName      String
+  payload      Json
+  status       OutboxStatus @default(PENDING)
+  attempts     Int          @default(0)
+  lastError    String?
+  availableAt  DateTime     @default(now())
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  dispatchedAt DateTime?
+
+  @@index([status, availableAt])
+  @@index([createdAt])
+}
+
+/// Result of a keyed request, so a retry after a lost response replays the
+/// original outcome instead of creating a second asset.
+model IdempotencyRecord {
+  id           String            @id @default(cuid())
+  /// Namespace so an owner upload key and a file-request key cannot collide.
+  scope        String
+  key          String
+  /// Fingerprint of the request. A changed body under the same key is a 409.
+  requestHash  String
+  status       IdempotencyStatus @default(IN_FLIGHT)
+  responseCode Int?
+  responseBody Json?
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+  expiresAt    DateTime
+
+  @@unique([scope, key])
+  @@index([expiresAt])
 }

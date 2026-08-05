@@ -22,8 +22,11 @@ export function isExplicitReadTextAssetMessage(
     return true
   }
 
-  // Slash-command expansions and tool-forcing prompts from the web client.
-  if (/\bread_text_asset\b|\bread_pdf_asset\b|Read ONLY the file\b/i.test(userText)) {
+  // Slash-command expansions — never steal PDF turns from read_pdf_asset.
+  if (/\.pdf\b/i.test(userText) && /\bread_pdf_asset\b|Summarize ONLY\b|summarize\b/i.test(userText)) {
+    return false
+  }
+  if (/\bread_text_asset\b|Read ONLY the file\b/i.test(userText)) {
     return CODE_FILE_RE.test(combined) || DOC_FILE_RE.test(combined) || /\bfile named\b/i.test(t)
   }
 

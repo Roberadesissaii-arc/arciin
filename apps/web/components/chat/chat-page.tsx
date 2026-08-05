@@ -51,6 +51,7 @@ import {
   formatChatSendError,
   messagePersistId,
   resolveFinalAssistantMessage,
+  resolveStreamingBubbleContent,
   displayThinkingDuringStream,
   deriveStreamingThinkingAndAnswer,
   type Message,
@@ -61,20 +62,43 @@ import { ARCIIN_DEFAULT_SYSTEM_INSTRUCTION, SYSTEM_INSTRUCTION_KEY, buildContext
 import { MessageBubble } from "@/components/chat/chat-message-bubble"
 import { WelcomeState } from "@/components/chat/chat-welcome-state"
 import { HistorySidebar } from "@/components/chat/chat-history-sidebar"
+import { ChatAttachProvider } from "@/components/chat/chat-attach-context"
+import { ChatCanvasPanel } from "@/components/chat/chat-canvas-panel"
+import {
+  buildCanvasFinishedChatSummary,
+  deriveCanvasTitle,
+  isCanvasWritingIntent,
+  refineCanvasTitleFromContent,
+  sanitizeCanvasDocument,
+} from "@/components/chat/chat-canvas-helpers"
+import { ChatCanvasSaveDialog } from "@/components/chat/chat-canvas-save-dialog"
+import { buildCanvasExportFile, type CanvasExportFormat } from "@/lib/chat/canvas-export"
+import {
+  listCanvasDraftsForConversation,
+  rekeyCanvasDraftsForConversation,
+  saveCanvasDraft,
+} from "@/lib/chat/canvas-draft-store"
+import { useUiStore } from "@/lib/stores/ui-store"
 import {
   ChatPromptBox,
   type ChatPromptToolId,
 } from "@/components/chat/chat-prompt-box"
 import {
   type ChatComposerAttachment,
+  isAttachableMediaType,
   isImageMediaType,
 } from "@/components/chat/chat-composer-attachments"
+import { loadAssetImageBase64 } from "@/lib/chat/load-asset-image-base64"
+import type { AssetSummary } from "@/lib/types/models"
 import {
   buildPromptToolsSystemAppend,
+  promptToolsForceCanvas,
   promptToolsForceThinking,
   promptToolsForceVision,
 } from "@/components/chat/chat-prompt-tools"
 import { expandSlashMessage } from "@/components/chat/chat-slash-commands"
+import { getLibraries } from "@/lib/api/libraries"
+import { uploadFile } from "@/lib/api/uploads"
 
 type ChatProfile = ChatProfilePicker
 
@@ -91,10 +115,21 @@ export function ChatPage() {
   const [selectedProfile, setSelectedProfile] = useState<ChatProfile | null>(null)
   const [selectedModel, setSelectedModel] = useState<string>("")
   const [conversationId, setConversationId] = useState<string | null>(null)
-  const [historyOpen, setHistoryOpen] = useState(false)
+  const historyOpen = useUiStore((s) => s.chatHistoryOpen)
+  const setHistoryOpen = useUiStore((s) => s.setChatHistoryOpen)
   const [mobileHistoryOpen, setMobileHistoryOpen] = useState(false)
   const [promptTools, setPromptTools] = useState<ChatPromptToolId[]>([])
   const [attachments, setAttachments] = useState<ChatComposerAttachment[]>([])
+  const [canvasOpen, setCanvasOpen] = useState(false)
+  const [canvasContent, setCanvasContent] = useState("")
+  const [canvasTitle, setCanvasTitle] = useState("Canvas")
+  const [canvasStreaming, setCanvasStreaming] = useState(false)
+  const [canvasSaving, setCanvasSaving] = useState(false)
+  const [canvasSaveOpen, setCanvasSaveOpen] = useState(false)
+  const [canvasSaveFormat, setCanvasSaveFormat] = useState<CanvasExportFormat>("pdf")
+  /** Message id of the draft currently shown in the Canvas panel (for re-save/re-link). */
+  const [activeCanvasMessageId, setActiveCanvasMessageId] = useState<string | null>(null)
+  const [attachBusyId, setAttachBusyId] = useState<string | null>(null)
   const thinkChipSynced = useRef(false)
   const aiSettingsQuery = useQuery({
     queryKey: queryKeys.aiSettings,
@@ -235,14 +270,99 @@ export function ChatPage() {
     (next: ChatPromptToolId[]) => {
       const wasVision = promptTools.includes("vision")
       const nowVision = next.includes("vision")
+      const wasCanvas = promptTools.includes("canvas")
+      const nowCanvas = next.includes("canvas")
       setPromptTools(next)
       if (nowVision && !wasVision) {
         // Keep only image attachments when entering Vision mode.
         setAttachments((prev) => prev.filter((a) => isImageMediaType(a.mediaType)))
         void ensureVisionModel()
       }
+      // Canvas chip toggles the side panel open and closed.
+      if (nowCanvas && !wasCanvas) {
+        setCanvasOpen(true)
+      } else if (!nowCanvas && wasCanvas) {
+        setCanvasOpen(false)
+      }
     },
     [promptTools, ensureVisionModel],
+  )
+
+  /** Click a listed PDF/image/file in chat → attach to composer for follow-ups. */
+  const attachAssetFromList = useCallback(
+    async (asset: AssetSummary) => {
+      if (chatLocked || streaming) {
+        toast.warning(chatLocked ? "Chat is locked" : "Wait for the current reply to finish")
+        return
+      }
+      if (!isAttachableMediaType(asset.mediaType)) {
+        toast.warning("Can't attach this file type", {
+          description: "Try a document, image, or similar library file.",
+        })
+        return
+      }
+      if (attachments.some((a) => a.assetId === asset.id)) {
+        toast.message("Already attached", {
+          description: asset.originalFilename,
+        })
+        return
+      }
+      if (attachments.length >= 4) {
+        toast.warning("Attachment limit", {
+          description: "Remove one attachment first (max 4).",
+        })
+        return
+      }
+
+      setAttachBusyId(asset.id)
+      try {
+        let imageBase64: string | undefined
+        if (isImageMediaType(asset.mediaType)) {
+          const b64 = await loadAssetImageBase64(asset.id, asset.updatedAt)
+          if (b64) imageBase64 = b64
+        }
+        const next: ChatComposerAttachment = {
+          assetId: asset.id,
+          filename: asset.originalFilename,
+          mediaType: asset.mediaType,
+          updatedAt: asset.updatedAt,
+          imageBase64,
+        }
+        setAttachments((prev) => [...prev, next].slice(0, 4))
+
+        if (isImageMediaType(asset.mediaType)) {
+          setPromptTools((prev) => {
+            const withoutFiles = prev.filter((t) => t !== "files")
+            return withoutFiles.includes("vision") ? withoutFiles : [...withoutFiles, "vision"]
+          })
+          void ensureVisionModel()
+          toast.success("Image attached", {
+            description: "Vision is on — ask a follow-up about this image.",
+          })
+        } else {
+          setPromptTools((prev) => (prev.includes("files") ? prev : [...prev, "files"]))
+          toast.success("File attached", {
+            description: "Ask a follow-up or type /summarize and send.",
+          })
+        }
+      } catch (err) {
+        toast.error("Could not attach file", {
+          description: err instanceof Error ? err.message : "Try again",
+        })
+      } finally {
+        setAttachBusyId(null)
+      }
+    },
+    [attachments, chatLocked, streaming, ensureVisionModel],
+  )
+
+  const chatAttachValue = useMemo(
+    () => ({
+      attachedIds: new Set(attachments.map((a) => a.assetId)),
+      busyAssetId: attachBusyId,
+      attachAsset: attachAssetFromList,
+    }),
+    [attachments, attachBusyId, attachAssetFromList],
   )
 
   useEffect(() => {
@@ -374,20 +494,51 @@ export function ChatPage() {
       })
       stickToBottomRef.current = true
       setConversationId(id)
+      const drafts = listCanvasDraftsForConversation(id)
+      const draftByMsg = new Map(drafts.map((d) => [d.messageId, d]))
       setMessages(
         detail.messages
           .filter((m) => m.role !== "system")
-          .map((m) => ({
-            id: m.id,
-            dbId: m.id,
-            role: m.role as "user" | "assistant",
-            content: m.content,
-            feedback: m.feedbackRating ?? null,
-            usage: m.totalTokens
-              ? { inputTokens: m.inputTokens ?? 0, outputTokens: m.outputTokens ?? 0, totalTokens: m.totalTokens }
-              : undefined,
-          })),
+          .map((m) => {
+            const draft = draftByMsg.get(m.id)
+            return {
+              id: m.id,
+              dbId: m.id,
+              role: m.role as "user" | "assistant",
+              content: m.content,
+              feedback: m.feedbackRating ?? null,
+              usage: m.totalTokens
+                ? {
+                    inputTokens: m.inputTokens ?? 0,
+                    outputTokens: m.outputTokens ?? 0,
+                    totalTokens: m.totalTokens,
+                  }
+                : undefined,
+              ...(draft
+                ? {
+                    canvasDraft: {
+                      id: draft.messageId,
+                      title: draft.title,
+                      content: draft.content,
+                    },
+                  }
+                : {}),
+            }
+          }),
       )
+      // Restore latest canvas draft for this conversation into the panel (closed until user opens).
+      const latestDraft = drafts.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0]
+      if (latestDraft) {
+        setCanvasTitle(latestDraft.title)
+        setCanvasContent(latestDraft.content)
+        setActiveCanvasMessageId(latestDraft.messageId)
+        setCanvasOpen(false)
+      } else {
+        setCanvasContent("")
+        setCanvasTitle("Canvas")
+        setActiveCanvasMessageId(null)
+        setCanvasOpen(false)
+      }
       setHistoryOpen(false)
       setMobileHistoryOpen(false)
     } catch {
@@ -401,7 +552,25 @@ export function ChatPage() {
     setConversationId(null)
     setMessages([])
     setInput("")
+    setCanvasContent("")
+    setCanvasTitle("Canvas")
+    setActiveCanvasMessageId(null)
+    setCanvasOpen(false)
+    setCanvasStreaming(false)
   }
+
+  const openCanvasDraft = useCallback(
+    (draft: NonNullable<Message["canvasDraft"]>) => {
+      setCanvasTitle(draft.title)
+      setCanvasContent(draft.content)
+      setActiveCanvasMessageId(draft.id)
+      setCanvasOpen(true)
+      setCanvasStreaming(false)
+      // Ensure Canvas chip reflects open panel.
+      setPromptTools((prev) => (prev.includes("canvas") ? prev : [...prev, "canvas"]))
+    },
+    [],
+  )
 
   async function handleMessageFeedback(msg: Message, rating: ChatMessageFeedbackRating | null) {
     const persistId = messagePersistId(msg)
@@ -438,15 +607,39 @@ export function ChatPage() {
     saved: { id: string; role: string }[],
     pendingAssistantId: string,
     pendingUserId?: string,
+    convoId?: string | null,
   ) {
     const userRow = saved.find((m) => m.role === "user")
     const asstRow = saved.find((m) => m.role === "assistant")
+    const map: Array<{ fromId: string; toId: string }> = []
+    if (pendingUserId && userRow) map.push({ fromId: pendingUserId, toId: userRow.id })
+    if (asstRow) map.push({ fromId: pendingAssistantId, toId: asstRow.id })
+    if (map.length && convoId) {
+      rekeyCanvasDraftsForConversation(null, convoId, map)
+      rekeyCanvasDraftsForConversation(conversationId, convoId, map)
+    }
     return prev.map((m) => {
       if (pendingUserId && m.id === pendingUserId && userRow) {
         return { ...m, id: userRow.id, dbId: userRow.id }
       }
       if (m.id === pendingAssistantId && asstRow) {
-        return { ...m, id: asstRow.id, dbId: asstRow.id }
+        const draft = m.canvasDraft
+          ? { ...m.canvasDraft, id: asstRow.id }
+          : undefined
+        if (draft && convoId) {
+          saveCanvasDraft({
+            id: asstRow.id,
+            conversationId: convoId,
+            messageId: asstRow.id,
+            title: draft.title,
+            content: draft.content,
+            updatedAt: new Date().toISOString(),
+          })
+        }
+        if (activeCanvasMessageId === pendingAssistantId) {
+          setActiveCanvasMessageId(asstRow.id)
+        }
+        return { ...m, id: asstRow.id, dbId: asstRow.id, canvasDraft: draft }
       }
       return m
     })
@@ -588,7 +781,7 @@ export function ChatPage() {
             if (json.thinking) thinkingAccum += json.thinking
             if (json.text) {
               accumulated += json.text
-              streamStatus = ""
+              // Keep last tool status until real answer prose arrives (resolved below).
             }
             if (json.usage) finalUsage = json.usage
           } catch (parseErr) {
@@ -598,15 +791,20 @@ export function ChatPage() {
         const derived = deriveStreamingThinkingAndAnswer(accumulated, thinkingAccum, showThinking)
         const displayThinking = displayThinkingDuringStream(reasoningUiEnabled, derived)
         const displayContent = finalizeAssistantContent(derived.answer, userText, priorMessages)
+        const bubble = resolveStreamingBubbleContent({
+          displayContent,
+          streamStatus,
+          forceCanvas: false,
+        })
         flushSync(() => {
           setMessages((prev) =>
             prev.map((m) =>
               m.id === pendingMsg.id
                 ? {
                     ...m,
-                    content: displayContent,
+                    content: bubble.content,
                     thinking: displayThinking,
-                    streamStatus: streamStatus || undefined,
+                    streamStatus: bubble.streamStatus,
                     pending: false,
                     usage: finalUsage ?? m.usage,
                   }
@@ -623,7 +821,14 @@ export function ChatPage() {
       setMessages((prev) =>
         prev.map((m) =>
           m.id === pendingMsg.id
-            ? { ...m, content: finalContent, thinking: finalThinking, pending: false, usage: finalUsage ?? m.usage }
+            ? {
+                ...m,
+                content: finalContent,
+                thinking: finalThinking,
+                streamStatus: undefined,
+                pending: false,
+                usage: finalUsage ?? m.usage,
+              }
             : m,
         ),
       )
@@ -713,6 +918,7 @@ export function ChatPage() {
     const forceThinking = promptToolsForceThinking(activeTools)
     // Think chip gates the reasoning panel — off means answer-only for this turn.
     const turnReasoningUi = forceThinking
+    const canvasChipOn = promptToolsForceCanvas(activeTools)
 
     const imageAttachments = attachments.filter(
       (a) => isImageMediaType(a.mediaType) && a.imageBase64,
@@ -736,23 +942,67 @@ export function ChatPage() {
       }
     }
 
+    // Document attachments MUST be part of the outbound user text BEFORE history/payload
+    // is built — otherwise the model never sees which book was selected.
+    // The API auto-loads PDF/text for attached ids; do NOT tell the model to "call tools"
+    // (that makes it narrate tool plans instead of writing the essay).
+    if (docAttachments.length > 0) {
+      const names = docAttachments
+        .map((d) => `"${d.filename}" (id=${d.assetId})`)
+        .join(", ")
+      const primary = docAttachments[0]!
+      text =
+        `${text}\n\n` +
+        `[USER ATTACHED FILE(S) — REQUIRED CONTEXT]\n` +
+        `The user selected these library file(s) for this message: ${names}.\n` +
+        `When they say "this book", "this document", "this PDF", or "it", they mean these attached file(s) — ` +
+        `especially "${primary.filename}" (id=${primary.assetId}).\n` +
+        `Arciin will load the file text automatically for this turn. ` +
+        `Write the full answer (essay, summary, exam, etc.) from that source. ` +
+        `Do NOT ask which book — it is already attached. Do NOT list the whole library. ` +
+        `Do NOT print tool_call XML, JSON, or lines like "I need to read the PDF". ` +
+        `Start the deliverable immediately.`
+      if (!activeTools.includes("files")) {
+        activeTools = [...activeTools, "files"]
+      }
+    }
+
+    // Canvas chip opens the panel; only long-form writing routes into it.
+    // "List my books" stays in chat even when Canvas is open.
+    // With an attached book + essay/exam/quiz request, force canvas when chip is on.
+    const forceCanvas =
+      canvasChipOn &&
+      (isCanvasWritingIntent(text) ||
+        (docAttachments.length > 0 &&
+          /\b(essay|article|draft|write|report|story|exam|quiz|test|questions?|worksheet|homework|study\s+guide|documentation|docs?|manual|outline)\b/i.test(
+            text,
+          )))
+
     // Display bubble: keep the human-typed slash line if we expanded.
-    // Snapshot tray images so the bubble shows what was sent; tray stays
-    // for follow-ups until the user removes attachments themselves.
+    // Snapshot tray attachments so the bubble shows what was sent.
     const displayUserText = (overrideText ?? input).trim() || text
     const attachedForBubble = imageAttachments
       .map((a) => a.imageBase64!)
       .slice(0, 3)
+    const fileAttachmentsForBubble = docAttachments.map((d) => ({
+      assetId: d.assetId,
+      filename: d.filename,
+      mediaType: d.mediaType,
+      updatedAt: d.updatedAt,
+    }))
     const userMsg: Message = {
       id: createId(),
       role: "user",
       content: displayUserText,
       ...(attachedForBubble.length > 0 ? { images: attachedForBubble } : {}),
+      ...(fileAttachmentsForBubble.length > 0
+        ? { fileAttachments: fileAttachmentsForBubble }
+        : {}),
     }
     const pendingMsg: Message = {
       id: createId(),
       role: "assistant",
-      content: "",
+      content: forceCanvas ? "Writing in Canvas…" : "",
       pending: true,
       ...(turnReasoningUi ? { thinking: "" } : {}),
     }
@@ -762,13 +1012,27 @@ export function ChatPage() {
     setInput("")
     setStreaming(true)
 
+    if (forceCanvas) {
+      setCanvasOpen(true)
+      setCanvasStreaming(true)
+      const bookTitle =
+        docAttachments[0]?.filename.replace(/\.pdf$/i, "").trim() ||
+        deriveCanvasTitle(displayUserText)
+      setCanvasTitle(
+        /\bessay\b/i.test(displayUserText)
+          ? `Essay: ${bookTitle}`.slice(0, 80)
+          : bookTitle.slice(0, 80),
+      )
+      setCanvasContent("")
+    }
+
     type OutboundMsg = {
       role: "user" | "assistant" | "system"
       content: string
       images?: string[]
     }
 
-    // Send expanded slash text to the model; keep the bubble as what the user typed.
+    // Send expanded slash text + attachment context; bubble keeps what the user typed.
     const history: OutboundMsg[] = [
       ...messages.map((m) => ({ role: m.role as "user" | "assistant", content: m.content })),
       { role: "user" as const, content: text },
@@ -830,19 +1094,11 @@ export function ChatPage() {
       )
     }
 
-    // Document attachments: steer the model at those files (no vision pixels).
-    if (docAttachments.length > 0) {
-      const names = docAttachments.map((d) => `"${d.filename}" (id=${d.assetId})`).join(", ")
-      text =
-        `${text}\n\n[Attached library file(s) for this turn: ${names}. ` +
-        `Read with read_text_asset or read_pdf_asset. Answer only about these files — ` +
-        `do not list the whole library.]`
-      if (!activeTools.includes("files")) {
-        activeTools = [...activeTools, "files"]
-      }
-    }
-
-    let sysTail = instanceBlock + buildPromptToolsSystemAppend(activeTools)
+    // Only inject Canvas long-form system rules when this turn is actually writing.
+    const toolsForSys = forceCanvas
+      ? activeTools
+      : activeTools.filter((t) => t !== "canvas")
+    let sysTail = instanceBlock + buildPromptToolsSystemAppend(toolsForSys)
     if (visionImages?.length) {
       sysTail +=
         visionImages.length === 1
@@ -938,7 +1194,7 @@ export function ChatPage() {
             if (json.thinking) thinkingAccum += json.thinking
             if (json.text) {
               accumulated += json.text
-              streamStatus = ""
+              // Keep last tool status until real answer prose arrives (resolved below).
             }
             if (json.usage) finalUsage = json.usage
           } catch (parseErr) {
@@ -953,6 +1209,17 @@ export function ChatPage() {
         const derived = deriveStreamingThinkingAndAnswer(accumulated, thinkingAccum, showReasoningPanel)
         const displayThinking = displayThinkingDuringStream(turnReasoningUi, derived)
         const displayContent = finalizeAssistantContent(derived.answer, text, messages)
+        const bubble = resolveStreamingBubbleContent({
+          displayContent,
+          streamStatus,
+          forceCanvas,
+        })
+
+        if (forceCanvas) {
+          // Canvas gets document body only — never "Okay let me write…" preambles.
+          setCanvasContent(sanitizeCanvasDocument(displayContent))
+          setCanvasStreaming(true)
+        }
 
         flushSync(() => {
           setMessages((prev) =>
@@ -960,9 +1227,10 @@ export function ChatPage() {
               m.id === pendingMsg.id
                 ? {
                     ...m,
-                    content: displayContent,
+                    // Canvas / placeholder: never surface [[ASSETS]] or tool talk in chat.
+                    content: bubble.content,
                     thinking: displayThinking,
-                    streamStatus: streamStatus || undefined,
+                    streamStatus: bubble.streamStatus,
                     pending: false,
                     usage: finalUsage ?? m.usage,
                   }
@@ -982,16 +1250,71 @@ export function ChatPage() {
       )
       finalContent = finalizeAssistantContent(resolved.content, text, messages)
       const finalThinking = resolved.thinking
+      let canvasChatSummary = ""
+      let canvasDraftForMsg: Message["canvasDraft"] | undefined
+      if (forceCanvas) {
+        const docOnly = sanitizeCanvasDocument(finalContent)
+        const nextTitle = refineCanvasTitleFromContent(docOnly, canvasTitle)
+        setCanvasContent(docOnly)
+        setCanvasStreaming(false)
+        setCanvasOpen(true)
+        setCanvasTitle(nextTitle)
+        setActiveCanvasMessageId(pendingMsg.id)
+        const wordCount = docOnly
+          .replace(/```[\s\S]*?```/g, " ")
+          .replace(/[#>*_`\[\]()]/g, " ")
+          .replace(/\s+/g, " ")
+          .trim()
+          .split(" ")
+          .filter(Boolean).length
+        const looksLikeProcessTalk =
+          wordCount > 0 &&
+          wordCount < 120 &&
+          /\b(need to read|read_pdf_asset|attempting to read|tool_call|i will (?:read|open)|let me (?:read|open))\b/i.test(
+            docOnly,
+          )
+        if (!docOnly.trim()) {
+          canvasChatSummary =
+            "Canvas finished, but no essay text was produced. Attach the book and try again — Arciin will load the PDF automatically."
+        } else {
+          canvasChatSummary = buildCanvasFinishedChatSummary({
+            title: nextTitle,
+            content: docOnly,
+            userText: displayUserText,
+            attachedFilenames: docAttachments.map((d) => d.filename),
+          })
+          if (looksLikeProcessTalk || (docAttachments.length > 0 && wordCount < 150)) {
+            canvasChatSummary +=
+              `\n\n⚠️ This draft is only ~${wordCount} words. If it is incomplete, re-send the request — the server loads the PDF automatically.`
+          }
+        }
+        if (docOnly.trim()) {
+          canvasDraftForMsg = {
+            id: pendingMsg.id,
+            title: nextTitle,
+            content: docOnly,
+          }
+          saveCanvasDraft({
+            id: pendingMsg.id,
+            conversationId,
+            messageId: pendingMsg.id,
+            title: nextTitle,
+            content: docOnly,
+            updatedAt: new Date().toISOString(),
+          })
+        }
+      }
       setMessages((prev) =>
         prev.map((m) =>
           m.id === pendingMsg.id
             ? {
                 ...m,
-                content: finalContent,
+                content: forceCanvas ? canvasChatSummary : finalContent,
                 thinking: finalThinking,
-                
+                streamStatus: undefined,
                 pending: false,
                 usage: finalUsage ?? m.usage,
+                ...(canvasDraftForMsg ? { canvasDraft: canvasDraftForMsg } : {}),
               }
             : m,
         ),
@@ -1016,7 +1339,9 @@ export function ChatPage() {
               { role: "user", content: displayUserText },
               {
                 role: "assistant",
-                content: finalContent,
+                // Canvas: store the short completion summary in chat history;
+                // the full essay lives in the Canvas panel (and Save-to-Documents).
+                content: forceCanvas ? canvasChatSummary || finalContent : finalContent,
                 inputTokens: finalUsage?.inputTokens,
                 outputTokens: finalUsage?.outputTokens,
                 totalTokens: finalUsage?.totalTokens,
@@ -1024,7 +1349,7 @@ export function ChatPage() {
             ],
           })
           setMessages((prev) =>
-            applyPersistedMessageIds(prev, saved.messages, pendingMsg.id, userMsg.id),
+            applyPersistedMessageIds(prev, saved.messages, pendingMsg.id, userMsg.id, convoId),
           )
           queryClient.invalidateQueries({ queryKey: queryKeys.chatConversations })
         } catch {
@@ -1048,6 +1373,7 @@ export function ChatPage() {
     } finally {
       setStreaming(false)
       setStreamingMsgId(null)
+      setCanvasStreaming(false)
       abortRef.current = null
     }
   }
@@ -1057,18 +1383,76 @@ export function ChatPage() {
     abortRef.current?.abort()
   }
 
+  const saveCanvasToDocuments = useCallback(
+    async (format: CanvasExportFormat) => {
+      const body = canvasContent.trim()
+      if (!body || canvasStreaming || canvasSaving) return
+
+      setCanvasSaving(true)
+      try {
+        const libraries = await getLibraries()
+        const docsLib =
+          libraries.find((l) => l.kind === "DOCUMENT") ||
+          libraries.find((l) => l.slug === "documents") ||
+          libraries.find((l) => /documents?/i.test(l.name))
+        if (!docsLib) {
+          toast.error("Documents library not found", {
+            description: "Create or restore the Documents library first.",
+          })
+          return
+        }
+
+        const title = refineCanvasTitleFromContent(body, canvasTitle)
+        setCanvasTitle(title)
+        const file = buildCanvasExportFile(title, body, format)
+
+        await uploadFile(file, { targetLibraryId: docsLib.id })
+        void queryClient.invalidateQueries({ queryKey: queryKeys.assetsRoot })
+        void queryClient.invalidateQueries({ queryKey: queryKeys.libraries })
+        void queryClient.invalidateQueries({ queryKey: queryKeys.chatContext })
+        setCanvasSaveOpen(false)
+        toast.success("Saved to Documents", {
+          description: file.name,
+        })
+      } catch (err) {
+        toast.error("Could not save to Documents", {
+          description: err instanceof Error ? err.message : "Upload failed",
+        })
+      } finally {
+        setCanvasSaving(false)
+      }
+    },
+    [canvasContent, canvasStreaming, canvasSaving, canvasTitle, queryClient],
+  )
+
+  const clearActiveCanvas = useCallback(() => {
+    // Clear the panel only — past drafts stay on their chat messages / storage.
+    setCanvasContent("")
+    setCanvasTitle("Canvas")
+    setActiveCanvasMessageId(null)
+    toast.message("Canvas cleared", {
+      description: "Earlier drafts stay on their chat messages — tap Open in Canvas to view them.",
+    })
+  }, [])
+
+  const canvasVisible = canvasOpen || promptTools.includes("canvas")
+
   return (
-    <div className="flex min-h-0 flex-1 overflow-hidden bg-background">
-      {/* ── History sidebar ──────────────────────────────────────────────── */}
+    <ChatAttachProvider value={chatAttachValue}>
+    <div className="relative flex min-h-0 flex-1 overflow-hidden bg-background">
+      {/* ── History sidebar (desktop/tablet rail; toggled from header chip) ─ */}
       <div
         className={cn(
           "hidden shrink-0 border-r border-border bg-card/60 transition-[width] duration-200 sm:flex sm:flex-col",
-          historyOpen
-            ? "sm:w-60 sm:overflow-visible lg:w-64"
-            : "sm:w-0 sm:overflow-hidden sm:border-r-0",
+          // Canvas open on tablet: hide history rail so chat isn't crushed.
+          historyOpen && !(canvasVisible)
+            ? "sm:w-52 sm:overflow-visible lg:w-60"
+            : historyOpen && canvasVisible
+              ? "max-lg:w-0 max-lg:overflow-hidden max-lg:border-r-0 lg:w-52 lg:overflow-visible"
+              : "sm:w-0 sm:overflow-hidden sm:border-r-0",
         )}
       >
-        {historyOpen && (
+        {historyOpen ? (
           <HistorySidebar
             conversations={conversations}
             activeId={conversationId}
@@ -1078,7 +1462,7 @@ export function ChatPage() {
             onNew={startNewChat}
             onDelete={(id) => deleteMutation.mutate(id)}
           />
-        )}
+        ) : null}
       </div>
 
       {/* ── Chat area ────────────────────────────────────────────────────── */}
@@ -1089,31 +1473,22 @@ export function ChatPage() {
           className="scrollbar-hide relative flex min-h-0 flex-1 flex-col overflow-y-auto"
           onClick={() => { if (historyOpen) setHistoryOpen(false) }}
         >
-          {/* Floating top bar — overlays messages, never pushes layout */}
-          <div className="pointer-events-none sticky top-0 z-10 flex items-center justify-between px-4 pt-3 sm:px-6">
-            <div className="pointer-events-auto flex items-center gap-2">
+          {/* Top bar: Clear only — History lives next to the breadcrumb in the header. */}
+          <div className="pointer-events-none sticky top-0 z-20 flex items-center justify-end px-4 pt-3 sm:px-6">
+            <div className="pointer-events-auto flex items-center gap-2 sm:hidden">
               <button
                 type="button"
                 onClick={(e) => { e.stopPropagation(); setMobileHistoryOpen(true) }}
-                className="flex items-center gap-1.5 rounded-full border border-border bg-card/90 px-2.5 py-1 text-[11px] text-muted-foreground backdrop-blur-md transition-colors hover:text-foreground sm:hidden"
+                className="flex items-center gap-1.5 rounded-full border border-border bg-card/90 px-2.5 py-1 text-[11px] text-muted-foreground shadow-sm backdrop-blur-md transition-colors hover:text-foreground"
                 title="Chat history"
               >
                 <Clock className="size-3" />
                 History
               </button>
-              <button
-                type="button"
-                onClick={(e) => { e.stopPropagation(); setHistoryOpen((v) => !v) }}
-                className="hidden items-center gap-1.5 rounded-full border border-border bg-card/90 px-2.5 py-1 text-[11px] text-muted-foreground backdrop-blur-md transition-colors hover:text-foreground sm:flex"
-                title={historyOpen ? "Hide history" : "Show history"}
-              >
-                <Clock className="size-3" />
-                {historyOpen ? "Hide history" : "History"}
-              </button>
             </div>
 
             {messages.length > 0 && (
-              <div className="pointer-events-auto flex items-center gap-2">
+              <div className="pointer-events-auto ml-auto flex items-center gap-2">
                 {streaming && (
                   <span className="flex items-center gap-1.5 rounded-full border border-border bg-card/90 px-2.5 py-1 text-[11px] font-medium text-primary backdrop-blur-md">
                     <span className="size-1.5 animate-pulse rounded-full bg-primary" />
@@ -1177,6 +1552,7 @@ export function ChatPage() {
                       ? (rating) => void handleMessageFeedback(msg, rating)
                       : undefined
                   }
+                  onOpenCanvasDraft={openCanvasDraft}
                   profileId={selectedProfile?.id}
                 />
               ))
@@ -1248,6 +1624,68 @@ export function ChatPage() {
         </div>
       </div>
 
+      {/* ── Canvas panel — full height; tablet uses a right overlay so chat isn't crushed ─ */}
+      {canvasVisible ? (
+        <div
+          className={cn(
+            // Small gap only on left (from chat); hug the right edge — less empty right padding.
+            "hidden min-h-0 self-stretch py-2 pl-1 pr-0 md:flex md:flex-col",
+            // Tablet (md–lg): float over chat as a sheet so the layout stays usable
+            "max-lg:absolute max-lg:inset-y-0 max-lg:right-0 max-lg:z-30 max-lg:w-[min(92vw,22rem)] max-lg:shadow-2xl",
+            // Desktop: inline column next to chat
+            "lg:relative lg:shrink-0 lg:w-[min(100%,26rem)] xl:w-[30rem]",
+          )}
+        >
+          <ChatCanvasPanel
+            title={canvasTitle}
+            content={canvasContent}
+            streaming={canvasStreaming}
+            saving={canvasSaving}
+            onSave={() => setCanvasSaveOpen(true)}
+            onClear={clearActiveCanvas}
+            onClose={() => {
+              setCanvasOpen(false)
+              // Turn off the Canvas chip when the panel is dismissed.
+              if (promptTools.includes("canvas")) {
+                setPromptTools((prev) => prev.filter((t) => t !== "canvas"))
+              }
+            }}
+          />
+        </div>
+      ) : null}
+
+      {/* Phone canvas: full-height overlay */}
+      {canvasVisible ? (
+        <div className="pointer-events-none absolute inset-0 z-30 flex py-2 pl-2 pr-0 md:hidden">
+          <div className="pointer-events-auto ml-auto flex h-full w-[min(100%,20rem)] flex-col">
+            <ChatCanvasPanel
+              title={canvasTitle}
+              content={canvasContent}
+              streaming={canvasStreaming}
+              saving={canvasSaving}
+              onSave={() => setCanvasSaveOpen(true)}
+              onClear={clearActiveCanvas}
+              onClose={() => {
+                setCanvasOpen(false)
+                if (promptTools.includes("canvas")) {
+                  setPromptTools((prev) => prev.filter((t) => t !== "canvas"))
+                }
+              }}
+            />
+          </div>
+        </div>
+      ) : null}
+
+      <ChatCanvasSaveDialog
+        open={canvasSaveOpen}
+        onOpenChange={setCanvasSaveOpen}
+        title={canvasTitle}
+        saving={canvasSaving}
+        selected={canvasSaveFormat}
+        onSelect={setCanvasSaveFormat}
+        onConfirm={() => void saveCanvasToDocuments(canvasSaveFormat)}
+      />
+
       <Sheet open={mobileHistoryOpen} onOpenChange={setMobileHistoryOpen}>
         <SheetContent side="left" className="flex w-[min(100%,18rem)] flex-col gap-0 p-0 sm:max-w-xs">
           <SheetTitle className="sr-only">Chat history</SheetTitle>
@@ -1266,5 +1704,6 @@ export function ChatPage() {
         </SheetContent>
       </Sheet>
     </div>
+    </ChatAttachProvider>
   )
 }
