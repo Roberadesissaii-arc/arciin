@@ -59,7 +59,10 @@
     "dev:db:setup": "bash scripts/setup-dev-db.sh",
     "deploy:lock:status": "node scripts/deploy-lock.mjs status",
     "deploy:lock:release": "node scripts/deploy-lock.mjs release",
-    "deploy:safe": "node scripts/deploy-lock.mjs acquire && (ARCIIN_ENV_NAMESPACE=production pnpm build:web && pm2 restart arciin-api arciin-worker arciin-web; ec=$?; node scripts/deploy-lock.mjs release; exit $ec)"
+    "deploy:safe": "node scripts/deploy-lock.mjs acquire && (ARCIIN_ENV_NAMESPACE=production pnpm build:web && pm2 restart arciin-api arciin-worker arciin-web; ec=$?; node scripts/deploy-lock.mjs release; exit $ec)",
+    "test:e2e": "playwright test",
+    "test:e2e:headed": "playwright test --headed",
+    "test:e2e:report": "playwright show-report reports/playwright"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
@@ -114,6 +117,7 @@
     "zustand": "^5.0.13"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",

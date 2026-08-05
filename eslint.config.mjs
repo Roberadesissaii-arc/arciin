@@ -11,6 +11,9 @@ const eslintConfig = defineConfig([
     "apps/web/.next/**",
     // Development build output — generated bundles, not source.
     "apps/web/.next-dev/**",
+    // Playwright artifacts: traces, videos and bundled page sources.
+    "test-results/**",
+    "reports/playwright/**",
     "out/**",
     "build/**",
     "apps/web/next-env.d.ts",

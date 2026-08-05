@@ -73,3 +73,7 @@ docker-compose.smoke.yml
 
 # Deployment lock (runtime state, never committed)
 .arciin-deploy.lock
+
+# Playwright artifacts
+reports/playwright/
+test-results/
