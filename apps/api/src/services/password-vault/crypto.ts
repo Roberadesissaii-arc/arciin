@@ -14,12 +14,24 @@ export type VaultPayload = {
 const ALGO = "aes-256-gcm"
 const KEY_SALT = "arciin-password-vault-v1"
 
+/**
+ * Derived once per process. scrypt is deliberately slow (~70ms) and both inputs
+ * are constant for the process lifetime, so deriving per call only burned CPU:
+ * listing the vault re-derived it once per entry and blocked Node's single
+ * thread for entries × 70ms — 187 entries stalled *every* request for ~13s.
+ */
+let cachedVaultKey: Buffer | null = null
+
 function vaultKey(): Buffer {
+  if (cachedVaultKey) {
+    return cachedVaultKey
+  }
   // Dedicated key when configured (ARCIIN_ENCRYPTION_KEY), else SESSION_SECRET
   // so existing vault entries keep decrypting. KEY_SALT domain-separates this
   // subkey from the webhook/integration one.
   const material = apiConfig.ARCIIN_ENCRYPTION_KEY ?? apiConfig.SESSION_SECRET
-  return scryptSync(material, KEY_SALT, 32)
+  cachedVaultKey = scryptSync(material, KEY_SALT, 32)
+  return cachedVaultKey
 }
 
 export function encryptVaultPayload(payload: VaultPayload): {

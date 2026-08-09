@@ -204,6 +204,11 @@ pm2 start ecosystem.config.cjs
 4. Check **I have read and agree** — the Claim button activates
 5. Sign in and explore the dashboard
 
+> **The setup token is never pre-filled for you.** Copy it out of `.env` yourself.
+> An unclaimed instance answers `/api/instance/status` without authentication, so
+> anything that could reach the server would otherwise be able to read the token and
+> claim your instance first. Claiming locks setup permanently.
+
 ---
 
 ## Managing Arciin
@@ -269,6 +274,23 @@ Quality gate before shipping changes:
 pnpm typecheck
 pnpm build
 ```
+
+### Browser features that need HTTPS
+
+Reaching Arciin over a plain-HTTP LAN address (`http://192.168.x.x:3004`) is fully
+supported, but browsers disable some APIs outside a *secure context* — HTTPS, or
+`localhost`. This is a browser rule, not an Arciin setting, and no amount of
+server config changes it:
+
+| Feature | On plain HTTP over LAN IP |
+|---------|---------------------------|
+| **Copy buttons** | Work — Arciin falls back to a legacy copy path |
+| **Native share sheet** (mobile "Share" → app list) | Unavailable; Arciin shows Copy link instead and explains why |
+| **`crypto.randomUUID`**-style browser APIs | Unavailable; Arciin uses its own fallbacks |
+
+To get all of them, reach the server over HTTPS — enable a tunnel or reverse
+proxy under **Settings → Remote access** and use that `https://` URL. Everything
+else (uploads, streaming, AI, sharing by link) works fine over plain HTTP.
 
 ---
 
@@ -348,6 +370,24 @@ pip install requests
 | `events/01_monitor_api_key.py` | Listen for live events |
 
 Create API keys in the app: **Developer → API Keys**.
+
+### App data databases (JSON store)
+
+Beyond files, Arciin exposes lightweight JSON stores backed by PostgreSQL — a
+**database** holds **tables**, and a table holds **rows**. Useful for driving your
+own small apps off the same server. Every new database gets a `Default` table.
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` / `POST` | `/api/app-databases` | List / create databases |
+| `DELETE` | `/api/app-databases/:id` | Delete a database and everything in it |
+| `GET` / `POST` | `/api/app-databases/:id/tables` | List / create tables |
+| `PATCH` / `DELETE` | `/api/app-database-tables/:tableId` | Rename / delete a table |
+| `GET` / `POST` | `/api/app-database-tables/:tableId/rows` | List / create rows |
+| `PATCH` / `DELETE` | `/api/app-database-rows/:rowId` | Update / delete a row |
+
+Requires API-key scopes `appdata:databases:*`, `appdata:folders:*`, `appdata:records:*`
+(or a signed-in session). Full copy-pasteable examples are in the in-app manual at `/docs`.
 
 ---
 

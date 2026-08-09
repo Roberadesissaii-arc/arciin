@@ -4,13 +4,20 @@ import { apiConfig } from "@/config"
 
 const KEY_LEN = 32
 
+/** Same reasoning as the vault key: scrypt is slow by design and the inputs never change. */
+let cachedKey: Buffer | null = null
+
 function getKey() {
+  if (cachedKey) {
+    return cachedKey
+  }
   // Prefer a dedicated encryption key so session signing and data encryption
   // can rotate independently. Falls back to SESSION_SECRET when unset so
   // existing ciphertext keeps decrypting. The domain salt separates this
   // subkey from the vault's.
   const material = apiConfig.ARCIIN_ENCRYPTION_KEY ?? apiConfig.SESSION_SECRET
-  return scryptSync(material, "arciin-webhooks", KEY_LEN)
+  cachedKey = scryptSync(material, "arciin-webhooks", KEY_LEN)
+  return cachedKey
 }
 
 export function encryptSecret(plaintext: string) {

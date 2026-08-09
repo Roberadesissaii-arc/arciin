@@ -49,15 +49,20 @@ export function mediaQueueLimiter(concurrency: number) {
  * Registered by name so BullMQ deduplicates them: restarting the worker, or
  * running more than one worker, cannot install the same schedule twice.
  */
+/**
+ * Names must not contain `:` — BullMQ rejects a custom job id containing a
+ * colon, so a colon here made every registration throw and the schedule was
+ * silently never installed.
+ */
 export const MAINTENANCE_SCHEDULES = {
   cleanupTempFiles: {
     /** Hourly is frequent enough for a 24h retention window and cheap to run. */
-    name: "arciin:cleanup-temp-files",
+    name: "arciin-cleanup-temp-files",
     everyMs: 60 * 60 * 1000,
   },
   storageIntegrityScan: {
     /** Report-only; daily is plenty. */
-    name: "arciin:storage-integrity-scan",
+    name: "arciin-storage-integrity-scan",
     everyMs: 24 * 60 * 60 * 1000,
   },
 } as const
