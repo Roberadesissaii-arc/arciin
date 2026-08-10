@@ -21,6 +21,7 @@ import { queryKeys } from "@/lib/api/query-keys"
 import { cn } from "@/lib/utils"
 import { formatRelativeDate } from "@/lib/utils/format-date"
 import type { HealthStatus } from "@/lib/types/models"
+import { RelativeTime } from "@/components/shared/relative-time"
 
 type ServiceId = keyof Omit<HealthStatus, "version" | "timestamp">
 
@@ -129,9 +130,9 @@ export function LogsSystemStatus() {
             <span>
               v{health.version} · {overview.environment}
             </span>
-            <span>Checked {formatRelativeDate(health.timestamp)}</span>
+            <span>Checked <RelativeTime value={health.timestamp} /></span>
             {health.workerLastSeenAt ? (
-              <span>Worker seen {formatRelativeDate(health.workerLastSeenAt)}</span>
+              <span>Worker seen <RelativeTime value={health.workerLastSeenAt} /></span>
             ) : null}
           </div>
         </div>

@@ -13,6 +13,7 @@ import { getLogFiles, getLogTail } from "@/lib/api/logs"
 import { queryKeys } from "@/lib/api/query-keys"
 import { cn } from "@/lib/utils"
 import { formatRelativeDate } from "@/lib/utils/format-date"
+import { RelativeTime } from "@/components/shared/relative-time"
 
 const TAIL_LINES = 200
 
@@ -117,7 +118,7 @@ export function LogsFileViewer() {
               />
               {activeFile ? (
                 <span className="text-xs text-zinc-500" suppressHydrationWarning>
-                  {lines.length} lines · updated {formatRelativeDate(activeFile.modifiedAt)}
+                  {lines.length} lines · updated <RelativeTime value={activeFile.modifiedAt} />
                 </span>
               ) : null}
             </div>

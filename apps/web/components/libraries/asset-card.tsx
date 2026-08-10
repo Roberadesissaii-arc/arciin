@@ -12,9 +12,9 @@ import { resolveAssetBadge } from "@/lib/utils/asset-badge"
 import { dashboardTableActionOutline } from "@/lib/dashboard-table-styles"
 import { formatBytes } from "@/lib/utils/format-bytes"
 import { formatMediaTypeLabel } from "@/lib/utils/media-type"
-import { formatRelativeDate } from "@/lib/utils/format-date"
 import { cn } from "@/lib/utils"
 import type { AssetSummary } from "@/lib/types/models"
+import { RelativeTime } from "@/components/shared/relative-time"
 
 const metaPillClass =
   "inline-flex shrink-0 items-center rounded-md border border-border bg-muted/70 px-2 py-0.5 text-[10px] font-semibold text-foreground"
@@ -109,7 +109,7 @@ export function AssetCard({ asset }: { asset: AssetSummary }) {
           <p className="truncate text-[11px] leading-4 text-muted-foreground">
             <span className="capitalize">{asset.status.toLowerCase()}</span>
             {" · "}
-            {formatRelativeDate(asset.createdAt)}
+            <RelativeTime value={asset.createdAt} />
           </p>
 
           <div className="flex min-w-0 flex-wrap items-center gap-1">

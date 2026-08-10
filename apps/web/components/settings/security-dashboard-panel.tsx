@@ -30,8 +30,8 @@ import {
 
 const SECURITY_LOG_GRID =
   "lg:grid lg:grid-cols-[minmax(4.75rem,1fr)_minmax(5.5rem,1fr)_minmax(0,1.35fr)_minmax(5.5rem,1fr)_minmax(3.25rem,0.75fr)_minmax(6.75rem,1fr)] lg:items-center lg:gap-x-3"
-import { formatRelativeDate } from "@/lib/utils/format-date"
 import { Skeleton } from "@/components/ui/skeleton"
+import { RelativeTime } from "@/components/shared/relative-time"
 
 const TABS = ["Security log", "Blocked IPs", "Allowed IPs"] as const
 type TabId = (typeof TABS)[number]
@@ -297,7 +297,7 @@ export function SecurityDashboardPanel() {
                       className={cn("grid grid-cols-1 gap-1 px-5 py-3.5", SECURITY_LOG_GRID)}
                     >
                       <span className="text-[11px] font-medium leading-none text-zinc-500 lg:text-zinc-400">
-                        {formatRelativeDate(event.createdAt)}
+                        <RelativeTime value={event.createdAt} />
                       </span>
                       <span className="font-mono text-[12px] leading-none text-foreground">
                         {ip ?? <span className="text-zinc-400">—</span>}

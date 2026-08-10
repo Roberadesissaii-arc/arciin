@@ -23,10 +23,10 @@ import {
   dashboardFeedMeta,
   dashboardFeedRow,
 } from "@/lib/dashboard-card-styles"
-import { formatRelativeDate } from "@/lib/utils/format-date"
 import { formatBytes } from "@/lib/utils/format-bytes"
 import { cn } from "@/lib/utils"
 import type { MediaType } from "@/lib/types/models"
+import { RelativeTime } from "@/components/shared/relative-time"
 
 const mediaTypeIcon: Partial<Record<MediaType, LucideIcon>> = {
   VIDEO: FileVideo,
@@ -115,7 +115,7 @@ export function RecentUploadsCard({
             <div className={dashboardFeedMeta}>
               <div className="flex items-center gap-1 text-[11px] font-medium text-zinc-400">
                 <Clock3 className="size-3 shrink-0" />
-                {formatRelativeDate(upload.createdAt)}
+                <RelativeTime value={upload.createdAt} />
               </div>
             </div>
           </div>

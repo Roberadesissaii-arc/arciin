@@ -4,9 +4,9 @@ import { Clock3 } from "lucide-react"
 import { accentIconShellSm } from "@/lib/accent-styles"
 import { resolveActivityIcon } from "@/lib/activity/resolve-activity-icon"
 import { dashboardFeedMeta } from "@/lib/dashboard-card-styles"
-import { formatRelativeDate, formatRelativeDateShort } from "@/lib/utils/format-date"
 import { cn } from "@/lib/utils"
 import type { ActivitySummary } from "@/lib/types/models"
+import { RelativeTime } from "@/components/shared/relative-time"
 
 function getIconElement(event: ActivitySummary, dashboard = false) {
   const IconComponent = resolveActivityIcon(event)
@@ -50,7 +50,7 @@ export function ActivityItem({
             <div className="flex items-start justify-between gap-2">
               <p className="text-[13px] font-semibold leading-snug text-zinc-900">{event.title}</p>
               <span className="shrink-0 text-[10px] font-medium text-zinc-400">
-                {formatRelativeDate(event.createdAt)}
+                <RelativeTime value={event.createdAt} />
               </span>
             </div>
             {event.message ? (
@@ -109,11 +109,11 @@ export function ActivityItem({
 
           <div className={cn(dashboardFeedMeta, "shrink-0 self-start pt-0.5")}>
             <span className="shrink-0 text-[10px] font-medium tabular-nums text-zinc-400 md:hidden">
-              {formatRelativeDateShort(event.createdAt)}
+              <RelativeTime value={event.createdAt} short />
             </span>
             <div className="hidden items-center gap-1 whitespace-nowrap text-[11px] font-medium text-zinc-400 md:flex">
               <Clock3 className="size-3 shrink-0" />
-              {formatRelativeDate(event.createdAt)}
+              <RelativeTime value={event.createdAt} />
             </div>
           </div>
         </>
@@ -146,7 +146,7 @@ export function ActivityItem({
 
       <div className="flex shrink-0 items-center gap-1 text-[11px] font-medium text-zinc-400">
         <Clock3 className="size-3 shrink-0" />
-        {formatRelativeDate(event.createdAt)}
+        <RelativeTime value={event.createdAt} />
       </div>
         </>
       )}

@@ -6,8 +6,8 @@ import { History, LogIn, LogOut, ShieldAlert, KeyRound, Ban } from "lucide-react
 import { Skeleton } from "@/components/ui/skeleton"
 import { getSecurityActivity } from "@/lib/api/activity"
 import { queryKeys } from "@/lib/api/query-keys"
-import { formatRelativeDate } from "@/lib/utils/format-date"
 import { cn } from "@/lib/utils"
+import { RelativeTime } from "@/components/shared/relative-time"
 
 /**
  * Security events are deliberately filtered out of the Activity feed, so until
@@ -92,7 +92,7 @@ export function SignInHistoryPanel() {
                   className="shrink-0 text-[11px] tabular-nums text-muted-foreground"
                   suppressHydrationWarning
                 >
-                  {formatRelativeDate(row.createdAt)}
+                  <RelativeTime value={row.createdAt} />
                 </span>
               </li>
             )

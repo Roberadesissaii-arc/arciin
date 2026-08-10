@@ -34,9 +34,9 @@ import {
 } from "@/lib/dashboard-table-styles"
 import { formatBytes } from "@/lib/utils/format-bytes"
 import { formatMediaTypeLabel } from "@/lib/utils/media-type"
-import { formatRelativeDate } from "@/lib/utils/format-date"
 import { cn } from "@/lib/utils"
 import type { AssetSummary } from "@/lib/types/models"
+import { RelativeTime } from "@/components/shared/relative-time"
 
 const PAGE_SIZE = 10
 
@@ -164,7 +164,7 @@ function AssetTableRow({ asset }: { asset: AssetSummary }) {
         {formatBytes(asset.sizeBytes)}
       </TableCell>
       <TableCell className="whitespace-nowrap py-3.5 text-[13px] tabular-nums text-zinc-500">
-        {formatRelativeDate(asset.createdAt)}
+        <RelativeTime value={asset.createdAt} />
       </TableCell>
       <TableCell className="whitespace-nowrap py-3.5 pr-5 text-right">
         <AssetRowActions asset={asset} />

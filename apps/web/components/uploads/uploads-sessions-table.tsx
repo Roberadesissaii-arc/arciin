@@ -43,9 +43,9 @@ import {
   dashboardTablePanelHeader,
 } from "@/lib/dashboard-table-styles"
 import { formatBytes } from "@/lib/utils/format-bytes"
-import { formatRelativeDate } from "@/lib/utils/format-date"
 import { cn } from "@/lib/utils"
 import type { MediaType, UploadSessionSummary } from "@/lib/types/models"
+import { RelativeTime } from "@/components/shared/relative-time"
 
 const PAGE_SIZE = 12
 
@@ -79,7 +79,7 @@ function UploadTableRow({ upload }: { upload: UploadSessionSummary }) {
       <TableCell className="whitespace-nowrap py-3.5 pl-5 text-[13px] tabular-nums text-zinc-500">
         <span className="inline-flex items-center gap-1.5">
           <Clock3 className="size-3.5 shrink-0 text-zinc-400" aria-hidden />
-          {formatRelativeDate(upload.createdAt)}
+          <RelativeTime value={upload.createdAt} />
         </span>
       </TableCell>
       <TableCell className="max-w-0 py-3.5">

@@ -8,9 +8,9 @@ import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { approxDatabaseIndexBytes, typeBadgeClass } from "@/lib/database/table-format"
 import { formatBytes } from "@/lib/utils/format-bytes"
-import { formatRelativeDate } from "@/lib/utils/format-date"
 import { cn } from "@/lib/utils"
 import type { AppDatabaseSummary } from "@/lib/types/models"
+import { RelativeTime } from "@/components/shared/relative-time"
 
 const deleteButtonClass =
   "border-0 bg-[#EF4444] text-white shadow-none hover:bg-[#DC2626] focus-visible:ring-2 focus-visible:ring-[#EF4444]/50"
@@ -81,7 +81,7 @@ export function AppDatabaseListTable({
                 {formatBytes(approxDatabaseIndexBytes(db))}
               </TableCell>
               <TableCell className="whitespace-nowrap tabular-nums font-medium text-zinc-700">
-                {formatRelativeDate(db.createdAt)}
+                <RelativeTime value={db.createdAt} />
               </TableCell>
               <TableCell className="text-right whitespace-nowrap">
                 <div className="flex shrink-0 flex-nowrap items-center justify-end gap-2">

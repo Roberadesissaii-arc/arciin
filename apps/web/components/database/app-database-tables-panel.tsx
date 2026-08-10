@@ -24,6 +24,7 @@ import { formatBytes } from "@/lib/utils/format-bytes"
 import { formatRelativeDate } from "@/lib/utils/format-date"
 import { cn } from "@/lib/utils"
 import type { AppDatabaseFolderSummary } from "@/lib/types/models"
+import { RelativeTime } from "@/components/shared/relative-time"
 
 type MutationLike<TVariables = void> = {
   isPending: boolean
@@ -135,7 +136,7 @@ export function AppDatabaseTablesPanel({
                       <Badge className={cn("inline-flex h-7 min-w-[5.75rem] shrink-0 justify-center rounded-md px-2.5 tabular-nums", typeBadgeClass)}>TABLE</Badge>
                     </TableCell>
                     <TableCell className="whitespace-nowrap tabular-nums font-medium text-muted-foreground">{formatBytes(approxTableSizeBytes(f))}</TableCell>
-                    <TableCell className="whitespace-nowrap tabular-nums font-medium text-muted-foreground">{formatRelativeDate(f.createdAt)}</TableCell>
+                    <TableCell className="whitespace-nowrap tabular-nums font-medium text-muted-foreground"><RelativeTime value={f.createdAt} /></TableCell>
                     <TableCell className="whitespace-nowrap text-right">
                       <div className="flex shrink-0 flex-nowrap items-center justify-end gap-2">
                         <Button type="button" variant="outline" size="sm"

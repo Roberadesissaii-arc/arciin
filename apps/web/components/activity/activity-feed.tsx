@@ -45,9 +45,9 @@ import {
   dashboardTablePanel,
   dashboardTablePanelHeader,
 } from "@/lib/dashboard-table-styles"
-import { formatRelativeDate } from "@/lib/utils/format-date"
 import { cn } from "@/lib/utils"
 import type { ActivitySummary } from "@/lib/types/models"
+import { RelativeTime } from "@/components/shared/relative-time"
 
 const PAGE_SIZE = 10
 
@@ -61,7 +61,7 @@ function ActivityTableRow({ event }: { event: ActivitySummary }) {
   return (
     <TableRow className={cn(dashboardTableBodyRow, "[&>td]:align-middle [&>td]:py-3.5")}>
       <TableCell className="whitespace-nowrap py-3.5 pl-5 text-[13px] tabular-nums text-zinc-500">
-        {formatRelativeDate(event.createdAt)}
+        <RelativeTime value={event.createdAt} />
       </TableCell>
       <TableCell className="whitespace-nowrap py-3.5">
         <Badge className={cn("inline-flex h-7 min-w-[5rem] justify-center rounded-md px-2.5", typeBadgeClass)}>

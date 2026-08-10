@@ -25,6 +25,7 @@ import { formatBytes } from "@/lib/utils/format-bytes"
 import { formatRelativeDate } from "@/lib/utils/format-date"
 import { cn } from "@/lib/utils"
 import type { AppDatabaseRecordSummary } from "@/lib/types/models"
+import { RelativeTime } from "@/components/shared/relative-time"
 
 type MutationLike<TVariables = void> = {
   isPending: boolean
@@ -127,7 +128,7 @@ export function AppDatabaseRowsPanel({
                         </Badge>
                       </TableCell>
                       <TableCell className="whitespace-nowrap tabular-nums font-medium text-muted-foreground">{formatBytes(recordPayloadBytes(r))}</TableCell>
-                      <TableCell className="whitespace-nowrap tabular-nums font-medium text-muted-foreground">{formatRelativeDate(r.createdAt)}</TableCell>
+                      <TableCell className="whitespace-nowrap tabular-nums font-medium text-muted-foreground"><RelativeTime value={r.createdAt} /></TableCell>
                       <TableCell className="whitespace-nowrap text-right">
                         <div className="flex shrink-0 flex-nowrap items-center justify-end gap-2">
                           <Button type="button" variant="outline" size="sm"

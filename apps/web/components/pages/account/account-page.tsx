@@ -51,6 +51,7 @@ import { cn } from "@/lib/utils"
 import { formatRelativeDate, formatDateTime } from "@/lib/utils/format-date"
 import { formatSessionIp } from "@/lib/utils/session-ip"
 import type { SessionDetail, UserRole } from "@/lib/types/models"
+import { RelativeTime } from "@/components/shared/relative-time"
 
 type Tab = "identity" | "password" | "sessions" | "danger"
 
@@ -550,12 +551,12 @@ function SessionItem({
           >
             {formatSessionIp(session.ipAddress)}
           </span>
-          <span title={formatDateTime(session.createdAt)}>Started {formatRelativeDate(session.createdAt)}</span>
+          <span title={formatDateTime(session.createdAt)}>Started <RelativeTime value={session.createdAt} /></span>
           <span
             className={cn(expiringSoon && "font-medium text-amber-700")}
             title={formatDateTime(session.expiresAt)}
           >
-            Expires {formatRelativeDate(session.expiresAt)}
+            Expires <RelativeTime value={session.expiresAt} />
           </span>
         </div>
       </div>

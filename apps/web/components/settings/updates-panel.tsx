@@ -28,6 +28,7 @@ import {
 import { queryKeys } from "@/lib/api/query-keys"
 import { formatRelativeDate } from "@/lib/utils/format-date"
 import { cn } from "@/lib/utils"
+import { RelativeTime } from "@/components/shared/relative-time"
 
 function hourLabel(hour: number): string {
   const period = hour < 12 ? "AM" : "PM"
@@ -178,7 +179,7 @@ function AutoUpdateCard({ data }: { data: AutoUpdateConfig }) {
 
       {data.lastCheckedAt ? (
         <p className="text-[11px] text-muted-foreground">
-          Last automatic check {formatRelativeDate(data.lastCheckedAt)}
+          Last automatic check <RelativeTime value={data.lastCheckedAt} />
         </p>
       ) : null}
     </SettingsCard>
@@ -259,7 +260,7 @@ function UpdateStatusCard({
       )}
 
       <p className="text-[11px] text-muted-foreground">
-        Last checked {formatRelativeDate(data.checkedAt)}
+        Last checked <RelativeTime value={data.checkedAt} />
       </p>
     </SettingsCard>
   )

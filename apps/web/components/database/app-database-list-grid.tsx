@@ -6,6 +6,7 @@ import { ArrowRight, Layers2, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { formatRelativeDate } from "@/lib/utils/format-date"
 import type { AppDatabaseSummary } from "@/lib/types/models"
+import { RelativeTime } from "@/components/shared/relative-time"
 
 const deleteButtonClass =
   "border-0 bg-[#EF4444] text-white shadow-none hover:bg-[#DC2626] focus-visible:ring-2 focus-visible:ring-[#EF4444]/50"
@@ -39,7 +40,7 @@ export function AppDatabaseListGrid({
               <p className="truncate font-semibold tracking-tight text-foreground">{db.name}</p>
               <p className="mt-1 truncate font-mono text-[11px] text-muted-foreground">{db.slug}</p>
               <p className="mt-2 text-[11px] leading-snug text-muted-foreground">
-                {db.folderCount} table{db.folderCount === 1 ? "" : "s"} · {formatRelativeDate(db.createdAt)}
+                {db.folderCount} table{db.folderCount === 1 ? "" : "s"} · <RelativeTime value={db.createdAt} />
               </p>
               {db.description?.trim() ? (
                 <p className="mt-2 line-clamp-2 text-[11px] text-muted-foreground">{db.description.trim()}</p>

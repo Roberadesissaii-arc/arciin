@@ -41,6 +41,7 @@ import { formatRelativeDate } from "@/lib/utils/format-date"
 import { formatMediaTypeLabel } from "@/lib/utils/media-type"
 import { cn } from "@/lib/utils"
 import { dashboardTablePagination } from "@/lib/dashboard-table-styles"
+import { RelativeTime } from "@/components/shared/relative-time"
 
 /** Keep Trash compact so the settings content panel stays closer to the sidebar height. */
 const PAGE_SIZE = 5
@@ -123,7 +124,7 @@ function TrashRow({
           <div className="flex flex-wrap items-center gap-2 pt-0.5">
             <span className="inline-flex items-center gap-1 text-[11px] text-zinc-400">
               <Clock3 className="size-3" />
-              Deleted {formatRelativeDate(item.deletedAt ?? item.updatedAt)}
+              Deleted <RelativeTime value={item.deletedAt ?? item.updatedAt} />
             </span>
             <span
               className={cn(
