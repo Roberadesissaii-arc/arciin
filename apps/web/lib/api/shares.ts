@@ -23,8 +23,16 @@ export function revokeShareLink(shareId: string) {
   })
 }
 
-export function getPublicShareView(token: string, folderId?: string, signal?: AbortSignal) {
-  const query = folderId ? `?folderId=${encodeURIComponent(folderId)}` : ""
+export function getPublicShareView(
+  token: string,
+  folderId?: string,
+  signal?: AbortSignal,
+  cursor?: string,
+) {
+  const params = new URLSearchParams()
+  if (folderId) params.set("folderId", folderId)
+  if (cursor) params.set("cursor", cursor)
+  const query = params.size ? `?${params.toString()}` : ""
   return fetchApi<PublicShareView>(`/shares/access/${encodeURIComponent(token)}${query}`, {
     signal,
     credentials: "omit",

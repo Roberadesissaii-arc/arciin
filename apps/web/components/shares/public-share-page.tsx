@@ -619,7 +619,9 @@ function PublicFolderBrowser({
     <article className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
       <ShareContentHeader
         title={atRoot ? label : folder.name}
-        description={`${folder.folders.length} folders · ${folder.assets.length} files`}
+        // assetCount is the real total; folder.assets is only the page loaded so
+        // far, so a 329-file folder used to announce itself as "60 files".
+        description={`${folder.folders.length} folders · ${folder.assetCount ?? folder.assets.length} files`}
         toolbar={
           <ShareDownloadAllButton
             token={token}
@@ -669,11 +671,7 @@ function PublicFolderBrowser({
         ) : null}
 
         {folder.assets.length > 0 ? (
-          <PublicShareAssetGrid
-            token={token}
-            assets={folder.assets}
-            allowDownload={view.allowDownload}
-          />
+          <ShareFolderAssets token={token} folder={folder} allowDownload={view.allowDownload} />
         ) : null}
 
         {folder.folders.length === 0 && folder.assets.length === 0 ? (
@@ -683,6 +681,75 @@ function PublicFolderBrowser({
         ) : null}
       </div>
     </article>
+  )
+}
+
+/**
+ * The share endpoint returns assets a page at a time. Without this a recipient
+ * could only ever see the first 60 files of a shared folder, with nothing on
+ * screen to suggest the rest existed.
+ */
+function ShareFolderAssets({
+  token,
+  folder,
+  allowDownload,
+}: {
+  token: string
+  folder: Extract<PublicShareView, { resourceType: "FOLDER" }>["folder"]
+  allowDownload: boolean
+}) {
+  const [extra, setExtra] = useState<PublicShareAsset[]>([])
+  const [cursor, setCursor] = useState<string | null>(folder.nextCursor ?? null)
+  const [loading, setLoading] = useState(false)
+
+  // A different folder (or a refetch) replaces the base page — drop what we appended.
+  const baseIds = folder.assets.map((a) => a.id).join(",")
+  const [seenBase, setSeenBase] = useState(baseIds)
+  if (seenBase !== baseIds) {
+    setSeenBase(baseIds)
+    setExtra([])
+    setCursor(folder.nextCursor ?? null)
+  }
+
+  const assets = [...folder.assets, ...extra]
+  const total = folder.assetCount ?? assets.length
+
+  async function loadMore() {
+    if (!cursor || loading) return
+    setLoading(true)
+    try {
+      const next = await getPublicShareView(token, folder.id, undefined, cursor)
+      if (next.resourceType === "FOLDER") {
+        setExtra((prev) => [...prev, ...next.folder.assets])
+        setCursor(next.folder.nextCursor ?? null)
+      }
+    } catch {
+      /* leave the button so the visitor can retry */
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <PublicShareAssetGrid token={token} assets={assets} allowDownload={allowDownload} />
+      {cursor ? (
+        <div className="flex flex-col items-center gap-2">
+          <p className="text-[12px] text-muted-foreground">
+            Showing {assets.length} of {total}
+          </p>
+          <Button
+            type="button"
+            variant="outline"
+            className="border-border"
+            disabled={loading}
+            onClick={() => void loadMore()}
+          >
+            {loading ? "Loading…" : "Load more"}
+          </Button>
+        </div>
+      ) : null}
+    </div>
   )
 }
 

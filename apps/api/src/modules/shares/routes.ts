@@ -515,13 +515,11 @@ export async function registerShareRoutes(fastify: FastifyInstance) {
       return
     }
 
-    if (asset.mediaType === "IMAGE") {
-      const contentType = resolveInlineContentType(asset.mimeType, asset.extension)
-      reply.header("content-type", contentType)
-      reply.header("Cache-Control", "public, max-age=86400")
-      return reply.send(createReadStream(sourcePathResolved))
-    }
-
+    // Images used to stream the full original from this route, so a shared
+    // folder of 60 photos made a recipient download hundreds of megabytes just
+    // to draw the grid — on a phone the tiles simply never appeared. Serve the
+    // same small thumbnail videos already use, and only fall back to the
+    // original when one genuinely cannot be produced.
     const thumbnailPath = resolvedThumbnailPath(
       instance?.storageRoot,
       asset.id,
@@ -536,7 +534,7 @@ export async function registerShareRoutes(fastify: FastifyInstance) {
       /* generate below */
     }
 
-    if (!hadFile && asset.mediaType === "VIDEO") {
+    if (!hadFile && (asset.mediaType === "VIDEO" || asset.mediaType === "IMAGE")) {
       await ensureThumbnailWritten({
         assetId: asset.id,
         mediaType: asset.mediaType,
@@ -559,6 +557,14 @@ export async function registerShareRoutes(fastify: FastifyInstance) {
         reply.header("content-type", "image/webp")
         reply.header("Cache-Control", "public, max-age=300")
         return reply.send(placeholder)
+      }
+      if (asset.mediaType === "IMAGE") {
+        // Thumbnailing failed (unusual format, corrupt file). The original is
+        // still a correct preview — better a slow tile than an empty one.
+        const contentType = resolveInlineContentType(asset.mimeType, asset.extension)
+        reply.header("content-type", contentType)
+        reply.header("Cache-Control", "public, max-age=86400")
+        return reply.send(createReadStream(sourcePathResolved))
       }
       reply.status(404).send(shareAccessError("ASSET_NOT_FOUND", "Preview unavailable."))
     }

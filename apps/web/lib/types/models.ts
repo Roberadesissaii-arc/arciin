@@ -323,7 +323,11 @@ export type PublicShareView =
         slug: string
         rootFolderId: string
         folders: PublicShareFolderEntry[]
+        /** Only the page loaded so far — use assetCount for the real total. */
         assets: PublicShareAsset[]
+        assetCount?: number
+        hasMore?: boolean
+        nextCursor?: string | null
       }
     }
   | {
