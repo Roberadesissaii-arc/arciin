@@ -167,6 +167,13 @@ export function PasswordVaultPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [detailCollapsed, setDetailCollapsed] = useState(false)
   const [page, setPage] = useState(1)
+  const [search, setSearch] = useState("")
+  /** Narrowing the list can leave you on a page that no longer exists. */
+  const [searchAtPageReset, setSearchAtPageReset] = useState("")
+  if (searchAtPageReset !== search) {
+    setSearchAtPageReset(search)
+    setPage(1)
+  }
 
   const vaultQuery = useQuery({
     queryKey: queryKeys.passwordVault,
@@ -178,10 +185,31 @@ export function PasswordVaultPage() {
   const secretsVisible = vaultQuery.data?.secretsVisible ?? !display.lockSidebarVault
   const lockRequired = vaultQuery.data?.lockRequired ?? display.lockSidebarVault
   const pinConfigured = vaultQuery.data?.pinConfigured ?? false
-  const entries = useMemo(
+  const allEntries = useMemo(
     () => vaultQuery.data?.entries ?? [],
     [vaultQuery.data?.entries],
   )
+
+  /**
+   * Filtering here rather than at the table means pagination, the selected
+   * entry and the detail pane's next/previous all follow the same list.
+   *
+   * Deliberately does not search the password or notes: passwords are redacted
+   * while the vault is locked so matching would be inconsistent, and notes are
+   * free text people keep secrets in — no reason to make those greppable.
+   */
+  const entries = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    if (!q) return allEntries
+    const terms = q.split(/\s+/)
+    return allEntries.filter((entry) => {
+      const haystack = [entry.name, entry.username, entry.url, entry.category]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase()
+      return terms.every((term) => haystack.includes(term))
+    })
+  }, [allEntries, search])
 
   const totalPages = Math.max(1, Math.ceil(entries.length / PAGE_SIZE))
   const safePage = Math.min(page, totalPages)
@@ -526,12 +554,16 @@ export function PasswordVaultPage() {
         secretsVisible={secretsVisible}
       />
 
-      {!vaultLocked && entries.length > 0 && !vaultQuery.isLoading ? (
+      {!vaultLocked && allEntries.length > 0 && !vaultQuery.isLoading ? (
         <PasswordVaultCredentialsSection
           pinConfigured={pinConfigured}
           lockRequired={lockRequired}
           secretsVisible={secretsVisible}
           actions={vaultActions}
+          search={search}
+          onSearchChange={setSearch}
+          resultCount={entries.length}
+          totalCount={allEntries.length}
         />
       ) : !vaultLocked && !vaultQuery.isLoading ? (
         <div className="flex justify-end">{vaultActions}</div>
@@ -540,10 +572,10 @@ export function PasswordVaultPage() {
       <div
         className={cn(
           "min-h-0",
-          (vaultLocked || (entries.length === 0 && !vaultQuery.isLoading)) &&
+          (vaultLocked || (allEntries.length === 0 && !vaultQuery.isLoading)) &&
             "flex flex-1 flex-col",
           !vaultLocked &&
-            entries.length > 0 &&
+            allEntries.length > 0 &&
             !vaultQuery.isLoading
             ? "grid items-stretch gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(300px,400px)] xl:grid-cols-[minmax(0,1fr)_minmax(340px,440px)]"
             : "grid-cols-1",
@@ -553,8 +585,28 @@ export function PasswordVaultPage() {
           <VaultEmptyPlaceholder locked planLabel={vaultPlanLabel} />
         ) : vaultQuery.isLoading && !vaultQuery.data ? (
           <VaultEmptyPlaceholder loading />
-        ) : entries.length === 0 ? (
+        ) : allEntries.length === 0 ? (
           <VaultEmptyPlaceholder />
+        ) : entries.length === 0 ? (
+          // A search miss is not an empty vault — saying "import some entries"
+          // here would be nonsense when you have 187 of them.
+          <div className="flex min-h-[32rem] flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-border bg-card px-6 text-center">
+            <p className="text-sm font-medium text-foreground">
+              No credentials match &ldquo;{search.trim()}&rdquo;
+            </p>
+            <p className="max-w-sm text-[13px] text-muted-foreground">
+              Search looks at the site, username, and category.
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="mt-1 border-border"
+              onClick={() => setSearch("")}
+            >
+              Clear search
+            </Button>
+          </div>
         ) : (
         <div className="flex min-h-[32rem] flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
           <div className="flex h-14 shrink-0 items-center gap-2 border-b border-border bg-muted/30 px-5">

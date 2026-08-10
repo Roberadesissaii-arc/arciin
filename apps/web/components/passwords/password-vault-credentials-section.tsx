@@ -1,10 +1,18 @@
 "use client"
 
+import { Search, X } from "lucide-react"
+
+import { Input } from "@/components/ui/input"
+
 type PasswordVaultCredentialsSectionProps = {
   pinConfigured: boolean
   lockRequired: boolean
   secretsVisible: boolean
   actions?: React.ReactNode
+  search: string
+  onSearchChange: (value: string) => void
+  resultCount: number
+  totalCount: number
 }
 
 export function PasswordVaultCredentialsSection({
@@ -12,6 +20,10 @@ export function PasswordVaultCredentialsSection({
   lockRequired,
   secretsVisible,
   actions,
+  search,
+  onSearchChange,
+  resultCount,
+  totalCount,
 }: PasswordVaultCredentialsSectionProps) {
   const description =
     lockRequired && !secretsVisible
@@ -33,6 +45,41 @@ export function PasswordVaultCredentialsSection({
         </div>
         {actions ? (
           <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">{actions}</div>
+        ) : null}
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
+        <div className="relative min-w-0 flex-1 sm:max-w-md">
+          <Search
+            className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+            aria-hidden
+          />
+          <Input
+            // Not type="search": Chrome adds its own clear ✕ on top of ours.
+            type="text"
+            value={search}
+            onChange={(e) => onSearchChange(e.target.value)}
+            placeholder="Search by site, username, or category"
+            aria-label="Search saved credentials"
+            className="h-10 border-border bg-muted/30 pl-9 pr-9 text-sm"
+          />
+          {search ? (
+            <button
+              type="button"
+              onClick={() => onSearchChange("")}
+              aria-label="Clear search"
+              className="absolute right-2 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <X className="size-3.5" />
+            </button>
+          ) : null}
+        </div>
+        {search ? (
+          <p className="text-[12px] tabular-nums text-muted-foreground" aria-live="polite">
+            {resultCount === 0
+              ? "No matches"
+              : `${resultCount} of ${totalCount} ${totalCount === 1 ? "entry" : "entries"}`}
+          </p>
         ) : null}
       </div>
     </section>
