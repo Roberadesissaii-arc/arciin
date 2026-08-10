@@ -85,7 +85,8 @@ export function InstallAppPrompt() {
     <div
       role="dialog"
       aria-label="Install Arciin"
-      className="fixed bottom-6 left-6 z-[70] w-[min(22rem,calc(100vw-3rem))] animate-in fade-in slide-in-from-bottom-4 duration-300"
+      // Bottom-right: on the left it sat on top of the sidebar nav.
+      className="fixed bottom-6 right-6 z-[70] w-[min(22rem,calc(100vw-3rem))] animate-in fade-in slide-in-from-bottom-4 duration-300"
     >
       <div className="relative overflow-hidden rounded-2xl border border-zinc-700 bg-zinc-900/95 p-4 shadow-2xl backdrop-blur-xl">
         <button
