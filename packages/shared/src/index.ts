@@ -14,6 +14,7 @@ export * from "./security-activity"
 export * from "./vision-search-query"
 export * from "./strip-assistant-stream-markup"
 export * from "./gemini-models"
+export * from "./grok-models"
 
 /** Backward-compatible barrel — prefer `@arciin/types`, `@arciin/config`, `@arciin/ui`. */
 export * from "@arciin/types"

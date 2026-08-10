@@ -1,3 +1,5 @@
+import { GROK_CHAT_MODEL_IDS } from "@arciin/shared"
+
 /** Static model catalogues for non-Ollama chat providers (mirrors AI Chat picker). */
 export const PROVIDER_MODELS: Record<string, string[]> = {
   openai: ["gpt-4o", "gpt-4o-mini", "o1", "o1-mini", "gpt-4-turbo"],
@@ -12,7 +14,7 @@ export const PROVIDER_MODELS: Record<string, string[]> = {
     "gemini-3-flash-preview",
   ],
   deepseek: ["deepseek-v4-flash", "deepseek-v4-pro", "deepseek-chat", "deepseek-reasoner"],
-  grok: ["grok-2", "grok-2-mini", "grok-3"],
+  grok: [...GROK_CHAT_MODEL_IDS],
   meta: [
     "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo",
     "meta-llama/Llama-4-Scout-17B-16E-Instruct",

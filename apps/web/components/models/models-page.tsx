@@ -2,7 +2,7 @@
 
 import Image from "next/image"
 import Link from "next/link"
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   Check,
@@ -41,9 +41,11 @@ import { ModelTestPanel, ModelTestTrigger } from "@/components/models/model-test
 import {
   DEFAULT_GEMINI_CHAT_MODEL,
   DEFAULT_GEMINI_TTS_MODEL,
+  DEFAULT_GROK_CHAT_MODEL,
   GEMINI_CHAT_MODELS,
   GEMINI_OTHER_MODELS,
   GEMINI_TTS_MODELS,
+  GROK_CHAT_MODELS,
   type GeminiModelEntry,
 } from "@arciin/shared"
 import { libraryGlassSheetPanel } from "@/lib/library-glass-sheet"
@@ -57,6 +59,7 @@ import {
   updateModelProfile,
 } from "@/lib/api/models"
 import { queryKeys } from "@/lib/api/query-keys"
+import { useOllamaAvailableModels } from "@/lib/hooks/use-ollama-available-models"
 import type { CreateModelProfileInput, ModelProfile, OllamaCloudModelProbe } from "@/lib/types/models"
 
 // ── Provider catalogue ─────────────────────────────────────────────────────────
@@ -141,10 +144,11 @@ const PROVIDERS: ProviderMeta[] = [
     logo: "/assets/icons/models/grok.svg",
     logoBg: "#ffffff",
     description:
-      "Grok-2 and Grok-3 from xAI, via the xAI API. Connect with your xAI key to run Grok models through Arciin chat.",
+      "Grok 4.5, Grok 4.3, and Grok Build from xAI — long context, tool calling, and vision. Add your xAI key to run Grok in Arciin chat.",
     requiresKey: true,
     requiresBaseUrl: false,
-    suggestedModels: ["grok-2", "grok-2-mini", "grok-3"],
+    baseUrlPlaceholder: "https://api.x.ai/v1",
+    suggestedModels: GROK_CHAT_MODELS.map((m) => m.id),
     docsUrl: "https://console.x.ai/",
   },
   {
@@ -491,6 +495,108 @@ function GeminiModelSelect({
   )
 }
 
+/**
+ * xAI model picker.
+ *
+ * Grok ids alone ("grok-4.20-non-reasoning") say nothing about what the model is
+ * for, so each row carries its name, context window, and whether it reasons.
+ * `liveModels` comes from the provider's own catalogue once a key is saved; the
+ * static list is the fallback before that.
+ */
+function GrokModelSelect({
+  id,
+  value,
+  onChange,
+  liveModels,
+}: {
+  id: string
+  value: string
+  onChange: (value: string) => void
+  liveModels?: string[]
+}) {
+  const [open, setOpen] = useState(false)
+
+  const entries = useMemo(() => {
+    if (!liveModels || liveModels.length === 0) return GROK_CHAT_MODELS
+    const known = new Map(GROK_CHAT_MODELS.map((m) => [m.id, m]))
+    return liveModels.map(
+      (modelId) =>
+        known.get(modelId) ?? {
+          id: modelId,
+          label: modelId,
+          context: "",
+          description: "",
+          tools: true,
+          reasoning: false,
+          vision: false,
+        },
+    )
+  }, [liveModels])
+
+  return (
+    <div className="relative">
+      <Input
+        id={id}
+        value={value}
+        onChange={(e) => {
+          onChange(e.target.value)
+          setOpen(true)
+        }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        placeholder={DEFAULT_GROK_CHAT_MODEL}
+        className="pr-8 font-mono text-[13px]"
+        autoComplete="off"
+      />
+      <button
+        type="button"
+        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+        onMouseDown={(e) => {
+          e.preventDefault()
+          setOpen((v) => !v)
+        }}
+      >
+        <ChevronDown className="size-3.5" />
+      </button>
+      {open ? (
+        <div className="absolute z-20 mt-1 max-h-64 w-full overflow-y-auto rounded-xl border border-border bg-card shadow-md">
+          {entries.map((entry) => (
+            <button
+              key={entry.id}
+              type="button"
+              className="block w-full border-b border-border px-3 py-2.5 text-left last:border-0 hover:bg-muted/60"
+              onMouseDown={(e) => {
+                e.preventDefault()
+                onChange(entry.id)
+                setOpen(false)
+              }}
+            >
+              <span className="flex items-center gap-2">
+                <span className="min-w-0 flex-1 truncate text-[12px] font-medium text-foreground">
+                  {entry.label}
+                </span>
+                {entry.context ? (
+                  <span className="shrink-0 text-[10px] text-muted-foreground">
+                    {entry.context}
+                  </span>
+                ) : null}
+                {entry.badge ? (
+                  <span className="shrink-0 rounded-md bg-muted px-1.5 py-0.5 text-[9px] font-medium text-muted-foreground">
+                    {entry.badge}
+                  </span>
+                ) : null}
+              </span>
+              <span className="mt-0.5 block truncate font-mono text-[10px] text-muted-foreground">
+                {entry.id}
+              </span>
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
 function ConnectSheet({
   meta,
   profile,
@@ -509,6 +615,7 @@ function ConnectSheet({
   const isOllamaCloud = meta.id === "ollama-cloud"
   const isAnyOllama = isOllamaLocal || isOllamaCloud
   const isGemini = meta.id === "gemini"
+  const isGrok = meta.id === "grok"
 
   const [scannedModels, setScannedModels] = useState<string[]>([])
   const [scanning, setScanning] = useState(false)
@@ -525,6 +632,7 @@ function ConnectSheet({
     if (profile?.defaultModel) return profile.defaultModel
     if (isAnyOllama) return ""
     if (isGemini) return DEFAULT_GEMINI_CHAT_MODEL
+    if (isGrok) return DEFAULT_GROK_CHAT_MODEL
     return meta.suggestedModels[0] ?? ""
   })
   const [ttsModel, setTtsModel] = useState(() => {
@@ -533,6 +641,11 @@ function ConnectSheet({
     return ""
   })
   const [showSuggestions, setShowSuggestions] = useState(false)
+
+  // Once an xAI profile exists, ask xAI what the key can actually reach rather
+  // than trusting a list baked into the build.
+  const grokQuery = useOllamaAvailableModels(profile?.id ?? "", isGrok && Boolean(profile?.id))
+  const grokModels = isGrok ? grokQuery.data?.models : undefined
 
   const queryClient = useQueryClient()
 
@@ -916,7 +1029,7 @@ function ConnectSheet({
 
               <Field>
                 <FieldLabel htmlFor="default-model" className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                  {isGemini ? "Chat model" : "Default model"}
+                  {isGemini || isGrok ? "Chat model" : "Default model"}
                 </FieldLabel>
                 {isGemini ? (
                   <GeminiModelSelect
@@ -926,6 +1039,13 @@ function ConnectSheet({
                     onChange={setModel}
                     models={[...GEMINI_CHAT_MODELS, ...GEMINI_OTHER_MODELS]}
                     placeholder={DEFAULT_GEMINI_CHAT_MODEL}
+                  />
+                ) : isGrok ? (
+                  <GrokModelSelect
+                    id="default-model"
+                    value={model}
+                    onChange={setModel}
+                    liveModels={grokModels}
                   />
                 ) : (
                 <div className="relative">

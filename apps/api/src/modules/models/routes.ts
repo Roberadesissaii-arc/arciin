@@ -3,6 +3,8 @@ import { z } from "zod"
 import {
   DEFAULT_GEMINI_CHAT_MODEL,
   DEFAULT_GEMINI_TTS_MODEL,
+  GROK_CHAT_MODEL_IDS,
+  isGrokChatModelId,
 } from "@arciin/shared"
 
 import { assertOllamaCloudApiKey, formatOllamaProviderError } from "@/services/chat/ollama-http"
@@ -194,6 +196,51 @@ export async function registerModelRoutes(fastify: FastifyInstance) {
       const { id } = request.params as { id: string }
       const profile = await fastify.prisma.modelProfile.findUnique({ where: { id } })
       if (!profile) { reply.status(404).send({ error: { code: "NOT_FOUND", message: "Not found." } }); return }
+
+      // xAI is OpenAI-compatible and publishes its catalogue, so the picker can
+      // show what the key really has instead of a list hardcoded months ago.
+      if (profile.provider === "grok") {
+        if (!profile.apiKey) {
+          reply.status(400).send({
+            error: { code: "MISSING_API_KEY", message: "Add an xAI API key to list models." },
+          })
+          return
+        }
+        const base = (profile.baseUrl ?? "https://api.x.ai/v1").replace(/\/$/, "")
+        try {
+          const res = await fetch(`${base}/models`, {
+            headers: { Authorization: `Bearer ${profile.apiKey}` },
+            signal: AbortSignal.timeout(15_000),
+          })
+          if (res.status === 401 || res.status === 403) {
+            reply.status(502).send({
+              error: { code: "XAI_AUTH", message: "xAI rejected the API key on this profile." },
+            })
+            return
+          }
+          if (!res.ok) {
+            reply.status(502).send({
+              error: { code: "XAI_ERROR", message: `xAI returned ${res.status}` },
+            })
+            return
+          }
+          const payload = (await res.json()) as { data?: { id?: string }[] }
+          const models = (payload.data ?? [])
+            .map((m) => m.id)
+            .filter((id): id is string => Boolean(id))
+            .filter(isGrokChatModelId)
+            .sort()
+          // An empty result means the key sees no chat model; the static
+          // catalogue is more useful there than an empty dropdown.
+          reply.send({
+            data: { models: models.length > 0 ? models : [...GROK_CHAT_MODEL_IDS], fromCache: false },
+          })
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : "Could not reach xAI"
+          reply.status(502).send({ error: { code: "XAI_UNREACHABLE", message: msg } })
+        }
+        return
+      }
 
       if (!OLLAMA_PROVIDERS.has(profile.provider)) {
         reply.status(400).send({ error: { code: "NOT_SUPPORTED", message: "Dynamic model listing is only supported for Ollama." } })
