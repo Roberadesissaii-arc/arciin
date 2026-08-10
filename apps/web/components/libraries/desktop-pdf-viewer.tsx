@@ -119,8 +119,10 @@ function PdfPageCanvas({
           host.appendChild(canvas)
           canvasRef.current = canvas
           setReady(true)
-        } catch {
-          /* best-effort */
+        } catch (err) {
+          // Swallowing this silently once hid a total render failure: every page
+          // stayed on the grey placeholder with nothing in the console.
+          console.error(`[pdf] page ${pageNumber} render failed`, err)
         }
       })()
     }
@@ -253,6 +255,15 @@ export function DesktopPdfViewer({
 
   useEffect(() => {
     let cancelled = false
+    /**
+     * Only the side that actually took a reference may give one back. Cleanup
+     * used to release unconditionally, so when it ran before the fetch resolved
+     * the async branch released a second time — refs hit 0, the document was
+     * destroyed mid-render, and every page died on `sendWithPromise of null`
+     * leaving a blank viewer. It raced on load time, so short PDFs lost almost
+     * every time and large ones only sometimes.
+     */
+    let acquired = false
 
     void (async () => {
       if (!hasPdfDocumentCache(fileUrl)) {
@@ -264,7 +275,9 @@ export function DesktopPdfViewer({
 
       try {
         const pdf = await fetchPdfDocument(fileUrl)
+        acquired = true
         if (cancelled) {
+          acquired = false
           releasePdfDocument(fileUrl)
           return
         }
@@ -284,7 +297,10 @@ export function DesktopPdfViewer({
 
     return () => {
       cancelled = true
-      releasePdfDocument(fileUrl)
+      if (acquired) {
+        acquired = false
+        releasePdfDocument(fileUrl)
+      }
     }
   }, [fileUrl])
 
@@ -496,7 +512,11 @@ export function DesktopPdfViewer({
     setPageWindow({ start, end })
   }, [layoutWidth, numPages, pageHeights, scrollToPage, scrollToPageAt])
 
-  const { start: windowStart, end: windowEnd } = pageWindow
+  // The initial window is a fixed guess (1..8) made before numPages is known, so
+  // clamp it — a 1-page PDF was asking pdf.js for pages 2-8 and logging
+  // "Invalid page request" for each one.
+  const windowStart = Math.max(1, pageWindow.start)
+  const windowEnd = numPages > 0 ? Math.min(pageWindow.end, numPages) : pageWindow.end
   const highlightsForRender = highlightTargets?.length ? pageHighlights : EMPTY_PAGE_HIGHLIGHTS
   const topSpacer = windowStart > 1 ? offsetBefore(windowStart) : 0
   const bottomSpacer =

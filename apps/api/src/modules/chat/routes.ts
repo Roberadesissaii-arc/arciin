@@ -21,7 +21,11 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify"
 import { z } from "zod"
 
 import { assertOllamaCloudApiKey } from "@/services/chat/ollama-http"
-import { executeArciinChatTool } from "@/services/chat/arciin-chat-tools"
+import {
+  ARCIIN_CHAT_TOOLS,
+  executeArciinChatTool,
+  type ArciinChatToolContext,
+} from "@/services/chat/arciin-chat-tools"
 import {
   DEFAULT_GEMINI_TTS_VOICE,
   synthesizeGeminiTts,
@@ -1137,6 +1141,25 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
             model,
             messages: compatMessages,
             provider: profile.provider,
+            // Same tool set Ollama gets, minus the vision/organize tools that
+            // depend on a locally reachable vision model.
+            tools: focusAsset
+              ? undefined
+              : ARCIIN_CHAT_TOOLS.filter(
+                  (t) =>
+                    t.function.name !== "vision_search_library" &&
+                    t.function.name !== "organize_images_library",
+                ),
+            toolCtx: {
+              prisma: fastify.prisma,
+              storageRoot: instance?.storageRoot ?? null,
+              baseUrl,
+              model,
+              apiKey: profile.apiKey,
+              userId: request.auth!.user.id,
+              libraryToolAccess: security.libraryToolAccess,
+              publishRealtimeEvent: fastify.publishRealtimeEvent,
+            },
           })
         }
       } catch (err) {
@@ -1427,8 +1450,17 @@ async function streamOllamaNative({
 
 // ── OpenAI-compatible streaming ────────────────────────────────────────────────
 
-async function streamOpenAICompat({
-  raw, baseUrl, apiKey, model, messages, provider,
+/** Tool rounds before we force a plain answer — stops a model looping on tools forever. */
+const OPENAI_COMPAT_MAX_TOOL_ROUNDS = 4
+
+type StreamedToolCall = { id: string; name: string; args: string }
+
+/**
+ * One streamed completion. Returns any tool calls the model asked for so the
+ * caller can run them and continue the conversation.
+ */
+async function streamOpenAICompatOnce({
+  raw, baseUrl, apiKey, model, messages, provider, tools, emitUsage,
 }: {
   raw: import("http").ServerResponse
   baseUrl: string
@@ -1436,7 +1468,9 @@ async function streamOpenAICompat({
   model: string
   messages: OpenAICompatMessage[]
   provider?: string
-}) {
+  tools?: unknown[]
+  emitUsage: boolean
+}): Promise<{ toolCalls: StreamedToolCall[]; content: string }> {
   const isDeepSeek =
     provider === "deepseek" || /deepseek\.com/i.test(baseUrl)
 
@@ -1448,6 +1482,10 @@ async function streamOpenAICompat({
   }
   if (isDeepSeek) {
     body.reasoning_effort = "medium"
+  }
+  if (tools?.length) {
+    body.tools = tools
+    body.tool_choice = "auto"
   }
 
   const res = await fetch(`${baseUrl}/chat/completions`, {
@@ -1467,6 +1505,9 @@ async function streamOpenAICompat({
   const reader = res.body.getReader()
   const decoder = new TextDecoder()
   let buffer = ""
+  // tool_call fragments arrive split across chunks and are keyed by index.
+  const pending = new Map<number, StreamedToolCall>()
+  let content = ""
 
   while (true) {
     const { done, value } = await reader.read()
@@ -1480,23 +1521,46 @@ async function streamOpenAICompat({
       const trimmed = line.trim()
       if (!trimmed.startsWith("data:")) continue
       const payload = trimmed.slice(5).trim()
-      if (payload === "[DONE]") return
+      if (payload === "[DONE]") {
+        return { toolCalls: [...pending.values()], content }
+      }
 
       try {
         const json = JSON.parse(payload) as {
-          choices?: { delta?: { content?: string; thinking?: string } }[]
+          choices?: { delta?: unknown }[]
           usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number }
         }
         const delta = json.choices?.[0]?.delta as
-          | { content?: string; thinking?: string; reasoning_content?: string }
+          | {
+              content?: string
+              thinking?: string
+              reasoning_content?: string
+              tool_calls?: {
+                index?: number
+                id?: string
+                function?: { name?: string; arguments?: string }
+              }[]
+            }
           | undefined
         const thinking = delta?.reasoning_content ?? delta?.thinking
         const text = delta?.content
 
         if (thinking) writeSseEvent(raw, { thinking })
-        if (text) writeSseEvent(raw, { text })
+        if (text) {
+          content += text
+          writeSseEvent(raw, { text })
+        }
 
-        if (json.usage?.total_tokens) {
+        for (const tc of delta?.tool_calls ?? []) {
+          const idx = tc.index ?? 0
+          const entry = pending.get(idx) ?? { id: "", name: "", args: "" }
+          if (tc.id) entry.id = tc.id
+          if (tc.function?.name) entry.name = tc.function.name
+          if (tc.function?.arguments) entry.args += tc.function.arguments
+          pending.set(idx, entry)
+        }
+
+        if (emitUsage && json.usage?.total_tokens) {
           writeSseEvent(raw, {
             usage: {
               inputTokens: json.usage.prompt_tokens ?? 0,
@@ -1508,6 +1572,78 @@ async function streamOpenAICompat({
       } catch {
         // skip malformed chunks
       }
+    }
+  }
+
+  return { toolCalls: [...pending.values()], content }
+}
+
+/**
+ * OpenAI-compatible providers (DeepSeek, OpenAI, Gemini-compat) with real tool
+ * calling. Previously this path sent no `tools` at all, so a model asked to read
+ * a PDF would announce "let me read the file" and then stop — there was nothing
+ * to call. Only Ollama had working tools.
+ */
+async function streamOpenAICompat({
+  raw, baseUrl, apiKey, model, messages, provider, tools, toolCtx,
+}: {
+  raw: import("http").ServerResponse
+  baseUrl: string
+  apiKey: string
+  model: string
+  messages: OpenAICompatMessage[]
+  provider?: string
+  tools?: unknown[]
+  toolCtx?: ArciinChatToolContext
+}) {
+  const convo = [...messages] as (OpenAICompatMessage & Record<string, unknown>)[]
+
+  for (let round = 0; round <= OPENAI_COMPAT_MAX_TOOL_ROUNDS; round += 1) {
+    // Last round drops tools so the model has to produce a final answer.
+    const offerTools = Boolean(tools?.length && toolCtx) && round < OPENAI_COMPAT_MAX_TOOL_ROUNDS
+    const { toolCalls, content } = await streamOpenAICompatOnce({
+      raw,
+      baseUrl,
+      apiKey,
+      model,
+      messages: convo as OpenAICompatMessage[],
+      provider,
+      tools: offerTools ? tools : undefined,
+      emitUsage: true,
+    })
+
+    if (!toolCalls.length || !toolCtx) return
+
+    convo.push({
+      role: "assistant",
+      content: content || "",
+      tool_calls: toolCalls.map((c) => ({
+        id: c.id,
+        type: "function",
+        function: { name: c.name, arguments: c.args || "{}" },
+      })),
+    } as OpenAICompatMessage & Record<string, unknown>)
+
+    for (const call of toolCalls) {
+      writeSseEvent(raw, { tool: { name: call.name, status: "running" } })
+      let resultText: string
+      try {
+        const result = await executeArciinChatTool(
+          { function: { name: call.name, arguments: call.args || "{}" } },
+          toolCtx,
+        )
+        resultText = JSON.stringify(result).slice(0, 60_000)
+      } catch (err) {
+        resultText = JSON.stringify({
+          error: err instanceof Error ? err.message : "Tool failed.",
+        })
+      }
+      writeSseEvent(raw, { tool: { name: call.name, status: "done" } })
+      convo.push({
+        role: "tool",
+        tool_call_id: call.id,
+        content: resultText,
+      } as OpenAICompatMessage & Record<string, unknown>)
     }
   }
 }

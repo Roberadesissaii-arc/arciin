@@ -79,7 +79,7 @@ function enqueueRender(fn: () => Promise<void>) {
   drainQueue()
 }
 
-import { fetchPdfDocument } from "@/lib/files/fetch-pdf-document"
+import { fetchPdfDocument, releasePdfDocument } from "@/lib/files/fetch-pdf-document"
 
 async function renderPdfThumbDataUrl(fileUrl: string): Promise<string | null> {
   const pdf = await fetchPdfDocument(fileUrl)
@@ -102,7 +102,10 @@ async function renderPdfThumbDataUrl(fileUrl: string): Promise<string | null> {
     page.cleanup()
     return dataUrl
   } finally {
-    await pdf.destroy()
+    // Must go back through the ref-counted cache. Calling pdf.destroy() here tore
+    // down a document the open viewer was still rendering from — and left the
+    // destroyed instance in the cache — so opening a PDF showed a blank page.
+    releasePdfDocument(fileUrl)
   }
 }
 
