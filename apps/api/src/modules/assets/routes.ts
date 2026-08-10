@@ -846,6 +846,25 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
       })
 
       if (!sourcePathResolved) {
+        // A thumbnail generated while the original still existed is perfectly
+        // good on its own. Falling straight through to a placeholder meant an
+        // asset whose original went missing showed a grey icon on the web even
+        // though a real preview was sitting on disk (mobile kept showing it
+        // from its own cache, which is what made the two clients disagree).
+        const cachedThumb = resolvedThumbnailPath(
+          instance?.storageRoot,
+          asset.id,
+          asset.storageObject.physicalPath,
+        )
+        try {
+          await access(cachedThumb)
+          reply.header("content-type", "image/webp")
+          reply.header("Cache-Control", "private, max-age=86400")
+          return reply.send(createReadStream(cachedThumb))
+        } catch {
+          /* no cached thumbnail — fall through to the placeholder */
+        }
+
         if (asset.mediaType === "IMAGE") {
           const placeholder = await renderImagePlaceholderWebpBuffer()
           reply.header("content-type", "image/webp")

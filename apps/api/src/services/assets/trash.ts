@@ -120,6 +120,17 @@ export async function permanentlyDeleteTrashedAsset(
   })
   const extraRoots = storageLocations.map((s) => s.rootPath)
 
+  /**
+   * Storage is content-addressed, so two assets with identical bytes share one
+   * StorageObject. The transaction below already refuses to drop the row while
+   * another asset points at it — but the unlink underneath used to run
+   * unconditionally, deleting the bytes anyway. Emptying the trash therefore
+   * destroyed originals belonging to assets that were still in the library:
+   * their rows survived pointing at files that no longer existed, so they
+   * rendered as placeholders (thumbnails are per-asset and outlived them).
+   */
+  let objectStillReferenced = false
+
   await prisma.$transaction(async (tx) => {
     await tx.assetTag.deleteMany({ where: { assetId } })
     await tx.shareLinkAsset.deleteMany({ where: { assetId } })
@@ -132,18 +143,21 @@ export async function permanentlyDeleteTrashedAsset(
     await tx.asset.delete({ where: { id: assetId } })
 
     const remaining = await tx.asset.count({ where: { storageObjectId } })
+    objectStillReferenced = remaining > 0
     if (remaining === 0) {
       await tx.storageObject.delete({ where: { id: storageObjectId } }).catch(() => {})
     }
   })
 
-  await unlink(physicalPath).catch(() => {})
-  // Also try object-key-relative candidates under known roots.
-  for (const root of [instance?.storageRoot, apiConfig.dataDir, ...extraRoots]) {
-    if (!root) continue
-    const candidate = path.join(getStoragePaths(root).objectsDir, objectKey)
-    if (candidate !== physicalPath) {
-      await unlink(candidate).catch(() => {})
+  if (!objectStillReferenced) {
+    await unlink(physicalPath).catch(() => {})
+    // Also try object-key-relative candidates under known roots.
+    for (const root of [instance?.storageRoot, apiConfig.dataDir, ...extraRoots]) {
+      if (!root) continue
+      const candidate = path.join(getStoragePaths(root).objectsDir, objectKey)
+      if (candidate !== physicalPath) {
+        await unlink(candidate).catch(() => {})
+      }
     }
   }
 
