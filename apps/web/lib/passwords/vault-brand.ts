@@ -122,17 +122,6 @@ const LOCAL_ICON_FILES: Record<VaultBrandCategory, Record<string, string>> = {
   },
 }
 
-/** Brand-colored tiles where the logo is designed to sit on that background. */
-const BRAND_TILE_BG: Partial<Record<string, string>> = {
-  spotify: "#191414",
-  netflix: "#141414",
-  aws: "#232f3e",
-  discord: "#5865f2",
-  adobe: "#ff0000",
-  plex: "#e5a00d",
-  instagram: "#E1306C",
-}
-
 /**
  * Logos that render white/light in SVG and need a dark tile for contrast.
  * Everything else defaults to a white tile (dark/currentColor marks, full-color logos).
@@ -330,9 +319,17 @@ export function vaultBrandUsesLobeHub(match: VaultBrandMatch): boolean {
   return match.category === "model" && LOBEHUB_MODEL_KEYS.has(match.key) && !vaultBrandIconSrc(match)
 }
 
+/**
+ * One neutral tile for every brand.
+ *
+ * Per-brand fills (Spotify black, Discord blurple, Adobe red, Plex gold,
+ * Instagram pink…) turned the list into a patchwork where every row looked
+ * like it belonged to a different design. The logo should be the only thing
+ * that varies. The single exception is marks that are drawn white, which are
+ * invisible on a light tile and get a uniform dark one instead.
+ */
 export function vaultBrandTileBg(match: VaultBrandMatch | null): string {
   if (!match) return "#18181b"
-  if (BRAND_TILE_BG[match.key]) return BRAND_TILE_BG[match.key]!
   if (LIGHT_MARK_KEYS.has(match.key)) return "#09090b"
   return "#ffffff"
 }
@@ -340,7 +337,6 @@ export function vaultBrandTileBg(match: VaultBrandMatch | null): string {
 export function vaultBrandTileFg(match: VaultBrandMatch | null): string | undefined {
   if (!match) return "#fafafa"
   if (LIGHT_MARK_KEYS.has(match.key)) return "#fafafa"
-  if (BRAND_TILE_BG[match.key]) return "#fafafa"
   return undefined
 }
 

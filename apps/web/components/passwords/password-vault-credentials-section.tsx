@@ -34,24 +34,16 @@ export function PasswordVaultCredentialsSection({
 
   return (
     <section>
-      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-        <div className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-3 gap-y-1">
-          <h3 className="shrink-0 font-heading text-base font-semibold tracking-tight text-foreground">
-            Saved credentials
-          </h3>
-          <p className="min-w-0 flex-1 truncate text-sm text-muted-foreground" title={description}>
-            {description}
-          </p>
-        </div>
-        {actions ? (
-          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">{actions}</div>
-        ) : null}
-      </div>
+      <h3 className="font-heading text-base font-semibold tracking-tight text-foreground">
+        Saved credentials
+      </h3>
+      {/* The explanation belongs with the heading, not squeezed onto the
+          toolbar row where it was truncated mid-sentence. */}
+      <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{description}</p>
 
-      {/* Full-width toolbar: capped at max-w-md the field left a dead band
-          across the right half of the row. */}
+      {/* One full-width toolbar: search grows, actions sit at the end. */}
       <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
-        <div className="relative min-w-0 flex-1">
+        <div className="relative min-w-0 flex-1 basis-64">
           <Search
             className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
             aria-hidden
@@ -86,6 +78,10 @@ export function PasswordVaultCredentialsSection({
               : `${resultCount} of ${totalCount} ${totalCount === 1 ? "entry" : "entries"}`
             : `${totalCount} ${totalCount === 1 ? "entry" : "entries"}`}
         </p>
+
+        {actions ? (
+          <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div>
+        ) : null}
       </div>
     </section>
   )
