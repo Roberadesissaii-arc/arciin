@@ -48,8 +48,10 @@ export function PasswordVaultCredentialsSection({
         ) : null}
       </div>
 
+      {/* Full-width toolbar: capped at max-w-md the field left a dead band
+          across the right half of the row. */}
       <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
-        <div className="relative min-w-0 flex-1 sm:max-w-md">
+        <div className="relative min-w-0 flex-1">
           <Search
             className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
             aria-hidden
@@ -74,13 +76,16 @@ export function PasswordVaultCredentialsSection({
             </button>
           ) : null}
         </div>
-        {search ? (
-          <p className="text-[12px] tabular-nums text-muted-foreground" aria-live="polite">
-            {resultCount === 0
+        <p
+          className="shrink-0 text-[12px] tabular-nums text-muted-foreground"
+          aria-live="polite"
+        >
+          {search
+            ? resultCount === 0
               ? "No matches"
-              : `${resultCount} of ${totalCount} ${totalCount === 1 ? "entry" : "entries"}`}
-          </p>
-        ) : null}
+              : `${resultCount} of ${totalCount} ${totalCount === 1 ? "entry" : "entries"}`
+            : `${totalCount} ${totalCount === 1 ? "entry" : "entries"}`}
+        </p>
       </div>
     </section>
   )
