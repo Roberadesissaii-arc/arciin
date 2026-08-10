@@ -1,6 +1,11 @@
 import { PrismaClient } from "@prisma/client"
 import type { FastifyInstance } from "fastify"
 
+import {
+  decryptModelProfileResult,
+  encryptModelApiKey,
+} from "@/services/security/model-profile-key-crypto"
+
 import { reclassifyApplicationAssets } from "@/services/classification/reclassify-application-assets"
 import { reclassifyCodeAssets } from "@/services/classification/reclassify-code-assets"
 import { ensureMediaTypeEnumValues } from "@/services/database/ensure-media-type-enum"
@@ -12,9 +17,42 @@ declare global {
 }
 
 function createPrismaClient() {
-  return new PrismaClient({
+  const base = new PrismaClient({
     log: process.env.NODE_ENV === "development" ? ["error", "warn"] : ["error"],
   })
+
+  /**
+   * ModelProfile.apiKey is encrypted at rest. Doing it here rather than at each
+   * of the ~70 call sites means no caller can forget, and none of them had to
+   * change: they still read and write a plain string.
+   */
+  return base.$extends({
+    query: {
+      modelProfile: {
+        async $allOperations({ args, query, operation }) {
+          const a = args as { data?: Record<string, unknown> | Record<string, unknown>[] }
+          if (a?.data) {
+            const rows = Array.isArray(a.data) ? a.data : [a.data]
+            for (const row of rows) {
+              if (typeof row.apiKey === "string") {
+                row.apiKey = encryptModelApiKey(row.apiKey)
+              } else if (row.apiKey && typeof row.apiKey === "object") {
+                // { set: "..." } update syntax
+                const wrapped = row.apiKey as { set?: unknown }
+                if (typeof wrapped.set === "string") {
+                  wrapped.set = encryptModelApiKey(wrapped.set)
+                }
+              }
+            }
+          }
+          const result = await query(args)
+          // Aggregates and counts have no apiKey to unwrap.
+          if (operation.startsWith("count") || operation.startsWith("aggregate")) return result
+          return decryptModelProfileResult(result)
+        },
+      },
+    },
+  }) as unknown as PrismaClient
 }
 
 export async function registerPrisma(fastify: FastifyInstance) {
