@@ -4,6 +4,7 @@ import { ArrowRight, ArrowRightLeft, FolderOpen, Library, X } from "lucide-react
 
 import { MediaTypeIcon } from "@/components/libraries/media-type-icon"
 import { Button } from "@/components/ui/button"
+import { Progress } from "@/components/ui/progress"
 import { Label } from "@/components/ui/label"
 import {
   Select,
@@ -146,6 +147,7 @@ export function MoveAssetsSheetContent({
   foldersLoading,
   librariesLoading,
   movePending,
+  moveProgress,
   onLibraryChange,
   onFolderChange,
   onMove,
@@ -159,6 +161,7 @@ export function MoveAssetsSheetContent({
   foldersLoading?: boolean
   librariesLoading?: boolean
   movePending?: boolean
+  moveProgress?: { done: number; total: number }
   onLibraryChange: (id: string) => void
   onFolderChange: (id: string) => void
   onMove: () => void | Promise<void>
@@ -278,6 +281,22 @@ export function MoveAssetsSheetContent({
       </div>
 
       <SheetFooter className="shrink-0 gap-2 border-t border-border px-4 py-4 sm:flex-col">
+        {moveProgress ? (
+          <div className="w-full space-y-2 pb-1" aria-live="polite">
+            <div className="flex items-baseline justify-between text-[12px]">
+              <span className="font-medium text-foreground">
+                Moving {moveProgress.done} of {moveProgress.total}…
+              </span>
+              <span className="tabular-nums text-muted-foreground">
+                {Math.round((moveProgress.done / Math.max(1, moveProgress.total)) * 100)}%
+              </span>
+            </div>
+            <Progress
+              value={(moveProgress.done / Math.max(1, moveProgress.total)) * 100}
+              className="h-1.5"
+            />
+          </div>
+        ) : null}
         <Button
           className="h-11 w-full bg-primary text-white hover:bg-primary/90"
           disabled={movePending || !libraryId || count === 0}
@@ -285,11 +304,13 @@ export function MoveAssetsSheetContent({
         >
           {movePending ? "Moving…" : `Move ${count} ${count === 1 ? "asset" : "assets"}`}
         </Button>
-        <SheetClose asChild>
-          <Button type="button" variant="outline" className="h-11 w-full border-border">
-            Cancel
-          </Button>
-        </SheetClose>
+        {!movePending ? (
+          <SheetClose asChild>
+            <Button type="button" variant="outline" className="h-11 w-full border-border">
+              Cancel
+            </Button>
+          </SheetClose>
+        ) : null}
       </SheetFooter>
     </>
   )
