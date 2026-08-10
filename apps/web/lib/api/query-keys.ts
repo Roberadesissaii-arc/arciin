@@ -18,6 +18,7 @@ export const queryKeys = {
   activityRoot: ["activity"] as const,
   activity: (filters: Record<string, unknown> = {}) =>
     ["activity", filters] as const,
+  securityActivity: ["activity", "security"] as const,
   uploads: ["uploads"] as const,
   upload: (uploadId: string) => ["upload", uploadId] as const,
   jobs: ["jobs"] as const,

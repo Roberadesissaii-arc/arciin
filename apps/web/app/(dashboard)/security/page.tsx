@@ -4,6 +4,7 @@ import { Shield } from "lucide-react"
 import { DashboardPageIntro } from "@/components/app-shell/dashboard-page-intro"
 import { IntroCornerIcon } from "@/components/app-shell/intro-corner-icon"
 import { SecurityDashboardPanel } from "@/components/settings/security-dashboard-panel"
+import { SignInHistoryPanel } from "@/components/settings/sign-in-history-panel"
 import { Button } from "@/components/ui/button"
 
 export default function SecurityPage() {
@@ -32,6 +33,7 @@ export default function SecurityPage() {
         }
       />
       <SecurityDashboardPanel />
+      <SignInHistoryPanel />
     </div>
   )
 }
