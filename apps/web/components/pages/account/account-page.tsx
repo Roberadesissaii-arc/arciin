@@ -83,7 +83,11 @@ function parseUA(ua: string | null) {
   const DeviceIcon = isTablet ? Tablet : isMobile ? Smartphone : Laptop
 
   let browser = "Unknown"
-  if (/edg\/|edghtml/.test(l)) browser = "Edge"
+  // Our own mobile app sends "Arciin Mobile · iPhone", which matches none of the
+  // browser patterns below — every phone signed in through the app was listed as
+  // "Unknown on iOS", indistinguishable from any other device.
+  if (/arciin mobile/.test(l)) browser = "Arciin Mobile"
+  else if (/edg\/|edghtml/.test(l)) browser = "Edge"
   else if (/opr\/|opera/.test(l)) browser = "Opera"
   else if (/firefox|fxios/.test(l)) browser = "Firefox"
   else if (/chrome|crios/.test(l)) browser = "Chrome"

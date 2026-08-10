@@ -78,15 +78,42 @@ export async function createSession(
     expiresAt.setDate(expiresAt.getDate() + (options?.expiresInDays ?? 30))
   }
 
+  const userAgent = request.headers["user-agent"] ?? null
+  const ipAddress = normalizeClientIp(clientIpFromRequest(request))
+
   const session = await request.server.prisma.session.create({
     data: {
       userId,
       tokenHash: hashToken(rawToken),
-      userAgent: request.headers["user-agent"] ?? null,
-      ipAddress: normalizeClientIp(clientIpFromRequest(request)),
+      userAgent,
+      ipAddress,
       expiresAt,
     },
   })
+
+  /**
+   * Signing in again from a device that already has a session replaces it
+   * rather than stacking another row. Re-authenticating had been appending
+   * one entry per sign-in, so Settings -> Sessions listed the same phone six
+   * times and there was no way to tell which row to revoke — or whether
+   * revoking one of them did anything.
+   *
+   * Only exact (user, user-agent, ip) matches collapse, and the new session is
+   * created first so a failure here can never sign anyone out. Sessions with no
+   * user-agent are left alone: too weak a signal to treat as the same device.
+   */
+  if (userAgent && ipAddress) {
+    await request.server.prisma.session
+      .deleteMany({
+        where: {
+          userId,
+          userAgent,
+          ipAddress,
+          id: { not: session.id },
+        },
+      })
+      .catch(() => {})
+  }
 
   return {
     session,
