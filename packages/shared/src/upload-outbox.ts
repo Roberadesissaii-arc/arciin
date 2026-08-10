@@ -53,9 +53,14 @@ export type UploadOutboxPlanInput = {
 /**
  * A job id is a function of (kind, asset). Two concurrent dispatches of the
  * same outbox row, or a dispatch racing the reconciler, collapse to one job.
+ *
+ * The separator must not be ":" — BullMQ rejects a custom job id containing a
+ * colon, so every dispatch threw "Custom Id cannot contain :" and no media job
+ * ever reached Redis. Uploads stayed PROCESSING forever while the reconciler
+ * retried the same doomed id hundreds of times. "__" keeps ids just as unique.
  */
 export function outboxJobId(kind: OutboxJobKind, assetId: string): string {
-  return `${kind}:${assetId}`
+  return `${kind}__${assetId}`
 }
 
 export function requiresMetadataExtraction(mediaType: string): boolean {
