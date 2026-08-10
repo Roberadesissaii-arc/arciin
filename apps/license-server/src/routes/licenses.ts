@@ -14,6 +14,7 @@ import {
   refreshLicense,
   revokeLicense,
   revokeLicenseById,
+  deleteLicenseById,
 } from "../services/license-ops.js"
 
 const planSchema = z.enum(LICENSE_PLANS)
@@ -259,6 +260,28 @@ export async function registerLicenseRoutes(app: FastifyInstance) {
     const result = body.data.licenseId
       ? await revokeLicenseById(body.data.licenseId)
       : await revokeLicense(body.data.licenseKey!)
+    if (!result.ok) {
+      reply.status(result.status).send({
+        error: { code: result.code, message: result.message },
+      })
+      return
+    }
+    reply.send({ data: result.data })
+  })
+
+  app.post("/licenses/delete", async (request, reply) => {
+    if (!checkDemoSecret(request as { headers: Record<string, unknown> })) {
+      unauthorized(reply, "Invalid or missing demo secret.")
+      return
+    }
+    const body = z.object({ licenseId: z.string().min(1).max(64) }).safeParse(request.body)
+    if (!body.success) {
+      reply.status(400).send({
+        error: { code: "VALIDATION_ERROR", message: "licenseId required." },
+      })
+      return
+    }
+    const result = await deleteLicenseById(body.data.licenseId)
     if (!result.ok) {
       reply.status(result.status).send({
         error: { code: result.code, message: result.message },

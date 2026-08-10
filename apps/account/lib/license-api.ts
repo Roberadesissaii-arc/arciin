@@ -152,3 +152,10 @@ export async function licenseServerHealth(): Promise<boolean> {
     return false
   }
 }
+
+export async function deleteLicense(input: { licenseId: string }) {
+  return lsFetch<{ id: string }>("/licenses/delete", {
+    method: "POST",
+    body: JSON.stringify(input),
+  })
+}

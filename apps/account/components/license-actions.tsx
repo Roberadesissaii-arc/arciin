@@ -7,6 +7,7 @@ import { Loader2 } from "lucide-react"
 import {
   actionCreateDemoLicense,
   actionDeactivateServer,
+  actionDeleteLicense,
   actionRevokeLicense,
 } from "@/lib/actions"
 import { Button } from "@/components/ui"
@@ -135,6 +136,48 @@ export function DeactivateServerButton({
       {error ? (
         <p className="max-w-[14rem] text-right text-[11px] text-[var(--bad)]">{error}</p>
       ) : null}
+    </div>
+  )
+}
+
+/**
+ * Only rendered for revoked licences — the server refuses to delete an active
+ * one, so offering the button there would just produce an error.
+ */
+export function DeleteButton({ licenseId }: { licenseId: string }) {
+  const router = useRouter()
+  const [pending, start] = useTransition()
+  const [error, setError] = useState<string | null>(null)
+
+  return (
+    <div className="flex flex-col items-end gap-1">
+      <Button
+        type="button"
+        variant="danger"
+        disabled={pending}
+        onClick={() => {
+          if (
+            !window.confirm(
+              "Delete this license permanently? This removes it and its activation history and cannot be undone.",
+            )
+          ) {
+            return
+          }
+          setError(null)
+          start(async () => {
+            const res = await actionDeleteLicense(licenseId)
+            if (!res.ok) {
+              setError(res.message)
+              return
+            }
+            router.refresh()
+          })
+        }}
+      >
+        {pending ? <Loader2 className="size-3.5 animate-spin" /> : null}
+        Delete
+      </Button>
+      {error ? <p className="text-xs text-red-600">{error}</p> : null}
     </div>
   )
 }

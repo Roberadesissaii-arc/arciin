@@ -3,6 +3,7 @@
 import {
   createDemoLicense,
   deactivateServer,
+  deleteLicense,
   revokeLicense,
 } from "@/lib/license-api"
 import { revalidatePath } from "next/cache"
@@ -48,6 +49,21 @@ export async function actionDeactivateServer(licenseId: string, instanceId: stri
     return {
       ok: false as const,
       message: e instanceof Error ? e.message : "Could not deactivate server",
+    }
+  }
+}
+
+export async function actionDeleteLicense(licenseId: string) {
+  try {
+    await deleteLicense({ licenseId })
+    revalidatePath("/account")
+    revalidatePath("/account/licenses")
+    revalidatePath("/account/servers")
+    return { ok: true as const }
+  } catch (e) {
+    return {
+      ok: false as const,
+      message: e instanceof Error ? e.message : "Could not delete license",
     }
   }
 }

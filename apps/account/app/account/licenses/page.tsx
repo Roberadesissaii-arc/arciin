@@ -1,6 +1,6 @@
 import { DemoBanner } from "@/components/demo-banner"
 import { CopyButton } from "@/components/copy-button"
-import { CreateDemoButtons, RevokeButton } from "@/components/license-actions"
+import { CreateDemoButtons, DeleteButton, RevokeButton } from "@/components/license-actions"
 import {
   Card,
   FieldLabel,
@@ -79,7 +79,11 @@ export default async function LicensesPage() {
                 {lic.licenseKey ? (
                   <CopyButton value={lic.licenseKey} label="Copy full key" />
                 ) : null}
-                {lic.status !== "revoked" ? <RevokeButton licenseId={lic.id} /> : null}
+                {lic.status !== "revoked" ? (
+                  <RevokeButton licenseId={lic.id} />
+                ) : (
+                  <DeleteButton licenseId={lic.id} />
+                )}
               </div>
             </div>
 

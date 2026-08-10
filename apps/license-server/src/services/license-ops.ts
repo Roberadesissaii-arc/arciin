@@ -865,3 +865,34 @@ export async function revokeLicenseById(
   })
   return { ok: true, data: { id: license.id } }
 }
+
+/**
+ * Permanently remove a licence.
+ *
+ * Guarded to revoked licences only: deleting an active one would silently cut
+ * off a server that is still relying on it, with no revocation record left to
+ * explain why. Revoke first, then delete.
+ */
+export async function deleteLicenseById(
+  licenseId: string,
+): Promise<OpsResult<{ id: string }>> {
+  const license = await prisma.license.findUnique({ where: { id: licenseId } })
+  if (!license) {
+    return { ok: false, code: "LICENSE_NOT_FOUND", message: "License not found.", status: 404 }
+  }
+  if (license.status !== "revoked") {
+    return {
+      ok: false,
+      code: "LICENSE_NOT_REVOKED",
+      message: "Revoke this license before deleting it.",
+      status: 409,
+    }
+  }
+  // Activations reference the licence; clear them in the same transaction so a
+  // licence that was ever bound to a server can still be deleted.
+  await prisma.$transaction([
+    prisma.activation.deleteMany({ where: { licenseId: license.id } }),
+    prisma.license.delete({ where: { id: license.id } }),
+  ])
+  return { ok: true, data: { id: license.id } }
+}
