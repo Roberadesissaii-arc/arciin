@@ -562,8 +562,6 @@ export function PasswordVaultPage() {
           actions={vaultActions}
           search={search}
           onSearchChange={setSearch}
-          resultCount={entries.length}
-          totalCount={allEntries.length}
         />
       ) : !vaultLocked && !vaultQuery.isLoading ? (
         <div className="flex justify-end">{vaultActions}</div>

@@ -11,8 +11,6 @@ type PasswordVaultCredentialsSectionProps = {
   actions?: React.ReactNode
   search: string
   onSearchChange: (value: string) => void
-  resultCount: number
-  totalCount: number
 }
 
 export function PasswordVaultCredentialsSection({
@@ -22,8 +20,6 @@ export function PasswordVaultCredentialsSection({
   actions,
   search,
   onSearchChange,
-  resultCount,
-  totalCount,
 }: PasswordVaultCredentialsSectionProps) {
   const description =
     lockRequired && !secretsVisible
@@ -41,9 +37,10 @@ export function PasswordVaultCredentialsSection({
           toolbar row where it was truncated mid-sentence. */}
       <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{description}</p>
 
-      {/* One full-width toolbar: search grows, actions sit at the end. */}
-      <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
-        <div className="relative min-w-0 flex-1 basis-64">
+      {/* Same column template as the panels below, so the field lines up with
+          the credentials table rather than running the full page width. */}
+      <div className="mt-3 grid items-center gap-x-4 gap-y-2 lg:grid-cols-[minmax(0,1fr)_minmax(300px,400px)] xl:grid-cols-[minmax(0,1fr)_minmax(340px,440px)]">
+        <div className="relative min-w-0">
           <Search
             className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
             aria-hidden
@@ -68,19 +65,8 @@ export function PasswordVaultCredentialsSection({
             </button>
           ) : null}
         </div>
-        <p
-          className="shrink-0 text-[12px] tabular-nums text-muted-foreground"
-          aria-live="polite"
-        >
-          {search
-            ? resultCount === 0
-              ? "No matches"
-              : `${resultCount} of ${totalCount} ${totalCount === 1 ? "entry" : "entries"}`
-            : `${totalCount} ${totalCount === 1 ? "entry" : "entries"}`}
-        </p>
-
         {actions ? (
-          <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div>
+          <div className="flex flex-wrap items-center gap-2 lg:justify-end">{actions}</div>
         ) : null}
       </div>
     </section>
