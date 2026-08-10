@@ -48,6 +48,33 @@ const LOCAL_ICON_FILES: Record<VaultBrandCategory, Record<string, string>> = {
     instagram: "instagram.svg",
     jetbrains: "jetbrains.svg",
     tuya: "tuya.svg",
+    // Sourced from dashboardicons.com and vendored under di-* so they are
+    // served from this instance. Hot-linking their CDN would tell a third
+    // party which services a self-hosted password vault holds accounts for.
+    arduino: "di-arduino.svg",
+    atlassian: "di-atlassian.svg",
+    att: "di-at-t.svg",
+    chatgpt: "di-chatgpt.svg",
+    digitalocean: "di-digital-ocean.svg",
+    "disney-plus-di": "di-disney-plus.svg",
+    docker: "di-docker.svg",
+    godaddy: "di-godaddy.svg",
+    hostinger: "di-hostinger.svg",
+    ibm: "di-ibm.svg",
+    leetcode: "di-leetcode.svg",
+    linkedin: "di-linkedin.svg",
+    linode: "di-linode.svg",
+    n8n: "di-n8n.svg",
+    ngrok: "di-ngrok.svg",
+    paypal: "di-paypal.svg",
+    postman: "di-postman.svg",
+    "raspberry-pi": "di-raspberry-pi.svg",
+    stripe: "di-stripe.svg",
+    supabase: "di-supabase.svg",
+    tmdb: "di-tmdb.svg",
+    ubuntu: "di-ubuntu-linux.svg",
+    udemy: "di-udemy.svg",
+    upwork: "di-upwork.svg",
   },
   cloud: {
     aws: "aws.svg",
@@ -144,6 +171,33 @@ export const LOBEHUB_MODEL_KEYS = new Set([
 const LOBEHUB_APP_KEYS = new Set<string>()
 
 const BRAND_RULES: BrandRule[] = [
+  // Sites matched on their own domain. Anchored to the hostname rather than a
+  // loose word so an unrelated entry that merely mentions the name in its
+  // title does not steal the icon.
+  { key: "paypal", category: "app", label: "PayPal", patterns: [/paypal\.(com|me)/i] },
+  { key: "linkedin", category: "app", label: "LinkedIn", patterns: [/linkedin\.com/i] },
+  { key: "stripe", category: "app", label: "Stripe", patterns: [/stripe\.com/i] },
+  { key: "supabase", category: "app", label: "Supabase", patterns: [/supabase\.(com|io)/i] },
+  { key: "digitalocean", category: "app", label: "DigitalOcean", patterns: [/digitalocean\.com/i] },
+  { key: "linode", category: "app", label: "Linode", patterns: [/linode\.com/i] },
+  { key: "hostinger", category: "app", label: "Hostinger", patterns: [/hostinger\.(com|co\.uk)/i, /hpanel\.hostinger/i] },
+  { key: "godaddy", category: "app", label: "GoDaddy", patterns: [/godaddy\.com/i] },
+  { key: "docker", category: "app", label: "Docker", patterns: [/docker\.(com|io)/i, /hub\.docker/i] },
+  { key: "ngrok", category: "app", label: "ngrok", patterns: [/ngrok\.(com|io|app)/i] },
+  { key: "n8n", category: "app", label: "n8n", patterns: [/n8n\.(io|cloud)/i] },
+  { key: "postman", category: "app", label: "Postman", patterns: [/postman\.com/i, /getpostman\.com/i] },
+  { key: "atlassian", category: "app", label: "Atlassian", patterns: [/atlassian\.(com|net)/i] },
+  { key: "leetcode", category: "app", label: "LeetCode", patterns: [/leetcode\.com/i] },
+  { key: "udemy", category: "app", label: "Udemy", patterns: [/udemy\.com/i] },
+  { key: "upwork", category: "app", label: "Upwork", patterns: [/upwork\.com/i] },
+  { key: "arduino", category: "app", label: "Arduino", patterns: [/arduino\.cc/i] },
+  { key: "raspberry-pi", category: "app", label: "Raspberry Pi", patterns: [/raspberrypi\.(com|org)/i] },
+  { key: "ubuntu", category: "app", label: "Ubuntu", patterns: [/ubuntu\.com/i] },
+  { key: "ibm", category: "app", label: "IBM", patterns: [/ibm\.com/i] },
+  { key: "att", category: "app", label: "AT&T", patterns: [/\batt\.com/i, /att\.net/i] },
+  { key: "tmdb", category: "app", label: "TMDB", patterns: [/themoviedb\.org/i, /\btmdb\b/i] },
+  { key: "chatgpt", category: "app", label: "ChatGPT", patterns: [/chatgpt\.com/i] },
+
   // Models — specific patterns before generic app matches
   { key: "v0", category: "model", label: "v0", patterns: [/\bv0\b/i, /v0\.dev/i, /v0\.app/i] },
   { key: "claude-code", category: "model", label: "Claude Code", patterns: [/claude code/i] },
@@ -218,10 +272,17 @@ const BRAND_RULES: BrandRule[] = [
   { key: "mcp", category: "app", label: "MCP", patterns: [/\bmcp\b/i] },
 ]
 
+/**
+ * Only the site identifies the brand — the name and the URL.
+ *
+ * Username, category and notes used to be in here, and that was badly wrong:
+ * a vault where every login is the same `you@gmail.com` matched /gmail/ on
+ * every single entry, so all 187 of them rendered the Google logo no matter
+ * which site they belonged to. Notes are free text and just as prone to it.
+ * The account is not the service.
+ */
 function haystackForEntry(entry: Pick<PasswordVaultEntry, "name" | "url" | "username" | "category" | "notes">) {
-  return [entry.name, entry.url, entry.username, entry.category, entry.notes]
-    .filter(Boolean)
-    .join(" ")
+  return [entry.name, entry.url].filter(Boolean).join(" ")
 }
 
 function hostnameHints(url: string | null | undefined) {
