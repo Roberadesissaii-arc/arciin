@@ -17,6 +17,7 @@ import {
   type AssetPageFilters,
 } from "@/lib/api/assets"
 import { queryKeys } from "@/lib/api/query-keys"
+import type { AssetSummary } from "@/lib/types/models"
 import { useSocketStore } from "@/lib/stores/socket-store"
 
 export function useAssets(filters: AssetFilters = {}) {
@@ -65,6 +66,36 @@ export function useAssetsPage(filters: AssetPageFilters = {}) {
   })
 }
 
+/**
+ * Apply `fn` to every asset in a cached ["assets"] entry, whatever its shape.
+ *
+ * That prefix deliberately covers both plain AssetSummary[] lists and the
+ * paginated browser, which is a useInfiniteQuery holding { pages, pageParams }.
+ * Callers that assumed an array threw "old.map is not a function" — and inside
+ * onMutate that aborts the mutation before it ever reaches the API, so a bulk
+ * move silently moved nothing on exactly the library grids it is used from.
+ */
+function mapCachedAssets(old: unknown, fn: (a: AssetSummary) => AssetSummary): unknown {
+  if (!old) return old
+
+  if (Array.isArray(old)) {
+    return (old as AssetSummary[]).map(fn)
+  }
+
+  const paged = old as { pages?: { items?: AssetSummary[] }[] }
+  if (Array.isArray(paged.pages)) {
+    return {
+      ...paged,
+      pages: paged.pages.map((page) =>
+        Array.isArray(page?.items) ? { ...page, items: page.items.map(fn) } : page,
+      ),
+    }
+  }
+
+  // Unknown shape — leave it for the invalidate that follows to refetch.
+  return old
+}
+
 export function useMoveAsset() {
   const queryClient = useQueryClient()
 
@@ -88,19 +119,20 @@ export function useMoveAsset() {
       // Optimistically update every cached asset list:
       // - remove the asset from any list where it no longer belongs
       // - update its folderId/libraryId so the folder view picks it up
-      queryClient.setQueriesData<import("@/lib/types/models").AssetSummary[]>(
-        { queryKey: ["assets"] },
-        (old) => {
-          if (!old) return old
-          return old.map((a) => {
-            if (a.id !== assetId) return a
-            return {
-              ...a,
-              folderId: folderId ?? null,
-              libraryId: libraryId ?? a.libraryId,
-            }
-          })
-        }
+      //
+      // The ["assets"] prefix deliberately covers several different cache
+      // shapes: plain AssetSummary[] lists and the paginated browser, which is
+      // a useInfiniteQuery holding { pages, pageParams }. Assuming an array
+      // here threw "old.map is not a function" inside onMutate, which aborts
+      // the mutation before it ever calls the API — so bulk move silently moved
+      // nothing on exactly the library grids people use it from.
+      const applyMove = (a: AssetSummary): AssetSummary =>
+        a.id !== assetId
+          ? a
+          : { ...a, folderId: folderId ?? null, libraryId: libraryId ?? a.libraryId }
+
+      queryClient.setQueriesData({ queryKey: ["assets"] }, (old: unknown) =>
+        mapCachedAssets(old, applyMove),
       )
 
       return { previousEntries }
@@ -150,9 +182,9 @@ export function useUpdateAsset() {
       showBadge?: boolean
     }) => updateAsset(assetId, input),
     onSuccess: (updated) => {
-      queryClient.setQueriesData<import("@/lib/types/models").AssetSummary[]>(
-        { queryKey: ["assets"] },
-        (old) => old?.map((a) => (a.id === updated.id ? { ...a, ...updated } : a)),
+      // Same shape hazard as the move above — rename from a paginated grid hit it too.
+      queryClient.setQueriesData({ queryKey: ["assets"] }, (old: unknown) =>
+        mapCachedAssets(old, (a) => (a.id === updated.id ? { ...a, ...updated } : a)),
       )
       queryClient.invalidateQueries({ queryKey: queryKeys.assetsRoot })
     },
