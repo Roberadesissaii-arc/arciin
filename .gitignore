@@ -75,5 +75,5 @@ docker-compose.smoke.yml
 .arciin-deploy.lock
 
 # Playwright artifacts
-reports/playwright/
+reports/
 test-results/
