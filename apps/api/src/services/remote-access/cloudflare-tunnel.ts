@@ -162,10 +162,21 @@ async function finalizeTunnelStart(publicUrl: string, localTarget: string): Prom
   return publicUrl
 }
 
-export function startCloudflareQuickTunnel(localTarget: string): Promise<string> {
+export function startCloudflareQuickTunnel(
+  localTarget: string,
+  options: { force?: boolean } = {},
+): Promise<string> {
   const normalizedTarget = localTarget.replace(/\/+$/, "")
   const existing = getCloudflareTunnelState()
+
+  // Reusing a healthy tunnel is right for auto-start (a restart should not
+  // churn the address for no reason) but wrong when someone clicks "Generate
+  // new URL": that returned the *existing* address, so the button looked like
+  // it worked, nothing changed, and no address-change notification was sent
+  // because there was no change to announce. An explicit request forces a new
+  // tunnel.
   if (
+    !options.force &&
     existing.running &&
     existing.url &&
     existing.localTarget === normalizedTarget &&

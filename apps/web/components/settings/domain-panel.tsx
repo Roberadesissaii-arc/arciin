@@ -3,7 +3,16 @@
 import { useEffect, useRef, useState, type ReactNode } from "react"
 import Link from "next/link"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Check, Cloud, Copy, ExternalLink, Globe, Link2, Loader2 } from "lucide-react"
+import {
+  Check,
+  Cloud,
+  Copy,
+  ExternalLink,
+  Globe,
+  Link2,
+  Loader2,
+  TriangleAlert,
+} from "lucide-react"
 import { toast } from "@/lib/notifications/arciin-toast"
 
 import { Button } from "@/components/ui/button"
@@ -33,7 +42,8 @@ function UrlChip({
 }: {
   label: string
   value: string
-  onCopy: () => void
+  /** Omitted when there is nothing to copy — an unset address renders inert. */
+  onCopy?: () => void
 }) {
   return (
     <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/15 px-3 py-2">
@@ -41,10 +51,12 @@ function UrlChip({
         <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">{label}</p>
         <p className="truncate font-mono text-[12px] text-foreground">{value}</p>
       </div>
-      <Button type="button" variant="ghost" size="icon-sm" className="shrink-0" onClick={onCopy}>
-        <Copy className="size-3.5" />
-        <span className="sr-only">Copy {label}</span>
-      </Button>
+      {onCopy ? (
+        <Button type="button" variant="ghost" size="icon-sm" className="shrink-0" onClick={onCopy}>
+          <Copy className="size-3.5" />
+          <span className="sr-only">Copy {label}</span>
+        </Button>
+      ) : null}
     </div>
   )
 }
@@ -136,6 +148,22 @@ export function DomainPanel() {
   const data = settingsQuery.data
   const tunnel = tunnelQuery.data
   const effective = (draft || data?.publicUrl || "").trim()
+
+  /**
+   * The two advertised entry points.
+   *
+   * `mobilePublicUrl` is stored separately from `publicUrl` for historical
+   * reasons — there used to be a second, mobile-only tunnel. Only one tunnel
+   * can exist, so these should now always agree; showing both is what makes a
+   * disagreement (a stale value left over from the old behaviour) visible
+   * instead of silent.
+   */
+  const desktopPublicUrl = data?.publicUrl?.trim() || null
+  const mobilePublicUrl = data?.mobilePublicUrl?.trim() || null
+  const addressesMatch =
+    !mobilePublicUrl ||
+    !desktopPublicUrl ||
+    mobilePublicUrl.replace(/\/+$/, "") === desktopPublicUrl.replace(/\/+$/, "")
   const publicHref = /^https?:\/\//i.test(effective) ? effective : null
   const tunnelBusy = startTunnelMutation.isPending || stopTunnelMutation.isPending
   const isInitializing = Boolean(initializingUrl && initializingUrl === publicHref)
@@ -251,6 +279,74 @@ export function DomainPanel() {
               onCopy={() => copyText(url, "LAN URL")}
             />
           ))}
+        </div>
+
+        {/* Desktop and mobile are two named entry points, so the panel says so
+            explicitly. One tunnel serves both — apps/web/proxy.ts picks the app
+            per device — so these normally match, and saying "same link" out
+            loud is more reassuring than showing one address and leaving the
+            reader to wonder what the phone is supposed to use. */}
+        <div className="border-t border-border px-4 py-4 sm:px-5">
+          <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+            Public addresses
+          </p>
+
+          {desktopPublicUrl || mobilePublicUrl ? (
+            <div className="mt-2 space-y-2">
+              <UrlChip
+                label="Desktop"
+                value={desktopPublicUrl ?? "Not set"}
+                onCopy={
+                  desktopPublicUrl
+                    ? () => copyText(desktopPublicUrl, "Desktop URL")
+                    : undefined
+                }
+              />
+              <UrlChip
+                label="Mobile"
+                value={mobilePublicUrl ?? desktopPublicUrl ?? "Not set"}
+                onCopy={
+                  (mobilePublicUrl ?? desktopPublicUrl)
+                    ? () => copyText((mobilePublicUrl ?? desktopPublicUrl)!, "Mobile URL")
+                    : undefined
+                }
+              />
+
+              <div
+                className={cn(
+                  "flex items-start gap-2 rounded-lg border px-3 py-2 text-[12px] leading-relaxed",
+                  addressesMatch
+                    ? "border-border bg-muted/25 text-muted-foreground"
+                    : "border-amber-500/40 bg-amber-500/10 text-foreground",
+                )}
+              >
+                {addressesMatch ? (
+                  <>
+                    <Check className="mt-0.5 size-3.5 shrink-0 text-primary" />
+                    <span>
+                      <span className="font-medium text-foreground">Same link for both.</span>{" "}
+                      Open it on a phone and you get the mobile app; on a computer you get the
+                      full desktop app. There is nothing separate to remember.
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <TriangleAlert className="mt-0.5 size-3.5 shrink-0 text-amber-500" />
+                    <span>
+                      <span className="font-medium">These differ.</span> Only one tunnel can run
+                      at a time, so one of these is stale and will not load. Generate a new URL
+                      to put both back on the same address.
+                    </span>
+                  </>
+                )}
+              </div>
+            </div>
+          ) : (
+            <p className="mt-2 rounded-lg border border-dashed border-border px-3 py-3 text-[12px] text-muted-foreground">
+              No public address yet. Generate one below to reach this server from outside your
+              network.
+            </p>
+          )}
         </div>
 
         <div className="border-t border-border px-4 py-4 sm:px-5">

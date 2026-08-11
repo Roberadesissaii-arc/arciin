@@ -15,8 +15,7 @@ import {
   persistTunnelPublicUrl,
   readRemoteAccessConfig,
 } from "@/services/remote-access/tunnel-persistence"
-import { resolveCloudflareTunnelTarget, resolveMobileCloudflareTunnelTarget } from "@/services/remote-access/tunnel-target"
-import { resolveLocalAccessUrls, resolveMobileLocalAccessUrls } from "@/services/remote-access/local-access-urls"
+import { resolveCloudflareTunnelTarget } from "@/services/remote-access/tunnel-target"
 
 const BOOT_RETRY_DELAYS_MS = [12_000, 25_000, 45_000]
 const RESTART_AFTER_EXIT_MS = 12_000
@@ -49,13 +48,19 @@ async function shouldAutoStart(fastify: FastifyInstance): Promise<boolean> {
   return isCloudflareTunnelAutoStartEnabled(config, instance.remoteAccessMode)
 }
 
-/** When mobile PWA listens on a different port than desktop web, auto-start tunnels :3003 not :3002. */
+/**
+ * Always tunnel the desktop web origin — it is the unified entry point.
+ *
+ * This used to prefer the mobile port whenever the two differed, which is why
+ * the desktop domain kept vanishing: only one cloudflared process can exist
+ * (see cloudflare-tunnel.ts), so whichever app was tunnelled last took the
+ * domain from the other.
+ *
+ * Now one tunnel points here and `apps/web/proxy.ts` routes each request to the
+ * desktop app or through to the mobile PWA based on the device. One domain,
+ * both apps, nothing to fight over.
+ */
 function resolveAutoStartTunnelTarget(): string {
-  const desktop = resolveLocalAccessUrls()
-  const mobile = resolveMobileLocalAccessUrls()
-  if (mobile.webPort !== desktop.webPort) {
-    return resolveMobileCloudflareTunnelTarget()
-  }
   return resolveCloudflareTunnelTarget()
 }
 

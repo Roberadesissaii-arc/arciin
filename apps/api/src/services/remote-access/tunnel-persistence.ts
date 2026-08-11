@@ -1,9 +1,13 @@
 import type { FastifyInstance } from "fastify"
 
 import { recordAndBroadcastActivity } from "@/services/activity/record-and-broadcast-activity"
+import { announcePublicUrlChange } from "@/services/email/notify-public-url"
 import { broadcastInstanceUrlsUpdated } from "@/services/mobile/mobile-server-urls"
 import { getCloudflareTunnelState } from "@/services/remote-access/cloudflare-tunnel"
-import { resolveMobileLocalAccessUrls } from "@/services/remote-access/local-access-urls"
+import {
+  resolveLocalAccessUrls,
+  resolveMobileLocalAccessUrls,
+} from "@/services/remote-access/local-access-urls"
 
 export type RemoteAccessConfigJson = Record<string, unknown>
 
@@ -25,11 +29,22 @@ export function isCloudflareTunnelAutoStartEnabled(
   return config.cloudflareTunnelAutoStart !== false
 }
 
+/**
+ * True only for a tunnel pointed straight at the mobile PWA port.
+ *
+ * Kept for the legacy case where someone has set ARCIIN_MOBILE_TUNNEL_TARGET
+ * by hand. The normal path now tunnels the desktop origin, which serves both
+ * apps via `apps/web/proxy.ts`, so both URL fields describe the same domain.
+ */
 function isMobileTunnelTarget(localTarget: string | null | undefined): boolean {
   if (!localTarget?.trim()) return false
   try {
     const mobileLoopback = resolveMobileLocalAccessUrls().loopbackUrl.replace(/\/+$/, "")
-    return localTarget.replace(/\/+$/, "") === mobileLoopback
+    const desktopLoopback = resolveLocalAccessUrls().loopbackUrl.replace(/\/+$/, "")
+    const normalized = localTarget.replace(/\/+$/, "")
+    // When both apps share a port there is no "mobile-only" tunnel to speak of.
+    if (mobileLoopback === desktopLoopback) return false
+    return normalized === mobileLoopback
   } catch {
     return false
   }
@@ -106,6 +121,20 @@ export async function persistTunnelPublicUrl(
         publicUrl: normalizedNew,
       },
     })
+
+    // The whole point of the email: this restart usually happens unattended,
+    // and the person who needs the new address is the one who is not at the
+    // server. Never let a mail failure take down tunnel persistence with it.
+    void announcePublicUrlChange(fastify, {
+      publicUrl: normalizedNew,
+      previousPublicUrl: normalizedPrevious,
+    })
+      .then((sent) => {
+        fastify.log.info(sent, "Announced new public URL")
+      })
+      .catch((error) => {
+        fastify.log.warn({ err: error }, "Public URL announcement failed")
+      })
   }
 
   await broadcastInstanceUrlsUpdated(fastify, instance.id, {

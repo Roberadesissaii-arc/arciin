@@ -9,7 +9,14 @@ export function resolveCloudflareTunnelTarget(): string {
   return loopbackUrl
 }
 
-/** Tunnel target for the standalone mobile PWA (separate port from desktop web). */
+/**
+ * Tunnel target for the standalone mobile PWA.
+ *
+ * No longer used by the normal flow: a tunnel here would serve *only* the
+ * mobile app, and since one cloudflared process is all Arciin can run, that
+ * meant the desktop app lost its domain. Retained for an operator who sets
+ * ARCIIN_MOBILE_TUNNEL_TARGET deliberately.
+ */
 export function resolveMobileCloudflareTunnelTarget(): string {
   const explicit = process.env.ARCIIN_MOBILE_TUNNEL_TARGET?.trim()
   if (explicit) return explicit.replace(/\/+$/, "")
