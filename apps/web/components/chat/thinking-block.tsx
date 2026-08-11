@@ -40,7 +40,12 @@ export function ThinkingBlock({ content, live }: { content: string; live: boolea
     if (!showBody) return
     const el = scrollRef.current
     if (!el) return
-    if (!live && !stickToBottomRef.current) return
+    // `live` used to force a scroll-to-bottom here, which meant that while the
+    // model was still thinking you physically could not read the earlier
+    // reasoning: every token yanked the box back down. Whether to follow is the
+    // reader's choice, not the stream's — so the pin flag decides in both
+    // states, and it re-pins on its own once you scroll back to the bottom.
+    if (!stickToBottomRef.current) return
     el.scrollTop = el.scrollHeight
   }, [content, live, showBody])
 

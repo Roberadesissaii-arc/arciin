@@ -1,3 +1,5 @@
+import { HUMANIZE_FULL_BRIEF, auditHumanTells } from "@arciin/shared"
+
 import type { ChatPromptToolId } from "@/components/chat/chat-prompt-box"
 
 export type ChatSlashCommand = {
@@ -40,6 +42,60 @@ export function expandHighlightSlashArgs(args: string): string {
 }
 
 export const CHAT_SLASH_COMMANDS: ChatSlashCommand[] = [
+  {
+    id: "modify",
+    name: "modify",
+    label: "Modify draft",
+    description: "Edit the current Canvas draft in place instead of rewriting it",
+    hint: "/modify cut the section on monoculture",
+    tools: [],
+    expand: (args) => {
+      const instruction = args.trim() || "improve the draft where it is weakest"
+
+      // The draft body is attached by the caller, which is what makes this an
+      // edit rather than a fresh generation: without the current text the model
+      // has nothing to revise and simply writes a new essay, which is exactly
+      // the behaviour this command exists to stop.
+      return (
+        `Revise the existing Canvas draft. Do NOT start a new document and do NOT rewrite it from scratch.\n\n` +
+        `Change requested: ${instruction}\n\n` +
+        `Rules:\n` +
+        `- Return the COMPLETE revised document, not a diff, not an excerpt, not a description of what you changed. The Canvas panel replaces its contents with your reply.\n` +
+        `- Keep every part the request did not touch byte-identical, including the title, headings, wording and reference list.\n` +
+        `- Do not re-order sections, re-title the piece, or "improve" prose that was not mentioned.\n` +
+        `- If the request names a section, locate that exact section and change only it.\n` +
+        `- If the request is ambiguous about which passage it means, make the smallest reasonable interpretation and say so in one line AFTER the document, separated by a line containing only ---.`
+      )
+    },
+  },
+  {
+    id: "humanize",
+    name: "humanize",
+    label: "Humanize",
+    description: "Write or rewrite so it reads as human prose, not model prose",
+    hint: "/humanize rewrite my intro paragraph",
+    tools: [],
+    expand: (args) => {
+      const request = args.trim()
+
+      // When the writer pastes text, name what is actually wrong with it. A
+      // rewrite that silently reshuffles prose teaches nothing and gives no way
+      // to check the result.
+      const findings = request.length > 200 ? auditHumanTells(request) : []
+      const audit =
+        findings.length > 0
+          ? `\n\nTells already present in this text — fix each and say what you changed:\n${findings
+              .map((f) => `- ${f.kind}: ${f.detail}`)
+              .join("\n")}`
+          : ""
+
+      const task = request
+        ? `Task: ${request}`
+        : "Task: continue writing the current piece, or rewrite the passage we were just discussing."
+
+      return `${task}\n\n${HUMANIZE_FULL_BRIEF}${audit}`
+    },
+  },
   {
     id: "summarize",
     name: "summarize",

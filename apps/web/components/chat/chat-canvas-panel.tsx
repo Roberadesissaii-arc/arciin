@@ -2,10 +2,11 @@
 
 import { Copy, Eraser, Loader2, PenLine, Save, X } from "lucide-react"
 
+import { copyToClipboard } from "@/lib/utils/clipboard"
+
 import { CanvasMarkdownContent } from "@/components/chat/chat-canvas-markdown"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
-import { toast } from "@/lib/notifications/arciin-toast"
 
 type ChatCanvasPanelProps = {
   title: string
@@ -36,12 +37,11 @@ export function ChatCanvasPanel({
   const handleCopy = async () => {
     const text = content.trim()
     if (!text) return
-    try {
-      await navigator.clipboard.writeText(text)
-      toast.success("Copied to clipboard")
-    } catch {
-      toast.error("Could not copy")
-    }
+    // `navigator.clipboard` only exists in a secure context. Arciin is normally
+    // reached over plain HTTP on a LAN address, where the API is simply
+    // undefined — so the button threw and reported "Could not copy" every time.
+    // The shared helper falls back to a hidden textarea + execCommand.
+    await copyToClipboard(text, "Draft")
   }
 
   const canSave = Boolean(onSave && content.trim() && !streaming && !saving)

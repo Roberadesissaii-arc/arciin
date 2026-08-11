@@ -1,8 +1,13 @@
 /** Domain helpers shared across API, worker, and web. */
+export * from "./app-surface"
 export * from "./client-device"
+export * from "./delivery-policy"
+export * from "./humanize-writing"
+export * from "./latex-math"
 export * from "./media"
 export * from "./office-documents"
 export * from "./temp-cleanup-policy"
+export * from "./remote-access-email"
 export * from "./share-availability"
 export * from "./file-request-policy"
 export * from "./idempotency"

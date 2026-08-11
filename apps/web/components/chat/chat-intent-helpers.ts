@@ -449,6 +449,7 @@ export function finalizeAssistantContent(
   content: string,
   userText: string,
   priorMessages: Message[] = [],
+  options: { streaming?: boolean } = {},
 ): string {
   // Always strip leaked tool markup first (never show <tool_call> to users).
   let out = stripAssistantStreamMarkup(content)
@@ -470,8 +471,20 @@ export function finalizeAssistantContent(
 
   out = stripUnrequestedAssetTags(out, userText, priorMessages)
   out = stripUnrequestedFilenameLists(out, userText, priorMessages)
-  out = ensureFilenameListTag(out, userText, priorMessages)
-  out = ensureAssetGalleryTag(out, userText, priorMessages)
+
+  // Injection is deliberately skipped while the reply is still streaming.
+  //
+  // These helpers append a gallery tag to whatever text exists so far. Run per
+  // chunk, that meant the very first chunk — with no prose yet — produced a
+  // message that was *only* the tag, so the file grid rendered instantly and
+  // the model's sentence ("Here are your PDFs…") then appeared above it. The
+  // reader watched a finished-looking grid get pushed down by text arriving
+  // afterwards. Stripping still runs every chunk, so nothing leaks; only the
+  // decision to *add* a gallery waits until the answer is complete.
+  if (!options.streaming) {
+    out = ensureFilenameListTag(out, userText, priorMessages)
+    out = ensureAssetGalleryTag(out, userText, priorMessages)
+  }
   out = stripUnrequestedAssetTags(out, userText, priorMessages)
   out = stripUnrequestedFilenameLists(out, userText, priorMessages)
   out = stripAssetListsWhenQueryingAppDatabases(out, userText)

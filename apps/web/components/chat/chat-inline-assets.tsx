@@ -132,6 +132,21 @@ function isDocumentLike(asset: AssetSummary): boolean {
   )
 }
 
+
+/**
+ * Card sizing for the asset grids.
+ *
+ * Fixed column counts (`grid-cols-2 sm:grid-cols-3 md:grid-cols-4`) tie card
+ * width to panel width, so in a wide chat the four columns stretched a book
+ * cover to ~300px across and ~450px tall — one PDF filled the screen.
+ *
+ * `auto-fill` with a bounded track inverts that: the card keeps a sensible size
+ * and the *number* of columns absorbs the extra width. A wide panel gets more
+ * covers per row instead of bigger covers, and a narrow one still gets two.
+ */
+const COVER_GRID = "grid gap-2 [grid-template-columns:repeat(auto-fill,minmax(9.5rem,1fr))]"
+const FILE_GRID = "grid gap-1.5 [grid-template-columns:repeat(auto-fill,minmax(11rem,1fr))]"
+
 function SelectableAssetCard({
   asset,
   coverStyle = false,
@@ -300,8 +315,7 @@ export function InlineAssetBlockByIds({ assetIds }: { assetIds: string[] }) {
       </p>
       <div
         className={cn(
-          "grid gap-1.5",
-          shown.length === 1 ? "grid-cols-1 max-w-[200px]" : "grid-cols-2 sm:grid-cols-3",
+          shown.length === 1 ? "grid max-w-[11rem] grid-cols-1 gap-1.5" : FILE_GRID,
         )}
       >
         {shown.map((asset) => (
@@ -380,7 +394,7 @@ export function InlineAssetFilenameList({ mediaType }: { mediaType: string }) {
         <p className="text-[11px] text-muted-foreground">
           Cover previews when available — tap a book to attach, then /summarize or ask a follow-up.
         </p>
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
+        <div className={COVER_GRID}>
           {shown.map((asset) => (
             <SelectableAssetCard key={asset.id} asset={asset} coverStyle />
           ))}
@@ -491,12 +505,11 @@ export function InlineAssetBlock({ mediaType, limit = 9 }: { mediaType: string; 
       </p>
       <div
         className={cn(
-          "grid gap-2",
           shown.length === 1
-            ? "max-w-[11rem] grid-cols-1"
+            ? "grid max-w-[9.5rem] grid-cols-1 gap-2"
             : isDocs
-              ? "grid-cols-2 sm:grid-cols-3 md:grid-cols-4"
-              : "grid-cols-2 sm:grid-cols-3",
+              ? COVER_GRID
+              : FILE_GRID,
         )}
       >
         {shown.map((asset) => (

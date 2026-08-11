@@ -59,6 +59,7 @@ import {
   type TokenUsage,
 } from "@/components/chat/chat-message-model"
 import { finalizeAssistantContent, shouldAttachVisionToUserMessage } from "@/components/chat/chat-intent-helpers"
+import { humanizeInstructionFor, shouldHumanizeByDefault } from "@arciin/shared"
 import { ARCIIN_DEFAULT_SYSTEM_INSTRUCTION, SYSTEM_INSTRUCTION_KEY, buildContextBlock } from "@/components/chat/chat-system-instruction"
 import { MessageBubble } from "@/components/chat/chat-message-bubble"
 import { WelcomeState } from "@/components/chat/chat-welcome-state"
@@ -444,9 +445,21 @@ export function ChatPage() {
 
   // ── Scroll ─────────────────────────────────────────────────────────────────
 
+  /**
+   * Set while we are scrolling the list ourselves.
+   *
+   * Our own `scrollTo` fires a `scroll` event exactly like a user gesture, and
+   * that event lands with the container already at the bottom — so the handler
+   * re-pinned immediately after the reader had scrolled away. During streaming
+   * that happens on every token, which is why scrolling up felt stuck: the
+   * unpin was real, and then instantly undone.
+   */
+  const programmaticScrollRef = useRef(false)
+
   const scrollToBottom = useCallback((instant?: boolean) => {
     const el = messagesScrollRef.current
     if (!el || !stickToBottomRef.current) return
+    programmaticScrollRef.current = true
     el.scrollTo({ top: el.scrollHeight, behavior: instant ? "auto" : "smooth" })
   }, [])
 
@@ -461,6 +474,7 @@ export function ChatPage() {
 
     const bump = () => {
       if (!stickToBottomRef.current) return
+      programmaticScrollRef.current = true
       outer.scrollTo({ top: outer.scrollHeight, behavior: "auto" })
     }
 
@@ -472,8 +486,33 @@ export function ChatPage() {
   function handleMessagesScroll() {
     const el = messagesScrollRef.current
     if (!el) return
+
+    // Ignore the echo of our own scroll; only a real gesture changes the pin.
+    if (programmaticScrollRef.current) {
+      programmaticScrollRef.current = false
+      return
+    }
+
     const dist = el.scrollHeight - el.scrollTop - el.clientHeight
     stickToBottomRef.current = dist < 100
+  }
+
+  /**
+   * Unpin the moment the reader gestures upward.
+   *
+   * The distance check alone is not enough while content is streaming in: the
+   * container grows under the reader, so a deliberate scroll up can still
+   * measure as "near the bottom" and be treated as following along.
+   */
+  function handleMessagesWheel(event: React.WheelEvent<HTMLDivElement>) {
+    if (event.deltaY < 0) stickToBottomRef.current = false
+  }
+
+  function handleMessagesTouchMove() {
+    const el = messagesScrollRef.current
+    if (!el) return
+    const dist = el.scrollHeight - el.scrollTop - el.clientHeight
+    if (dist >= 100) stickToBottomRef.current = false
   }
 
   // ── Load conversation ──────────────────────────────────────────────────────
@@ -681,6 +720,13 @@ export function ChatPage() {
     const history: OutboundMsg[] = priorMessages.map((m) => ({ role: m.role, content: m.content }))
     const sysPrompt = systemInstruction.trim()
     const instanceBlock = contextQuery.data ? "\n\n" + buildContextBlock(contextQuery.data) : ""
+    // Long-form drafting gets the humanised-writing guidance without being
+    // asked. The habits it corrects — even sentence rhythm, stock transitions,
+    // vague nouns — are what make a draft read as machine-written, and they are
+    // cheapest to avoid while writing rather than to edit out afterwards.
+    const humanizeBlock = shouldHumanizeByDefault({ userText })
+      ? "\n\n" + humanizeInstructionFor("default")
+      : ""
     const caps = ollamaShowQuery.data?.capabilities
     const visionCapable =
       ollamaChat &&
@@ -697,7 +743,7 @@ export function ChatPage() {
       } catch { /* optional */ }
     }
 
-    let sysTail = instanceBlock
+    let sysTail = instanceBlock + humanizeBlock
     if (visionImages?.length) {
       sysTail +=
         visionImages.length === 1
@@ -791,7 +837,9 @@ export function ChatPage() {
         }
         const derived = deriveStreamingThinkingAndAnswer(accumulated, thinkingAccum, showThinking)
         const displayThinking = displayThinkingDuringStream(reasoningUiEnabled, derived)
-        const displayContent = finalizeAssistantContent(derived.answer, userText, priorMessages)
+        const displayContent = finalizeAssistantContent(derived.answer, userText, priorMessages, {
+          streaming: true,
+        })
         const bubble = resolveStreamingBubbleContent({
           displayContent,
           streamStatus,
@@ -971,13 +1019,28 @@ export function ChatPage() {
     // Canvas chip opens the panel; only long-form writing routes into it.
     // "List my books" stays in chat even when Canvas is open.
     // With an attached book + essay/exam/quiz request, force canvas when chip is on.
+    // `/modify` edits the draft that already exists, so it routes to Canvas
+    // regardless of the chip and regardless of whether the words read as a
+    // "writing request" — "cut the third section" does not, but it is still
+    // canvas work.
+    const isCanvasEdit = /^\s*\/modify\b/i.test((overrideText ?? input).trim())
+
     const forceCanvas =
-      canvasChipOn &&
+      isCanvasEdit ||
+      (canvasChipOn &&
       (isCanvasWritingIntent(text) ||
         (docAttachments.length > 0 &&
           /\b(essay|article|draft|write|report|story|exam|quiz|test|questions?|worksheet|homework|study\s+guide|documentation|docs?|manual|outline)\b/i.test(
             text,
-          )))
+          ))))
+
+    // The draft itself has to travel with the request. Without it the model has
+    // no document to revise and writes a new one — which is the exact
+    // behaviour /modify exists to prevent.
+    const canvasEditBody =
+      isCanvasEdit && canvasContent.trim()
+        ? `\n\nCURRENT CANVAS DRAFT (revise this exact text):\n\n${canvasContent.trim()}`
+        : ""
 
     // Display bubble: keep the human-typed slash line if we expanded.
     // Snapshot tray attachments so the bubble shows what was sent.
@@ -1036,11 +1099,17 @@ export function ChatPage() {
     // Send expanded slash text + attachment context; bubble keeps what the user typed.
     const history: OutboundMsg[] = [
       ...messages.map((m) => ({ role: m.role as "user" | "assistant", content: m.content })),
-      { role: "user" as const, content: text },
+      { role: "user" as const, content: text + canvasEditBody },
     ]
     const sysPrompt = systemInstruction.trim()
 
     const instanceBlock = contextQuery.data ? "\n\n" + buildContextBlock(contextQuery.data) : ""
+    // Canvas is always long-form, so it always gets the guidance. /humanize
+    // sends the fuller brief in the message itself and does not need it twice.
+    const humanizeBlock =
+      !/\bHumanize\b/i.test(text) && shouldHumanizeByDefault({ canvas: forceCanvas, userText: text })
+        ? "\n\n" + humanizeInstructionFor("default")
+        : ""
     const caps = ollamaShowQuery.data?.capabilities
     const modelToSend = selectedModel || profile.defaultModel || undefined
     const visionCapable =
@@ -1099,7 +1168,7 @@ export function ChatPage() {
     const toolsForSys = forceCanvas
       ? activeTools
       : activeTools.filter((t) => t !== "canvas")
-    let sysTail = instanceBlock + buildPromptToolsSystemAppend(toolsForSys)
+    let sysTail = instanceBlock + humanizeBlock + buildPromptToolsSystemAppend(toolsForSys)
     if (visionImages?.length) {
       sysTail +=
         visionImages.length === 1
@@ -1209,7 +1278,9 @@ export function ChatPage() {
         const showReasoningPanel = forceThinking
         const derived = deriveStreamingThinkingAndAnswer(accumulated, thinkingAccum, showReasoningPanel)
         const displayThinking = displayThinkingDuringStream(turnReasoningUi, derived)
-        const displayContent = finalizeAssistantContent(derived.answer, text, messages)
+        const displayContent = finalizeAssistantContent(derived.answer, text, messages, {
+          streaming: true,
+        })
         const bubble = resolveStreamingBubbleContent({
           displayContent,
           streamStatus,
@@ -1493,6 +1564,8 @@ export function ChatPage() {
         <div
           ref={messagesScrollRef}
           onScroll={handleMessagesScroll}
+          onWheel={handleMessagesWheel}
+          onTouchMove={handleMessagesTouchMove}
           className="scrollbar-hide relative flex min-h-0 flex-1 flex-col overflow-y-auto"
           onClick={() => { if (historyOpen) setHistoryOpen(false) }}
         >
