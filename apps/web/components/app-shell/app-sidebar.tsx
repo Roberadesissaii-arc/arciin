@@ -190,10 +190,23 @@ function AppSidebarInner({ auth }: { auth: AuthSession }) {
     staleTime: 5 * 60 * 1000,
   })
 
+  /**
+   * `shouldPaywall`, not `!hasFeature`.
+   *
+   * `hasFeature` is false while the licence is still unresolved, so the lock
+   * badge rendered on every server render — including for Pro users. That was
+   * also the cause of a hydration mismatch on every page after the first: the
+   * server had no licence and drew the badge, while the client read its cached
+   * Pro status and did not, so React discarded and re-rendered the tree.
+   *
+   * `shouldPaywall` is the rule use-license.ts documents — a paywall needs an
+   * authoritative Free answer, and "not loaded yet" is not one. It stays false
+   * until the licence resolves, which keeps both renders identical.
+   */
   function navLock(itemId: string): { locked: boolean; planBadge: string | null } {
     const feature = NAV_ITEM_FEATURES[itemId]
     if (!feature) return { locked: false, planBadge: null }
-    if (license.hasFeature(feature)) return { locked: false, planBadge: null }
+    if (!license.shouldPaywall(feature)) return { locked: false, planBadge: null }
     const plan = license.requiredPlanFor(feature)
     return { locked: true, planBadge: plan ? license.planLabel(plan) : "Pro" }
   }

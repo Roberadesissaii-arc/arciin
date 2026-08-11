@@ -1,6 +1,7 @@
 "use client"
 
-import { useQuery } from "@tanstack/react-query"
+import { useEffect } from "react"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 
 import {
   FEATURE_LABELS,
@@ -97,6 +98,24 @@ function toSnapshot(
 export function useLicense(): LicenseUiState {
   const { data: auth } = useAuth()
   const userId = auth?.user?.id ?? null
+  const queryClient = useQueryClient()
+
+  /**
+   * Apply the cached entitlement after mount rather than during render.
+   *
+   * This is what `initialData` used to do, minus the hydration mismatch: the
+   * first paint matches the server, then the cache lands on the next tick with
+   * no network round trip, so a returning user still avoids the verifying
+   * state. `prev ?? cached` means a live result already in flight always wins.
+   */
+  useEffect(() => {
+    const cached = readCachedLicense(userId)
+    if (!cached) return
+    queryClient.setQueryData(
+      queryKeys.licenseStatusFor(userId),
+      (prev: LicenseStatusView | undefined) => prev ?? cached.data,
+    )
+  }, [queryClient, userId])
 
   const query = useQuery({
     // Scoped by user so one account's plan can never seed another's.
@@ -113,8 +132,15 @@ export function useLicense(): LicenseUiState {
       }
       return data
     },
-    initialData: () => readCachedLicense(userId)?.data,
-    initialDataUpdatedAt: () => readCachedLicense(userId)?.updatedAt,
+    // Deliberately NOT seeded via `initialData`.
+    //
+    // `initialData` runs during the first render, and it reads localStorage —
+    // which the server cannot do. So the server rendered every gated surface as
+    // unresolved (sidebar Pro badges, locked vault, FeatureGate skeletons) while
+    // a returning client rendered them resolved from cache. React saw the two
+    // trees disagree and threw the hydrated tree away on every page after the
+    // first. The cache is instead applied in an effect below, one tick later,
+    // so the first client render matches the server exactly.
     staleTime: 15_000,
     refetchOnWindowFocus: true,
     placeholderData: (prev) => prev,
