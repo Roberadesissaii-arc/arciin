@@ -15,6 +15,8 @@ import { AppearancePanel } from "@/components/settings/appearance-panel"
 import { AttachedDisksPanel } from "@/components/settings/attached-disks-panel"
 import { ClearDataPanel } from "@/components/settings/clear-data-panel"
 import { DomainPanel } from "@/components/settings/domain-panel"
+import { DiscordPanel } from "@/components/settings/discord-panel"
+import { EmailPanel } from "@/components/settings/email-panel"
 import { LicensePanel } from "@/components/settings/license-panel"
 import { NotificationsSettingsPanel } from "@/components/settings/notifications-settings-panel"
 import { PasswordsPanel } from "@/components/settings/passwords-panel"
@@ -70,6 +72,12 @@ export function SettingsPage() {
     storage: <StorageSettingsForm />,
     "attached-disks": <AttachedDisksPanel />,
     domain: <DomainPanel />,
+    email: (
+      <div className="space-y-4">
+        <EmailPanel />
+        <DiscordPanel />
+      </div>
+    ),
     license: <LicensePanel />,
     updates: <UpdatesPanel />,
     passwords: <PasswordsPanel />,

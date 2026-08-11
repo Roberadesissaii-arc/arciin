@@ -1,7 +1,13 @@
 import type { Prisma, PrismaClient } from "@prisma/client"
 import { nanoid } from "nanoid"
 import type { AiLibraryToolAccess } from "@arciin/shared"
-import { libraryAllowsFolderMutations, libraryAllowsOrganize } from "@arciin/shared"
+import {
+  DELIVERY_CHAT_TOOLS,
+  libraryAllowsFolderMutations,
+  libraryAllowsOrganize,
+  matchAssetByName,
+  type DeliveryChannel,
+} from "@arciin/shared"
 
 import { recordAndBroadcastActivity } from "@/services/activity/record-and-broadcast-activity"
 import { organizeImagesLibrary } from "@/services/chat/organize-images-library"
@@ -23,6 +29,19 @@ export type ArciinChatToolContext = {
   userId: string
   /** Defaults to full access when omitted. */
   libraryToolAccess?: AiLibraryToolAccess
+  /**
+   * Sends a library file to the *owner's own* configured email or Discord.
+   * Injected rather than imported so this module keeps no Fastify dependency —
+   * and note the signature: no destination. See delivery-policy for why.
+   */
+  deliverAsset?: (input: {
+    channel: DeliveryChannel
+    assetId: string
+    note: string | null
+  }) => Promise<
+    | { ok: true; channel: DeliveryChannel; filename: string; destination: string }
+    | { ok: false; code: string; message: string }
+  >
   publishRealtimeEvent?: (event: import("@arciin/shared").RealtimeEvent) => Promise<void>
 }
 
@@ -89,6 +108,8 @@ export const ARCIIN_CHAT_TOOLS = [
       },
     },
   },
+  // Defined in @arciin/shared beside the rule they obey: no destination argument.
+  ...DELIVERY_CHAT_TOOLS,
   {
     type: "function",
     function: {
@@ -293,6 +314,69 @@ type OllamaToolCall = {
   function?: { name?: string; arguments?: Record<string, unknown> | string }
 }
 
+
+/**
+ * Turn "send me invoice.pdf" into a specific asset id.
+ *
+ * Refuses on ambiguity rather than guessing. Sending the wrong file to someone's
+ * inbox or a Discord channel is not an action they can take back, so a
+ * clarifying question is strictly better than a confident mistake.
+ */
+async function resolveDeliverableAsset(
+  ctx: ArciinChatToolContext,
+  input: { assetId?: string | null; filename?: string | null },
+): Promise<{ assetId?: string; error?: Record<string, unknown> }> {
+  if (input.assetId) {
+    const asset = await ctx.prisma.asset.findFirst({
+      where: { id: input.assetId, deletedAt: null },
+      select: { id: true },
+    })
+    if (!asset) {
+      return { error: { error: "asset_not_found", message: "I could not find that file." } }
+    }
+    return { assetId: asset.id }
+  }
+
+  if (!input.filename) {
+    return {
+      error: {
+        error: "validation",
+        message: "Tell me which file you want sent — a filename works.",
+      },
+    }
+  }
+
+  // Bounded scan of recent files rather than a LIKE across the whole library:
+  // the user is almost always referring to something they have just seen.
+  const candidates = await ctx.prisma.asset.findMany({
+    where: { deletedAt: null, status: { not: "DELETED" } },
+    orderBy: { createdAt: "desc" },
+    take: 400,
+    select: { id: true, originalFilename: true, title: true },
+  })
+
+  const match = matchAssetByName(input.filename, candidates)
+
+  if (match.status === "matched") return { assetId: match.asset.id }
+
+  if (match.status === "ambiguous") {
+    return {
+      error: {
+        error: "asset_ambiguous",
+        message: "Several files match that name — which one?",
+        candidates: match.candidates.map((c) => c.originalFilename),
+      },
+    }
+  }
+
+  return {
+    error: {
+      error: "asset_not_found",
+      message: `I could not find a file called ${input.filename}.`,
+    },
+  }
+}
+
 export async function executeArciinChatTool(
   call: OllamaToolCall,
   ctx: ArciinChatToolContext,
@@ -439,6 +523,43 @@ export async function executeArciinChatTool(
     } catch (e) {
       const msg = e instanceof Error ? e.message : "create_failed"
       return { error: "create_failed", message: msg }
+    }
+  }
+
+  if (name === "send_asset_to_email" || name === "send_asset_to_discord") {
+    const channel = name === "send_asset_to_email" ? "email" : "discord"
+    const a = args as Record<string, unknown>
+    const assetId = coalesceOptionalId(pickArgString(a, ["asset_id", "assetId"]))
+    const filename = pickArgString(a, ["filename", "file_name", "name"])
+    const note = pickArgString(a, ["note", "message"])
+
+    if (!ctx.deliverAsset) {
+      return {
+        error: "unavailable",
+        message: "Sending files is not available in this chat session.",
+      }
+    }
+
+    const resolved = await resolveDeliverableAsset(ctx, { assetId, filename })
+    if (resolved.error) return resolved.error
+
+    const result = await ctx.deliverAsset({
+      channel,
+      assetId: resolved.assetId!,
+      note: note ?? null,
+    })
+
+    if (!result.ok) {
+      return { error: result.code, message: result.message }
+    }
+
+    return {
+      sent: true,
+      channel,
+      filename: result.filename,
+      // The masked destination is for the user's confirmation. The model is
+      // told where it went in general terms only — see delivery-policy.
+      destination: result.destination,
     }
   }
 

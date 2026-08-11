@@ -21,6 +21,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify"
 import { z } from "zod"
 
 import { assertOllamaCloudApiKey } from "@/services/chat/ollama-http"
+import { deliverAssetToOwner } from "@/services/delivery/deliver-asset"
 import {
   ARCIIN_CHAT_TOOLS,
   executeArciinChatTool,
@@ -1121,6 +1122,10 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
               userId: request.auth!.user.id,
               libraryToolAccess: security.libraryToolAccess,
               publishRealtimeEvent: fastify.publishRealtimeEvent,
+              // Bound to this instance's configured destinations. The tool
+              // schema has no recipient argument on purpose — see
+              // packages/shared/src/delivery-policy.ts.
+              deliverAsset: (delivery) => deliverAssetToOwner(fastify, delivery),
             },
             ai: { agent: aiSettings.agent, autonomy: aiSettings.autonomy },
             security: {
@@ -1203,6 +1208,10 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
               userId: request.auth!.user.id,
               libraryToolAccess: security.libraryToolAccess,
               publishRealtimeEvent: fastify.publishRealtimeEvent,
+              // Bound to this instance's configured destinations. The tool
+              // schema has no recipient argument on purpose — see
+              // packages/shared/src/delivery-policy.ts.
+              deliverAsset: (delivery) => deliverAssetToOwner(fastify, delivery),
             },
           })
         }

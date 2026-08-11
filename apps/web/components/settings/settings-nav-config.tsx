@@ -11,6 +11,7 @@ import {
   KeyRound,
   Layers,
   LogOut,
+  Mail,
   Palette,
   Shield,
   ShieldAlert,
@@ -22,6 +23,7 @@ export type SettingsTab =
   | "storage"
   | "attached-disks"
   | "domain"
+  | "email"
   | "license"
   | "updates"
   | "passwords"
@@ -40,6 +42,7 @@ export const SETTINGS_VALID_TABS: SettingsTab[] = [
   "storage",
   "attached-disks",
   "domain",
+  "email",
   "license",
   "updates",
   "passwords",
@@ -76,6 +79,7 @@ export const SETTINGS_NAV: SettingsNavItem[][] = [
     { id: "storage", label: "Storage", icon: Database },
     { id: "attached-disks", label: "Attached disks", icon: HardDrive },
     { id: "domain", label: "Domain", icon: Globe },
+    { id: "email", label: "Email & Discord", icon: Mail },
     { id: "license", label: "License", icon: KeyRound },
     { id: "updates", label: "Updates", icon: Sparkles },
   ],

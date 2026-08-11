@@ -186,6 +186,15 @@ model InstanceConfig {
   publicUrl          String?
   remoteAccessMode   String?  @default("local")
   remoteAccessConfig Json?
+  /// SMTP delivery settings: { host, port, secure, username, passwordEncrypted,
+  /// fromAddress, fromName, notifyAddress, notifyOnUrlChange }. The password is
+  /// AES-256-GCM ciphertext (services/security/encryption) and is never
+  /// returned by the API — only a `hasPassword` flag is.
+  emailConfig        Json?
+  /// Discord delivery: { webhookUrlEncrypted, notifyOnUrlChange, enabled }.
+  /// The webhook URL is a bearer credential — anyone holding it can post to the
+  /// channel — so it is stored as ciphertext and never returned by the API.
+  discordConfig      Json?
   aiConfig           Json?
   /// { enabled, hour (0-23 local, preferred stage time), stagedVersion, stagedAt,
   /// lastCheckedAt, lastError } — staged updates are never applied without a

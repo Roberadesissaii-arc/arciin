@@ -267,3 +267,89 @@ export function getIntegrations(signal?: AbortSignal) {
     signal,
   })
 }
+
+// ---------------------------------------------------------------------------
+// Email delivery
+// ---------------------------------------------------------------------------
+
+export type EmailSettings = {
+  configured: boolean
+  host: string | null
+  port: number | null
+  secure: boolean | null
+  username: string | null
+  /** The password itself is never returned — only whether one is stored. */
+  hasPassword: boolean
+  fromAddress: string | null
+  fromName: string | null
+  notifyAddress: string | null
+  notifyOnUrlChange: boolean
+  /** Where mail actually goes today, including the owner-account fallback. */
+  effectiveNotifyAddress?: string | null
+}
+
+export type EmailSettingsInput = {
+  host: string
+  port: number
+  secure?: boolean
+  username?: string | null
+  /** Omit to keep the stored password; null clears it. */
+  password?: string | null
+  fromAddress: string
+  fromName?: string | null
+  notifyAddress?: string | null
+  notifyOnUrlChange?: boolean
+}
+
+export function getEmailSettings(signal?: AbortSignal) {
+  return fetchApi<EmailSettings>("/settings/email", { method: "GET", signal })
+}
+
+export function updateEmailSettings(input: EmailSettingsInput) {
+  return fetchApi<EmailSettings>("/settings/email", { method: "PUT", body: input })
+}
+
+export function clearEmailSettings() {
+  return fetchApi<EmailSettings>("/settings/email", { method: "DELETE" })
+}
+
+export function sendEmailTest() {
+  return fetchApi<{ sent: boolean; to: string }>("/settings/email/test", { method: "POST" })
+}
+
+export function emailCurrentPublicUrl() {
+  return fetchApi<{ sent: boolean }>("/settings/email/send-current-url", { method: "POST" })
+}
+
+// ---------------------------------------------------------------------------
+// Discord delivery
+// ---------------------------------------------------------------------------
+
+export type DiscordSettings = {
+  configured: boolean
+  enabled: boolean
+  notifyOnUrlChange: boolean
+}
+
+export type DiscordSettingsInput = {
+  /** Omit to keep the stored webhook; null clears it. */
+  webhookUrl?: string | null
+  enabled?: boolean
+  notifyOnUrlChange?: boolean
+}
+
+export function getDiscordSettings(signal?: AbortSignal) {
+  return fetchApi<DiscordSettings>("/settings/discord", { method: "GET", signal })
+}
+
+export function updateDiscordSettings(input: DiscordSettingsInput) {
+  return fetchApi<DiscordSettings>("/settings/discord", { method: "PUT", body: input })
+}
+
+export function clearDiscordSettings() {
+  return fetchApi<DiscordSettings>("/settings/discord", { method: "DELETE" })
+}
+
+export function sendDiscordTest() {
+  return fetchApi<{ sent: boolean }>("/settings/discord/test", { method: "POST" })
+}

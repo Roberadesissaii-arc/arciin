@@ -7,9 +7,11 @@ import {
   parseAiSecurityConfig,
   parseApiProtectionConfig,
   MOBILE_PAIRING_CODE_TTL_MINUTES,
+  renderEmailTestMessage,
 } from "@arciin/shared"
 import path from "node:path"
 
+import { Prisma } from "@prisma/client"
 import type { FastifyInstance } from "fastify"
 import { z } from "zod"
 
@@ -31,7 +33,26 @@ import {
   stopCloudflareQuickTunnel,
 } from "@/services/remote-access/cloudflare-tunnel"
 import { resolveMobileLocalAccessUrls } from "@/services/remote-access/local-access-urls"
-import { resolveCloudflareTunnelTarget, resolveMobileCloudflareTunnelTarget } from "@/services/remote-access/tunnel-target"
+import { resolveCloudflareTunnelTarget } from "@/services/remote-access/tunnel-target"
+import {
+  emailConfigSchema,
+  mergeEmailConfig,
+  parseStoredEmailConfig,
+  serializeEmailConfig,
+} from "@/services/email/email-config"
+import {
+  loadEmailConfig,
+  resolveNotifyRecipient,
+  sendEmail,
+} from "@/services/email/send-email"
+import { announcePublicUrlChange, notifyPublicUrlChanged } from "@/services/email/notify-public-url"
+import {
+  discordConfigSchema,
+  mergeDiscordConfig,
+  parseStoredDiscordConfig,
+  serializeDiscordConfig,
+} from "@/services/discord/discord-config"
+import { loadDiscordConfig, sendDiscordMessage } from "@/services/discord/send-discord"
 import {
   resolveDisplayStorageRoot,
   resolveEffectiveStorageRoot,
@@ -725,7 +746,9 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
       const localTarget = resolveCloudflareTunnelTarget()
 
       try {
-        const url = await startCloudflareQuickTunnel(localTarget)
+        // Explicit user action: always mint a fresh address so a reset really resets
+        // (and therefore actually notifies).
+        const url = await startCloudflareQuickTunnel(localTarget, { force: true })
 
         if (request.auth) {
           await fastify.prisma.activityEvent.create({
@@ -771,18 +794,25 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
         return
       }
 
-      const localTarget = resolveMobileCloudflareTunnelTarget()
+      // Deliberately the *same* target as /start. Only one cloudflared process
+      // can exist, so a separate mobile tunnel could only ever be created by
+      // killing the desktop one — which is exactly the bug this endpoint used
+      // to cause. One tunnel fronts the desktop origin and apps/web/proxy.ts
+      // serves the mobile PWA to phones on that same domain.
+      const localTarget = resolveCloudflareTunnelTarget()
 
       try {
-        const url = await startCloudflareQuickTunnel(localTarget)
+        // Explicit user action: always mint a fresh address so a reset really resets
+        // (and therefore actually notifies).
+        const url = await startCloudflareQuickTunnel(localTarget, { force: true })
 
         if (request.auth) {
           await fastify.prisma.activityEvent.create({
             data: {
               userId: request.auth.user.id,
               type: "settings.cloudflare_tunnel_started",
-              title: "Cloudflare quick tunnel started (mobile)",
-              message: `Mobile public URL set to ${url}`,
+              title: "Cloudflare quick tunnel started",
+              message: `Public URL set to ${url} (serves desktop and mobile)`,
             },
           })
         }
@@ -790,6 +820,7 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
         reply.send({
           data: {
             ...getCloudflareTunnelState(),
+            publicUrl: url,
             mobilePublicUrl: url,
             cloudflareTunnelEnabled: true,
           },
@@ -811,6 +842,339 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
     async (_request, reply) => {
       stopCloudflareQuickTunnel()
       reply.send({ data: getCloudflareTunnelState() })
+    },
+  )
+
+  // ---------------------------------------------------------------------------
+  // Email delivery
+  //
+  // The instance mails you the new public address when the tunnel restarts,
+  // because that restart normally happens while you are away from the server —
+  // which is exactly when the old link stops working and you cannot read the
+  // new one off the screen.
+  // ---------------------------------------------------------------------------
+
+  fastify.get(
+    "/settings/email",
+    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    async (_request, reply) => {
+      const config = await loadEmailConfig(fastify.prisma)
+      const fallbackRecipient = await resolveNotifyRecipient(fastify.prisma, config)
+
+      reply.send({
+        data: {
+          ...serializeEmailConfig(config),
+          // Shown as the placeholder so the owner can see where mail will go
+          // before they set an explicit address.
+          effectiveNotifyAddress: fallbackRecipient,
+        },
+      })
+    },
+  )
+
+  fastify.put(
+    "/settings/email",
+    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    async (request, reply) => {
+      const parsed = emailConfigSchema.safeParse(request.body)
+      if (!parsed.success) {
+        reply.status(400).send({
+          error: {
+            code: "VALIDATION_ERROR",
+            message: "Invalid email settings.",
+            details: parsed.error.flatten(),
+          },
+        })
+        return
+      }
+
+      const instance = await fastify.prisma.instanceConfig.findFirst()
+      if (!instance) {
+        reply.status(409).send({
+          error: { code: "INSTANCE_NOT_READY", message: "Instance not initialized." },
+        })
+        return
+      }
+
+      const existing = parseStoredEmailConfig(instance.emailConfig)
+      const merged = mergeEmailConfig(existing, parsed.data)
+
+      const updated = await fastify.prisma.instanceConfig.update({
+        where: { id: instance.id },
+        data: { emailConfig: merged as unknown as object },
+        select: { emailConfig: true },
+      })
+
+      await recordSecurityEvent(fastify, {
+        type: "settings.email_updated",
+        title: "Email settings updated",
+        // Host only — never the username, never the password.
+        message: `SMTP delivery configured via ${merged.host}.`,
+        metadata: { reason: `${merged.host}:${merged.port}` },
+      }).catch(() => {})
+
+      reply.send({ data: serializeEmailConfig(parseStoredEmailConfig(updated.emailConfig)) })
+    },
+  )
+
+  fastify.delete(
+    "/settings/email",
+    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    async (_request, reply) => {
+      const instance = await fastify.prisma.instanceConfig.findFirst()
+      if (!instance) {
+        reply.status(409).send({
+          error: { code: "INSTANCE_NOT_READY", message: "Instance not initialized." },
+        })
+        return
+      }
+
+      await fastify.prisma.instanceConfig.update({
+        where: { id: instance.id },
+        data: { emailConfig: Prisma.DbNull },
+      })
+
+      reply.send({ data: serializeEmailConfig(null) })
+    },
+  )
+
+  fastify.post(
+    "/settings/email/test",
+    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    async (request, reply) => {
+      if (
+        await checkEndpointRateLimit(request, reply, {
+          // A test button that talks to an arbitrary host is an outbound-request
+          // primitive; rate limit it like one.
+          key: `settings-email-test:${request.auth?.user.id ?? request.ip}`,
+          limit: 5,
+          windowSec: 300,
+          perIp: false,
+        })
+      ) {
+        return
+      }
+
+      const config = await loadEmailConfig(fastify.prisma)
+      if (!config) {
+        reply.status(409).send({
+          error: {
+            code: "EMAIL_NOT_CONFIGURED",
+            message: "Save your SMTP settings before sending a test.",
+          },
+        })
+        return
+      }
+
+      const instance = await fastify.prisma.instanceConfig.findFirst({
+        select: { instanceName: true },
+      })
+      const to = await resolveNotifyRecipient(fastify.prisma, config)
+
+      const result = await sendEmail(fastify, {
+        to,
+        config,
+        message: renderEmailTestMessage(instance?.instanceName ?? "Arciin"),
+      })
+
+      if (!result.ok) {
+        reply.status(result.code === "SEND_FAILED" ? 502 : 409).send({
+          error: { code: result.code, message: result.message },
+        })
+        return
+      }
+
+      reply.send({ data: { sent: true, to: result.to } })
+    },
+  )
+
+  // ---------------------------------------------------------------------------
+  // Discord delivery
+  // ---------------------------------------------------------------------------
+
+  fastify.get(
+    "/settings/discord",
+    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    async (_request, reply) => {
+      const config = await loadDiscordConfig(fastify.prisma)
+      reply.send({ data: serializeDiscordConfig(config) })
+    },
+  )
+
+  fastify.put(
+    "/settings/discord",
+    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    async (request, reply) => {
+      const parsed = discordConfigSchema.safeParse(request.body)
+      if (!parsed.success) {
+        reply.status(400).send({
+          error: {
+            code: "VALIDATION_ERROR",
+            message: "Invalid Discord settings.",
+            details: parsed.error.flatten(),
+          },
+        })
+        return
+      }
+
+      const instance = await fastify.prisma.instanceConfig.findFirst()
+      if (!instance) {
+        reply.status(409).send({
+          error: { code: "INSTANCE_NOT_READY", message: "Instance not initialized." },
+        })
+        return
+      }
+
+      const merged = mergeDiscordConfig(
+        parseStoredDiscordConfig(instance.discordConfig),
+        parsed.data,
+      )
+
+      const updated = await fastify.prisma.instanceConfig.update({
+        where: { id: instance.id },
+        data: { discordConfig: merged as unknown as object },
+        select: { discordConfig: true },
+      })
+
+      // No webhook detail in the audit trail — the URL is the credential.
+      await recordSecurityEvent(fastify, {
+        type: "settings.discord_updated",
+        title: "Discord settings updated",
+        message: merged.webhookUrlEncrypted
+          ? "A Discord webhook is configured for this instance."
+          : "The Discord webhook was removed.",
+      }).catch(() => {})
+
+      reply.send({ data: serializeDiscordConfig(parseStoredDiscordConfig(updated.discordConfig)) })
+    },
+  )
+
+  fastify.delete(
+    "/settings/discord",
+    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    async (_request, reply) => {
+      const instance = await fastify.prisma.instanceConfig.findFirst()
+      if (!instance) {
+        reply.status(409).send({
+          error: { code: "INSTANCE_NOT_READY", message: "Instance not initialized." },
+        })
+        return
+      }
+
+      await fastify.prisma.instanceConfig.update({
+        where: { id: instance.id },
+        data: { discordConfig: Prisma.DbNull },
+      })
+
+      reply.send({ data: serializeDiscordConfig(null) })
+    },
+  )
+
+  fastify.post(
+    "/settings/discord/test",
+    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    async (request, reply) => {
+      if (
+        await checkEndpointRateLimit(request, reply, {
+          // Posting to a user-supplied URL is an outbound-request primitive.
+          key: `settings-discord-test:${request.auth?.user.id ?? request.ip}`,
+          limit: 5,
+          windowSec: 300,
+          perIp: false,
+        })
+      ) {
+        return
+      }
+
+      const instance = await fastify.prisma.instanceConfig.findFirst({
+        select: { instanceName: true },
+      })
+      const name = instance?.instanceName ?? "Arciin"
+
+      const result = await sendDiscordMessage(fastify, {
+        content: `**${name} is connected.**\nYou will get the new address here whenever this server's public link changes.`,
+      })
+
+      if (!result.ok) {
+        reply.status(result.code === "SEND_FAILED" ? 502 : 409).send({
+          error: { code: result.code, message: result.message },
+        })
+        return
+      }
+
+      reply.send({ data: { sent: true } })
+    },
+  )
+
+  /** Re-send the current address on demand — "text me the link" from Settings. */
+  fastify.post(
+    "/settings/email/send-current-url",
+    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    async (request, reply) => {
+      if (
+        await checkEndpointRateLimit(request, reply, {
+          key: `settings-email-url:${request.auth?.user.id ?? request.ip}`,
+          limit: 5,
+          windowSec: 300,
+          perIp: false,
+        })
+      ) {
+        return
+      }
+
+      const instance = await fastify.prisma.instanceConfig.findFirst()
+      const config = (instance?.remoteAccessConfig as Record<string, unknown> | null) || {}
+      const publicUrl =
+        (typeof config.mobilePublicUrl === "string" ? config.mobilePublicUrl : null) ??
+        instance?.publicUrl ??
+        null
+
+      if (!publicUrl) {
+        reply.status(409).send({
+          error: {
+            code: "NO_PUBLIC_URL",
+            message: "This instance has no public address yet. Generate one first.",
+          },
+        })
+        return
+      }
+
+      // Both channels, once each. Succeeding on either is a success — someone
+      // with Discord but no SMTP account still gets their link.
+      const announced = await announcePublicUrlChange(fastify, { publicUrl })
+      if (announced.email || announced.discord) {
+        reply.send({
+          data: {
+            sent: true,
+            via: [announced.email ? "email" : null, announced.discord ? "discord" : null].filter(
+              Boolean,
+            ),
+          },
+        })
+        return
+      }
+
+      // Nothing went out. Re-run the email path only to recover a reason for
+      // the error message; it already failed, so this cannot double-send.
+      const result = await notifyPublicUrlChanged(fastify, { publicUrl })
+      if (!result.sent) {
+        reply.status(result.reason === "SEND_FAILED" ? 502 : 409).send({
+          error: {
+            code: result.reason ?? "EMAIL_FAILED",
+            message:
+              result.reason === "NOT_CONFIGURED"
+                ? "Configure SMTP settings first."
+                : result.reason === "NO_RECIPIENT"
+                  ? "No notification address is set."
+                  : result.reason === "DISABLED"
+                    ? "Address-change emails are turned off."
+                    : "Could not send the email.",
+          },
+        })
+        return
+      }
+
+      reply.send({ data: { sent: true } })
     },
   )
 
