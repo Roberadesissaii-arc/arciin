@@ -4,6 +4,7 @@ import { hash, verify } from "@node-rs/argon2"
 import type { FastifyReply, FastifyRequest } from "fastify"
 
 import { apiConfig } from "@/config"
+import { verifyMediaToken } from "@/services/security/media-token"
 import { clientIpFromRequest, normalizeClientIp } from "@/services/security/client-ip"
 import { enforceApiKeyRateLimit } from "@/services/security/api-key-rate-limit"
 
@@ -365,6 +366,53 @@ export function requireSessionRolesOrApiKeyScopes(
       })
       return
     }
+  }
+}
+
+/**
+ * Media routes: a normal session / API key, or a short-lived token scoped to
+ * this one asset.
+ *
+ * `<video>` and `<img>` cannot send an Authorization header, so the credential
+ * has to be in the query string. Accepting a *session* token there — which the
+ * app does today via `?access_token=` — means a leaked media URL is a full
+ * credential, usable against every authenticated route. A media token is bound
+ * to one asset id and expires in minutes, so the same leak costs one file for
+ * a short window.
+ *
+ * The legacy `?access_token=` path still works; removing it breaks every
+ * already-installed PWA, so that is a separate, later change.
+ */
+export function requireAssetMediaAccess(
+  sessionRoles: Array<"OWNER" | "ADMIN" | "MEMBER" | "VIEWER">,
+  apiKeyScopesAnyOf: string[],
+) {
+  const fallback = requireSessionRolesOrApiKeyScopes(sessionRoles, apiKeyScopesAnyOf)
+
+  return async (request: FastifyRequest, reply: FastifyReply) => {
+    const query = request.query as { media_token?: string }
+    const token = typeof query?.media_token === "string" ? query.media_token.trim() : ""
+    const params = request.params as { assetId?: string }
+    const assetId = typeof params?.assetId === "string" ? params.assetId : ""
+
+    if (token && assetId) {
+      const result = verifyMediaToken({ token, assetId })
+      if (result.ok) {
+        const user = await request.server.prisma.user.findUnique({
+          where: { id: result.userId },
+        })
+        if (user && user.status === "ACTIVE" && sessionRoles.includes(user.role)) {
+          request.auth = { user, session: null, apiKeyId: null, apiKeyScopes: null }
+          return
+        }
+      }
+      reply.status(401).send({
+        error: { code: "INVALID_MEDIA_TOKEN", message: "This media link has expired." },
+      })
+      return
+    }
+
+    await fallback(request, reply)
   }
 }
 

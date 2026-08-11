@@ -50,7 +50,8 @@ import {
   syncAssetToPlexMirror,
 } from "@/services/integrations/plex"
 import { PLEX_CONNECTOR_DEF, JELLYFIN_CONNECTOR_DEF } from "@/services/integrations/library-media-connector"
-import { requireSessionRolesOrApiKeyScopes } from "@/services/security/auth"
+import { signMediaToken } from "@/services/security/media-token"
+import { requireAssetMediaAccess, requireSessionRolesOrApiKeyScopes } from "@/services/security/auth"
 import { getPdfNavigationIndex } from "@/services/chat/read-pdf-asset"
 import { serializeAsset } from "@/services/serializers"
 import { loadUserPreferences } from "@/services/user/preferences"
@@ -622,10 +623,46 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
     },
   )
 
+  /**
+   * Mint a short-lived token for one asset so `<video>` / `<img>` URLs do not
+   * have to carry a session credential in the query string.
+   */
+  fastify.post(
+    "/assets/:assetId/media-token",
+    {
+      preHandler: requireSessionRolesOrApiKeyScopes(
+        ["OWNER", "ADMIN", "MEMBER", "VIEWER"],
+        ["assets:read"],
+      ),
+    },
+    async (request, reply) => {
+      const params = z.object({ assetId: z.string() }).parse(request.params)
+      const body = z
+        .object({ scope: z.enum(["stream", "download"]).optional() })
+        .parse(request.body ?? {})
+
+      const asset = await fastify.prisma.asset.findFirst({
+        where: { id: params.assetId },
+        select: { id: true },
+      })
+      if (!asset) {
+        reply.status(404).send({ error: { code: "NOT_FOUND", message: "Asset not found." } })
+        return
+      }
+
+      const signed = signMediaToken({
+        assetId: asset.id,
+        userId: request.auth!.user.id,
+        scope: body.scope ?? "stream",
+      })
+      reply.send({ data: signed })
+    },
+  )
+
   fastify.get(
     "/assets/:assetId/download",
     {
-      preHandler: requireSessionRolesOrApiKeyScopes(
+      preHandler: requireAssetMediaAccess(
         ["OWNER", "ADMIN", "MEMBER", "VIEWER"],
         ["assets:read"],
       ),
@@ -788,7 +825,7 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
   fastify.get(
     "/assets/:assetId/thumbnail",
     {
-      preHandler: requireSessionRolesOrApiKeyScopes(
+      preHandler: requireAssetMediaAccess(
         ["OWNER", "ADMIN", "MEMBER", "VIEWER"],
         ["assets:read"],
       ),
