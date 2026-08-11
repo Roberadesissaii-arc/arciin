@@ -53,6 +53,8 @@ DEFAULT_WEB_PORT=3000
 DEFAULT_API_PORT=4000
 DEFAULT_PG_PORT=5432
 ARCIIN_PG_PORT="${DEFAULT_PG_PORT}"
+# Set once PM2 boot persistence is actually configured (real systemd only).
+ARCIIN_BOOT_PERSISTENT=0
 
 # ── Colors & styling ─────────────────────────────────────────────────────────
 BOLD="\033[1m"
@@ -637,9 +639,19 @@ launch_pm2() {
 
   wait_for_api_health || warn "Web UI may show 'waiting for API' until arciin-api is fixed"
 
-  if command -v systemctl >/dev/null 2>&1; then
+  if has_systemd; then
     spin_ok "Configuring auto-start on boot..." "Auto-start configured" \
       bash -c 'PM2_STARTUP="$(pm2 startup 2>&1 | grep sudo | tail -1 || true)"; [[ -n "$PM2_STARTUP" ]] && eval "$PM2_STARTUP" || true'
+    ARCIIN_BOOT_PERSISTENT=1
+  elif is_wsl; then
+    # Claiming auto-start here would be false twice over: systemd is off, and
+    # WSL itself does not launch when Windows boots.
+    warn "WSL detected — Arciin will not start automatically"
+    echo -e "    ${DIM}WSL does not start with Windows, and systemd is off by default.${RESET}"
+    echo -e "    ${DIM}After each Windows restart, open your WSL terminal and run:${RESET} ${BOLD}bash start.sh${RESET}"
+    echo -e "    ${DIM}To enable systemd: add [boot]\\nsystemd=true to /etc/wsl.conf, then 'wsl --shutdown' in PowerShell.${RESET}"
+  else
+    warn "No systemd — Arciin will not start automatically on boot (run: bash start.sh)"
   fi
 
   sleep 3
@@ -755,7 +767,9 @@ ensure_setup_token() {
 
 start_service() {
   local service_name="$1"
-  if command -v systemctl >/dev/null 2>&1 && systemctl list-unit-files >/dev/null 2>&1; then
+  # has_systemd(), not `command -v systemctl` — on WSL the binary exists while
+  # systemd is off, and every systemctl call then fails.
+  if has_systemd; then
     sudo systemctl enable --now "$service_name" &>/dev/null || warn "Could not enable/start ${service_name}"
   else
     sudo service "$service_name" start &>/dev/null || warn "Could not start ${service_name}"
@@ -799,6 +813,23 @@ if [[ "${EUID}" -eq 0 ]]; then
 fi
 
 if ! command -v apt-get >/dev/null 2>&1; then
+  # Windows users land here from Git Bash / MSYS, where apt does not exist.
+  # Point them at WSL rather than leaving them to guess.
+  case "$(uname -s 2>/dev/null || echo unknown)" in
+    MINGW*|MSYS*|CYGWIN*)
+      echo ""
+      echo -e "  ${YELLOW}This looks like Git Bash or MSYS on Windows.${RESET}"
+      echo -e "  Arciin installs through ${BOLD}WSL2${RESET}, not Git Bash. In PowerShell (as Administrator):"
+      echo ""
+      echo -e "      ${BOLD}wsl --install -d Ubuntu${RESET}"
+      echo ""
+      echo -e "  Then open ${BOLD}Ubuntu${RESET} from the Start menu, clone the repo into your Linux"
+      echo -e "  home (${DIM}not /mnt/c${RESET}), and run this script there."
+      echo -e "  ${DIM}Full steps: README.md → \"Windows (WSL2)\"${RESET}"
+      echo ""
+      fail "Run install.sh inside WSL2, not Git Bash."
+      ;;
+  esac
   fail "This installer supports Debian/Ubuntu/WSL with apt. Use Docker or manual setup on other OSes."
 fi
 
@@ -1076,7 +1107,13 @@ echo -e "    ${DIM}Redis${RESET}        localhost:6379"
 echo ""
 echo -e "  ${BOLD}${WHITE}Get started${RESET}"
 echo ""
-echo -e "    ${BGREEN}1.${RESET}  Arciin is running under ${BOLD}PM2${RESET} (production, auto-restart on boot)"
+if [[ "${ARCIIN_BOOT_PERSISTENT:-0}" == "1" ]]; then
+  echo -e "    ${BGREEN}1.${RESET}  Arciin is running under ${BOLD}PM2${RESET} (production, auto-restart on boot)"
+elif is_wsl; then
+  echo -e "    ${BGREEN}1.${RESET}  Arciin is running under ${BOLD}PM2${RESET} ${DIM}(restart after each Windows reboot:${RESET} ${BOLD}bash start.sh${DIM})${RESET}"
+else
+  echo -e "    ${BGREEN}1.${RESET}  Arciin is running under ${BOLD}PM2${RESET} ${DIM}(no systemd — start manually after reboot:${RESET} ${BOLD}bash start.sh${DIM})${RESET}"
+fi
 echo -e "    ${BGREEN}2.${RESET}  Open from this machine or LAN:  ${BOLD}${SETUP_URL}${RESET}"
 echo -e "    ${BGREEN}3.${RESET}  Claim your instance and create the admin account"
 echo ""

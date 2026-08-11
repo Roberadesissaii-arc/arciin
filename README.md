@@ -126,6 +126,82 @@ Pick **one** install path:
 | **Docker** (recommended for most installs) | [Docker](https://docs.docker.com/engine/install/) + Compose plugin |
 | **Native** (`./install.sh`) | Linux/WSL2, Node 20+, pnpm, PostgreSQL 14+, Redis 6+, FFmpeg |
 
+On **Windows**, start with [Windows (WSL2)](#windows-wsl2) below — the installer is a bash script and cannot run in PowerShell, CMD, or Git Bash.
+
+---
+
+## Windows (WSL2)
+
+Arciin runs on Windows through **WSL2** (Windows Subsystem for Linux). There is
+no native Windows installer: `install.sh` needs `apt`, so PowerShell, CMD, and
+Git Bash will not work. This is a one-time setup.
+
+**1. Install WSL2 with Ubuntu.** In PowerShell **as Administrator**:
+
+```powershell
+wsl --install -d Ubuntu
+```
+
+Reboot when prompted, then open **Ubuntu** from the Start menu and create your
+Linux username and password. Everything below runs in that Ubuntu window, not
+in PowerShell.
+
+**2. Clone inside the Linux filesystem — not `/mnt/c`.**
+
+```bash
+cd ~
+git clone https://github.com/Roberadesissaii-arc/arciin.git
+cd arciin
+```
+
+> **Do not** clone into `/mnt/c/...` (your Windows drive). Cross-filesystem I/O
+> is several times slower, and Linux file permissions are not preserved there,
+> which breaks the `chmod 600` on `.env` and PostgreSQL's data directory. Use
+> your Linux home (`~`), as above.
+
+**3. Install.**
+
+```bash
+chmod +x install.sh
+./install.sh
+```
+
+**4. Open the printed setup URL** in your normal Windows browser. WSL2 forwards
+`localhost`, so `http://localhost:3000` works from Windows with no extra setup.
+
+### Starting Arciin after a Windows reboot
+
+WSL does **not** start when Windows boots, and systemd is off by default, so
+Arciin cannot start on its own. After each restart, open Ubuntu and run:
+
+```bash
+cd ~/arciin && bash start.sh
+```
+
+To make services (PostgreSQL, Redis) start with the WSL distro, enable systemd
+once — create `/etc/wsl.conf`:
+
+```bash
+printf '[boot]\nsystemd=true\n' | sudo tee /etc/wsl.conf
+```
+
+Then in PowerShell: `wsl --shutdown`, and reopen Ubuntu. With systemd enabled,
+`./install.sh` will also configure PM2 to start Arciin with the distro — you
+still need to open a WSL window (or run `wsl -d Ubuntu` at Windows login) for
+the distro itself to boot.
+
+### Docker Desktop on Windows
+
+Docker Desktop with the WSL2 backend also works, but `install.sh --docker` is
+still a bash script — run it from your **Ubuntu** window, not PowerShell.
+
+### Where files are stored
+
+Storage lives inside WSL at `/srv/arciin-storage/arciin`. Reach it from Windows
+Explorer at `\\wsl$\Ubuntu\srv\arciin-storage\arciin`. To keep media on a
+Windows drive instead, point `ARCIIN_DATA_DIR` at a path under `/mnt/d/...` —
+expect slower uploads and thumbnailing.
+
 ---
 
 ## Quick start
