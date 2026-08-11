@@ -42,16 +42,6 @@ export type AiSecuritySettingsResolved = {
   passwordVaultAiShare: PasswordVaultAiShareSettings
   /** Route password-related chat turns through a local Ollama profile only (never cloud APIs). */
   passwordQueriesLocalAiOnly: boolean
-  /**
-   * Let the assistant answer questions that have nothing to do with this
-   * instance — coding help, explanations, writing, general knowledge.
-   *
-   * Off, the whole system prompt is about files and libraries, so the model
-   * treats anything else as out of scope and deflects. That is the right
-   * default for a file manager, but it wastes a capable model when the user
-   * wants one assistant instead of two.
-   */
-  allowGeneralKnowledge: boolean
 }
 
 export const DEFAULT_AI_SECURITY: AiSecuritySettingsResolved = {
@@ -68,7 +58,6 @@ export const DEFAULT_AI_SECURITY: AiSecuritySettingsResolved = {
   passwordVaultAiAccess: "blocked",
   passwordVaultAiShare: DEFAULT_PASSWORD_VAULT_AI_SHARE,
   passwordQueriesLocalAiOnly: false,
-  allowGeneralKnowledge: false,
 }
 
 function resolveLibraryToolAccess(s: Record<string, unknown>): AiLibraryToolAccess {
@@ -105,7 +94,6 @@ export function parseAiSecurityConfig(sec: unknown): AiSecuritySettingsResolved 
     passwordVaultAiAccess,
     passwordVaultAiShare: parsePasswordVaultAiShare(s.passwordVaultAiShare),
     passwordQueriesLocalAiOnly: Boolean(s.passwordQueriesLocalAiOnly ?? false),
-    allowGeneralKnowledge: Boolean(s.allowGeneralKnowledge ?? false),
   }
 }
 
@@ -171,30 +159,10 @@ export function sanitizeOutboundChatText(
 export function buildAiSecuritySystemAppend(
   settings: Pick<
     AiSecuritySettingsResolved,
-    | "blockInjection"
-    | "libraryToolAccess"
-    | "requireToolApproval"
-    | "passwordVaultAiAccess"
-    | "allowGeneralKnowledge"
+    "blockInjection" | "libraryToolAccess" | "requireToolApproval" | "passwordVaultAiAccess"
   >,
 ): string {
   const parts: string[] = []
-
-  // The rest of the prompt is entirely about files and libraries, so without
-  // this the model reads anything else as out of scope and deflects.
-  if (settings.allowGeneralKnowledge) {
-    parts.push(`
-
-## Scope — general questions allowed
-You are a general-purpose assistant that also happens to run inside Arciin. Answer **any** question the user asks — programming, maths, writing, explanations, translation, advice, current topics — using your own knowledge, at the same quality you would give anywhere else.
-- Do **not** deflect with "I can only help with your files/libraries" or redirect a general question back to Arciin. There is no such restriction.
-- Instance questions still come from the context block; general questions come from your own knowledge. Keep the two apart: **never** present general knowledge as data about this instance, and never invent libraries, folders, files, counts, or ids.
-- If a question could mean either (e.g. "what's in my documents?" vs "how do I write a résumé?"), take the instance reading first and say so in one line if you had to choose.
-- Long-form work (essays, code, plans) is fine — the user asked for it.`)
-  }
-  // No `else`: off is the behaviour the app already had. Adding an explicit
-  // "Arciin only" rule here would make the default stricter than it was, which
-  // is the opposite of what this setting is for.
 
   if (settings.blockInjection) {
     parts.push(`

@@ -1,7 +1,7 @@
 "use client"
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Eye, Globe, Lock, ShieldAlert, SlidersHorizontal } from "lucide-react"
+import { Eye, Lock, ShieldAlert, SlidersHorizontal } from "lucide-react"
 import { toast } from "@/lib/notifications/arciin-toast"
 
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
@@ -42,7 +42,6 @@ const SETTING_LABELS: Record<
   hideAssetCounts: "Hide asset counts",
   hideStorageSize: "Hide storage usage",
   hideUploadDates: "Hide last upload time",
-  allowGeneralKnowledge: "General questions",
 }
 
 const LIBRARY_TOOL_ACCESS_OPTIONS: { value: AiLibraryToolAccess; label: string }[] = [
@@ -168,23 +167,6 @@ export function AiSecurityPanel() {
 
   return (
     <div className="space-y-4">
-      <SecurityCard
-        icon={Globe}
-        title="Assistant scope"
-        description="What the assistant is allowed to answer"
-      >
-        <SettingRow
-          label="General questions"
-          hint="Answer coding, writing, and general-knowledge questions, not just questions about this instance. Instance data still comes only from your server."
-        >
-          <PillSwitch
-            on={s.allowGeneralKnowledge}
-            onChange={() => toggle("allowGeneralKnowledge")}
-            disabled={busy}
-          />
-        </SettingRow>
-      </SecurityCard>
-
       <SecurityCard
         icon={ShieldAlert}
         title="Protection"

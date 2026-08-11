@@ -699,8 +699,6 @@ export type AiSecuritySettings = {
     notes: boolean
   }
   passwordQueriesLocalAiOnly: boolean
-  /** Allow the assistant to answer questions unrelated to this instance. */
-  allowGeneralKnowledge: boolean
 }
 
 export type ModelProvider =
