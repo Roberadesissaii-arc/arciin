@@ -10,7 +10,8 @@
  * /chat/completions path. The authoritative list lives on the provider: once a
  * key is saved, the Models page fetches GET /v1/models and shows what the key
  * actually has access to. This catalogue is the offline fallback and the source
- * of the human-readable labels.
+ * of the human-readable labels; the ids below were verified against that live
+ * catalogue.
  */
 
 /** Default chat model when connecting xAI. */
@@ -51,7 +52,7 @@ export const GROK_CHAT_MODELS: GrokModelEntry[] = [
     vision: true,
   },
   {
-    id: "grok-4.20",
+    id: "grok-4.20-0309-reasoning",
     label: "Grok 4.20",
     context: "1M",
     description: "High-speed reasoning with industry-leading agentic tool calling.",
@@ -61,7 +62,7 @@ export const GROK_CHAT_MODELS: GrokModelEntry[] = [
     vision: true,
   },
   {
-    id: "grok-4.20-non-reasoning",
+    id: "grok-4.20-0309-non-reasoning",
     label: "Grok 4.20 (Non-Reasoning)",
     context: "1M",
     description: "Fast, cost-efficient responses powered by the flagship architecture.",
@@ -71,7 +72,7 @@ export const GROK_CHAT_MODELS: GrokModelEntry[] = [
     vision: true,
   },
   {
-    id: "grok-4.20-multi-agent",
+    id: "grok-4.20-multi-agent-0309",
     label: "Grok 4.20 Multi-Agent",
     context: "1M",
     description: "Multiple agents collaborate in parallel to perform deep research tasks.",

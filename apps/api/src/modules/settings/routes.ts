@@ -130,6 +130,7 @@ const aiSecuritySchema = z.object({
     })
     .optional(),
   passwordQueriesLocalAiOnly: z.boolean().optional(),
+  allowGeneralKnowledge: z.boolean().optional(),
 })
 
 const clearDataSchema = z
