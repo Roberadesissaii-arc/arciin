@@ -223,6 +223,19 @@ export function postChatOrganizeImages(body: {
   }>("/chat/organize-images", { method: "POST", body })
 }
 
+/**
+ * Ask the server to name a conversation from its opening exchange.
+ *
+ * Fire-and-forget from the caller's point of view: the title is cosmetic, so a
+ * failure leaves the placeholder in place rather than interrupting the chat.
+ */
+export function autoTitleChatConversation(id: string) {
+  return fetchApi<{ id: string; title: string }>(`/chat/conversations/${id}/auto-title`, {
+    method: "POST",
+    body: {},
+  })
+}
+
 export function renameChatConversation(id: string, title: string) {
   return fetchApi<{ id: string; title: string }>(`/chat/conversations/${id}`, {
     method: "PATCH",

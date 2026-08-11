@@ -12,6 +12,7 @@ import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet"
 import { getOllamaModelShow } from "@/lib/api/models"
 import { fetchApi } from "@/lib/api/client"
 import {
+  autoTitleChatConversation,
   createChatConversation,
   deleteChatConversation,
   getChatConversation,
@@ -1324,11 +1325,15 @@ export function ChatPage() {
       if (finalContent) {
         try {
           let convoId = conversationId
+          // A brand-new conversation gets a real title from the model once the
+          // first exchange is saved. Until then it needs *something*, so it
+          // starts as the user's own words rather than sitting blank.
+          let needsAutoTitle = false
           if (!convoId) {
-            // Create a new conversation titled from the first user message
             const title = text.slice(0, 80).replace(/\n/g, " ")
             const newConvo = await createChatConversation({ title, profileId: profile.id })
             convoId = newConvo.id
+            needsAutoTitle = true
             setConversationId(convoId)
             queryClient.invalidateQueries({ queryKey: queryKeys.chatConversations })
           }
@@ -1352,6 +1357,18 @@ export function ChatPage() {
             applyPersistedMessageIds(prev, saved.messages, pendingMsg.id, userMsg.id, convoId),
           )
           queryClient.invalidateQueries({ queryKey: queryKeys.chatConversations })
+
+          if (needsAutoTitle) {
+            // Not awaited: the reply is already on screen, and a slow or failed
+            // title should never hold up the chat. The rail refreshes when it lands.
+            void autoTitleChatConversation(convoId)
+              .then(() => {
+                queryClient.invalidateQueries({ queryKey: queryKeys.chatConversations })
+              })
+              .catch(() => {
+                /* keep the placeholder title */
+              })
+          }
         } catch {
           toast.error("Could not save to history", {
             description: "The reply still shows here, but won't appear in past conversations.",

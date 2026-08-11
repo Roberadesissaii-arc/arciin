@@ -45,6 +45,7 @@ import {
   visionSearchLibraryImages,
   visionSuggestAssetRename,
 } from "@/services/chat/vision-library"
+import { generateConversationTitle } from "@/services/chat/auto-title"
 import { requireFeature, requireRole } from "@/services/security/auth"
 
 import { corsHeadersForRequestOrigin } from "@/plugins/cors-origins"
@@ -925,6 +926,49 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
         select: { id: true, title: true },
       })
       reply.send({ data: updated })
+    },
+  )
+
+  // ── Auto-title a conversation from its opening exchange ──────────────────────
+  fastify.post(
+    "/chat/conversations/:id/auto-title",
+    { preHandler: requireAiChat },
+    async (request, reply) => {
+      const user = request.auth!.user
+      const { id } = request.params as { id: string }
+      const convo = await fastify.prisma.chatConversation.findFirst({
+        where: { id, userId: user.id },
+        select: { id: true },
+      })
+      if (!convo) {
+        reply.status(404).send({ error: { code: "NOT_FOUND", message: "Not found." } })
+        return
+      }
+
+      // The first exchange is enough: later turns drift off the original topic
+      // and would produce a title that no longer matches what is in the rail.
+      const messages = await fastify.prisma.chatMessage.findMany({
+        where: { conversationId: id },
+        orderBy: { createdAt: "asc" },
+        take: 2,
+        select: { role: true, content: true },
+      })
+      const userText = messages.find((m) => m.role === "user")?.content ?? ""
+      const assistantText = messages.find((m) => m.role === "assistant")?.content ?? ""
+      if (!userText.trim()) {
+        reply.status(400).send({
+          error: { code: "NO_MESSAGES", message: "Conversation has no user message yet." },
+        })
+        return
+      }
+
+      const title = await generateConversationTitle({
+        prisma: fastify.prisma,
+        conversationId: id,
+        userText,
+        assistantText,
+      })
+      reply.send({ data: { id, title } })
     },
   )
 
