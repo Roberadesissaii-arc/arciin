@@ -11,16 +11,20 @@ const eslintConfig = defineConfig([
     "apps/web/.next/**",
     // Development build output — generated bundles, not source.
     "apps/web/.next-dev/**",
+    // Account portal build output — same generated bundles as apps/web/.next.
+    // Missing here, `pnpm lint` failed for anyone who had built the portal.
+    "apps/account/.next/**",
     // Playwright artifacts: traces, videos and bundled page sources.
     "test-results/**",
-    "reports/playwright/**",
+    "reports/**",
     "out/**",
     "build/**",
     "apps/web/next-env.d.ts",
     // Reference-only snapshot; not part of the Arciin app package graph.
     "Arceclaw/**",
-    // PM2 production config (CommonJS require).
+    // PM2 configs (CommonJS require).
     "ecosystem.config.cjs",
+    "ecosystem.vendor.config.cjs",
     "apps/web/public/pdfjs-wasm/**",
   ]),
   {
