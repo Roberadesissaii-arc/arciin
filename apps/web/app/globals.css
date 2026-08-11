@@ -2,6 +2,9 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @import "./arciin-toast-styles.css";
+/* KaTeX: math typesetting in chat and canvas. Bundled locally — the package
+   ships its own woff2 fonts, so nothing is fetched from a CDN at runtime. */
+@import "katex/dist/katex.min.css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -545,4 +548,33 @@ html.reduce-motion .dashboard-main [data-slot="card"]:hover {
   font-family: inherit;
   font-size: inherit;
   line-height: inherit;
+}
+
+/* ── Math ──────────────────────────────────────────────────────────────────
+   KaTeX sets its own colours; inherit the surrounding text colour instead so
+   equations follow the light/dark theme like the prose around them. */
+.katex {
+  color: inherit;
+  font-size: 1.05em;
+}
+
+/* A long derivation scrolls inside its own box rather than widening the page. */
+.arciin-math-block {
+  scrollbar-width: thin;
+}
+
+.arciin-math-block .katex-display {
+  margin: 0;
+  padding: 0.25rem 0;
+}
+
+/* Inline math should sit on the text baseline without stretching line height. */
+.arciin-math-inline .katex {
+  font-size: 1em;
+}
+
+/* Numerator/denominator rules and radicals default to currentColor already,
+   but the fraction bar needs it stated explicitly in some browsers. */
+.katex .frac-line {
+  border-bottom-color: currentColor;
 }

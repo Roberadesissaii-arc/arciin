@@ -1,8 +1,56 @@
 /**
  * Export Canvas markdown drafts to Markdown / Word-friendly HTML / simple PDF.
+ *
+ * Maths is handled per format, because the formats differ in what they can do:
+ *
+ *   - `.md` keeps the LaTeX exactly as written. That *is* the source, and any
+ *     markdown reader with math support will typeset it.
+ *   - `.doc` and `.pdf` get `latexToReadableText`, which turns
+ *     `\frac{1 + \sqrt{5}}{2}` into `(1 + sqrt(5))/2`. Lossy, but readable —
+ *     and far better than the raw backslashes these exports used to print.
+ *
+ * The PDF writer here emits PDF operators by hand with the built-in Times
+ * fonts, which are Latin-1 only: no Greek, no fraction bars, no glyph metrics
+ * for anything else. Real typesetting would mean embedding a font and a layout
+ * engine, so the readable-text fallback is the honest ceiling for now.
  */
 
+import { extractBlockMath, latexToReadableText, splitInlineMath } from "@arciin/shared"
+
 export type CanvasExportFormat = "md" | "pdf" | "doc"
+
+/**
+ * Replace every LaTeX span with readable text, leaving prose untouched.
+ * Applied to the document before either non-markdown exporter sees it.
+ */
+export function flattenMathForExport(markdown: string): string {
+  const { text, blocks } = extractBlockMath(markdown)
+
+  const withBlocks = text
+    .split("\n")
+    .map((line) => {
+      const index = readMathBlockIndex(line)
+      if (index === null || blocks[index] === undefined) return line
+      return latexToReadableText(blocks[index]!)
+    })
+    .join("\n")
+
+  return withBlocks
+    .split("\n")
+    .map((line) =>
+      splitInlineMath(line)
+        .map((segment) =>
+          segment.type === "math" ? latexToReadableText(segment.value) : segment.value,
+        )
+        .join(""),
+    )
+    .join("\n")
+}
+
+function readMathBlockIndex(line: string): number | null {
+  const match = /^\u0000arciin-math-(\d+)\u0000$/.exec(line.trim())
+  return match ? Number.parseInt(match[1]!, 10) : null
+}
 
 export function canvasExportLabel(format: CanvasExportFormat): string {
   switch (format) {
@@ -137,11 +185,12 @@ function toPdfLatin1(s: string): string {
     .replace(/\u2026/g, "...")
     .replace(/[\u2022\u00B7•]/g, "-")
     .replace(/\u00A0/g, " ")
-    .replace(/[^\x09\x0A\x0D\x20-\x7E]/g, (ch) => {
-      const code = ch.charCodeAt(0)
-      if (code >= 0xa0 && code <= 0xff) return ch
-      return ""
-    })
+    // Everything else is dropped, including Latin-1. The page stream is encoded
+    // with TextEncoder (UTF-8) into a Times font carrying no /Encoding entry,
+    // so a byte like 0xB2 is not "²" — it is StandardEncoding's dagger, and a
+    // two-byte UTF-8 sequence renders as two wrong glyphs. Keeping high bytes
+    // here produced exactly that mojibake.
+    .replace(/[^\x09\x0A\x0D\x20-\x7E]/g, "")
 }
 
 function stripInlineMd(s: string): string {
@@ -486,8 +535,11 @@ export function buildCanvasExportFile(
     })
   }
 
+  // Markdown keeps its LaTeX; the other two cannot typeset it, so flatten.
+  const exportBody = flattenMathForExport(body)
+
   if (format === "doc") {
-    const html = wrapHtmlDocument(title, markdownToSimpleHtml(body))
+    const html = wrapHtmlDocument(title, markdownToSimpleHtml(exportBody))
     return new File([html], `${safeBase}.doc`, {
       type: canvasExportMime("doc"),
       lastModified: Date.now(),
@@ -495,7 +547,7 @@ export function buildCanvasExportFile(
   }
 
   // pdf — copy into a fresh ArrayBuffer so File/Blob gets a real buffer
-  const bytes = markdownToPdfBytes(title, body)
+  const bytes = markdownToPdfBytes(title, exportBody)
   const copy = new Uint8Array(bytes.byteLength)
   copy.set(bytes)
   return new File([copy], `${safeBase}.pdf`, {

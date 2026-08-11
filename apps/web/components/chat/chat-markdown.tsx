@@ -1,14 +1,17 @@
 "use client"
 
+import { extractBlockMath, readMathBlockPlaceholder } from "@arciin/shared"
+
 import {
   InlineAssetBlock,
   InlineAssetBlockByIds,
   InlineAssetFilenameList,
 } from "@/components/chat/chat-inline-assets"
+import { MathBlock, renderInlineWithMath } from "@/components/chat/math"
 
 // ── Markdown renderer ──────────────────────────────────────────────────────────
 
-function parseInline(text: string): React.ReactNode {
+function parseInlineText(text: string): React.ReactNode {
   // Matches: **bold**, *italic*, `code`, [label](url)
   const pattern = /\*\*(.+?)\*\*|\*(.+?)\*|`([^`]+)`|\[([^\]]+)\]\(([^)]+)\)/g
   const nodes: React.ReactNode[] = []
@@ -49,8 +52,16 @@ function parseInline(text: string): React.ReactNode {
   return nodes.length === 1 ? nodes[0] : nodes
 }
 
+/** Inline markdown with LaTeX spans rendered by KaTeX. */
+function parseInline(text: string): React.ReactNode {
+  return renderInlineWithMath(text, parseInlineText)
+}
+
 export function MarkdownContent({ content }: { content: string }) {
-  const lines = content.split("\n")
+  // Display equations lifted out before the line loop — see the canvas
+  // renderer for why this happens first.
+  const { text: withMathPlaceholders, blocks: mathBlocks } = extractBlockMath(content)
+  const lines = withMathPlaceholders.split("\n")
   const nodes: React.ReactNode[] = []
   const listItems: { text: string; ordered: boolean }[] = []
   const tableLines: string[] = []
@@ -205,6 +216,13 @@ export function MarkdownContent({ content }: { content: string }) {
     }
 
     // Support # through ###### (models often emit #### which previously showed as raw text)
+    const mathIndex = readMathBlockPlaceholder(line)
+    if (mathIndex !== null && mathBlocks[mathIndex] !== undefined) {
+      flushAll()
+      nodes.push(<MathBlock key={k++} latex={mathBlocks[mathIndex]!} />)
+      continue
+    }
+
     const heading = line.match(/^(#{1,6})\s+(.+)$/)
     const hr = /^(-{3,}|\*{3,}|_{3,})$/.test(line.trim())
     const ul = line.match(/^[-*]\s+(.+)/)

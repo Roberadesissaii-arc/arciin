@@ -6,10 +6,11 @@
  */
 
 import type React from "react"
-import { stripAssistantStreamMarkup } from "@arciin/shared"
+import { extractBlockMath, readMathBlockPlaceholder, stripAssistantStreamMarkup } from "@arciin/shared"
+import { MathBlock, renderInlineWithMath } from "@/components/chat/math"
 import { cn } from "@/lib/utils"
 
-function parseInline(text: string): React.ReactNode {
+function parseInlineText(text: string): React.ReactNode {
   const pattern = /\*\*(.+?)\*\*|\*(.+?)\*|`([^`]+)`|\[([^\]]+)\]\(([^)]+)\)/g
   const nodes: React.ReactNode[] = []
   let last = 0
@@ -56,6 +57,17 @@ function parseInline(text: string): React.ReactNode {
   return nodes.length === 1 ? nodes[0] : nodes
 }
 
+/**
+ * Inline markdown, with LaTeX spans rendered by KaTeX.
+ *
+ * Math is split out first and the remaining runs go through the existing
+ * emphasis/code/link parser unchanged, so `\(x^2\)` renders as maths while
+ * everything else keeps behaving exactly as it did.
+ */
+function parseInline(text: string): React.ReactNode {
+  return renderInlineWithMath(text, parseInlineText)
+}
+
 const HEADING_CLASS: Record<number, string> = {
   1: "mb-3 mt-0 text-[1.35rem] font-bold leading-snug tracking-tight text-foreground first:mt-0",
   2: "mb-2 mt-6 border-b border-border/60 pb-1.5 text-[1.05rem] font-semibold leading-snug text-foreground",
@@ -83,7 +95,11 @@ export function CanvasMarkdownContent({
   className?: string
 }) {
   const cleaned = stripAssistantStreamMarkup(content)
-  const lines = cleaned.split("\n")
+  // Display equations are lifted out first so the line-based loop below never
+  // has to deal with a construct that spans lines. Each becomes one
+  // placeholder line, and unclosed math (mid-stream) stays as ordinary text.
+  const { text: withMathPlaceholders, blocks: mathBlocks } = extractBlockMath(cleaned)
+  const lines = withMathPlaceholders.split("\n")
   const nodes: React.ReactNode[] = []
   const listItems: { text: string; ordered: boolean }[] = []
   let inCode = false
@@ -174,6 +190,13 @@ export function CanvasMarkdownContent({
     }
     if (inCode) {
       codeLines.push(line)
+      continue
+    }
+
+    const mathIndex = readMathBlockPlaceholder(line)
+    if (mathIndex !== null && mathBlocks[mathIndex] !== undefined) {
+      flushList()
+      nodes.push(<MathBlock key={k++} latex={mathBlocks[mathIndex]!} />)
       continue
     }
 
