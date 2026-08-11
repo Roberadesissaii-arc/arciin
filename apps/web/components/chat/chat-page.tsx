@@ -1460,29 +1460,31 @@ export function ChatPage() {
       {/* ── History sidebar (desktop/tablet rail; toggled from header chip) ─ */}
       <div
         className={cn(
-          "hidden shrink-0 border-r border-border bg-card/60 transition-[width] duration-200 sm:flex sm:flex-col",
-          // The breadcrumb and History chip float over the top of the page on
-          // /chat, and they land exactly on this rail's header — covering the
-          // New button and swallowing its clicks. Start the rail below them.
-          "pt-14",
+          "hidden shrink-0 transition-[width] duration-200 sm:flex sm:flex-col",
+          // A floating panel rather than a flush column: clear of the breadcrumb
+          // that floats over the top of /chat, off the app sidebar on the left,
+          // and ending level with the composer (which sits on pb-4).
+          "pb-4 pl-2.5 pr-0 pt-[3.75rem]",
           // Canvas open on tablet: hide history rail so chat isn't crushed.
           historyOpen && !(canvasVisible)
-            ? "sm:w-52 sm:overflow-visible lg:w-60"
+            ? "sm:w-56 sm:overflow-visible lg:w-64"
             : historyOpen && canvasVisible
-              ? "max-lg:w-0 max-lg:overflow-hidden max-lg:border-r-0 lg:w-52 lg:overflow-visible"
-              : "sm:w-0 sm:overflow-hidden sm:border-r-0",
+              ? "max-lg:w-0 max-lg:overflow-hidden lg:w-56 lg:overflow-visible"
+              : "sm:w-0 sm:overflow-hidden sm:pl-0",
         )}
       >
         {historyOpen ? (
-          <HistorySidebar
-            conversations={conversations}
-            activeId={conversationId}
-            loadingId={loadingConvoId}
-            loading={historyQuery.isLoading}
-            onSelect={loadConversation}
-            onNew={startNewChat}
-            onDelete={(id) => deleteMutation.mutate(id)}
-          />
+          <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-card/60">
+            <HistorySidebar
+              conversations={conversations}
+              activeId={conversationId}
+              loadingId={loadingConvoId}
+              loading={historyQuery.isLoading}
+              onSelect={loadConversation}
+              onNew={startNewChat}
+              onDelete={(id) => deleteMutation.mutate(id)}
+            />
+          </div>
         ) : null}
       </div>
 

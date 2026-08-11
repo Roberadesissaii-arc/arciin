@@ -79,7 +79,7 @@ export function HistorySidebar({
               <div
                 key={convo.id}
                 className={cn(
-                  "group relative mb-1.5 cursor-pointer rounded-2xl px-3 py-2.5 transition-colors",
+                  "group relative mb-1.5 cursor-pointer rounded-lg px-3 py-2.5 transition-colors",
                   active
                     ? "bg-primary/[0.08] ring-1 ring-primary/20"
                     : "hover:bg-muted/60",
