@@ -5,7 +5,7 @@ import { flushSync } from "react-dom"
 import Link from "next/link"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { prefetchOllamaAvailableModels } from "@/lib/hooks/use-ollama-available-models"
-import { Clock, X } from "lucide-react"
+import { Clock, Plus } from "lucide-react"
 import { toast } from "@/lib/notifications/arciin-toast"
 
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet"
@@ -1444,6 +1444,10 @@ export function ChatPage() {
       <div
         className={cn(
           "hidden shrink-0 border-r border-border bg-card/60 transition-[width] duration-200 sm:flex sm:flex-col",
+          // The breadcrumb and History chip float over the top of the page on
+          // /chat, and they land exactly on this rail's header — covering the
+          // New button and swallowing its clicks. Start the rail below them.
+          "pt-14",
           // Canvas open on tablet: hide history rail so chat isn't crushed.
           historyOpen && !(canvasVisible)
             ? "sm:w-52 sm:overflow-visible lg:w-60"
@@ -1499,9 +1503,10 @@ export function ChatPage() {
                   type="button"
                   onClick={(e) => { e.stopPropagation(); abortRef.current?.abort(); startNewChat() }}
                   className="flex items-center gap-1 rounded-full border border-border bg-card/90 px-2.5 py-1 text-[11px] text-muted-foreground backdrop-blur-md transition-colors hover:text-foreground"
+                  title="Start a new chat"
                 >
-                  <X className="size-3" />
-                  Clear
+                  <Plus className="size-3" />
+                  New chat
                 </button>
               </div>
             )}
