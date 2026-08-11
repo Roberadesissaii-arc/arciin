@@ -173,18 +173,25 @@ export async function resolveSession(request: FastifyRequest) {
   return session
 }
 
-/** Session token from `Authorization: Bearer` or `?access_token=` (media `<audio>` / `<video>` cannot send headers). */
+/**
+ * Session token from `Authorization: Bearer` only.
+ *
+ * `?access_token=` used to be accepted here as well, because media elements
+ * cannot send headers. That made a session credential travel in query strings —
+ * into browser history, Referer headers, and any link copied out of a player —
+ * and it authenticated on *every* route, not just media. A shared video URL was
+ * account takeover.
+ *
+ * Media now uses `?media_token=`, signed and scoped to one asset for minutes
+ * (see services/security/media-token.ts), so the query string never carries
+ * anything that works twice.
+ */
 export function extractMobileSessionToken(request: FastifyRequest): string | null {
   const authHeader = request.headers.authorization
   if (authHeader?.toLowerCase().startsWith("bearer ")) {
     const token = authHeader.slice(7).trim()
     if (token && !token.startsWith("arc_")) return token
   }
-
-  const query = request.query as { access_token?: string }
-  const fromQuery =
-    typeof query.access_token === "string" ? query.access_token.trim() : ""
-  if (fromQuery && !fromQuery.startsWith("arc_")) return fromQuery
 
   return null
 }
@@ -374,14 +381,12 @@ export function requireSessionRolesOrApiKeyScopes(
  * this one asset.
  *
  * `<video>` and `<img>` cannot send an Authorization header, so the credential
- * has to be in the query string. Accepting a *session* token there — which the
- * app does today via `?access_token=` — means a leaked media URL is a full
- * credential, usable against every authenticated route. A media token is bound
- * to one asset id and expires in minutes, so the same leak costs one file for
- * a short window.
+ * has to be in the query string. A media token is bound to one asset id and
+ * expires in minutes, so a leaked URL costs one file for a short window rather
+ * than the account.
  *
- * The legacy `?access_token=` path still works; removing it breaks every
- * already-installed PWA, so that is a separate, later change.
+ * The session-token-in-query path (`?access_token=`) this replaced is gone —
+ * see extractMobileSessionToken.
  */
 export function requireAssetMediaAccess(
   sessionRoles: Array<"OWNER" | "ADMIN" | "MEMBER" | "VIEWER">,

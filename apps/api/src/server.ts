@@ -52,9 +52,13 @@ import {
 import { pruneExpiredIdempotencyRecords } from "@/services/uploads/idempotency-store"
 import { ensureStorageDirectories } from "@/services/storage/local-storage"
 
-const REDACTED_QUERY_PARAMS = ["access_token"]
+const REDACTED_QUERY_PARAMS = ["access_token", "media_token"]
 
-/** `?access_token=` carries a live session credential (media tags can't send headers) — never let it hit logs. */
+/**
+ * Media URLs carry their credential in the query string because media tags
+ * cannot send headers. Neither belongs in a log file: `access_token` is a live
+ * session, and `media_token` is a signed grant for one asset.
+ */
 function redactSensitiveUrl(url: string): string {
   const [pathPart, queryPart] = url.split("?")
   if (!queryPart) return url
