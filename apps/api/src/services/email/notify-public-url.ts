@@ -9,7 +9,7 @@
 
 import type { FastifyInstance } from "fastify"
 
-import { renderRemoteAccessEmail } from "@arciin/shared"
+import { renderDiscordRemoteAccessMessage, renderRemoteAccessEmail } from "@arciin/shared"
 
 import { loadDiscordConfig, sendDiscordMessage } from "@/services/discord/send-discord"
 import { loadEmailConfig, resolveNotifyRecipient, sendEmail } from "@/services/email/send-email"
@@ -67,19 +67,17 @@ export async function announcePublicUrlToDiscord(
   })
   const name = instance?.instanceName ?? "Arciin"
 
-  const lines = [
-    `**${name} has a new address**`,
-    input.publicUrl,
-    "",
-    "Works on phone and computer — the same link opens the mobile app or the desktop app depending on the device.",
-  ]
-  if (input.previousPublicUrl) {
-    lines.push("", "The previous address has stopped working.")
-  }
-
   const result = await sendDiscordMessage(fastify, {
     config,
-    content: lines.join("\n"),
+    payload: renderDiscordRemoteAccessMessage({
+      instanceName: name,
+      publicUrl: input.publicUrl,
+      previousPublicUrl: input.previousPublicUrl ?? null,
+      changedAt: new Date().toLocaleString("en-GB", {
+        dateStyle: "medium",
+        timeStyle: "short",
+      }),
+    }),
   })
 
   return result.ok ? { sent: true } : { sent: false, reason: result.code }

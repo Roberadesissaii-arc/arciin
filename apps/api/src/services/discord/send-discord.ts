@@ -1,18 +1,20 @@
 /**
- * Posting to a Discord webhook.
+ * Posting to a Discord webhook with Arciin-branded embeds.
  *
- * Uses the plain webhook REST endpoint — no bot, no gateway connection, no
- * OAuth. The user pastes a webhook URL from their own server's channel settings
- * and that is the whole setup.
- *
- * Errors from Discord are never surfaced verbatim: the URL is a credential and
- * Discord echoes the request URL in some failures.
+ * Brand banner + mark are always attached as multipart files and referenced
+ * via attachment:// so the channel shows unique art (not the email images).
  */
 
 import type { FastifyInstance } from "fastify"
 
-import { DELIVERY_MAX_BYTES, formatBytesShort } from "@arciin/shared"
+import {
+  DELIVERY_MAX_BYTES,
+  formatBytesShort,
+  type DiscordEmbed,
+  type DiscordWebhookPayload,
+} from "@arciin/shared"
 
+import { loadDiscordBrandFiles } from "@/services/discord/brand-assets"
 import {
   decryptWebhookUrl,
   parseStoredDiscordConfig,
@@ -34,23 +36,17 @@ export async function loadDiscordConfig(
 
 export type DiscordAttachment = {
   filename: string
-  /** Read into memory deliberately — capped at DELIVERY_MAX_BYTES.discord. */
   content: Buffer
   contentType?: string
 }
 
-/**
- * Post a message, optionally with one file attached.
- *
- * `allowed_mentions: { parse: [] }` is not decoration: message content can
- * include a filename the user did not choose (an uploaded file from a File
- * Request, say), and without it a filename containing `@everyone` would ping
- * the whole server.
- */
 export async function sendDiscordMessage(
   fastify: FastifyInstance,
   input: {
-    content: string
+    content?: string
+    embeds?: DiscordEmbed[]
+    username?: string
+    payload?: DiscordWebhookPayload
     attachment?: DiscordAttachment | null
     config?: StoredDiscordConfig | null
   },
@@ -74,27 +70,79 @@ export async function sendDiscordMessage(
     }
   }
 
-  const payload = {
-    content: input.content.slice(0, 1900),
-    allowed_mentions: { parse: [] as string[] },
+  const payload: Record<string, unknown> = input.payload
+    ? {
+        username: input.payload.username || "Arciin",
+        embeds: input.payload.embeds,
+        allowed_mentions: input.payload.allowed_mentions ?? { parse: [] },
+        ...(input.payload.content?.trim()
+          ? { content: input.payload.content.slice(0, 1900) }
+          : {}),
+      }
+    : {
+        username: input.username?.trim() || "Arciin",
+        allowed_mentions: { parse: [] as string[] },
+        ...(input.content?.trim() ? { content: input.content.slice(0, 1900) } : {}),
+        ...(input.embeds?.length ? { embeds: input.embeds.slice(0, 10) } : {}),
+      }
+
+  const wantsBrand =
+    input.payload?.includeBrandArt === true ||
+    (Array.isArray(payload.embeds) &&
+      JSON.stringify(payload.embeds).includes("attachment://"))
+
+  let brandFiles: Awaited<ReturnType<typeof loadDiscordBrandFiles>> = []
+  if (wantsBrand) {
+    try {
+      brandFiles = await loadDiscordBrandFiles()
+    } catch (err) {
+      fastify.log.warn({ err }, "Discord brand art missing — sending embed without images")
+    }
   }
+
+  const hasBody =
+    Boolean(payload.content) ||
+    (Array.isArray(payload.embeds) && (payload.embeds as unknown[]).length > 0) ||
+    Boolean(input.attachment) ||
+    brandFiles.length > 0
+
+  if (!hasBody) {
+    return {
+      ok: false,
+      code: "SEND_FAILED",
+      message: "Nothing to send to Discord.",
+    }
+  }
+
+  const extraFiles = [
+    ...brandFiles,
+    ...(input.attachment
+      ? [
+          {
+            filename: input.attachment.filename,
+            content: input.attachment.content,
+            contentType: input.attachment.contentType || "application/octet-stream",
+          },
+        ]
+      : []),
+  ]
 
   let body: BodyInit
   const headers: Record<string, string> = {}
 
-  if (input.attachment) {
+  if (extraFiles.length > 0) {
     const form = new FormData()
     form.append("payload_json", JSON.stringify(payload))
-    form.append(
-      "files[0]",
-      new Blob([new Uint8Array(input.attachment.content)], {
-        type: input.attachment.contentType || "application/octet-stream",
-      }),
-      input.attachment.filename,
-    )
+    extraFiles.forEach((file, index) => {
+      form.append(
+        `files[${index}]`,
+        new Blob([new Uint8Array(file.content)], {
+          type: file.contentType,
+        }),
+        file.filename,
+      )
+    })
     body = form
-    // Content-Type is set by FormData with its own boundary; setting it here
-    // would produce a boundary mismatch and a 400 from Discord.
   } else {
     body = JSON.stringify(payload)
     headers["Content-Type"] = "application/json"
@@ -109,8 +157,6 @@ export async function sendDiscordMessage(
     })
 
     if (!response.ok) {
-      // Deliberately does not include the response body or URL — both can
-      // contain the webhook token.
       fastify.log.warn({ status: response.status }, "Discord webhook rejected the message")
       return {
         ok: false,

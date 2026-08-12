@@ -3,7 +3,15 @@ import * as React from "react"
 /** Matches Tailwind `md` — below this is phone (web app gated). */
 export const MOBILE_BREAKPOINT = 768
 /** Matches Tailwind `lg` — tablet is md through lg−1. */
-export const DESKTOP_BREAKPOINT = 1024
+/**
+ * Below this, the sidebar collapses to its icon rail.
+ *
+ * 1024 was too low. The rail costs 16rem, so at ~1100px the dashboard was left
+ * with under 850px of content — enough to render, not enough to read: label
+ * columns in Settings wrapped one word per line. The sidebar should give the
+ * page back its width well before the layout is technically broken.
+ */
+export const DESKTOP_BREAKPOINT = 1280
 
 const TABLET_MEDIA = `(min-width: ${MOBILE_BREAKPOINT}px) and (max-width: ${DESKTOP_BREAKPOINT - 1}px)`
 

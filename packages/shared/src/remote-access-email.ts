@@ -1,26 +1,13 @@
 /**
- * The "your Arciin address changed" email.
+ * Arciin transactional email templates.
  *
- * Cloudflare quick tunnels get a new hostname every time cloudflared restarts,
- * and the restart usually happens while nobody is watching — a reboot, a crash,
- * a power cut. Until now the only way to learn the new address was to be
- * physically at the server and read it out of Settings, which is precisely
- * impossible in the situation where you need it: you are away from home and the
- * link in your phone has stopped working.
+ * Light, modern product mail (not a dark dump). Full-width header image +
+ * compact brand mark are always CID-attached by the API so every message looks
+ * the same in every inbox.
  *
- * So the instance mails it to you instead.
- *
- * Content rules, all of which are security decisions rather than style ones:
- *
- *   - No credentials, no tokens, no session material. The URL is not a secret
- *     in the sense a password is, but it is also not an invitation: reaching
- *     the address still lands on the login screen.
- *   - No storage paths, instance ids, or file names.
- *   - The old address is shown host-only so the reader can confirm the mail is
- *     about their server without it becoming a second live link.
- *
- * Pure: builds strings, sends nothing. Kept out of the API so the wording and
- * escaping are unit-testable without SMTP.
+ * Links: never show the raw URL in HTML. Only a friendly named button; the
+ * destination is the href. Plain-text part still includes the URL for clients
+ * that strip HTML.
  */
 
 export type RemoteAccessEmailInput = {
@@ -40,11 +27,17 @@ export type RenderedEmail = {
   text: string
 }
 
+/** Full-width masthead banner (generated brand art). */
+export const ARCIIN_EMAIL_HEADER_CID = "arciin-header"
+
+/** Small square mark used next to the wordmark in the footer strip. */
+export const ARCIIN_EMAIL_BRAND_CID = "arciin-brand"
+
+/** @deprecated use ARCIIN_EMAIL_HEADER_CID / ARCIIN_EMAIL_BRAND_CID */
+export const ARCIIN_EMAIL_BRAND_CID_LEGACY = ARCIIN_EMAIL_BRAND_CID
+
 /**
  * Escape for HTML text and attribute contexts.
- *
- * The instance name is user-controlled and lands in both. A mail client is a
- * hostile place to discover you did not escape something.
  */
 export function escapeHtml(value: string): string {
   return value
@@ -55,12 +48,6 @@ export function escapeHtml(value: string): string {
     .replace(/'/g, "&#39;")
 }
 
-/**
- * Host of a URL, for display.
- *
- * Falls back to the raw string rather than throwing: an unparseable stored URL
- * must not be the reason the notification fails to send.
- */
 export function hostOf(url: string | null | undefined): string {
   const raw = url?.trim()
   if (!raw) return ""
@@ -71,13 +58,6 @@ export function hostOf(url: string | null | undefined): string {
   }
 }
 
-/**
- * Only http(s) links are ever rendered as anchors.
- *
- * The URL comes from cloudflared output and instance settings, not from a
- * request body, but an anchor built from an unvalidated string is a
- * javascript:-injection waiting for the one day that stops being true.
- */
 export function isSafeLinkUrl(url: string | null | undefined): boolean {
   const raw = url?.trim()
   if (!raw) return false
@@ -89,24 +69,6 @@ export function isSafeLinkUrl(url: string | null | undefined): boolean {
   }
 }
 
-/**
- * Shared chrome for both messages.
- *
- * Designed as mail, not as a screenshot of the app. Three things carry it:
- *
- *   1. **A masthead**, so the message is identifiable in a crowded inbox before
- *      the reader has read a word.
- *   2. **One obvious action.** Transactional mail exists to be acted on; every
- *      element that is not the address or the button is deliberately quieter.
- *   3. **Generous vertical rhythm.** Inbox chrome already crowds the message,
- *      so the padding has to be larger than it would be on a web page.
- *
- * Constraints that shape the markup: tables, not flex or grid; inline styles,
- * because Gmail strips `<head>` CSS on forward; a padded anchor inside a
- * `bgcolor` cell for the button, because that is the one construction Gmail
- * and Outlook agree on; and no external images, so nothing depends on remote
- * content being unblocked.
- */
 type ShellInput = {
   title: string
   heading: string
@@ -114,77 +76,92 @@ type ShellInput = {
   bodyHtml: string
   preheader: string
   footerNote: string
+  badge?: string | null
 }
 
 const FONT =
   "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif"
-const MONO = "ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace"
+
+/** Light product palette — modern SaaS mail, not black. */
+const C = {
+  page: "#F4F4F5",
+  card: "#FFFFFF",
+  border: "#E4E4E7",
+  borderSoft: "#F4F4F5",
+  text: "#18181B",
+  muted: "#52525B",
+  dim: "#71717A",
+  accent: "#FF4F12",
+  accentSoft: "#FFF4F0",
+  white: "#FFFFFF",
+  panel: "#FAFAFA",
+} as const
 
 function shell(input: ShellInput): string {
+  const badge = input.badge?.trim()
+    ? `<div style="padding-top:14px;">
+        <span style="display:inline-block;padding:6px 12px;border-radius:999px;background:${C.accentSoft};border:1px solid rgba(255,79,18,0.22);font-family:${FONT};font-size:11px;font-weight:650;letter-spacing:0.04em;text-transform:uppercase;color:${C.accent};">${escapeHtml(input.badge.trim())}</span>
+      </div>`
+    : ""
+
   return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="x-apple-disable-message-reformatting">
-<meta name="color-scheme" content="light dark">
-<meta name="supported-color-schemes" content="light dark">
+<meta name="color-scheme" content="light">
+<meta name="supported-color-schemes" content="light">
 <title>${input.title}</title>
 <style>
-  @media (prefers-color-scheme: dark) {
-    .page      { background:#0B0B0E !important; }
-    .card      { background:#161619 !important; border-color:#2A2A30 !important; }
-    .masthead  { background:#101013 !important; border-color:#2A2A30 !important; }
-    .h1, .strong, .wordmark { color:#FAFAFA !important; }
-    .body-text { color:#A1A1AA !important; }
-    .small     { color:#8B8B93 !important; }
-    .panel     { background:#101013 !important; border-color:#2A2A30 !important; }
-    .rule      { border-color:#2A2A30 !important; }
-    .pill      { background:#101013 !important; border-color:#2A2A30 !important; }
-  }
+  a { text-decoration: none !important; }
   @media only screen and (max-width:600px) {
-    .pad  { padding-left:22px !important; padding-right:22px !important; }
+    .pad  { padding-left:20px !important; padding-right:20px !important; }
     .h1   { font-size:22px !important; }
     .stack { display:block !important; width:100% !important; }
+    .hero { height:auto !important; max-height:160px !important; }
   }
-  a { text-decoration:none; }
 </style>
 </head>
-<body style="margin:0;padding:0;background:#F5F5F7;-webkit-font-smoothing:antialiased;">
+<body style="margin:0;padding:0;background:${C.page};-webkit-font-smoothing:antialiased;">
 <div style="display:none;max-height:0;overflow:hidden;opacity:0;mso-hide:all;">${input.preheader}</div>
 
-<table role="presentation" class="page" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#F5F5F7;">
-<tr><td align="center" style="padding:40px 12px;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:${C.page};">
+<tr><td align="center" style="padding:32px 12px 28px 12px;">
 
-<table role="presentation" class="card" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:544px;background:#FFFFFF;border:1px solid #E6E6EA;border-radius:16px;overflow:hidden;font-family:${FONT};">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;background:${C.card};border:1px solid ${C.border};border-radius:20px;overflow:hidden;font-family:${FONT};box-shadow:0 8px 30px rgba(24,24,27,0.06);">
 
-  <!-- Masthead: identifiable at a glance, before a word is read. -->
-  <tr><td class="masthead pad" style="background:#FBFBFC;border-bottom:1px solid #E6E6EA;padding:18px 32px;">
-    <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
-      <td style="padding-right:9px;vertical-align:middle;">
-        <div style="width:9px;height:9px;border-radius:5px;background:#FF4F12;font-size:0;line-height:0;">&nbsp;</div>
-      </td>
-      <td class="wordmark" style="vertical-align:middle;font-family:${FONT};font-size:14px;font-weight:600;letter-spacing:-0.01em;color:#18181B;">Arciin</td>
-    </tr></table>
+  <!-- Generated brand header image (cid:arciin-header) -->
+  <tr><td style="padding:0;line-height:0;font-size:0;">
+    <img class="hero" src="cid:${ARCIIN_EMAIL_HEADER_CID}" width="560" alt="Arciin" style="display:block;width:100%;max-width:560px;height:auto;border:0;outline:none;text-decoration:none;" />
   </td></tr>
 
-  <tr><td class="pad" style="padding:36px 32px 0 32px;">
-    <h1 class="h1" style="margin:0;font-family:${FONT};font-size:25px;line-height:1.25;font-weight:650;letter-spacing:-0.02em;color:#0F0F12;">${input.heading}</h1>
-    <p class="body-text" style="margin:12px 0 0 0;font-family:${FONT};font-size:15px;line-height:1.62;color:#52525B;">${input.subheading}</p>
+  <tr><td class="pad" style="padding:28px 28px 0 28px;">
+    <h1 class="h1" style="margin:0;font-family:${FONT};font-size:24px;line-height:1.28;font-weight:650;letter-spacing:-0.025em;color:${C.text};">${input.heading}</h1>
+    <p style="margin:12px 0 0 0;font-family:${FONT};font-size:15px;line-height:1.65;color:${C.muted};">${input.subheading}</p>
+    ${badge}
   </td></tr>
 
   ${input.bodyHtml}
 
-  <tr><td class="pad" style="padding:0 32px 32px 32px;">
-    <div class="rule" style="border-top:1px solid #EDEDF0;padding-top:20px;">
-      <p class="small" style="margin:0;font-family:${FONT};font-size:12px;line-height:1.65;color:#8E8E96;">${input.footerNote}</p>
+  <tr><td class="pad" style="padding:8px 28px 28px 28px;">
+    <div style="border-top:1px solid ${C.borderSoft};padding-top:18px;">
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"><tr>
+        <td style="vertical-align:middle;width:32px;">
+          <img src="cid:${ARCIIN_EMAIL_BRAND_CID}" width="28" height="28" alt="" style="display:block;width:28px;height:28px;border-radius:8px;border:1px solid ${C.border};" />
+        </td>
+        <td style="padding-left:10px;vertical-align:middle;">
+          <div style="font-family:${FONT};font-size:12px;font-weight:600;color:${C.text};">Arciin</div>
+          <div style="font-family:${FONT};font-size:11px;line-height:1.45;color:${C.dim};">${input.footerNote}</div>
+        </td>
+      </tr></table>
     </div>
   </td></tr>
 
 </table>
 
-<p class="small" style="max-width:544px;margin:18px auto 0 auto;font-family:${FONT};font-size:11px;line-height:1.6;color:#9A9AA2;text-align:center;">
-  Sent by your own Arciin server. No third party was involved in delivering this.
+<p style="max-width:560px;margin:16px auto 0 auto;font-family:${FONT};font-size:11px;line-height:1.6;color:${C.dim};text-align:center;">
+  Sent by your own Arciin server · no third-party marketing platform
 </p>
 
 </td></tr>
@@ -193,131 +170,328 @@ function shell(input: ShellInput): string {
 </html>`
 }
 
-/** The call to action. A padded anchor in a bgcolor cell renders everywhere. */
+/**
+ * Named CTA only — never put the raw URL in the visible label.
+ * Full-width of the content column (not a floating centered pill).
+ */
 function primaryButton(href: string, label: string): string {
-  return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 auto;"><tr>
-    <td align="center" bgcolor="#FF4F12" style="border-radius:10px;">
-      <a href="${href}" style="display:inline-block;padding:14px 32px;font-family:${FONT};font-size:15px;font-weight:600;letter-spacing:-0.01em;color:#FFFFFF;border-radius:10px;">${label}</a>
+  if (!isSafeLinkUrl(href)) return ""
+  const safeHref = escapeHtml(href.trim())
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
+    <td align="center" bgcolor="${C.accent}" style="border-radius:12px;">
+      <a href="${safeHref}" target="_blank" rel="noopener noreferrer" style="display:block;width:100%;padding:15px 20px;font-family:${FONT};font-size:15px;font-weight:650;letter-spacing:-0.01em;color:${C.white};border-radius:12px;text-decoration:none;text-align:center;box-sizing:border-box;">${escapeHtml(label)}</a>
     </td>
   </tr></table>`
+}
+
+/** Simple icon chip (email-safe: table cell, no external images). */
+function iconChip(kind: "phone" | "computer"): string {
+  // Unicode glyphs render in nearly every client; chip gives them structure.
+  const glyph = kind === "phone" ? "&#128241;" : "&#128187;"
+  const label = kind === "phone" ? "Phone" : "Desktop"
+  return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" aria-label="${label}"><tr>
+    <td width="40" height="40" align="center" valign="middle" style="width:40px;height:40px;border-radius:10px;background:${C.accentSoft};border:1px solid rgba(255,79,18,0.18);font-size:18px;line-height:40px;text-align:center;">${glyph}</td>
+  </tr></table>`
+}
+
+/** Full-width info row with icon + title + caption (stacked, spaced). */
+function featureRow(kind: "phone" | "computer", title: string, caption: string): string {
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:${C.panel};border:1px solid ${C.border};border-radius:12px;">
+  <tr>
+    <td width="40" valign="middle" style="padding:14px 0 14px 14px;width:40px;">${iconChip(kind)}</td>
+    <td valign="middle" style="padding:14px 16px 14px 12px;">
+      <div style="font-family:${FONT};font-size:13px;font-weight:650;color:${C.text};">${escapeHtml(title)}</div>
+      <div style="padding-top:3px;font-family:${FONT};font-size:12px;line-height:1.5;color:${C.dim};">${escapeHtml(caption)}</div>
+    </td>
+  </tr>
+</table>`
 }
 
 export function renderRemoteAccessEmail(input: RemoteAccessEmailInput): RenderedEmail {
   const instanceName = input.instanceName.trim() || "Arciin"
   const safeName = escapeHtml(instanceName)
   const url = input.publicUrl.trim()
-  const linkable = isSafeLinkUrl(url)
-  const safeUrl = escapeHtml(url)
   const newHost = hostOf(url)
   const previousHost = hostOf(input.previousPublicUrl)
   const localUrl = input.localUrl?.trim() || null
+  const localHost = hostOf(localUrl)
+  const buttonLabel = `Open ${instanceName}`
 
+  // Plain text still includes the URL — many clients strip HTML entirely.
   const text = [
     `${instanceName} has a new address.`,
     "",
-    `  ${url}`,
+    `Open: ${buttonLabel}`,
+    url,
     "",
-    "One link for both: open it on a phone and you get the mobile app, on a",
-    "computer you get the full desktop app.",
-    previousHost ? `\nThe old address (${previousHost}) has stopped working.` : "",
+    "One link for phone and computer.",
+    previousHost ? `The old address (${previousHost}) has stopped working.` : "",
     input.changedAt ? `Changed: ${input.changedAt}` : "",
-    localUrl ? `\nAt home on the same network: ${localUrl}` : "",
+    localUrl ? `At home on the same network: ${localUrl}` : "",
     "",
-    "You still have to sign in — this link is an address, not a key.",
+    "You still have to sign in — this is an address, not a key.",
   ]
     .filter((line) => line !== "")
     .join("\n")
 
+  // HTML: NO raw URL shown. Full-width named button; stacked device rows with icons.
   const bodyHtml = `
-  <!-- The address itself: the one thing the reader came for. -->
-  <tr><td class="pad" style="padding:26px 32px 0 32px;">
-    <table role="presentation" class="panel" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#FAFAFB;border:1px solid #E6E6EA;border-radius:12px;">
+  <tr><td class="pad" style="padding:22px 28px 0 28px;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:${C.panel};border:1px solid ${C.border};border-radius:14px;">
       <tr><td style="padding:16px 18px;">
-        <div class="small" style="font-family:${FONT};font-size:10px;font-weight:600;letter-spacing:0.1em;text-transform:uppercase;color:#8E8E96;">Your address</div>
-        <div class="strong" style="padding-top:7px;font-family:${MONO};font-size:14px;line-height:1.5;color:#0F0F12;word-break:break-all;">${safeUrl}</div>
+        <div style="font-family:${FONT};font-size:13px;font-weight:600;color:${C.text};">What this is</div>
+        <div style="padding-top:6px;font-family:${FONT};font-size:13px;line-height:1.65;color:${C.muted};">
+          Your secure tunnel restarted, so the previous bookmark stopped working.
+          Use the button below — works on phone and computer.
+        </div>
       </td></tr>
     </table>
   </td></tr>
 
-  ${
-    linkable
-      ? `<tr><td class="pad" align="center" style="padding:24px 32px 0 32px;">${primaryButton(safeUrl, "Open " + safeName)}</td></tr>`
-      : ""
-  }
+  <tr><td class="pad" style="padding:20px 28px 0 28px;">
+    ${primaryButton(url, buttonLabel)}
+  </td></tr>
 
-  <!-- Two quiet cells: visual rhythm, and the one thing people ask about. -->
-  <tr><td class="pad" style="padding:28px 32px 0 32px;">
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
-      <td class="stack pill" width="50%" style="background:#FAFAFB;border:1px solid #E6E6EA;border-radius:10px;padding:14px 16px;vertical-align:top;">
-        <div class="strong" style="font-family:${FONT};font-size:13px;font-weight:600;color:#0F0F12;">On your phone</div>
-        <div class="small" style="padding-top:3px;font-family:${FONT};font-size:12px;line-height:1.55;color:#8E8E96;">Opens the mobile app</div>
-      </td>
-      <td class="stack" width="12" style="font-size:0;line-height:0;">&nbsp;</td>
-      <td class="stack pill" width="50%" style="background:#FAFAFB;border:1px solid #E6E6EA;border-radius:10px;padding:14px 16px;vertical-align:top;">
-        <div class="strong" style="font-family:${FONT};font-size:13px;font-weight:600;color:#0F0F12;">On a computer</div>
-        <div class="small" style="padding-top:3px;font-family:${FONT};font-size:12px;line-height:1.55;color:#8E8E96;">Opens the full desktop app</div>
-      </td>
-    </tr></table>
+  <tr><td class="pad" style="padding:20px 28px 0 28px;">
+    ${featureRow("phone", "On your phone", "Opens the mobile app")}
+  </td></tr>
+  <tr><td class="pad" style="padding:12px 28px 0 28px;">
+    ${featureRow("computer", "On a computer", "Opens the full desktop app")}
   </td></tr>
 ${
-  previousHost || localUrl
-    ? `  <tr><td class="pad" style="padding:22px 32px 0 32px;">
+  previousHost || localHost
+    ? `  <tr><td class="pad" style="padding:16px 28px 0 28px;">
     ${
       previousHost
-        ? `<p class="small" style="margin:0;font-family:${FONT};font-size:12px;line-height:1.65;color:#8E8E96;">The previous address <span style="font-family:${MONO};">${escapeHtml(previousHost)}</span> no longer works — safe to remove from your bookmarks.</p>`
+        ? `<p style="margin:0;font-family:${FONT};font-size:12px;line-height:1.65;color:${C.dim};">Your previous bookmark no longer works — remove it when you can.</p>`
         : ""
     }${
-        localUrl
-          ? `<p class="small" style="margin:${previousHost ? "8px" : "0"} 0 0 0;font-family:${FONT};font-size:12px;line-height:1.65;color:#8E8E96;">At home on the same network you can also use <span style="font-family:${MONO};">${escapeHtml(hostOf(localUrl))}</span>.</p>`
-          : ""
-      }
+      localHost
+        ? `<p style="margin:${previousHost ? "8px" : "0"} 0 0 0;font-family:${FONT};font-size:12px;line-height:1.65;color:${C.dim};">At home on the same network you can also open Arciin from your local network.</p>`
+        : ""
+    }
   </td></tr>`
     : ""
 }
-  <tr><td class="pad" style="padding:26px 32px 0 32px;">&nbsp;</td></tr>`
+  <tr><td class="pad" style="padding:22px 28px 0 28px;">&nbsp;</td></tr>`
 
   return {
-    subject: `${instanceName}: new address — ${newHost}`,
+    subject: `${instanceName}: new address ready`,
     html: shell({
       title: `${safeName} — new address`,
       heading: "Your server has a new address",
-      subheading:
-        "The secure tunnel restarted, so the previous link stopped working. This is the current one.",
-      preheader: `${escapeHtml(newHost)} — one link for phone and computer`,
-      footerNote: `You still have to sign in; this link is an address, not a key.${input.changedAt ? ` Changed ${escapeHtml(input.changedAt)}.` : ""}`,
+      subheading: "The secure tunnel restarted. Open your instance with the button below.",
+      preheader: `Open ${escapeHtml(instanceName)} — new address ready`,
+      footerNote: `You still sign in as usual.${input.changedAt ? ` Updated ${escapeHtml(input.changedAt)}.` : ""}`,
       bodyHtml,
+      badge: "Remote access",
     }),
     text,
   }
 }
 
-/** Confirmation mail for the "send a test" button in Settings. */
+/** Confirmation mail for Settings → Email → Send test. */
 export function renderEmailTestMessage(instanceName: string): RenderedEmail {
   const name = instanceName.trim() || "Arciin"
   const safeName = escapeHtml(name)
 
   return {
     subject: `${name}: email is working`,
-    text: `Email delivery is configured correctly.\n\n${name} will send the new link to this address whenever your server's public address changes, so you are never locked out because you are away from home.\n`,
+    text: [
+      `Email delivery is configured correctly for ${name}.`,
+      "",
+      "When your server's public address changes, you will get a message like this",
+      "with a button to open Arciin — no copy-pasting raw links.",
+      "",
+      "— Arciin",
+    ].join("\n"),
     html: shell({
       title: `${safeName} — email is working`,
       heading: "Email is working",
-      subheading: `${safeName} can reach this address. Nothing else to set up.`,
-      preheader: "Delivery confirmed — you will get the new link automatically",
-      footerNote:
-        "You will receive one of these whenever your server's public address changes.",
+      subheading: `${safeName} can reach this inbox. Delivery looks good.`,
+      preheader: "Delivery confirmed — Arciin can reach this address",
+      badge: "Connected",
+      footerNote: "You will get the same branded style whenever your address changes.",
       bodyHtml: `
-  <tr><td class="pad" style="padding:26px 32px 0 32px;">
-    <table role="presentation" class="panel" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#FAFAFB;border:1px solid #E6E6EA;border-radius:12px;">
+  <tr><td class="pad" style="padding:24px 28px 0 28px;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:${C.panel};border:1px solid ${C.border};border-radius:14px;">
       <tr><td style="padding:18px;">
-        <div class="strong" style="font-family:${FONT};font-size:13px;font-weight:600;color:#0F0F12;">What happens next</div>
-        <div class="small" style="padding-top:6px;font-family:${FONT};font-size:13px;line-height:1.62;color:#71717A;">
-          Your address changes every time the secure tunnel restarts — a reboot, a crash, a power cut. When it does, the new link arrives here, so being away from home never means being locked out.
+        <div style="font-family:${FONT};font-size:13px;font-weight:600;color:${C.text};">What happens next</div>
+        <div style="padding-top:8px;font-family:${FONT};font-size:13px;line-height:1.65;color:${C.muted};">
+          If the secure tunnel restarts, you will receive a short message here with a button named after your instance — for example <strong style="color:${C.text};">Open ${safeName}</strong>. Tap it to continue; no raw link to decipher.
         </div>
       </td></tr>
     </table>
   </td></tr>
-  <tr><td class="pad" style="padding:26px 32px 0 32px;">&nbsp;</td></tr>`,
+  <tr><td class="pad" style="padding:18px 28px 0 28px;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+      <tr><td style="padding:0 0 10px 0;font-family:${FONT};font-size:13px;color:${C.muted};">
+        <span style="color:${C.accent};font-weight:700;">●</span>&nbsp;&nbsp;Brand header on every message
+      </td></tr>
+      <tr><td style="padding:0 0 10px 0;font-family:${FONT};font-size:13px;color:${C.muted};">
+        <span style="color:${C.accent};font-weight:700;">●</span>&nbsp;&nbsp;Friendly button names — not raw URLs
+      </td></tr>
+      <tr><td style="font-family:${FONT};font-size:13px;color:${C.muted};">
+        <span style="color:${C.accent};font-weight:700;">●</span>&nbsp;&nbsp;Sent only from your own server
+      </td></tr>
+    </table>
+  </td></tr>
+  <tr><td class="pad" style="padding:22px 28px 0 28px;">&nbsp;</td></tr>`,
+    }),
+  }
+}
+
+/** File-type badge for the attachment card (email-safe, no external icons). */
+function fileKindFromName(
+  filename: string,
+  mimeType?: string | null,
+): { label: string; chip: string; glyph: string } {
+  const lower = filename.toLowerCase()
+  const mime = (mimeType ?? "").toLowerCase()
+
+  if (mime.startsWith("image/") || /\.(png|jpe?g|gif|webp|heic|svg|avif)$/i.test(lower)) {
+    return { label: "Image", chip: "#EEF2FF", glyph: "IMG" }
+  }
+  if (mime.startsWith("video/") || /\.(mp4|mov|mkv|webm|avi)$/i.test(lower)) {
+    return { label: "Video", chip: "#F5F3FF", glyph: "VID" }
+  }
+  if (mime.startsWith("audio/") || /\.(mp3|wav|flac|aac|m4a|ogg)$/i.test(lower)) {
+    return { label: "Audio", chip: "#ECFDF5", glyph: "AUD" }
+  }
+  if (mime.includes("pdf") || lower.endsWith(".pdf")) {
+    return { label: "PDF", chip: "#FFF4F0", glyph: "PDF" }
+  }
+  if (
+    mime.includes("zip") ||
+    mime.includes("compressed") ||
+    /\.(zip|rar|7z|tar|gz)$/i.test(lower)
+  ) {
+    return { label: "Archive", chip: "#FFFBEB", glyph: "ZIP" }
+  }
+  if (
+    mime.includes("word") ||
+    mime.includes("document") ||
+    /\.(docx?|odt|rtf|txt|md)$/i.test(lower)
+  ) {
+    return { label: "Document", chip: "#EFF6FF", glyph: "DOC" }
+  }
+  if (mime.includes("sheet") || mime.includes("excel") || /\.(xlsx?|csv)$/i.test(lower)) {
+    return { label: "Spreadsheet", chip: "#ECFDF5", glyph: "XLS" }
+  }
+  const ext = lower.includes(".") ? lower.split(".").pop()!.slice(0, 4).toUpperCase() : "FILE"
+  return { label: "File", chip: "#F4F4F5", glyph: ext || "FILE" }
+}
+
+function formatEmailBytes(bytes: number | null | undefined): string | null {
+  if (bytes == null || !Number.isFinite(bytes) || bytes < 0) return null
+  if (bytes < 1024) return `${Math.round(bytes)} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(bytes < 10 * 1024 ? 1 : 0)} KB`
+  if (bytes < 1024 * 1024 * 1024) {
+    return `${(bytes / (1024 * 1024)).toFixed(bytes < 10 * 1024 * 1024 ? 1 : 0)} MB`
+  }
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`
+}
+
+/**
+ * Human title from a storage filename — drop long junk tails like (z-lib.org).pdf
+ * while keeping a readable book/document name.
+ */
+export function displayNameFromFilename(filename: string): string {
+  let name = filename.trim()
+  // Strip extension for display
+  name = name.replace(/\.[a-z0-9]{1,8}$/i, "")
+  // Drop common download-site / mirror noise in parentheses
+  name = name
+    .replace(/\s*\((?:z-?lib(?:\.org)?|libgen|pdfdrive|ebook|epub|complete|full)[^)]*\)\s*/gi, " ")
+    .replace(/\s*\[[^\]]*\]\s*/g, " ")
+    .replace(/\s{2,}/g, " ")
+    .trim()
+  return name || filename.trim()
+}
+
+/** Extension label for a quiet meta line (e.g. pdf · 1.4 MB) — not a big chip. */
+function extensionLabel(filename: string): string | null {
+  const m = filename.trim().match(/\.([a-z0-9]{1,8})$/i)
+  return m ? m[1]!.toLowerCase() : null
+}
+
+/** Clean attachment block — name first, no type icon chip, no orange side bar. */
+function attachmentCard(input: {
+  filename: string
+  mimeType?: string | null
+  sizeBytes?: number | null
+}): string {
+  const title = displayNameFromFilename(input.filename)
+  const safeTitle = escapeHtml(title)
+  const ext = extensionLabel(input.filename)
+  const size = formatEmailBytes(input.sizeBytes ?? null)
+  const metaParts = [ext, size].filter(Boolean) as string[]
+  const meta = metaParts.join(" · ")
+
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:${C.panel};border:1px solid ${C.border};border-radius:14px;">
+  <tr>
+    <td style="padding:18px 20px;">
+      <div style="font-family:${FONT};font-size:10px;font-weight:650;letter-spacing:0.1em;text-transform:uppercase;color:${C.dim};">Attached file</div>
+      <div style="padding-top:8px;font-family:${FONT};font-size:16px;font-weight:650;letter-spacing:-0.02em;color:${C.text};word-break:break-word;line-height:1.4;">${safeTitle}</div>
+      ${
+        meta
+          ? `<div style="padding-top:6px;font-family:${FONT};font-size:12px;line-height:1.45;color:${C.muted};">${escapeHtml(meta)}</div>`
+          : ""
+      }
+      <div style="margin-top:14px;padding-top:12px;border-top:1px solid ${C.borderSoft};font-family:${FONT};font-size:12px;line-height:1.55;color:${C.dim};">
+        Download it from your email client’s attachment area below.
+      </div>
+    </td>
+  </tr>
+</table>`
+}
+
+/** File delivery mail (chat “send this to my email”). */
+export function renderAssetDeliveryEmail(input: {
+  instanceName: string
+  filename: string
+  note?: string | null
+  mimeType?: string | null
+  sizeBytes?: number | null
+}): RenderedEmail {
+  const name = input.instanceName.trim() || "Arciin"
+  const safeName = escapeHtml(name)
+  const display = displayNameFromFilename(input.filename)
+  const note = input.note?.trim() || null
+  const size = formatEmailBytes(input.sizeBytes ?? null)
+
+  return {
+    subject: `${name}: ${display}`,
+    text: [
+      note || `${name} sent you a file.`,
+      "",
+      `Attached: ${display}${size ? ` (${size})` : ""}`,
+      input.filename !== display ? `File: ${input.filename}` : "",
+      "",
+      "Download the file from this email’s attachments.",
+      "",
+      "— Arciin",
+    ]
+      .filter((line) => line !== "")
+      .join("\n"),
+    html: shell({
+      title: `${safeName} — file delivery`,
+      heading: "Your file is ready",
+      subheading: note
+        ? escapeHtml(note)
+        : `${safeName} delivered a file from your library to this inbox.`,
+      preheader: `${escapeHtml(display)} is attached`,
+      badge: "Library delivery",
+      footerNote: "Sent from your Arciin instance at your request.",
+      bodyHtml: `
+  <tr><td class="pad" style="padding:24px 28px 0 28px;">
+    ${attachmentCard({
+      filename: input.filename,
+      mimeType: input.mimeType,
+      sizeBytes: input.sizeBytes,
+    })}
+  </td></tr>
+  <tr><td class="pad" style="padding:22px 28px 0 28px;">&nbsp;</td></tr>`,
     }),
   }
 }

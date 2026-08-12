@@ -16,6 +16,8 @@ import {
   checkDeliverable,
   formatBytesShort,
   maskEmail,
+  renderAssetDeliveryEmail,
+  renderDiscordAssetDeliveryMessage,
   type DeliveryChannel,
 } from "@arciin/shared"
 
@@ -123,10 +125,19 @@ export async function deliverAssetToOwner(
   const label = asset!.title?.trim() || bytes.filename
   const note = input.note?.trim()
 
+  const instance = await fastify.prisma.instanceConfig.findFirst({
+    select: { instanceName: true },
+  })
+  const instanceName = instance?.instanceName ?? "Arciin"
+
   if (input.channel === "discord") {
     const result = await sendDiscordMessage(fastify, {
       config: discordConfig,
-      content: note ? `**${label}**\n${note}` : `**${label}**`,
+      payload: renderDiscordAssetDeliveryMessage({
+        instanceName,
+        filename: label,
+        note: note ?? null,
+      }),
       attachment: {
         filename: bytes.filename,
         content: bytes.buffer,
@@ -143,19 +154,21 @@ export async function deliverAssetToOwner(
     }
   }
 
+  const message = renderAssetDeliveryEmail({
+    instanceName,
+    filename: bytes.filename,
+    note: note ?? null,
+    mimeType: bytes.mimeType || asset?.mimeType || null,
+    sizeBytes: bytes.buffer.byteLength || (asset?.sizeBytes != null ? Number(asset.sizeBytes) : null),
+  })
+
   const result = await sendEmail(fastify, {
     to: destination,
     config: emailConfig,
     attachments: [
       { filename: bytes.filename, content: bytes.buffer, contentType: bytes.mimeType },
     ],
-    message: {
-      subject: label,
-      text: note ? `${note}\n\n${bytes.filename} is attached.` : `${bytes.filename} is attached.`,
-      html: `<p style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-size:14px;color:#18181B;">${
-        note ? `${escapeText(note)}<br><br>` : ""
-      }<strong>${escapeText(bytes.filename)}</strong> is attached.</p>`,
-    },
+    message,
   })
 
   if (!result.ok) return { ok: false, code: result.code, message: result.message }
@@ -166,11 +179,4 @@ export async function deliverAssetToOwner(
     filename: bytes.filename,
     destination: maskEmail(result.to),
   }
-}
-
-function escapeText(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
 }

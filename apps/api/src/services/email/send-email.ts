@@ -12,6 +12,7 @@ import type { FastifyInstance } from "fastify"
 
 import type { RenderedEmail } from "@arciin/shared"
 
+import { arciinEmailInlineImages } from "@/services/email/brand-assets"
 import {
   decryptEmailPassword,
   parseStoredEmailConfig,
@@ -101,6 +102,8 @@ export async function sendEmail(
   })
 
   try {
+    // Same generated header + mark on every message (cid:arciin-header / arciin-brand).
+    const brandImages = await arciinEmailInlineImages()
     const info = await transport.sendMail({
       from: config.fromName
         ? { name: config.fromName, address: config.fromAddress }
@@ -109,11 +112,14 @@ export async function sendEmail(
       subject: input.message.subject,
       text: input.message.text,
       html: input.message.html,
-      attachments: input.attachments?.map((a) => ({
-        filename: a.filename,
-        content: a.content,
-        contentType: a.contentType,
-      })),
+      attachments: [
+        ...brandImages,
+        ...(input.attachments?.map((a) => ({
+          filename: a.filename,
+          content: a.content,
+          contentType: a.contentType,
+        })) ?? []),
+      ],
     })
 
     fastify.log.info({ to, subject: input.message.subject }, "Notification email sent")

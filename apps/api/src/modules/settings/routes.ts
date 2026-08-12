@@ -7,6 +7,7 @@ import {
   parseAiSecurityConfig,
   parseApiProtectionConfig,
   MOBILE_PAIRING_CODE_TTL_MINUTES,
+  renderDiscordTestMessage,
   renderEmailTestMessage,
 } from "@arciin/shared"
 import path from "node:path"
@@ -1089,10 +1090,8 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
       const instance = await fastify.prisma.instanceConfig.findFirst({
         select: { instanceName: true },
       })
-      const name = instance?.instanceName ?? "Arciin"
-
       const result = await sendDiscordMessage(fastify, {
-        content: `**${name} is connected.**\nYou will get the new address here whenever this server's public link changes.`,
+        payload: renderDiscordTestMessage(instance?.instanceName ?? "Arciin"),
       })
 
       if (!result.ok) {

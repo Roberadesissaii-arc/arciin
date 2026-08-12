@@ -132,7 +132,15 @@ function SidebarProvider({
 
     const mq = window.matchMedia(TABLET_SIDEBAR_MEDIA)
     const onViewportChange = () => {
-      if (mq.matches) setOpenRef.current(false)
+      if (mq.matches) {
+        setOpenRef.current(false)
+        return
+      }
+      // Widening again restores what the user actually chose. Collapsing on the
+      // way down but never expanding on the way back left the rail shut for the
+      // rest of the session, which reads as the toggle having broken.
+      const preferred = readSidebarOpenCookie()
+      setOpenRef.current(preferred ?? true)
     }
 
     mq.addEventListener("change", onViewportChange)
