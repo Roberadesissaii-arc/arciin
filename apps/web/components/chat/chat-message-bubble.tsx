@@ -14,6 +14,9 @@ import {
   Volume2,
 } from "lucide-react"
 
+import { canvasSectionTitles, followUpSuggestions } from "@arciin/shared"
+
+import { ChatSuggestionChips } from "@/components/chat/chat-suggestion-chips"
 import { useChatTextToSpeech } from "@/hooks/use-chat-text-to-speech"
 import { plainTextFromMessage } from "@/lib/chat/plain-text-from-message"
 import { toast } from "@/lib/notifications/arciin-toast"
@@ -151,6 +154,7 @@ export function MessageBubble({
   onRegenerate,
   onFeedback,
   onOpenCanvasDraft,
+  onPickSuggestion,
   profileId,
 }: {
   msg: Message
@@ -162,6 +166,8 @@ export function MessageBubble({
   onFeedback?: (rating: ChatMessageFeedbackRating | null) => void
   /** Re-open a Canvas draft that was written for this assistant message. */
   onOpenCanvasDraft?: (draft: NonNullable<Message["canvasDraft"]>) => void
+  /** Fill the composer with a suggested follow-up. */
+  onPickSuggestion?: (prompt: string) => void
   profileId?: string | null
 }) {
   const isUser = msg.role === "user"
@@ -348,6 +354,28 @@ export function MessageBubble({
             profileId={profileId}
           />
         )}
+
+        {/* Suggested next moves. Derived from what this reply actually did —
+            a draft gets /modify edits, a file list gets "summarize one" — so
+            they stay true instead of being a fixed menu. Picking one fills the
+            composer; it does not send. */}
+        {!isUser && !msg.pending && !isStreaming && onPickSuggestion ? (
+          <ChatSuggestionChips
+            className="mt-2"
+            suggestions={followUpSuggestions({
+              hasCanvasDraft: Boolean(msg.canvasDraft),
+              // The draft model carries no saved flag, so "Save to Documents"
+              // is always offered when a draft exists rather than guessed at.
+              canvasUnsaved: Boolean(msg.canvasDraft),
+              sectionTitles: msg.canvasDraft
+                ? canvasSectionTitles(msg.canvasDraft.content)
+                : undefined,
+              listedAssets: /\[\[ASSETS?[:_]/i.test(msg.content),
+              replyWordCount: msg.content.trim().split(/\s+/).filter(Boolean).length,
+            })}
+            onPick={(suggestion) => onPickSuggestion(suggestion.prompt)}
+          />
+        ) : null}
       </div>
     </div>
   )

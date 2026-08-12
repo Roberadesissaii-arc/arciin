@@ -64,7 +64,8 @@ export const CHAT_SLASH_COMMANDS: ChatSlashCommand[] = [
         `- Keep every part the request did not touch byte-identical, including the title, headings, wording and reference list.\n` +
         `- Do not re-order sections, re-title the piece, or "improve" prose that was not mentioned.\n` +
         `- If the request names a section, locate that exact section and change only it.\n` +
-        `- If the request is ambiguous about which passage it means, make the smallest reasonable interpretation and say so in one line AFTER the document, separated by a line containing only ---.`
+        `- After the document, on a line of its own, write --- and then ONE short line naming exactly what you changed ("Rewrote the Overview and Introduction in a warmer voice; left the rest untouched"). A revision the reader cannot verify is indistinguishable from a fresh draft, which is the problem this command exists to solve.\n` +
+        `- Scope honestly: if the request genuinely touches the whole document (e.g. "make it warmer"), say so. If it names one section, change only that one and say the rest is unchanged.`
       )
     },
   },

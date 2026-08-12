@@ -1650,6 +1650,11 @@ export function ChatPage() {
                       : undefined
                   }
                   onOpenCanvasDraft={openCanvasDraft}
+                  onPickSuggestion={(prompt) => {
+                    // Fill, do not send: a wrong guess would cost a whole
+                    // generation and leave the reader undoing it.
+                    setInput(prompt)
+                  }}
                   profileId={selectedProfile?.id}
                 />
               ))

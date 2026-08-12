@@ -3,7 +3,7 @@
  * Canvas chip open ≠ every reply goes to Canvas — only long-form writing.
  */
 
-import { stripAssistantStreamMarkup } from "@arciin/shared"
+import { describeCanvasDraft, stripAssistantStreamMarkup } from "@arciin/shared"
 
 /** True when the user is asking for Canvas long-form output (essay, exam, quiz, etc.). */
 export function isCanvasWritingIntent(userText: string): boolean {
@@ -342,6 +342,9 @@ export function buildCanvasFinishedChatSummary(opts: {
         : null
 
   const lines: string[] = []
+  // Lead with a sentence about what was actually written. The metadata block
+  // below is accurate but reads like a receipt; this says what the reader got.
+  lines.push(describeCanvasDraft({ content: opts.content, words }))
   lines.push(`**Finished in Canvas:** ${title}`)
   if (about) {
     lines.push(`Based on: **${about}**`)

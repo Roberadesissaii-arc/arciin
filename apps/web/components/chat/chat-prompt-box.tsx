@@ -28,6 +28,13 @@ import {
   isImageMediaType,
 } from "@/components/chat/chat-composer-attachments"
 import {
+  attachmentKindFor,
+  attachmentSuggestions,
+  type ChatSuggestion,
+} from "@arciin/shared"
+
+import { ChatSuggestionChips } from "@/components/chat/chat-suggestion-chips"
+import {
   filterSlashCommands,
   getActiveSlashQuery,
   splitTextForSlashHighlight,
@@ -590,6 +597,35 @@ export function ChatPromptBox({
               </div>
             ))}
           </div>
+        ) : null}
+
+        {/* Templates offered once something is attached. A blank composer next
+            to a freshly attached book is the moment the reader is least sure
+            what this can do; these fill the input rather than sending. */}
+        {attachments.length > 0 && value.trim().length === 0 ? (
+          <ChatSuggestionChips
+            className="mb-1.5 px-2"
+            label="Try"
+            suggestions={attachmentSuggestions({
+              kind: attachmentKindFor({
+                mediaType: attachments[0]!.mediaType,
+                filename: attachments[0]!.filename,
+              }),
+              filename: attachments.length === 1 ? attachments[0]!.filename : null,
+              count: attachments.length,
+            })}
+            onPick={(suggestion: ChatSuggestion) => {
+              onValueChange(suggestion.prompt)
+              // Focus and put the caret at the end so a partial prompt like
+              // "/summarize " can be completed straight away.
+              requestAnimationFrame(() => {
+                const el = textareaRef.current
+                if (!el) return
+                el.focus()
+                el.setSelectionRange(suggestion.prompt.length, suggestion.prompt.length)
+              })
+            }}
+          />
         ) : null}
 
         {/* Input with orange slash-command highlight overlay */}

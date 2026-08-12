@@ -1,5 +1,6 @@
 /** Domain helpers shared across API, worker, and web. */
 export * from "./app-surface"
+export * from "./chat-suggestions"
 export * from "./client-device"
 export * from "./delivery-policy"
 export * from "./humanize-writing"
