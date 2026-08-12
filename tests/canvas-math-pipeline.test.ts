@@ -80,3 +80,39 @@ describe("canvas document → math extraction", () => {
     expect(withBlanks.blocks).toEqual(["x = 1"])
   })
 })
+
+describe("canvas tables", () => {
+  // Canvas never handled pipe tables, so a medication schedule — exactly the
+  // kind of document Canvas exists for — rendered as a run of paragraphs
+  // starting with "|", separator row and all.
+  const TABLE = [
+    "## 1. The Four Medications",
+    "",
+    "| Medication | Strength | Daily Frequency |",
+    "|---|---|---|",
+    "| Tetracycline | 500 MG | 4 times |",
+    "| Bismuth | 262 MG | 4 times |",
+    "",
+    "**Duration:** 14 consecutive days.",
+  ].join("\n")
+
+  it("leaves the table rows intact through canvas sanitising", () => {
+    const sanitized = sanitizeCanvasDocument(TABLE)
+    expect(sanitized).toContain("| Tetracycline | 500 MG | 4 times |")
+    expect(sanitized).toContain("|---|---|---|")
+  })
+
+  it("keeps the separator row adjacent to the header", () => {
+    // The header is only a header because a separator follows it directly;
+    // collapsing blank lines must not move them apart.
+    const lines = sanitizeCanvasDocument(TABLE).split("\n")
+    const headerAt = lines.findIndex((l) => l.includes("Medication | Strength"))
+    expect(lines[headerAt + 1]).toMatch(/^\|[-|]+\|$/)
+  })
+
+  it("does not mistake a table row for math or a list", () => {
+    const result = extractBlockMath(sanitizeCanvasDocument(TABLE))
+    expect(result.blocks).toEqual([])
+    expect(result.text).toContain("| Bismuth | 262 MG | 4 times |")
+  })
+})

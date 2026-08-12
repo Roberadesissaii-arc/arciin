@@ -102,10 +102,70 @@ export function CanvasMarkdownContent({
   const lines = withMathPlaceholders.split("\n")
   const nodes: React.ReactNode[] = []
   const listItems: { text: string; ordered: boolean }[] = []
+  const tableLines: string[] = []
   let inCode = false
   let codeLang = ""
   const codeLines: string[] = []
   let k = 0
+
+  /**
+   * Render an accumulated pipe table.
+   *
+   * Canvas never handled these, so a medication schedule — exactly the kind of
+   * document Canvas is for — came out as a run of paragraphs beginning with a
+   * pipe, separator row and all. The chat renderer already did tables; this one
+   * had simply never been given them.
+   */
+  function flushTable() {
+    if (tableLines.length === 0) return
+    const rows = tableLines.splice(0)
+
+    const cells = (line: string) =>
+      line
+        .trim()
+        .replace(/^\||\|$/g, "")
+        .split("|")
+        .map((cell) => cell.trim())
+
+    // A separator row (|---|---|) marks the line above as the header. Without
+    // one there is no header, just a grid.
+    const separatorAt = rows.findIndex((line) => /^\s*\|?[\s:-]*-[\s:|-]*\|?\s*$/.test(line))
+    const hasHeader = separatorAt === 1
+    const header = hasHeader ? cells(rows[0]!) : null
+    const bodyRows = rows.filter((_, i) => (hasHeader ? i > 1 : !/^\s*\|?[\s:-]*-[\s:|-]*\|?\s*$/.test(rows[i]!)))
+
+    nodes.push(
+      <div key={k++} className="my-4 overflow-x-auto">
+        <table className="w-full border-collapse text-[13px]">
+          {header ? (
+            <thead>
+              <tr>
+                {header.map((cell, i) => (
+                  <th
+                    key={i}
+                    className="border-b border-border bg-muted/40 px-3 py-2 text-left text-[12px] font-semibold text-foreground"
+                  >
+                    {parseInline(cell)}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+          ) : null}
+          <tbody>
+            {bodyRows.map((row, r) => (
+              <tr key={r} className="border-b border-border/60 last:border-0">
+                {cells(row).map((cell, c) => (
+                  <td key={c} className="px-3 py-2 align-top leading-relaxed text-foreground">
+                    {parseInline(cell)}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>,
+    )
+  }
 
   function flushList() {
     if (!listItems.length) return
@@ -193,6 +253,15 @@ export function CanvasMarkdownContent({
       continue
     }
 
+    // A pipe row belongs to a table. Collected until something else appears,
+    // because a table only ends when the pipes do.
+    if (/^\s*\|.*\|\s*$/.test(line)) {
+      flushList()
+      tableLines.push(line)
+      continue
+    }
+    flushTable()
+
     const mathIndex = readMathBlockPlaceholder(line)
     if (mathIndex !== null && mathBlocks[mathIndex] !== undefined) {
       flushList()
@@ -263,6 +332,7 @@ export function CanvasMarkdownContent({
   }
 
   if (inCode) flushCode()
+  flushTable()
   flushList()
 
   return <div className={cn("canvas-doc max-w-none", className)}>{nodes}</div>

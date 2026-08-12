@@ -91,6 +91,26 @@ export function markdownToSimpleHtml(markdown: string): string {
     }
   }
 
+  // Tables must survive the export or a medication schedule saves as a run of
+  // paragraphs beginning with a pipe — which is what Canvas itself used to do.
+  const tableRows: string[] = []
+  const isSeparator = (line: string) => /^\s*\|?[\s:-]*-[\s:|-]*\|?\s*$/.test(line)
+  const flushTable = () => {
+    if (tableRows.length === 0) return
+    const rows = tableRows.splice(0)
+    const cells = (line: string) =>
+      line.trim().replace(/^\||\|$/g, "").split("|").map((c) => c.trim())
+    const hasHeader = rows.length > 1 && isSeparator(rows[1]!)
+    const head = hasHeader
+      ? `<thead><tr>${cells(rows[0]!).map((c) => `<th>${inline(c)}</th>`).join("")}</tr></thead>`
+      : ""
+    const bodyRows = rows.filter((line, i) => !(hasHeader && i < 2) && !isSeparator(line))
+    const body = bodyRows
+      .map((line) => `<tr>${cells(line).map((c) => `<td>${inline(c)}</td>`).join("")}</tr>`)
+      .join("")
+    out.push(`<table>${head}<tbody>${body}</tbody></table>`)
+  }
+
   const inline = (s: string) =>
     s
       .replace(/&/g, "&amp;")
@@ -102,6 +122,12 @@ export function markdownToSimpleHtml(markdown: string): string {
 
   for (const raw of lines) {
     const line = raw.trimEnd()
+    if (/^\s*\|.*\|\s*$/.test(line)) {
+      flushList()
+      tableRows.push(line)
+      continue
+    }
+    flushTable()
     if (!line.trim()) {
       flushList()
       continue
@@ -132,6 +158,7 @@ export function markdownToSimpleHtml(markdown: string): string {
     flushList()
     out.push(`<p>${inline(line.trim())}</p>`)
   }
+  flushTable()
   flushList()
   return out.join("\n")
 }
@@ -163,6 +190,9 @@ function wrapHtmlDocument(title: string, bodyHtml: string): string {
   ul { margin: 0 0 0.85em 1.25em; padding: 0; }
   li { margin: 0.25em 0; }
   code { font-family: ui-monospace, monospace; font-size: 0.92em; }
+  table { border-collapse: collapse; width: 100%; margin: 1em 0; font-size: 0.95em; }
+  th, td { border: 1px solid #d4d4d8; padding: 6px 10px; text-align: left; vertical-align: top; }
+  th { background: #f4f4f5; font-weight: 600; }
 </style>
 </head>
 <body>
