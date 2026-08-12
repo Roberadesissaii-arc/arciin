@@ -25,9 +25,25 @@ setup("authenticate against the isolated dev instance", async ({ page, context }
 
   await page.goto("/login")
 
+  // A previous run may have left a valid session cookie, in which case /login
+  // redirects straight to the dashboard and there is no form to fill. The old
+  // code waited 120s for an email input that was never going to appear and
+  // reported it as a selector problem. Signing in is only needed when we are
+  // actually signed out.
+  const emailField = page.locator('input[type="email"]')
+  const alreadySignedIn = await emailField
+    .waitFor({ state: "visible", timeout: 10_000 })
+    .then(() => false)
+    .catch(() => !page.url().includes("/login"))
+
+  if (alreadySignedIn) {
+    await context.storageState({ path: STORAGE_STATE })
+    return
+  }
+
   // Placeholder selectors: the login inputs are not wired to <label for>, so
   // getByLabel does not resolve them.
-  await page.locator('input[type="email"]').fill(EMAIL)
+  await emailField.fill(EMAIL)
   await page.locator('input[type="password"]').first().fill(password)
   await page.getByRole("button", { name: /sign in|log in|continue/i }).first().click()
 
