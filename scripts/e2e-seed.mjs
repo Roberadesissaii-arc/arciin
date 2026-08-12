@@ -87,6 +87,27 @@ export async function seedE2EUser() {
       instance = await prisma.instanceConfig.update({ where: { id: instance.id }, data: licence })
     }
 
+    // A chat profile must exist or the chat page renders its "no models
+    // configured" empty state instead of the entitlement UI, and the gating
+    // assertions look for a banner that was never going to be there. No API
+    // key: nothing in the browser suite sends a real completion.
+    const existingProfile = await prisma.modelProfile.findFirst({
+      where: { provider: "ollama" },
+      select: { id: true },
+    })
+    if (!existingProfile) {
+      await prisma.modelProfile.create({
+        data: {
+          provider: "ollama",
+          displayName: "E2E Local",
+          baseUrl: "http://127.0.0.1:11434",
+          defaultModel: "llama3.2",
+          isDefault: true,
+          isEnabled: true,
+        },
+      })
+    }
+
     const user = await prisma.user.upsert({
       where: { email: E2E_EMAIL },
       create: {

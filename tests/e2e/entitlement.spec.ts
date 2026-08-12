@@ -197,13 +197,16 @@ test.describe("Free entitlement", () => {
     await page.waitForLoadState("networkidle").catch(() => {})
 
     // Gating must still work — the fix must not have opened the gate.
-    const anyPaywallText = await Promise.all(
-      PAYWALL_TEXT.map((t) => page.getByText(t, { exact: false }).count()),
-    )
-    expect(
-      anyPaywallText.some((n) => n > 0),
+    //
+    // Waits for the gate rather than counting once. The paywall is deliberately
+    // withheld until the entitlement answer is authoritative, so it appears a
+    // render after the response lands; a single synchronous count raced it and
+    // reported an open gate that was about to close. This still fails if the
+    // gate never appears — it just stops failing when it merely appears late.
+    await expect(
+      page.getByText(PAYWALL_TEXT[0]!, { exact: false }).first(),
       "an authoritative Free response must produce the upgrade state",
-    ).toBe(true)
+    ).toBeVisible({ timeout: 10_000 })
   })
 
   test("does not paywall a Free user before the answer is authoritative", async ({ page }) => {
