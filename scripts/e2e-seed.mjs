@@ -60,6 +60,19 @@ export async function seedE2EUser() {
     const password = randomBytes(24).toString("base64url")
     const passwordHash = await hash(password)
 
+    // The instance is seeded Pro because the entitlement suite tests Pro
+    // behaviour, and the plan is decided server-side: the chat page renders the
+    // soft-lock before any browser route stub can intervene, so a Free instance
+    // made every Pro test fail on a paywall that was correctly shown. Tests
+    // that need Free stub the license endpoint and drive the client-side state.
+    const licence = {
+      licensePlan: "pro",
+      licenseStatus: "active",
+      licenseSource: "mock_dev",
+      licenseActivatedAt: new Date(),
+      licenseExpiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
+    }
+
     let instance = await prisma.instanceConfig.findFirst()
     if (!instance) {
       instance = await prisma.instanceConfig.create({
@@ -67,8 +80,11 @@ export async function seedE2EUser() {
           instanceName: "Arciin E2E",
           storageRoot: process.env.ARCIIN_DATA_DIR ?? "/srv/arce-projects/arciin-dev-storage",
           initializedAt: new Date(),
+          ...licence,
         },
       })
+    } else {
+      instance = await prisma.instanceConfig.update({ where: { id: instance.id }, data: licence })
     }
 
     const user = await prisma.user.upsert({
