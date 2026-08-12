@@ -1,5 +1,7 @@
 import type { PrismaClient } from "@prisma/client"
 
+import { decryptModelApiKey } from "@/services/security/model-profile-key-crypto"
+
 /**
  * Short, human titles for chat conversations.
  *
@@ -159,7 +161,10 @@ async function requestTitle(
       body: JSON.stringify({
         model,
         stream: false,
-        max_tokens: 32,
+        // Reasoning models spend this budget on reasoning_content and return
+        // an empty content field: deepseek-v4-flash produced 1,049 characters
+        // of reasoning and no answer at 256, so a title needs real headroom.
+        max_tokens: 1024,
         messages: [
           { role: "system", content: TITLE_PROMPT },
           { role: "user", content: exchange },
@@ -175,9 +180,19 @@ async function requestTitle(
       return null
     }
     const data = (await res.json()) as {
-      choices?: { message?: { content?: string } }[]
+      choices?: { message?: { content?: string; reasoning_content?: string } }[]
     }
-    return data.choices?.[0]?.message?.content ?? null
+    const message = data.choices?.[0]?.message
+    const content = message?.content?.trim()
+    if (content) return content
+
+    // A reasoning model that ran out of budget leaves content empty. Its
+    // reasoning usually ends with the title it was about to give, so take the
+    // last non-empty line rather than falling back to the user's own words.
+    const reasoning = message?.reasoning_content?.trim()
+    if (!reasoning) return null
+    const lastLine = reasoning.split("\n").map((l) => l.trim()).filter(Boolean).at(-1)
+    return lastLine ?? null
   } catch (error) {
     // Includes the 15s timeout. Worth naming: a title that never arrives is
     // indistinguishable from one that arrived and was ignored.
@@ -217,9 +232,14 @@ export async function generateConversationTitle(input: {
   let title = ""
   const model = profile?.defaultModel?.trim()
   if (profile && model) {
+    // Keys are stored encrypted. Passing the ciphertext straight through as a
+    // bearer token made every provider answer 401, requestTitle return null,
+    // and the fallback — the user's own first message — become the title. That
+    // is why every conversation in the rail was named after its opening line.
+    const keyed = { ...profile, apiKey: decryptModelApiKey(profile.apiKey) }
     const exchange =
       `User: ${userText.slice(0, 600)}\n\n` + `Assistant: ${assistantText.slice(0, 600)}`
-    const raw = await requestTitle(profile, model, exchange)
+    const raw = await requestTitle(keyed, model, exchange)
     if (raw) title = cleanTitle(raw)
   }
 
