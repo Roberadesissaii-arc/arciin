@@ -14,11 +14,18 @@
  * highlighted on the page they are looking at.
  */
 
+import {
+  DEFAULT_ANNOTATION_STYLE,
+  styleFromRequest,
+  type PdfAnnotationStyle,
+} from "@/lib/files/pdf-annotation-style"
 import type { PdfHighlightTarget } from "@/lib/files/pdf-highlight-types"
 
 /** Verbs that mean "put a mark on the page", as opposed to asking about it. */
 const HIGHLIGHT_VERB =
-  "highlight|underline|mark|circle|point\\s+(?:to|at|out)|show\\s+me|find|locate|" +
+  "highlight|highlights|highlighted|underline|underlines|underlined|mark|marks|marked|" +
+  "circle|circles|circled|box|boxes|boxed|outline|outlines|outlined|frame|frames|framed|" +
+  "cross\\s+out|strike(?:\\s*through)?|point\\s+(?:to|at|out)|show\\s+me|find|locate|" +
   "take\\s+me\\s+to|jump\\s+to|go\\s+to|where\\s+is"
 
 const HIGHLIGHT_INTENT = new RegExp(`\\b(?:${HIGHLIGHT_VERB})\\b`, "i")
@@ -269,6 +276,8 @@ export type InferHighlightInput = {
   assistantText: string
   currentPage: number
   maxPage?: number
+  /** Overrides what the request implies — used when a tag already named one. */
+  style?: PdfAnnotationStyle
 }
 
 /**
@@ -295,10 +304,16 @@ export function inferPdfHighlightTargets(
     ...extractPhrasesFromAnswer(assistantText),
   ]).filter(isSearchablePhrase)
 
+  // "Circle the summary table" has to draw a circle. Picking the mark from the
+  // user's own verb is the point — defaulting every request to a highlight
+  // would make the other verbs decorative.
+  const style = input.style ?? styleFromRequest(userText) ?? DEFAULT_ANNOTATION_STYLE
+
   return phrases.slice(0, MAX_INFERRED_HIGHLIGHTS).map((quote) => ({
     page: currentPage,
     quote,
     kind: looksLikeHeading(quote) ? ("heading" as const) : ("default" as const),
+    style,
   }))
 }
 

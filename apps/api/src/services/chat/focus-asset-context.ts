@@ -43,21 +43,35 @@ export async function buildFocusAssetSystemAppend(
 The reader cannot act on prose. To mark or move anything you MUST emit a tag; a
 sentence saying you highlighted something highlights nothing.
 
-- Mark a section title on the page in view: [highlight-heading:"exact title"]
-- Mark any other text on the page in view: [highlight-current:"exact text"]
-- Mark text on a specific file page: [highlight:PAGE:"exact text"]
-- Mark text on a printed/book page: [highlight-printed:PAGE:"exact text"]
-- Scroll to a file page: [goto-page:PAGE] · printed page: [goto-printed:PAGE] · chapter: [goto-chapter:N]
+Marks — pick the one the user asked for:
+- highlight  → a colour wash behind the words (the default)
+- underline  → a line under the words
+- circle     → a hand-drawn loop around the words, like a pen
+- box        → a rectangle around the words
+- strike     → a line through the words
+
+Write the mark name in place of <mark> below:
+- On the page in view, a section title: [<mark>-heading:"exact title"]
+- On the page in view, any other text:  [<mark>-current:"exact text"]
+- On a specific file page:              [<mark>:PAGE:"exact text"]
+- On a printed/book page:               [<mark>-printed:PAGE:"exact text"]
+
+So "circle the summary table" is [circle-heading:"Summary Table"], and
+"underline the net reaction" is [underline-current:"6 CO2 + 6 H2O"].
+
+Scrolling: [goto-page:PAGE] · [goto-printed:PAGE] · [goto-chapter:N]
 
 Rules:
+- Use the mark the user named. If they did not name one, highlight.
 - The quoted text MUST be copied verbatim from the page text given below. The
-  viewer finds the highlight by searching the page for that string; a paraphrase,
-  a translation, or a title you reworded will match nothing.
+  viewer finds the mark by searching the page for that string; a paraphrase, a
+  translation, or a title you reworded will match nothing.
 - Keep the quote short — a heading or one phrase. Do not quote a paragraph.
-- Emit the tag in the same reply as the sentence describing it. Tags are stripped
+- One tag per thing they asked for. Asked to mark two things, emit two tags.
+- Emit tags in the same reply as the sentence describing them. Tags are stripped
   before the user sees the text, so they never appear in the answer.
 - If the text genuinely is not on the page, say so plainly and emit no tag.
-  Never claim to have highlighted something you did not tag.`
+  Never claim to have marked something you did not tag.`
     : ""
 
   const pdfPageNote =

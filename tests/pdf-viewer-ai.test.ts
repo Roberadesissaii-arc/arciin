@@ -38,7 +38,9 @@ describe("highlight tags", () => {
       currentPdfPage: 2,
       maxPage: 3,
     })
-    expect(out).toEqual([{ page: 2, quote: "Carbon Fixation", kind: "heading" }])
+    expect(out).toEqual([
+      { page: 2, quote: "Carbon Fixation", kind: "heading", style: "highlight" },
+    ])
   })
 
   it("reads a plain current-page tag", () => {
@@ -51,7 +53,9 @@ describe("highlight tags", () => {
 
   it("reads an explicit file page", () => {
     const out = parseAssistantHighlights('[highlight:3:"Summary Table"]', { maxPage: 3 })
-    expect(out).toEqual([{ page: 3, quote: "Summary Table", kind: "default" }])
+    expect(out).toEqual([
+      { page: 3, quote: "Summary Table", kind: "default", style: "highlight" },
+    ])
   })
 
   it("maps a printed page through the page index", () => {
@@ -59,7 +63,9 @@ describe("highlight tags", () => {
       maxPage: 40,
       pageIndex: PAGE_INDEX,
     })
-    expect(out).toEqual([{ page: 16, quote: "Reduction", kind: "default" }])
+    expect(out).toEqual([
+      { page: 16, quote: "Reduction", kind: "default", style: "highlight" },
+    ])
   })
 
   it("clamps a page past the end of the file", () => {

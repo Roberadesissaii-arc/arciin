@@ -13,13 +13,17 @@ import {
 import { useDebouncedValue } from "@/lib/hooks/use-debounced-value"
 import { findHighlightRectsOnPage } from "@/lib/files/pdf-page-text-search"
 import type { PdfHighlightRect, PdfHighlightTarget } from "@/lib/files/pdf-highlight-types"
+import type { PdfAnnotationStyle } from "@/lib/files/pdf-annotation-style"
+import { PdfAnnotationMark } from "@/components/libraries/pdf-annotation-mark"
 import { cn } from "@/lib/utils"
 
 const PAGE_PAD = 12
 const WINDOW_BEFORE = 2
 const WINDOW_AFTER = 5
 const RENDER_WIDTH_EPS = 0.12
-const EMPTY_PAGE_HIGHLIGHTS = new Map<number, PdfHighlightRect[]>()
+type StyledRect = PdfHighlightRect & { style?: PdfAnnotationStyle }
+
+const EMPTY_PAGE_HIGHLIGHTS = new Map<number, StyledRect[]>()
 
 function defaultPageHeight(layoutWidth: number) {
   return Math.round(layoutWidth * 1.294) + PAGE_PAD
@@ -40,7 +44,7 @@ function PdfPageCanvas({
   renderWidth: number
   numPages: number
   onHeight: (page: number, height: number) => void
-  highlightRects?: PdfHighlightRect[]
+  highlightRects?: StyledRect[]
 }) {
   const hostRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -172,16 +176,7 @@ function PdfPageCanvas({
         <div className="pointer-events-none absolute inset-0 flex justify-center py-1.5" aria-hidden>
           <div className="relative" style={{ width: layoutWidth, height: cssHeight - PAGE_PAD }}>
             {highlightRects.map((rect, i) => (
-              <div
-                key={i}
-                className="absolute rounded-sm border border-[#ff4f12]/70 bg-[#ff4f12]/30 shadow-[0_0_0_1px_rgba(255,79,18,0.15)] animate-in fade-in duration-300"
-                style={{
-                  left: rect.left,
-                  top: rect.top,
-                  width: rect.width,
-                  height: rect.height,
-                }}
-              />
+              <PdfAnnotationMark key={i} rect={rect} style={rect.style ?? "highlight"} />
             ))}
           </div>
         </div>
@@ -225,7 +220,7 @@ export function DesktopPdfViewer({
   const [viewWidth, setViewWidth] = useState(640)
   const [pageWindow, setPageWindow] = useState({ start: 1, end: 8 })
   const [pageHeights, setPageHeights] = useState<Map<number, number>>(() => new Map())
-  const [pageHighlights, setPageHighlights] = useState<Map<number, PdfHighlightRect[]>>(
+  const [pageHighlights, setPageHighlights] = useState<Map<number, StyledRect[]>>(
     () => new Map(),
   )
 
@@ -315,7 +310,7 @@ export function DesktopPdfViewer({
 
     let cancelled = false
     void (async () => {
-      const next = new Map<number, PdfHighlightRect[]>()
+      const next = new Map<number, StyledRect[]>()
       for (const target of highlightTargets) {
         const rects = await findHighlightRectsOnPage(
           pdf,
@@ -327,7 +322,8 @@ export function DesktopPdfViewer({
         if (cancelled) return
         if (rects.length > 0) {
           const prev = next.get(target.page) ?? []
-          next.set(target.page, [...prev, ...rects])
+          const styled = rects.map((r) => ({ ...r, style: target.style ?? "highlight" }))
+          next.set(target.page, [...prev, ...styled])
         }
       }
       if (!cancelled) setPageHighlights(next)
