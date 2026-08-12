@@ -40,16 +40,6 @@ export type RenderedEmail = {
   text: string
 }
 
-const BRAND = {
-  background: "#09090B",
-  surface: "#18181B",
-  muted: "#27272A",
-  accent: "#FF4F12",
-  text: "#FFFFFF",
-  mutedText: "#A1A1AA",
-  border: "#3F3F46",
-}
-
 /**
  * Escape for HTML text and attribute contexts.
  *
@@ -99,6 +89,67 @@ export function isSafeLinkUrl(url: string | null | undefined): boolean {
   }
 }
 
+/**
+ * Shared chrome for both messages.
+ *
+ * Email is not the app. The first version used the product's dark palette,
+ * which arrives in a light inbox as a black slab with a floating card in it —
+ * it reads as broken rather than branded. So: a light card on a light page,
+ * the orange kept only as an accent, and a `prefers-color-scheme` block for
+ * clients that support it (Apple Mail, iOS) while everyone else gets the light
+ * version that works everywhere.
+ *
+ * Everything is inline styles on tables. Gmail strips `<head>` styles in
+ * forwarded mail and ignores most modern CSS, so the layout cannot depend on
+ * anything but width attributes and inline rules.
+ */
+function shell(input: {
+  title: string
+  eyebrow: string
+  heading: string
+  bodyHtml: string
+  preheader: string
+}): string {
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>${input.title}</title>
+<style>
+  @media (prefers-color-scheme: dark) {
+    .arciin-page { background:#09090B !important; }
+    .arciin-card { background:#18181B !important; border-color:#3F3F46 !important; }
+    .arciin-heading, .arciin-strong { color:#FFFFFF !important; }
+    .arciin-text { color:#A1A1AA !important; }
+    .arciin-panel { background:#27272A !important; border-color:#3F3F46 !important; }
+  }
+  @media only screen and (max-width:600px) {
+    .arciin-pad { padding-left:20px !important; padding-right:20px !important; }
+  }
+</style>
+</head>
+<body style="margin:0;padding:0;background:#F4F4F5;">
+<div style="display:none;max-height:0;overflow:hidden;opacity:0;">${input.preheader}</div>
+<table role="presentation" class="arciin-page" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#F4F4F5;padding:32px 12px;">
+<tr><td align="center">
+<table role="presentation" class="arciin-card" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:520px;background:#FFFFFF;border:1px solid #E4E4E7;border-radius:14px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+  <tr><td class="arciin-pad" style="padding:28px 28px 0 28px;">
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+      <td style="padding-right:8px;"><div style="width:8px;height:8px;border-radius:4px;background:#FF4F12;font-size:0;line-height:0;">&nbsp;</div></td>
+      <td class="arciin-text" style="font-size:11px;letter-spacing:0.09em;text-transform:uppercase;color:#71717A;">${input.eyebrow}</td>
+    </tr></table>
+    <h1 class="arciin-heading" style="margin:16px 0 0 0;color:#18181B;font-size:21px;line-height:1.3;font-weight:600;">${input.heading}</h1>
+  </td></tr>
+  ${input.bodyHtml}
+</table>
+</td></tr>
+</table>
+</body>
+</html>`
+}
+
 export function renderRemoteAccessEmail(input: RemoteAccessEmailInput): RenderedEmail {
   const instanceName = input.instanceName.trim() || "Arciin"
   const safeName = escapeHtml(instanceName)
@@ -108,7 +159,6 @@ export function renderRemoteAccessEmail(input: RemoteAccessEmailInput): Rendered
   const newHost = hostOf(url)
   const previousHost = hostOf(input.previousPublicUrl)
   const localUrl = input.localUrl?.trim() || null
-  const localLinkable = isSafeLinkUrl(localUrl)
 
   const subject = `${instanceName}: new address — ${newHost}`
 
@@ -130,93 +180,78 @@ export function renderRemoteAccessEmail(input: RemoteAccessEmailInput): Rendered
     .filter((line) => line !== "")
     .join("\n")
 
-  const primaryButton = linkable
-    ? `<a href="${safeUrl}" style="display:inline-block;background:${BRAND.accent};color:#FFFFFF;text-decoration:none;font-weight:600;font-size:15px;padding:13px 26px;border-radius:10px;">Open ${safeName}</a>`
-    : `<span style="color:${BRAND.mutedText};font-size:14px;">${safeUrl}</span>`
+  // A bulletproof-ish button: a padded anchor inside a table cell, which is
+  // the only construction Outlook and Gmail both render the same way.
+  const button = linkable
+    ? `<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+        <td align="center" bgcolor="#FF4F12" style="border-radius:9px;">
+          <a href="${safeUrl}" style="display:inline-block;padding:13px 28px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;font-size:15px;font-weight:600;color:#FFFFFF;text-decoration:none;border-radius:9px;">Open ${safeName}</a>
+        </td></tr></table>`
+    : ""
 
-  const html = `<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>${safeName} — new address</title>
-</head>
-<body style="margin:0;padding:0;background:${BRAND.background};">
-<div style="display:none;max-height:0;overflow:hidden;opacity:0;">Your new ${safeName} address is ${escapeHtml(newHost)}</div>
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${BRAND.background};padding:32px 16px;">
-<tr><td align="center">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;background:${BRAND.surface};border:1px solid ${BRAND.border};border-radius:16px;overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
-
-  <tr><td style="padding:28px 28px 0 28px;">
-    <div style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${BRAND.accent};vertical-align:middle;"></div>
-    <span style="color:${BRAND.mutedText};font-size:12px;letter-spacing:0.08em;text-transform:uppercase;vertical-align:middle;padding-left:8px;">${safeName}</span>
-  </td></tr>
-
-  <tr><td style="padding:18px 28px 0 28px;">
-    <h1 style="margin:0;color:${BRAND.text};font-size:22px;line-height:1.3;font-weight:600;">Your server has a new address</h1>
-    <p style="margin:10px 0 0 0;color:${BRAND.mutedText};font-size:14px;line-height:1.6;">
+  const bodyHtml = `
+  <tr><td class="arciin-pad" style="padding:10px 28px 0 28px;">
+    <p class="arciin-text" style="margin:0;color:#52525B;font-size:14px;line-height:1.6;">
       The secure tunnel restarted, so the old link stopped working. This is the current one.
     </p>
   </td></tr>
 
-  <tr><td style="padding:22px 28px 0 28px;">
-    <div style="background:${BRAND.muted};border:1px solid ${BRAND.border};border-radius:12px;padding:16px;">
-      <div style="color:${BRAND.mutedText};font-size:11px;letter-spacing:0.06em;text-transform:uppercase;">Address</div>
-      <div style="color:${BRAND.text};font-size:15px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;word-break:break-all;padding-top:6px;">${safeUrl}</div>
-    </div>
+  <tr><td class="arciin-pad" style="padding:20px 28px 0 28px;">
+    <table role="presentation" class="arciin-panel" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#FAFAFA;border:1px solid #E4E4E7;border-radius:10px;">
+      <tr><td style="padding:14px 16px;">
+        <div class="arciin-text" style="color:#71717A;font-size:10px;letter-spacing:0.08em;text-transform:uppercase;">Address</div>
+        <div class="arciin-strong" style="color:#18181B;font-size:14px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;word-break:break-all;padding-top:6px;">${safeUrl}</div>
+      </td></tr>
+    </table>
   </td></tr>
 
-  <tr><td style="padding:20px 28px 0 28px;" align="center">${primaryButton}</td></tr>
+  ${button ? `<tr><td class="arciin-pad" align="center" style="padding:20px 28px 0 28px;">${button}</td></tr>` : ""}
 
-  <tr><td style="padding:22px 28px 0 28px;">
-    <div style="border:1px solid ${BRAND.border};border-radius:12px;padding:14px 16px;">
-      <p style="margin:0;color:${BRAND.text};font-size:13px;line-height:1.6;font-weight:600;">One link, both apps</p>
-      <p style="margin:6px 0 0 0;color:${BRAND.mutedText};font-size:13px;line-height:1.6;">
-        Open it on your phone and you get the mobile app. Open it on a computer and you get the full desktop app. There is nothing separate to remember.
-      </p>
-    </div>
+  <tr><td class="arciin-pad" style="padding:22px 28px 0 28px;">
+    <p class="arciin-strong" style="margin:0;color:#18181B;font-size:13px;font-weight:600;">One link, both apps</p>
+    <p class="arciin-text" style="margin:6px 0 0 0;color:#52525B;font-size:13px;line-height:1.6;">
+      Open it on your phone and you get the mobile app. On a computer you get the full desktop app. There is nothing separate to remember.
+    </p>
   </td></tr>
 ${
   previousHost
-    ? `
-  <tr><td style="padding:14px 28px 0 28px;">
-    <p style="margin:0;color:${BRAND.mutedText};font-size:12px;line-height:1.6;">
-      The previous address (<span style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;">${escapeHtml(previousHost)}</span>) no longer works. You can delete it from your bookmarks.
+    ? `  <tr><td class="arciin-pad" style="padding:14px 28px 0 28px;">
+    <p class="arciin-text" style="margin:0;color:#71717A;font-size:12px;line-height:1.6;">
+      The previous address (<span style="font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;">${escapeHtml(previousHost)}</span>) no longer works — you can delete it from your bookmarks.
     </p>
   </td></tr>`
     : ""
 }${
     localUrl
-      ? `
-  <tr><td style="padding:14px 28px 0 28px;">
-    <p style="margin:0;color:${BRAND.mutedText};font-size:12px;line-height:1.6;">
-      At home on the same network you can also use ${
-        localLinkable
-          ? `<a href="${escapeHtml(localUrl)}" style="color:${BRAND.accent};text-decoration:none;">${escapeHtml(hostOf(localUrl))}</a>`
-          : `<span style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;">${escapeHtml(localUrl)}</span>`
-      }.
+      ? `  <tr><td class="arciin-pad" style="padding:14px 28px 0 28px;">
+    <p class="arciin-text" style="margin:0;color:#71717A;font-size:12px;line-height:1.6;">
+      At home on the same network you can also use <span style="font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;">${escapeHtml(hostOf(localUrl))}</span>.
     </p>
   </td></tr>`
       : ""
   }
-  <tr><td style="padding:22px 28px 26px 28px;">
-    <div style="border-top:1px solid ${BRAND.border};padding-top:16px;">
-      <p style="margin:0;color:${BRAND.mutedText};font-size:12px;line-height:1.6;">
+  <tr><td class="arciin-pad" style="padding:22px 28px 26px 28px;">
+    <div style="border-top:1px solid #E4E4E7;padding-top:16px;">
+      <p class="arciin-text" style="margin:0;color:#71717A;font-size:12px;line-height:1.6;">
         You still have to sign in — this link is an address, not a key.
       </p>
-      <p style="margin:8px 0 0 0;color:${BRAND.mutedText};font-size:12px;line-height:1.6;">
+      <p class="arciin-text" style="margin:8px 0 0 0;color:#A1A1AA;font-size:12px;line-height:1.6;">
         Sent by your own ${safeName} server${input.changedAt ? ` at ${escapeHtml(input.changedAt)}` : ""}. Nobody else was told.
       </p>
     </div>
-  </td></tr>
+  </td></tr>`
 
-</table>
-</td></tr>
-</table>
-</body>
-</html>`
-
-  return { subject, html, text }
+  return {
+    subject,
+    html: shell({
+      title: `${safeName} — new address`,
+      eyebrow: safeName,
+      heading: "Your server has a new address",
+      preheader: `Your new ${safeName} address is ${escapeHtml(newHost)}`,
+      bodyHtml,
+    }),
+    text,
+  }
 }
 
 /** Confirmation mail for the "send a test" button in Settings. */
@@ -226,24 +261,25 @@ export function renderEmailTestMessage(instanceName: string): RenderedEmail {
 
   return {
     subject: `${name}: email is working`,
-    text: `Email delivery is configured correctly.\n\n${name} will use this address to send you the new link whenever your server's public address changes.\n`,
-    html: `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
-<body style="margin:0;background:${BRAND.background};">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${BRAND.background};padding:32px 16px;">
-<tr><td align="center">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;background:${BRAND.surface};border:1px solid ${BRAND.border};border-radius:16px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
-<tr><td style="padding:28px;">
-  <div style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${BRAND.accent};vertical-align:middle;"></div>
-  <span style="color:${BRAND.mutedText};font-size:12px;letter-spacing:0.08em;text-transform:uppercase;vertical-align:middle;padding-left:8px;">${safeName}</span>
-  <h1 style="margin:16px 0 0 0;color:${BRAND.text};font-size:20px;font-weight:600;">Email is working</h1>
-  <p style="margin:10px 0 0 0;color:${BRAND.mutedText};font-size:14px;line-height:1.6;">
-    ${safeName} will use this address to send you the new link whenever your server's public address changes — so you are never locked out just because you are away from home.
-  </p>
-</td></tr>
-</table>
-</td></tr>
-</table>
-</body></html>`,
+    text: `Email delivery is configured correctly.\n\n${name} will use this address to send you the new link whenever your server's public address changes, so you are never locked out because you are away from home.\n`,
+    html: shell({
+      title: `${safeName} — email is working`,
+      eyebrow: safeName,
+      heading: "Email is working",
+      preheader: `${safeName} can reach this address`,
+      bodyHtml: `
+  <tr><td class="arciin-pad" style="padding:10px 28px 0 28px;">
+    <p class="arciin-text" style="margin:0;color:#52525B;font-size:14px;line-height:1.6;">
+      ${safeName} will use this address to send you the new link whenever your server's public address changes — so you are never locked out just because you are away from home.
+    </p>
+  </td></tr>
+  <tr><td class="arciin-pad" style="padding:22px 28px 26px 28px;">
+    <div style="border-top:1px solid #E4E4E7;padding-top:16px;">
+      <p class="arciin-text" style="margin:0;color:#A1A1AA;font-size:12px;line-height:1.6;">
+        Sent by your own ${safeName} server. Nothing left this machine except this message.
+      </p>
+    </div>
+  </td></tr>`,
+    }),
   }
 }
