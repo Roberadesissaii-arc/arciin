@@ -137,3 +137,34 @@ To re-run initialization manually:
 ```bash
 docker compose exec api pnpm db:init
 ```
+
+## Remote access environment
+
+```bash
+ARCIIN_WEB_PORT=3002                          # desktop app
+ARCIIN_MOBILE_PORT=3003                       # mobile PWA
+ARCIIN_MOBILE_ORIGIN=http://127.0.0.1:3003    # optional; derived from the port
+ARCIIN_UNIFIED_DOMAIN=true                    # false = desktop app only
+ARCIIN_TUNNEL_AUTOSTART=true                  # false disables tunnel auto-start
+```
+
+One public address serves both apps — see [`REMOTE_ACCESS.md`](./REMOTE_ACCESS.md).
+If no mobile origin is configured, or the ports match, everything falls back to
+the desktop app.
+
+## Deploying safely
+
+Use the deployment lock. A concurrent build or a stray `next dev` writing to
+`apps/web/.next` corrupts the running site.
+
+```bash
+pnpm deploy:safe     # acquire lock → build → restart → release
+```
+
+**Restart the web app after every build** — `next start` reads its manifest at
+boot, so rebuilding underneath a running server leaves it serving stale chunks.
+
+**Never `pm2 restart all`**: `arciin-mobile`, `arceclaw` and `arceclaw-tunnel`
+are separate applications.
+
+Full runbook: [`OPERATIONS.md`](./OPERATIONS.md).

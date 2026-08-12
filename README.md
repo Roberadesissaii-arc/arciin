@@ -563,6 +563,13 @@ arciin/
 | [`docs/DEPLOYMENT.md`](./docs/DEPLOYMENT.md) | Production and self-hosting |
 | [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) | System design |
 | [`docs/API.md`](./docs/API.md) | API overview |
+| [`docs/REMOTE_ACCESS.md`](./docs/REMOTE_ACCESS.md) | One public domain serving both the desktop and mobile apps; Cloudflare tunnels |
+| [`docs/SHARING.md`](./docs/SHARING.md) | Share links and File Requests, and the rules that keep them apart |
+| [`docs/NOTIFICATIONS.md`](./docs/NOTIFICATIONS.md) | Email (SMTP) and Discord delivery, and sending files from chat |
+| [`docs/SECURITY.md`](./docs/SECURITY.md) | Credential storage, public endpoints, assistant boundaries, and what is *not* implemented |
+| [`docs/OPERATIONS.md`](./docs/OPERATIONS.md) | Deploying safely, health checks, data-integrity repair, backups |
+| [`docs/TESTING.md`](./docs/TESTING.md) | Test suites, the integration guard, and the anti-vacuous-pass rule |
+| [`docs/UPLOAD_RECOVERY.md`](./docs/UPLOAD_RECOVERY.md) | Repairing assets whose bytes are missing from storage |
 | [`docs/THIRD_PARTY_NOTICES.md`](./docs/THIRD_PARTY_NOTICES.md) | Open-source licenses, fonts, brand icon attribution |
 | In-app **Documentation** | Full REST manual at `/docs` when running |
 

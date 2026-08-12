@@ -119,3 +119,28 @@ Queues: `analyze_file`, `extract_metadata`, `generate_thumbnail`, `cleanup_temp_
 ## Related client: Arciin Mobile
 
 [`arciin-app`](../arciin-app) is a **client-only** PWA. It proxies `/api` to the user's Arciin server, stores session tokens locally, and does **not** run PostgreSQL, Redis, or instance claim. First-run setup happens on the server web UI.
+
+## Request routing (one domain, two apps)
+
+One Cloudflare quick tunnel points at the desktop web app. `apps/web/proxy.ts`
+decides per request whether to serve locally or proxy through to the mobile PWA
+on its own port, so a single public address serves phones and computers.
+
+`/api` and `/socket.io` always stay on the desktop app, which proxies to Fastify
+while preserving the real client IP. Public share and upload links (`/s/`,
+`/request/`) stay there too, because those routes exist only in that app.
+
+Full rules and rationale: [`REMOTE_ACCESS.md`](./REMOTE_ACCESS.md).
+
+## Transactional uploads
+
+An upload commits its StorageObject, Asset, UploadSession, Job rows and an
+**outbox** row per background job in a single Prisma transaction. Redis is never
+touched inside that transaction. Dispatch happens after commit and may fail; a
+reconciler drains pending outbox rows every 60 seconds, and job ids are derived
+from the work so re-dispatch is a no-op.
+
+This replaced a sequence of separate awaits where a `queue.add` failure left the
+asset stranded in `PROCESSING` permanently.
+
+Operational detail: [`OPERATIONS.md`](./OPERATIONS.md).
