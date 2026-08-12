@@ -108,11 +108,14 @@ export function PdfAnnotationLayer({
   notes,
   width,
   height,
+  fontSize = NOTE_FONT_SIZE,
   onSelect,
 }: {
   notes: PlacedNote[]
   width: number
   height: number
+  /** Matches the size the placement was computed at, so text fills its box. */
+  fontSize?: number
   onSelect?: (id: string) => void
 }) {
   if (notes.length === 0) return null
@@ -130,7 +133,7 @@ export function PdfAnnotationLayer({
         </svg>
 
         {notes.map((note) => {
-          const { lines } = measureNote(note.text, note.box.width)
+          const { lines } = measureNote(note.text, note.box.width, fontSize)
           const framed = note.kind === "summary" || note.kind === "important"
           return (
             <div
@@ -156,7 +159,7 @@ export function PdfAnnotationLayer({
                     className="block"
                     style={{
                       ...HAND,
-                      fontSize: NOTE_FONT_SIZE,
+                      fontSize,
                       lineHeight: 1.28,
                       // Each line sits a touch differently, as written lines do.
                       transform: `rotate(${jitter(note.id, i) * 0.5}deg) translateX(${jitter(note.id, i + 7) * 1.4}px)`,

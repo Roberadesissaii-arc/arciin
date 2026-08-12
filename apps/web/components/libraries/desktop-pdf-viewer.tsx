@@ -13,6 +13,7 @@ import {
 import { useDebouncedValue } from "@/lib/hooks/use-debounced-value"
 import { findHighlightRectsOnPage, measurePageGeometry } from "@/lib/files/pdf-page-text-search"
 import {
+  NOTE_FONT_SIZE,
   layoutPageAnnotations,
   type PdfPageAnnotation,
   type PlacedNote,
@@ -45,6 +46,7 @@ function PdfPageCanvas({
   onHeight,
   highlightRects,
   notes,
+  noteFontSize,
   onSelectNote,
 }: {
   pdf: PDFDocumentProxy
@@ -55,6 +57,7 @@ function PdfPageCanvas({
   onHeight: (page: number, height: number) => void
   highlightRects?: StyledRect[]
   notes?: PlacedNote[]
+  noteFontSize?: number
   onSelectNote?: (id: string) => void
 }) {
   const hostRef = useRef<HTMLDivElement>(null)
@@ -197,6 +200,7 @@ function PdfPageCanvas({
           notes={notes}
           width={layoutWidth}
           height={cssHeight - PAGE_PAD}
+          fontSize={noteFontSize}
           onSelect={onSelectNote}
         />
       ) : null}
@@ -248,6 +252,8 @@ export function DesktopPdfViewer({
   const [pageWindow, setPageWindow] = useState({ start: 1, end: 8 })
   const [pageHeights, setPageHeights] = useState<Map<number, number>>(() => new Map())
   const [placedNotes, setPlacedNotes] = useState<Map<number, PlacedNote[]>>(EMPTY_PLACED_NOTES)
+  /** Font size the current placement was computed at — the renderer must match. */
+  const [noteFontSize, setNoteFontSize] = useState(NOTE_FONT_SIZE)
   const [pageHighlights, setPageHighlights] = useState<Map<number, StyledRect[]>>(
     () => new Map(),
   )
@@ -579,7 +585,12 @@ export function DesktopPdfViewer({
           if (cancelled) return
           withRects.push({ ...note, rect: rects[0] ?? null })
         }
-        next.set(page, layoutPageAnnotations(withRects, geometry))
+        // Handwriting is written *on* the page, so it scales with it: at 150%
+        // the notes grow like the printed words rather than shrinking beside
+        // them.
+        const sized = NOTE_FONT_SIZE * geometry.scale
+        if (!cancelled) setNoteFontSize(sized)
+        next.set(page, layoutPageAnnotations(withRects, geometry, sized))
       }
 
       if (!cancelled) setPlacedNotes(next)
@@ -673,6 +684,7 @@ export function DesktopPdfViewer({
               onHeight={onHeight}
               highlightRects={highlightsForRender.get(pageNumber)}
               notes={placedNotes.get(pageNumber)}
+              noteFontSize={noteFontSize}
               onSelectNote={onSelectNote}
             />
           ),

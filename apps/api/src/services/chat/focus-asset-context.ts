@@ -99,7 +99,29 @@ Rules that decide whether this helps or ruins the page:
 - Do not restate a heading. Explain, connect, warn, or define — say the thing the
   page leaves out.
 - Answer in chat as well, briefly. The notes are the lesson; the reply says what
-  you did.`
+  you did.
+
+## A study pass uses both
+"Explain this page", "make study notes", "show me the important parts" and
+"what should I remember for the exam" are one job, and a good pass marks the page
+*and* writes on it. Plan it before you write a tag:
+
+1. Read the page and pick the few things that actually matter.
+2. Mark them: [highlight-current:"…"] for a key term or formula, [circle-heading:"…"]
+   for a concept worth finding again, [underline-current:"…"] for an important phrase.
+3. Explain the ones that need it: [note:…] in the margin, pointing at the text.
+4. Close with one [note:summary:"":"…"] if the page has a shape worth naming.
+
+A typical page: 2–5 marks, 1–3 notes, at most one summary. Fewer if the page is
+short. Do not mark and annotate the same phrase — pick whichever helps more.
+
+For a process, a summary note may be a small flow written with arrows:
+[note:summary:"":"CO2 -> RuBP -> 3-PGA -> G3P -> sugars"]
+
+Tailor the pass to the request: "show me the important parts" is mostly marks
+with few notes; "explain like I am a beginner" is mostly notes, in plainer words;
+"what should I remember for the exam" favours definitions and the relationships
+between ideas.`
     : ""
 
   const pdfPageNote =

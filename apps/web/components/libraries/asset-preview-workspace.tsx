@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
 import { createPortal } from "react-dom"
 import { ChevronLeft, ChevronRight } from "lucide-react"
 import { toast } from "@/lib/notifications/arciin-toast"
@@ -34,6 +34,7 @@ import {
 } from "@/lib/files/pdf-preview-bookmarks"
 import type { PdfHighlightTarget } from "@/lib/files/pdf-highlight-types"
 import type { PdfPageAnnotation } from "@/lib/files/pdf-annotation-layout"
+import { loadStudyLayer, saveStudyLayer } from "@/lib/files/pdf-study-layer-store"
 import type { ImageHighlightRegion } from "@/lib/files/image-highlight-types"
 import type { AssetSummary } from "@/lib/types/models"
 
@@ -172,13 +173,52 @@ function PreviewWorkspaceBody({
   const [pdfHighlightAt, setPdfHighlightAt] = useState<number | undefined>()
   const [pdfNotes, setPdfNotes] = useState<PdfPageAnnotation[]>([])
   const [notesHidden, setNotesHidden] = useState(false)
+  /** Blocks the first save, so restoring a layer is not mistaken for a change. */
+  const studyLayerReadyRef = useRef(false)
   const [focusPdfMark, setFocusPdfMark] = useState<
     { page: number; ordinal: number; at: number } | undefined
   >()
+
+
   const [imageHighlightRegions, setImageHighlightRegions] = useState<ImageHighlightRegion[]>([])
   const [bookmarkRevision, setBookmarkRevision] = useState(0)
 
   const asset = assets[index] ?? assets[0]!
+
+  /**
+   * Restore the study layer for whichever asset is open.
+   *
+   * Runs on asset change rather than mount, because the preview is reused as the
+   * user moves between files — without the reset, one document's notes would
+   * follow them into the next.
+   */
+  useEffect(() => {
+    studyLayerReadyRef.current = false
+    let cancelled = false
+    // Deferred by a microtask rather than set in the effect body: a synchronous
+    // setState here cascades a second render before paint, and the layer is
+    // being read off disk anyway.
+    queueMicrotask(() => {
+      if (cancelled) return
+      const saved = loadStudyLayer(asset.id)
+      setPdfNotes(saved?.notes ?? [])
+      setPdfHighlightTargets(saved?.marks ?? [])
+      setNotesHidden(false)
+      // Marks and notes are stored as text plus page, so the viewer resolves
+      // their positions against the live document — nothing to re-anchor here.
+      if (saved) setPdfHighlightAt(Date.now())
+      studyLayerReadyRef.current = true
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [asset.id])
+
+  useEffect(() => {
+    // Skip the write that would otherwise fire immediately after restoring.
+    if (!studyLayerReadyRef.current) return
+    saveStudyLayer(asset.id, { notes: pdfNotes, marks: pdfHighlightTargets })
+  }, [asset.id, pdfNotes, pdfHighlightTargets])
   const isPdf = isPdfAsset(asset)
   const isImage = asset.mediaType === "IMAGE"
   const isVideo = isVideoLikeAsset(asset)

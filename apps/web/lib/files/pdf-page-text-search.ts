@@ -390,6 +390,8 @@ export async function measurePageGeometry(
   contentRight: number
   contentTop: number
   contentBottom: number
+  /** Rendered size over natural size, so callers can scale what they draw. */
+  scale: number
 } | null> {
   if (pageNumber < 1 || pageNumber > pdf.numPages || displayWidth < 1) return null
 
@@ -397,7 +399,8 @@ export async function measurePageGeometry(
   const page = await pdf.getPage(pageNumber)
   try {
     const base = page.getViewport({ scale: 1 })
-    const viewport = page.getViewport({ scale: displayWidth / base.width })
+    const scale = displayWidth / base.width
+    const viewport = page.getViewport({ scale })
     const textContent = await page.getTextContent()
 
     let left = Infinity
@@ -426,6 +429,7 @@ export async function measurePageGeometry(
     if (!Number.isFinite(left)) return null
 
     return {
+      scale,
       width: viewport.width,
       height: viewport.height,
       contentLeft: Math.max(0, left),

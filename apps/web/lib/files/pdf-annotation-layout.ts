@@ -70,6 +70,9 @@ const NOTE_GAP = 12
 
 export const NOTE_FONT_SIZE = 15
 
+/** Widest a margin note gets at 100%; scaled with the page above. */
+const MAX_NOTE_WIDTH = 210
+
 /**
  * Wrap by width, and honour the line breaks the assistant wrote.
  *
@@ -134,8 +137,13 @@ export function arrowPath(from: Point, to: Point, side: "left" | "right"): Point
   return [from, mid, to]
 }
 
-function overlaps(top: number, height: number, taken: Array<{ top: number; bottom: number }>) {
-  return taken.some((t) => top < t.bottom + NOTE_GAP && top + height + NOTE_GAP > t.top)
+function overlaps(
+  top: number,
+  height: number,
+  taken: Array<{ top: number; bottom: number }>,
+  gap: number,
+) {
+  return taken.some((t) => top < t.bottom + gap && top + height + gap > t.top)
 }
 
 /**
@@ -152,23 +160,30 @@ export function layoutPageAnnotations(
   page: PageGeometry,
   fontSize = NOTE_FONT_SIZE,
 ): PlacedNote[] {
-  const rightWidth = page.width - page.contentRight - GUTTER - EDGE_PAD
-  const leftWidth = page.contentLeft - GUTTER - EDGE_PAD
+  // Every spacing constant is written for 100% and scaled with the page.
+  // Leaving them fixed makes a note occupy half the margin at 200% zoom and land
+  // at a different point on the sheet than it did at 100% — the handwriting has
+  // to zoom with the words it sits beside, because it is written *on* the page.
+  const scale = fontSize / NOTE_FONT_SIZE
+  const edgePad = EDGE_PAD * scale
+  const gutter = GUTTER * scale
+  const noteGap = NOTE_GAP * scale
+  const maxNoteWidth = MAX_NOTE_WIDTH * scale
+
+  const rightWidth = page.width - page.contentRight - gutter - edgePad
+  const leftWidth = page.contentLeft - gutter - edgePad
 
   const sides: Array<{ side: "left" | "right"; width: number; left: number }> = []
-  if (rightWidth > 60) {
-    sides.push({ side: "right", width: rightWidth, left: page.contentRight + GUTTER })
+  if (rightWidth > 60 * scale) {
+    sides.push({ side: "right", width: rightWidth, left: page.contentRight + gutter })
   }
-  if (leftWidth > 60) {
-    sides.push({ side: "left", width: leftWidth, left: EDGE_PAD })
+  if (leftWidth > 60 * scale) {
+    sides.push({ side: "left", width: leftWidth, left: edgePad })
   }
   // A page with no usable margin still gets notes, tucked under the text block.
   if (sides.length === 0) {
-    sides.push({
-      side: "right",
-      width: Math.max(80, page.width * 0.3),
-      left: page.width - Math.max(80, page.width * 0.3) - EDGE_PAD,
-    })
+    const fallback = Math.max(80 * scale, page.width * 0.3)
+    sides.push({ side: "right", width: fallback, left: page.width - fallback - edgePad })
   }
   sides.sort((a, b) => b.width - a.width)
 
@@ -186,27 +201,30 @@ export function layoutPageAnnotations(
     let done = false
 
     for (const side of sides) {
-      const width = Math.min(side.width, 210)
+      const width = Math.min(side.width, maxNoteWidth)
       const { height } = measureNote(annotation.text, width, fontSize)
 
       // Line the note up with what it explains; a summary goes near the bottom,
       // where a student would write one.
       const desired = isSummary
-        ? Math.max(page.contentBottom - height, EDGE_PAD)
+        ? Math.max(page.contentBottom - height, edgePad)
         : (annotation.rect!.top ?? 0) - fontSize * 0.4
 
-      let top = Math.min(Math.max(desired, EDGE_PAD), Math.max(EDGE_PAD, page.height - height - EDGE_PAD))
+      let top = Math.min(
+        Math.max(desired, edgePad),
+        Math.max(edgePad, page.height - height - edgePad),
+      )
 
       // Slide down past anything already there, then try above if that overflows.
       let guard = 0
-      while (overlaps(top, height, taken[side.side]) && guard < 40) {
+      while (overlaps(top, height, taken[side.side], noteGap) && guard < 40) {
         const blocker = taken[side.side]
-          .filter((t) => top < t.bottom + NOTE_GAP && top + height + NOTE_GAP > t.top)
+          .filter((t) => top < t.bottom + noteGap && top + height + noteGap > t.top)
           .sort((a, b) => b.bottom - a.bottom)[0]!
-        top = blocker.bottom + NOTE_GAP
+        top = blocker.bottom + noteGap
         guard += 1
       }
-      if (top + height > page.height - EDGE_PAD) continue
+      if (top + height > page.height - edgePad) continue
 
       taken[side.side].push({ top, bottom: top + height })
 
@@ -216,14 +234,14 @@ export function layoutPageAnnotations(
           : arrowPath(
               {
                 // Leave from the edge of the note nearest the text.
-                x: side.side === "right" ? side.left + 2 : side.left + width - 2,
+                x: side.side === "right" ? side.left + 2 * scale : side.left + width - 2 * scale,
                 y: top + height / 2,
               },
               {
                 x:
                   side.side === "right"
-                    ? annotation.rect.left + annotation.rect.width + 4
-                    : annotation.rect.left - 4,
+                    ? annotation.rect.left + annotation.rect.width + 4 * scale
+                    : annotation.rect.left - 4 * scale,
                 y: annotation.rect.top + annotation.rect.height / 2,
               },
               side.side,
