@@ -3,16 +3,16 @@ import type { PDFDocumentProxy } from "pdfjs-dist"
 import { loadPdfJs } from "@/lib/files/pdfjs-client"
 import type { PdfHighlightRect } from "@/lib/files/pdf-highlight-types"
 
-type PdfTextItem = {
+export type PdfTextItem = {
   str: string
   transform: number[]
   width: number
   height?: number
 }
 
-type MatchMode = "default" | "heading"
+export type MatchMode = "default" | "heading"
 
-function buildSearchableText(items: PdfTextItem[]): { text: string; spans: { start: number; end: number; index: number }[] } {
+export function buildSearchableText(items: PdfTextItem[]): { text: string; spans: { start: number; end: number; index: number }[] } {
   let text = ""
   const spans: { start: number; end: number; index: number }[] = []
 
@@ -44,11 +44,17 @@ function buildFlexiblePattern(query: string): RegExp {
   const pattern = parts
     .map((part) => {
       const escaped = escapeRegex(part)
-      return escaped.replace(/(\d)\.(\d)/g, "$1\\.?\\s*$2")
+      // "3.2" in the query must also match "3 . 2" in the text layer, which is
+      // how some extractors emit a numbered heading.
+      return escaped.replace(/(\d)\\?\.(\d)/g, "$1\\s*\\.?\\s*$2")
     })
     .join("\\s+")
 
-  return new RegExp(pattern, "i")
+  // Global: the caller drives this with `exec` in a loop, and a non-global regex
+  // ignores lastIndex and returns the same match forever — an unbounded loop
+  // that grows the results array until the tab dies. It never fired only because
+  // highlights never reached this code.
+  return new RegExp(pattern, "gi")
 }
 
 function scoreMatch(matched: string, query: string, mode: MatchMode): number {
@@ -88,8 +94,13 @@ function findAllFlexibleMatches(text: string, query: string, mode: MatchMode): {
   pattern.lastIndex = 0
   let m: RegExpExecArray | null
   while ((m = pattern.exec(text)) !== null) {
-    if (m.index === undefined) continue
     const matched = m[0] ?? ""
+    // A zero-length match leaves lastIndex where it was; step over it or the
+    // loop stalls on the same position.
+    if (!matched) {
+      pattern.lastIndex += 1
+      continue
+    }
     const score = scoreMatch(matched, q, mode)
     if (score >= 0) {
       results.push({ start: m.index, end: m.index + matched.length, score })
@@ -121,7 +132,7 @@ function findHeadingMatch(text: string, query: string): { start: number; end: nu
   return null
 }
 
-function findMatchRange(text: string, query: string, mode: MatchMode = "default"): { start: number; end: number } | null {
+export function findMatchRange(text: string, query: string, mode: MatchMode = "default"): { start: number; end: number } | null {
   const q = query.trim()
   if (!q) return null
 

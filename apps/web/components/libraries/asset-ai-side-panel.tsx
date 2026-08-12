@@ -36,6 +36,8 @@ import { queryKeys } from "@/lib/api/query-keys"
 import { useAuth } from "@/hooks/use-auth"
 import { heyTherePhrase, resolveUserGreeting } from "@/lib/user/greeting"
 import { parseAssistantHighlights } from "@/lib/files/parse-pdf-highlight-request"
+import { inferPdfHighlightTargets } from "@/lib/files/infer-pdf-highlight"
+import { inferPdfGotoPage } from "@/lib/files/infer-pdf-page-request"
 import {
   pointingKeywordsFromUser,
   resolveImageHighlightRegions,
@@ -581,6 +583,40 @@ export function AssetAiSidePanel({
         }
         const finalText = stripAssistantStreamMarkup(accumulated)
         applyImageHighlights(finalText)
+
+        // Tags are the fast path; these are the floor under it. A model that
+        // says "Highlighted \"Carbon Fixation\"" and emits no tag left the page
+        // untouched while telling the user it had marked it.
+        const turnUserText =
+          [...historyMessages].reverse().find((m) => m.role === "user")?.content ?? ""
+
+        if (onHighlightPdf && !lastHighlightSigRef.current) {
+          const inferred = inferPdfHighlightTargets({
+            userText: turnUserText,
+            assistantText: finalText,
+            currentPage: pdfPage ?? 0,
+            maxPage: pdfPageCount,
+          })
+          if (inferred.length > 0) {
+            lastHighlightSigRef.current = inferred
+              .map((h) => `${h.kind ?? "default"}:${h.page}:${h.quote}`)
+              .join("|")
+            onHighlightPdf(inferred)
+          }
+        }
+        if (onNavigateToPage && lastGotoRef.current === null) {
+          const page = inferPdfGotoPage({
+            userText: turnUserText,
+            assistantText: finalText,
+            maxPage: pdfPageCount,
+            pageIndex: pdfPageIndex ?? undefined,
+          })
+          if (page) {
+            lastGotoRef.current = page
+            onNavigateToPage(page)
+          }
+        }
+
         const display = stripGotoPageTags(finalText)
         setMessages((m) =>
           m.map((msg) => (msg.id === assistantId ? { ...msg, content: display } : msg)),
