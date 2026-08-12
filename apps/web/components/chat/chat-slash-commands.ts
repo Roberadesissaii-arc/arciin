@@ -72,8 +72,13 @@ export const CHAT_SLASH_COMMANDS: ChatSlashCommand[] = [
   {
     id: "humanize",
     name: "humanize",
-    label: "Humanize",
-    description: "Write or rewrite so it reads as human prose, not model prose",
+    label: "Natural voice",
+    // Named for what it does, not for beating a detector. Tested against
+    // GPTZero: the score does not move. Detectors measure how predictable the
+    // token stream is, and a prompt changes word choice, not sampling. What it
+    // genuinely does is remove the habits — even rhythm, stock transitions,
+    // vague nouns — that make prose dull, which is worth having on its own.
+    description: "Rewrite with varied rhythm and plainer words (does not beat AI detectors)",
     hint: "/humanize rewrite my intro paragraph",
     tools: [],
     expand: (args) => {

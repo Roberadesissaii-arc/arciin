@@ -6,6 +6,12 @@
  * reflexive rule-of-three grouping, and a conclusion that restates the
  * introduction. Readers notice it, and detectors measure it.
  *
+ * This does NOT defeat AI detectors. Tested against GPTZero on a full essay:
+ * the score stayed at 100%. Detectors measure the statistical shape of the
+ * token stream, and a system-prompt instruction changes word choice at the
+ * margin without changing how the model samples. Anyone reaching for this to
+ * pass a checker should be told plainly that it will not work.
+ *
  * The point of this module is not evasion. Every marker below is probabilistic,
  * no checklist defeats a specific classifier, and writing engineered to fool one
  * tends to read worse. The point is that the same habits that make text
