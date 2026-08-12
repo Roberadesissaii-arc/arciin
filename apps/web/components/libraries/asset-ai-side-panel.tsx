@@ -590,18 +590,38 @@ export function AssetAiSidePanel({
         const turnUserText =
           [...historyMessages].reverse().find((m) => m.role === "user")?.content ?? ""
 
-        if (onHighlightPdf && !lastHighlightSigRef.current) {
+        if (onHighlightPdf) {
+          const tagged = parseAssistantHighlights(finalText, {
+            maxPage: pdfPageCount,
+            currentPdfPage: pdfPage,
+            pageIndex: pdfPageIndex ?? undefined,
+          })
           const inferred = inferPdfHighlightTargets({
             userText: turnUserText,
             assistantText: finalText,
             currentPage: pdfPage ?? 0,
             maxPage: pdfPageCount,
           })
-          if (inferred.length > 0) {
-            lastHighlightSigRef.current = inferred
-              .map((h) => `${h.kind ?? "default"}:${h.page}:${h.quote}`)
-              .join("|")
-            onHighlightPdf(inferred)
+
+          // Union, not either/or. Asked for two targets a model often tags one
+          // and describes the other in prose, and taking only the tags drops
+          // half the request. Tags come first so their exact quotes win the
+          // dedupe; the page search silently discards whatever it cannot find.
+          const merged = [...tagged]
+          for (const target of inferred) {
+            const key = `${target.page}:${target.quote.trim().toLowerCase()}`
+            const already = merged.some(
+              (t) => `${t.page}:${t.quote.trim().toLowerCase()}` === key,
+            )
+            if (!already) merged.push(target)
+          }
+
+          const sig = merged
+            .map((h) => `${h.kind ?? "default"}:${h.page}:${h.quote}`)
+            .join("|")
+          if (merged.length > 0 && sig !== lastHighlightSigRef.current) {
+            lastHighlightSigRef.current = sig
+            onHighlightPdf(merged)
           }
         }
         if (onNavigateToPage && lastGotoRef.current === null) {

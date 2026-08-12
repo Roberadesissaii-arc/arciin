@@ -4,6 +4,8 @@ import { parseAssistantHighlights, stripHighlightTags } from "@/lib/files/parse-
 import { resolvePdfGotoPage } from "@/lib/files/parse-pdf-page-request"
 import {
   extractHighlightPhrase,
+  extractHighlightPhrases,
+  extractPhrasesFromAnswer,
   extractQuotedPhraseFromAnswer,
   inferPdfHighlightTargets,
   looksLikeHeading,
@@ -366,5 +368,146 @@ describe("tags outrank the fallback", () => {
     // The panel only infers when the tag parse produced nothing; if both ran the
     // user would get two highlights for one request.
     expect(tagged[0]!.quote).toBe("Reduction")
+  })
+})
+
+// ── Several targets in one request ────────────────────────────────────────────
+
+describe("highlighting more than one thing at once", () => {
+  const TWO_TARGETS =
+    "OK now I want you to highlight two things for me. You know what it says. " +
+    "Caravan fixation and then the other one that I want you to highlight is summary table."
+
+  const TWO_ANSWER = [
+    "Done — I've highlighted both:",
+    "",
+    "* Carbon Fixation — the heading where RuBisCO fixes CO₂ onto RuBP.",
+    "* Summary Table — the comparison table of Light-Dependent Reactions vs. Calvin Cycle.",
+    "",
+    "Both are on PDF page 2.",
+  ].join("\n")
+
+  it("splits the request into both targets", () => {
+    const phrases = extractHighlightPhrases(TWO_TARGETS)
+    expect(phrases.length).toBeGreaterThanOrEqual(2)
+    expect(phrases.join(" | ").toLowerCase()).toContain("summary table")
+  })
+
+  it("reads both targets out of the model's bullet list", () => {
+    expect(extractPhrasesFromAnswer(TWO_ANSWER)).toEqual(["Carbon Fixation", "Summary Table"])
+  })
+
+  it("recovers the misheard word from the answer", () => {
+    // Dictation produced "Caravan fixation", which is not on the page. The
+    // model's list spells it correctly, and both spellings are offered so the
+    // page search can pick the one it finds.
+    const targets = inferPdfHighlightTargets({
+      userText: TWO_TARGETS,
+      assistantText: TWO_ANSWER,
+      currentPage: 2,
+      maxPage: 3,
+    })
+    const quotes = targets.map((t) => t.quote.toLowerCase())
+    expect(quotes).toContain("carbon fixation")
+    expect(quotes.some((q) => q.includes("summary table"))).toBe(true)
+  })
+
+  it("marks every target on the page in view", () => {
+    const targets = inferPdfHighlightTargets({
+      userText: TWO_TARGETS,
+      assistantText: TWO_ANSWER,
+      currentPage: 2,
+      maxPage: 3,
+    })
+    expect(targets.length).toBeGreaterThanOrEqual(2)
+    expect(targets.every((t) => t.page === 2)).toBe(true)
+  })
+
+  it.each([
+    ['highlight "Carbon Fixation" and "Summary Table"', 2],
+    ["highlight the Overview, the Reduction and the Summary Table", 3],
+    ["highlight Photolysis of Water and also ATP and NADPH Production", 2],
+    ["mark Reduction; Regeneration of RuBP", 2],
+  ])("%s finds %i targets", (text, count) => {
+    expect(extractHighlightPhrases(text).length).toBe(count)
+  })
+
+  it("does not split a phrase that merely contains 'and'", () => {
+    // "ATP and NADPH Production" is one heading, not two targets.
+    expect(extractHighlightPhrases("highlight ATP and NADPH Production")).toEqual([
+      "ATP and NADPH Production",
+    ])
+  })
+
+  it("still handles a single target", () => {
+    expect(extractHighlightPhrases("highlight the Calvin Cycle")).toEqual(["Calvin Cycle"])
+  })
+
+  it("caps how many things one request can mark", () => {
+    const many = "highlight a one, b two, c three, d four, e five, f six, g seven, h eight"
+    const targets = inferPdfHighlightTargets({
+      userText: many,
+      assistantText: "",
+      currentPage: 1,
+      maxPage: 3,
+    })
+    expect(targets.length).toBeLessThanOrEqual(6)
+  })
+
+  it("does not fire on an answer that merely lists things", () => {
+    // The user asked a question; a bulleted answer must not paint the page.
+    expect(
+      inferPdfHighlightTargets({
+        userText: "What are the three phases of the Calvin Cycle?",
+        assistantText: "* Carbon Fixation — first\n* Reduction — second\n* Regeneration — third",
+        currentPage: 2,
+        maxPage: 3,
+      }),
+    ).toEqual([])
+  })
+})
+
+describe("tags and inference together", () => {
+  // The panel unions both sources. A model asked for two targets often tags one
+  // and describes the other in prose; taking only the tags drops half the ask.
+  function union(finalText: string, userText: string, page: number, maxPage: number) {
+    const tagged = parseAssistantHighlights(finalText, {
+      maxPage,
+      currentPdfPage: page,
+    })
+    const inferred = inferPdfHighlightTargets({
+      userText,
+      assistantText: finalText,
+      currentPage: page,
+      maxPage,
+    })
+    const merged = [...tagged]
+    for (const t of inferred) {
+      const key = `${t.page}:${t.quote.trim().toLowerCase()}`
+      if (!merged.some((m) => `${m.page}:${m.quote.trim().toLowerCase()}` === key)) merged.push(t)
+    }
+    return merged
+  }
+
+  it("recovers the second target when only one was tagged", () => {
+    const answer =
+      'Done. [highlight-heading:"Carbon Fixation"]\n\n* Summary Table — the comparison table.'
+    const merged = union(answer, "highlight carbon fixation and the summary table", 2, 3)
+    const quotes = merged.map((m) => m.quote.toLowerCase())
+    expect(quotes).toContain("carbon fixation")
+    expect(quotes.some((q) => q.includes("summary table"))).toBe(true)
+  })
+
+  it("does not double-highlight a target that was tagged", () => {
+    const answer = 'Done. [highlight-heading:"Summary Table"]'
+    const merged = union(answer, "highlight the summary table", 2, 3)
+    expect(merged).toHaveLength(1)
+  })
+
+  it("leaves a fully tagged answer alone", () => {
+    const answer =
+      '[highlight-heading:"Carbon Fixation"] [highlight-heading:"Summary Table"]'
+    const merged = union(answer, "highlight carbon fixation and the summary table", 2, 3)
+    expect(merged).toHaveLength(2)
   })
 })

@@ -68,6 +68,98 @@ export function wantsPdfHighlight(userText: string): boolean {
  * Quoted text wins outright — a user who typed quotes has already told us where
  * the phrase begins and ends.
  */
+/**
+ * Split a request that named more than one target.
+ *
+ * "highlight carbon fixation and then the other one is summary table" is two
+ * jobs. Splitting on the connectives keeps each phrase whole — splitting on
+ * every "and" would cut "ATP and NADPH Production" in half, so the connective
+ * has to look like a list joint: "and then", "and also", ", and", or a bare
+ * "and" followed by a fresh naming clause.
+ */
+const LIST_JOINT =
+  /\s*(?:,\s*(?:and\s+)?|;\s*|\band\s+then\b|\band\s+also\b|\balso\b|\band\s+(?=the\s+other|another|second|secondly|next)|\bplus\b)\s*/i
+
+/** "the other one that I want you to highlight is X" → "X". */
+function stripNamingClause(part: string): string {
+  return part
+    .replace(/^.*?\b(?:the\s+other\s+one|another\s+one|the\s+second\s+one|the\s+next\s+one)\b.*?\bis\b\s*/i, "")
+    .replace(/^.*?\bi\s+want\s+you\s+to\s+highlight\b\s*(?:is\s*)?/i, "")
+    .replace(/^(?:the\s+other|another|second|next)\s+(?:one\s+)?(?:is\s+)?/i, "")
+    .trim()
+}
+
+export function extractHighlightPhrases(userText: string): string[] {
+  const raw = (userText || "").trim()
+  if (!raw || !wantsPdfHighlight(raw)) return []
+
+  // Quoted spans are unambiguous; if the user quoted, take every quote.
+  const quotes = [...raw.matchAll(/["“'‘]([^"”'’]{2,80})["”'’]/g)]
+    .map((m) => normalizePhrase(m[1] ?? ""))
+    .filter(Boolean)
+  if (quotes.length > 0) return dedupe(quotes)
+
+  const stripped = raw.replace(FILLER, " ").replace(/\s+/g, " ")
+  const afterVerb = stripped.match(new RegExp(`\\b(?:${HIGHLIGHT_VERB})\\b\\s*(.+)$`, "i"))
+  const body = afterVerb?.[1] ?? stripped
+
+  const parts = splitTrailingAnd(body.split(LIST_JOINT).filter((p) => p && p.trim()))
+  if (parts.length <= 1) {
+    const single = extractHighlightPhrase(raw)
+    return single ? [single] : []
+  }
+
+  const out: string[] = []
+  for (const part of parts) {
+    const cleaned = cleanTarget(stripNamingClause(part))
+    if (isSearchablePhrase(cleaned)) out.push(cleaned)
+  }
+  return dedupe(out)
+}
+
+/**
+ * "A, B and C" — the last comma segment holds two targets joined by a bare
+ * "and".
+ *
+ * Applied only when both sides read as targets in their own right, which is
+ * what separates "carbon fixation and the summary table" (two headings) from
+ * "ATP and NADPH Production" (one heading that contains the word).
+ */
+function splitTrailingAnd(parts: string[]): string[] {
+  if (parts.length === 0) return parts
+  const out = parts.slice(0, -1)
+  const last = parts[parts.length - 1]!
+  const at = last.search(/\s+\band\b\s+/i)
+  if (at < 0) return parts
+  const left = last.slice(0, at)
+  const right = last.replace(/^[\s\S]{0,999}?\s+\band\b\s+/i, "")
+  if (standaloneTarget(left) && standaloneTarget(right)) {
+    out.push(left, right)
+    return out
+  }
+  return parts
+}
+
+/** Distinguishes a target from half of a compound heading like "ATP and NADPH". */
+function standaloneTarget(part: string): boolean {
+  const t = cleanTarget(part)
+  if (!isSearchablePhrase(t)) return false
+  if (t.split(/\s+/).filter(Boolean).length >= 2) return true
+  return t.length >= 6 && !/^[A-Z0-9]+$/.test(t)
+}
+
+function dedupe(values: string[]): string[] {
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const v of values) {
+    const key = v.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(v)
+  }
+  return out
+}
+
 export function extractHighlightPhrase(userText: string): string | null {
   const raw = (userText || "").trim()
   if (!raw) return null
@@ -115,6 +207,42 @@ function isSearchablePhrase(phrase: string): boolean {
  * `Highlighted "Carbon Fixation" — …` is the shape a model produces when it
  * believes it did the job, and the quoted span is exactly what it meant to mark.
  */
+/**
+ * Every phrase the model named, in order.
+ *
+ * Asked for two highlights, a model answers with a list:
+ *
+ *   Done — I've highlighted both:
+ *   * Carbon Fixation — the heading where RuBisCO fixes CO₂ onto RuBP.
+ *   * Summary Table — the comparison table of Light-Dependent Reactions.
+ *
+ * No quotes anywhere, so quote-scanning finds nothing. Each bullet names its
+ * target before the dash. This also repairs dictation: the request said
+ * "Caravan fixation", and the model's list says "Carbon Fixation" — the phrase
+ * that is actually on the page.
+ */
+export function extractPhrasesFromAnswer(assistantText: string): string[] {
+  const text = (assistantText || "").trim()
+  if (!text) return []
+
+  const out: string[] = []
+  for (const line of text.split(/\n/)) {
+    const bullet = line.match(/^\s*(?:[*\-•]|\d+[.)])\s+(.+)$/)
+    if (!bullet?.[1]) continue
+    // The target is the head of the item, before the explanatory dash or colon.
+    const head = bullet[1].split(/\s+[—–]\s+|\s+-\s+|:\s+/)[0] ?? ""
+    const phrase = normalizePhrase(head.replace(/\*\*/g, "").replace(/`/g, ""))
+    if (isSearchablePhrase(phrase) && phrase.split(/\s+/).length <= 8) out.push(phrase)
+  }
+
+  if (out.length > 0) return dedupe(out)
+
+  const quoted = [...text.slice(0, 600).matchAll(/["“]([^"”\n]{2,80})["”]/g)]
+    .map((m) => normalizePhrase(m[1] ?? ""))
+    .filter((p) => isSearchablePhrase(p))
+  return dedupe(quoted)
+}
+
 export function extractQuotedPhraseFromAnswer(assistantText: string): string | null {
   const text = (assistantText || "").trim()
   if (!text) return null
@@ -157,16 +285,22 @@ export function inferPdfHighlightTargets(
   if (!Number.isFinite(currentPage) || currentPage < 1) return []
   if (maxPage && maxPage > 0 && currentPage > maxPage) return []
 
-  const phrase = extractHighlightPhrase(userText) ?? extractQuotedPhraseFromAnswer(assistantText)
-  if (!phrase) return []
-  // A single short token like "it" is not a search term.
-  if (phrase.length < 3) return []
+  // Both sources, not one: the request carries what the user meant, the answer
+  // carries the spelling that is actually on the page. Dictation turned "carbon
+  // fixation" into "Caravan fixation" — unfindable — while the model's own list
+  // had it right. The page search drops whichever phrases it cannot locate, so
+  // offering both costs nothing and rescues the turn.
+  const phrases = dedupe([
+    ...extractHighlightPhrases(userText),
+    ...extractPhrasesFromAnswer(assistantText),
+  ]).filter(isSearchablePhrase)
 
-  return [
-    {
-      page: currentPage,
-      quote: phrase,
-      kind: looksLikeHeading(phrase) ? "heading" : "default",
-    },
-  ]
+  return phrases.slice(0, MAX_INFERRED_HIGHLIGHTS).map((quote) => ({
+    page: currentPage,
+    quote,
+    kind: looksLikeHeading(quote) ? ("heading" as const) : ("default" as const),
+  }))
 }
+
+/** A request cannot sensibly mark more than a handful of things at once. */
+const MAX_INFERRED_HIGHLIGHTS = 6
