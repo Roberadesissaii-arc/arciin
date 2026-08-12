@@ -130,14 +130,26 @@ async function requestTitle(
         }),
         signal,
       })
-      if (!res.ok) return null
+      if (!res.ok) {
+        console.warn(
+          `[auto-title] ${profile.provider} rejected the request (HTTP ${res.status}); falling back to the user's words`,
+        )
+        return null
+      }
       const data = (await res.json()) as { message?: { content?: string } }
       return data.message?.content ?? null
     }
 
     // Everything else speaks the OpenAI-compatible shape.
     const base = (profile.baseUrl ?? PROVIDER_BASE_URLS[profile.provider] ?? "").replace(/\/$/, "")
-    if (!base || !profile.apiKey) return null
+    if (!base || !profile.apiKey) {
+      // Silently returning null here is why every conversation kept its raw
+      // first message: the fallback looks identical to a working title.
+      console.warn(
+        `[auto-title] ${profile.provider} has no ${!base ? "base URL" : "API key"}; cannot generate a title`,
+      )
+      return null
+    }
     const res = await fetch(`${base}/chat/completions`, {
       method: "POST",
       headers: {
@@ -155,12 +167,25 @@ async function requestTitle(
       }),
       signal,
     })
-    if (!res.ok) return null
+    if (!res.ok) {
+      const detail = await res.text().catch(() => "")
+      console.warn(
+        `[auto-title] ${profile.provider}/${model} rejected the request (HTTP ${res.status}) ${detail.slice(0, 160)}`,
+      )
+      return null
+    }
     const data = (await res.json()) as {
       choices?: { message?: { content?: string } }[]
     }
     return data.choices?.[0]?.message?.content ?? null
-  } catch {
+  } catch (error) {
+    // Includes the 15s timeout. Worth naming: a title that never arrives is
+    // indistinguishable from one that arrived and was ignored.
+    console.warn(
+      `[auto-title] ${profile.provider} request failed: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    )
     return null
   }
 }
