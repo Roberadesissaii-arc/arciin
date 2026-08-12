@@ -1,5 +1,7 @@
 "use client"
 
+import type React from "react"
+
 import { Loader2, Sparkles, User } from "lucide-react"
 
 import { ChatMessageActions } from "@/components/chat/chat-message-actions"
@@ -13,6 +15,7 @@ export function PreviewChatMessage({
   canRegenerate = false,
   onRegenerate,
   profileId,
+  footer,
 }: {
   role: "user" | "assistant"
   content: string
@@ -20,6 +23,8 @@ export function PreviewChatMessage({
   canRegenerate?: boolean
   onRegenerate?: () => void
   profileId?: string | null
+  /** Rendered under the answer, above the action row — the mark chips. */
+  footer?: React.ReactNode
 }) {
   const isUser = role === "user"
   const hasContent = content.trim().length > 0
@@ -69,6 +74,7 @@ export function PreviewChatMessage({
             </div>
           )}
         </div>
+        {!isUser && !isStreaming ? footer : null}
         {!isUser && hasContent && !isStreaming ? (
           <ChatMessageActions
             content={content}

@@ -51,14 +51,45 @@ function normalizePhrase(value: string): string {
     .trim()
 }
 
+/**
+ * Words that describe where something is, not what it says.
+ *
+ * "Underline the Reduction heading" asks for the word Reduction; the page has no
+ * text reading "Reduction heading", so leaving the noun on searched for a string
+ * that cannot exist and marked nothing at all. Stripped from both ends, since
+ * users write "the heading Reduction" just as often.
+ *
+ * `table` is deliberately absent: "Summary Table" is the heading itself.
+ */
+const STRUCTURE_NOUN =
+  "headings?|headers?|sections?|titles?|lines?|paragraphs?|sentences?|paras?|" +
+  "paragraph|paras|bits?|paras|paragraphs|rows?|columns?|entr(?:y|ies)|items?|" +
+  "labels?|captions?|paragraph|bullets?|paragraphs"
+
+/** Prepositions left behind by verbs like "put a box **around** X". */
+const LEADING_NOISE =
+  "around|round|over|under|on|at|to|near|through|across|next\\s+to|beside|" +
+  "the|a|an|it|that|this|where|what|which|part|bit|text|words?|phrase|" +
+  `says?|saying|said|is|are|about|for|in|of|${STRUCTURE_NOUN}`
+
 function cleanTarget(value: string): string {
   let phrase = normalizePhrase(value.replace(FILLER, " "))
-  // Leading connectives left behind once the verb is removed.
-  phrase = phrase.replace(
-    /^(?:the|a|an|it|that|this|where|what|which|part|section|bit|text|word|words|phrase|title|heading)\s+/i,
-    "",
-  )
-  phrase = phrase.replace(/^(?:says?|saying|said|is|are|about|on|for|in|of)\s+/i, "")
+
+  // Peel one word at a time: "around the Summary Table" needs the preposition
+  // and the article gone, and a single pass in a fixed order misses one of them.
+  const leading = new RegExp(`^(?:${LEADING_NOISE})\\s+`, "i")
+  for (let i = 0; i < 5; i++) {
+    const next = phrase.replace(leading, "")
+    if (next === phrase) break
+    phrase = next
+  }
+
+  // Trailing structure word: "Reduction heading" → "Reduction". Never strip the
+  // whole phrase — "the heading" on its own leaves nothing to search for.
+  const trailing = new RegExp(`\\s+(?:${STRUCTURE_NOUN})$`, "i")
+  const trimmedTail = phrase.replace(trailing, "")
+  if (trimmedTail.trim()) phrase = trimmedTail
+
   // A trailing clause the user tacked on is not part of the phrase.
   phrase = phrase.replace(/\s+(?:please|thanks|thank you)$/i, "")
   return phrase.trim()
@@ -205,7 +236,10 @@ export function extractHighlightPhrase(userText: string): string | null {
 function isSearchablePhrase(phrase: string): boolean {
   const p = phrase.trim()
   if (p.length < 3) return false
-  return !/^(?:it|that|this|there|them|these|those|here|one)$/i.test(p)
+  if (/^(?:it|that|this|there|them|these|those|here|one)$/i.test(p)) return false
+  // "highlight the heading" names a kind of thing, not a thing. Searching the
+  // page for the word "heading" would mark whatever prose happened to use it.
+  return !new RegExp(`^(?:${STRUCTURE_NOUN})$`, "i").test(p)
 }
 
 /**

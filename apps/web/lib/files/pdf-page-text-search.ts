@@ -12,12 +12,31 @@ export type PdfTextItem = {
 
 export type MatchMode = "default" | "heading"
 
+/**
+ * Subscripts and superscripts, flattened to plain digits.
+ *
+ * A PDF that reads "CO₂" on paper often stores the 2 as a separate positioned
+ * glyph, and some extractors drop it entirely — this document's text layer holds
+ * "6 CO + 6 HO". A model quoting the formula writes the subscripts, so the query
+ * and the page can never match on a straight comparison. Both sides are
+ * flattened here, and `buildFlexiblePattern` then makes the digits optional so a
+ * query of "CO2" still finds a page that says "CO".
+ */
+export function flattenScriptDigits(value: string): string {
+  return value
+    .replace(/[\u2080-\u2089]/g, (c) => String(c.charCodeAt(0) - 0x2080))
+    .replace(/[\u2070\u2074-\u2079]/g, (c) => String(c.charCodeAt(0) - 0x2070))
+    .replace(/\u00b9/g, "1")
+    .replace(/\u00b2/g, "2")
+    .replace(/\u00b3/g, "3")
+}
+
 export function buildSearchableText(items: PdfTextItem[]): { text: string; spans: { start: number; end: number; index: number }[] } {
   let text = ""
   const spans: { start: number; end: number; index: number }[] = []
 
   for (let i = 0; i < items.length; i++) {
-    const str = items[i]!.str
+    const str = flattenScriptDigits(items[i]!.str)
     if (!str) continue
     const start = text.length
     text += str
@@ -33,11 +52,23 @@ function escapeRegex(value: string): string {
 }
 
 function normalizeForMatch(value: string): string {
-  return value.replace(/\s+/g, " ").trim().toLowerCase()
+  return flattenScriptDigits(value).replace(/\s+/g, " ").trim().toLowerCase()
+}
+
+/**
+ * Drop the digits welded to letters, for comparison only.
+ *
+ * The pattern already treats "CO2" and "CO" as the same token, but the score
+ * that decides whether a match is worth keeping compared raw words and threw the
+ * match away again: "h2o" does not contain "ho" as a substring. Both sides are
+ * folded the same way here so scoring agrees with matching.
+ */
+function foldFormulaDigits(value: string): string {
+  return value.replace(/([a-z])\d+/gi, "$1")
 }
 
 function buildFlexiblePattern(query: string): RegExp {
-  const trimmed = query.trim()
+  const trimmed = flattenScriptDigits(query).trim()
   const parts = trimmed.split(/\s+/).filter(Boolean)
   if (parts.length === 0) return /$^/
 
@@ -46,7 +77,11 @@ function buildFlexiblePattern(query: string): RegExp {
       const escaped = escapeRegex(part)
       // "3.2" in the query must also match "3 . 2" in the text layer, which is
       // how some extractors emit a numbered heading.
-      return escaped.replace(/(\d)\\?\.(\d)/g, "$1\\s*\\.?\\s*$2")
+      const spaced = escaped.replace(/(\d)\\?\.(\d)/g, "$1\\s*\\.?\\s*$2")
+      // Digits welded to letters are chemistry — CO2, H2O, G3P — and the text
+      // layer may have lost them with the subscript they were set in. Make them
+      // optional so "CO2" still matches a page that only kept "CO".
+      return spaced.replace(/([A-Za-z])(\d+)(?![.\d])/g, "$1(?:$2)?")
     })
     .join("\\s+")
 
@@ -63,8 +98,8 @@ function scoreMatch(matched: string, query: string, mode: MatchMode): number {
   if (!m || !q) return -1
   if (m === q) return 1000
   if (m.includes(q)) return 800 + q.length - Math.abs(m.length - q.length)
-  const qWords = q.split(/\s+/).filter(Boolean)
-  const mWords = m.split(/\s+/).filter(Boolean)
+  const qWords = foldFormulaDigits(q).split(/\s+/).filter(Boolean)
+  const mWords = foldFormulaDigits(m).split(/\s+/).filter(Boolean)
   const allPresent = qWords.every((w) => mWords.some((mw) => mw.includes(w) || w.includes(mw)))
   if (!allPresent) return -1
   let score = 400 + qWords.length * 20
@@ -78,8 +113,8 @@ function findAllFlexibleMatches(text: string, query: string, mode: MatchMode): {
   const q = query.trim()
   if (!q) return results
 
-  const lowerText = text.toLowerCase()
-  const lowerQ = q.toLowerCase()
+  const lowerText = flattenScriptDigits(text).toLowerCase()
+  const lowerQ = flattenScriptDigits(q).toLowerCase()
   let idx = 0
   while (idx < lowerText.length) {
     const found = lowerText.indexOf(lowerQ, idx)

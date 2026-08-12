@@ -190,6 +190,7 @@ export function DesktopPdfViewer({
   zoom = 1,
   scrollToPage,
   scrollToPageAt,
+  focusHighlight,
   highlightTargets,
   highlightAt,
   onPageChange,
@@ -198,6 +199,8 @@ export function DesktopPdfViewer({
   zoom?: number
   scrollToPage?: number
   scrollToPageAt?: number
+  /** Scroll a specific mark into view: its page, and which mark on that page. */
+  focusHighlight?: { page: number; ordinal: number; at: number }
   highlightTargets?: PdfHighlightTarget[]
   highlightAt?: number
   onPageChange?: (page: number, total: number) => void
@@ -507,6 +510,41 @@ export function DesktopPdfViewer({
     const end = Math.min(numPages, page + WINDOW_AFTER)
     setPageWindow({ start, end })
   }, [layoutWidth, numPages, pageHeights, scrollToPage, scrollToPageAt])
+
+  /**
+   * Bring one mark into view.
+   *
+   * Scrolling to the page is not enough on a long page: a circle three quarters
+   * of the way down a A4 sheet is off screen, and the user is told something was
+   * marked with nothing to see. This lands the mark a third of the way down the
+   * viewport, which reads as deliberate rather than as the page having jumped.
+   */
+  useEffect(() => {
+    if (!focusHighlight || numPages < 1) return
+    const { page, ordinal, at } = focusHighlight
+    const key = `focus:${at}:${page}:${ordinal}`
+    if (lastScrollKeyRef.current === key) return
+
+    const root = scrollRef.current
+    if (!root) return
+    const rects = pageHighlights.get(page)
+    // The rect may not exist yet — the page has to render before it is measured.
+    if (!rects?.length) return
+    lastScrollKeyRef.current = key
+
+    let top = 0
+    for (let p = 1; p < page; p++) top += pageHeights.get(p) ?? defaultPageHeight(layoutWidth)
+
+    const rect = rects[Math.min(Math.max(ordinal, 0), rects.length - 1)]!
+    const target = top + rect.top - root.clientHeight / 3
+
+    programmaticScrollUntilRef.current = Date.now() + 1400
+    anchorPageRef.current = page
+    root.scrollTo({ top: Math.max(0, target), behavior: "smooth" })
+    onPageChangeRef.current?.(page, numPages)
+    // No window change needed: a measured rect means the page is already
+    // rendered, and therefore already inside the window.
+  }, [focusHighlight, layoutWidth, numPages, pageHeights, pageHighlights])
 
   // The initial window is a fixed guess (1..8) made before numPages is known, so
   // clamp it — a 1-page PDF was asking pdf.js for pages 2-8 and logging

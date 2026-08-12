@@ -1,0 +1,113 @@
+import { describe, expect, it } from "vitest"
+
+import {
+  buildSearchableText,
+  findMatchRange,
+  flattenScriptDigits,
+  type PdfTextItem,
+} from "@/lib/files/pdf-page-text-search"
+import { extractHighlightPhrases } from "@/lib/files/infer-pdf-highlight"
+
+/**
+ * Chemistry, and the words that describe where text is rather than what it says.
+ *
+ * The photosynthesis PDF's text layer lost its subscripts: the page reads
+ * "6 CO + 6 HO + light energy" where the paper shows CO₂ and H₂O. A model
+ * quoting the formula writes the subscripts, so nothing matched.
+ */
+
+function items(strings: string[]): PdfTextItem[] {
+  return strings.map((str) => ({ str, transform: [1, 0, 0, 1, 0, 0], width: str.length * 5 }))
+}
+
+function findable(page: string[], query: string, mode: "default" | "heading" = "default") {
+  const { text } = buildSearchableText(items(page))
+  return findMatchRange(text, query, mode) !== null
+}
+
+// Exactly as the extractor handed this document over.
+const PAGE = [
+  "The net reaction:",
+  "6 CO + 6 HO + light energy CHO + 6 O",
+  "The enzyme RuBisCO grabs CO from the atmosphere and attaches it to a five-carbon sugar",
+  "2 HO 4 H + 4 e + O",
+  "3-PGA into glyceraldehyde-3-phosphate (G3P), a three-carbon sugar",
+]
+
+describe("flattening scripts", () => {
+  it.each([
+    ["CO₂", "CO2"],
+    ["H₂O", "H2O"],
+    ["CO²", "CO2"],
+    ["x¹y³", "x1y3"],
+    ["C₆H₁₂O₆", "C6H12O6"],
+  ])("%s → %s", (input, want) => {
+    expect(flattenScriptDigits(input)).toBe(want)
+  })
+
+  it("leaves ordinary text alone", () => {
+    expect(flattenScriptDigits("Carbon Fixation 3.2")).toBe("Carbon Fixation 3.2")
+  })
+})
+
+describe("a query with subscripts against a page that lost them", () => {
+  it.each([
+    "CO₂",
+    "CO2",
+    "6 CO₂ + 6 H₂O",
+    "RuBisCO grabs CO₂ from the atmosphere",
+  ])("finds %j", (query) => {
+    expect(findable(PAGE, query)).toBe(true)
+  })
+
+  it("finds the photolysis equation written with subscripts", () => {
+    expect(findable(PAGE, "2 H₂O")).toBe(true)
+  })
+
+  it("still finds a formula the page did keep", () => {
+    expect(findable(PAGE, "G3P")).toBe(true)
+    expect(findable(PAGE, "3-PGA")).toBe(true)
+  })
+
+  it("does not match a formula that is genuinely absent", () => {
+    expect(findable(PAGE, "NH3 ammonia synthesis")).toBe(false)
+  })
+})
+
+describe("words describing position, not content", () => {
+  // "Underline the Reduction heading" searched for the string "Reduction
+  // heading", which is on no page, so it marked nothing at all.
+  it.each([
+    ["underline the Reduction heading", "Reduction"],
+    ["underline the heading Reduction", "Reduction"],
+    ["cross out the Location line", "Location"],
+    ["highlight the Overview section", "Overview"],
+    ["circle the Carbon Fixation title", "Carbon Fixation"],
+    ["put a box around the Summary Table", "Summary Table"],
+    ["draw a circle around the Reduction heading", "Reduction"],
+    ["mark the first row", "first"],
+  ])("%j → %j", (text, want) => {
+    expect(extractHighlightPhrases(text)).toEqual([want])
+  })
+
+  it("keeps Table when it is part of the heading", () => {
+    // "Summary Table" is the heading; stripping the noun would break the match.
+    expect(extractHighlightPhrases("highlight the Summary Table")).toEqual(["Summary Table"])
+  })
+
+  it("never strips a phrase down to nothing", () => {
+    expect(extractHighlightPhrases("highlight the heading")).toEqual([])
+  })
+})
+
+describe("the two fixes together", () => {
+  it("underlining a heading by description finds it on the page", () => {
+    const phrase = extractHighlightPhrases("underline the Reduction heading")[0]!
+    expect(findable(["Reduction", "ATP and NADPH from the light-dependent reactions"], phrase, "heading")).toBe(true)
+  })
+
+  it("marking the net reaction with subscripts finds the flattened page text", () => {
+    const phrase = extractHighlightPhrases("highlight where it says 6 CO₂ + 6 H₂O")[0]!
+    expect(findable(PAGE, phrase)).toBe(true)
+  })
+})

@@ -38,6 +38,7 @@ import { heyTherePhrase, resolveUserGreeting } from "@/lib/user/greeting"
 import { parseAssistantHighlights } from "@/lib/files/parse-pdf-highlight-request"
 import { inferPdfHighlightTargets } from "@/lib/files/infer-pdf-highlight"
 import { inferPdfGotoPage } from "@/lib/files/infer-pdf-page-request"
+import { PdfMarkBadges } from "@/components/libraries/pdf-mark-badges"
 import {
   pointingKeywordsFromUser,
   resolveImageHighlightRegions,
@@ -61,7 +62,13 @@ import { PreviewChatMessage } from "@/components/libraries/preview-chat-message"
 import { cn } from "@/lib/utils"
 import type { AssetSummary } from "@/lib/types/models"
 
-type PanelMessage = { id: string; role: "user" | "assistant"; content: string }
+type PanelMessage = {
+  id: string
+  role: "user" | "assistant"
+  content: string
+  /** Marks this turn put on the page, shown as chips under the answer. */
+  marks?: PdfHighlightTarget[]
+}
 
 function suggestionsFor(
   asset: AssetSummary,
@@ -110,6 +117,7 @@ export function AssetAiSidePanel({
   pdfPageCount,
   onNavigateToPage,
   onHighlightPdf,
+  onFocusPdfMark,
   onClearPdfHighlight,
   onHighlightImage,
   onClearImageHighlight,
@@ -122,6 +130,8 @@ export function AssetAiSidePanel({
   pdfPageCount?: number
   onNavigateToPage?: (page: number) => void
   onHighlightPdf?: (targets: PdfHighlightTarget[]) => void
+  /** Scroll one already-drawn mark into view (badge click). */
+  onFocusPdfMark?: (target: PdfHighlightTarget) => void
   onClearPdfHighlight?: () => void
   onHighlightImage?: (regions: ImageHighlightRegion[], options?: { replace?: boolean }) => void
   onClearImageHighlight?: () => void
@@ -622,6 +632,11 @@ export function AssetAiSidePanel({
           if (merged.length > 0 && sig !== lastHighlightSigRef.current) {
             lastHighlightSigRef.current = sig
             onHighlightPdf(merged)
+            // Kept on the message, not in one shared slot: scrolling back to an
+            // earlier answer should still offer that turn's marks.
+            setMessages((m) =>
+              m.map((msg) => (msg.id === assistantId ? { ...msg, marks: merged } : msg)),
+            )
           }
         }
         if (onNavigateToPage && lastGotoRef.current === null) {
@@ -913,6 +928,15 @@ export function AssetAiSidePanel({
                     m.role === "assistant" && m.id === lastAssistantId
                       ? () => void regenerateAssistant(m.id)
                       : undefined
+                  }
+                  footer={
+                    m.marks?.length && onFocusPdfMark ? (
+                      <PdfMarkBadges
+                        targets={m.marks}
+                        currentPage={pdfPage}
+                        onFocus={(target) => onFocusPdfMark(target)}
+                      />
+                    ) : null
                   }
                 />
               ))}

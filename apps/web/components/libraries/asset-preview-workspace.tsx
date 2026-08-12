@@ -80,6 +80,7 @@ function PreviewBody({
   scrollToPdfPageAt,
   pdfHighlightTargets,
   pdfHighlightAt,
+  focusPdfMark,
   imageHighlightRegions,
   onPdfPageChange,
 }: {
@@ -89,6 +90,7 @@ function PreviewBody({
   scrollToPdfPageAt?: number
   pdfHighlightTargets?: PdfHighlightTarget[]
   pdfHighlightAt?: number
+  focusPdfMark?: { page: number; ordinal: number; at: number }
   imageHighlightRegions?: ImageHighlightRegion[]
   onPdfPageChange: (page: number, total: number) => void
 }) {
@@ -119,6 +121,7 @@ function PreviewBody({
           scrollToPageAt={scrollToPdfPageAt}
           highlightTargets={pdfHighlightTargets}
           highlightAt={pdfHighlightAt}
+          focusHighlight={focusPdfMark}
           onPageChange={onPdfPageChange}
         />
       ) : isVideo ? (
@@ -163,6 +166,9 @@ function PreviewWorkspaceBody({
   >()
   const [pdfHighlightTargets, setPdfHighlightTargets] = useState<PdfHighlightTarget[]>([])
   const [pdfHighlightAt, setPdfHighlightAt] = useState<number | undefined>()
+  const [focusPdfMark, setFocusPdfMark] = useState<
+    { page: number; ordinal: number; at: number } | undefined
+  >()
   const [imageHighlightRegions, setImageHighlightRegions] = useState<ImageHighlightRegion[]>([])
   const [bookmarkRevision, setBookmarkRevision] = useState(0)
 
@@ -216,6 +222,23 @@ function PreviewWorkspaceBody({
     [assets.length, onNavigate],
   )
 
+  const handleFocusPdfMark = useCallback(
+    (target: PdfHighlightTarget) => {
+      // The viewer stores rects grouped by page in target order, so a mark's
+      // position among the targets on its own page is its position in that list.
+      const ordinal = pdfHighlightTargets
+        .filter((t) => t.page === target.page)
+        .findIndex(
+          (t) =>
+            t.quote.trim().toLowerCase() === target.quote.trim().toLowerCase() &&
+            (t.style ?? "highlight") === (target.style ?? "highlight"),
+        )
+      setFocusPdfMark({ page: target.page, ordinal: Math.max(0, ordinal), at: Date.now() })
+      if (target.page !== pdfPage) setPdfPage(target.page)
+    },
+    [pdfHighlightTargets, pdfPage],
+  )
+
   const handlePdfHighlight = useCallback(
     (targets: PdfHighlightTarget[]) => {
       setPdfHighlightTargets((prev) => {
@@ -235,6 +258,12 @@ function PreviewWorkspaceBody({
         return merged
       })
       setPdfHighlightAt(Date.now())
+      // Scroll to the first mark automatically. Being told something was marked
+      // and having to hunt for it is the same as not being told.
+      const lead = targets[0]
+      if (lead) {
+        setFocusPdfMark({ page: lead.page, ordinal: 0, at: Date.now() })
+      }
       const first = targets[0]
       if (first && first.page !== pdfPage) {
         setScrollToPdfPage({ page: first.page, at: Date.now() })
@@ -316,6 +345,7 @@ function PreviewWorkspaceBody({
             scrollToPdfPageAt={scrollToPdfPage?.at}
             pdfHighlightTargets={pdfHighlightTargets}
             pdfHighlightAt={pdfHighlightAt}
+            focusPdfMark={focusPdfMark}
             imageHighlightRegions={imageHighlightRegions}
             onPdfPageChange={(page, total) => {
               setPdfPage(page)
@@ -397,6 +427,7 @@ function PreviewWorkspaceBody({
                 isPdf ? (page) => setScrollToPdfPage({ page, at: Date.now() }) : undefined
               }
               onHighlightPdf={isPdf ? handlePdfHighlight : undefined}
+              onFocusPdfMark={isPdf ? handleFocusPdfMark : undefined}
               onClearPdfHighlight={isPdf ? () => handlePdfHighlight([]) : undefined}
               onHighlightImage={isImage ? handleImageHighlight : undefined}
               onClearImageHighlight={isImage ? () => handleImageHighlight([]) : undefined}
@@ -423,6 +454,7 @@ function PreviewWorkspaceBody({
               isPdf ? (page) => setScrollToPdfPage({ page, at: Date.now() }) : undefined
             }
             onHighlightPdf={isPdf ? handlePdfHighlight : undefined}
+            onFocusPdfMark={isPdf ? handleFocusPdfMark : undefined}
             onClearPdfHighlight={isPdf ? () => handlePdfHighlight([]) : undefined}
             onHighlightImage={isImage ? handleImageHighlight : undefined}
             onClearImageHighlight={isImage ? () => handleImageHighlight([]) : undefined}
