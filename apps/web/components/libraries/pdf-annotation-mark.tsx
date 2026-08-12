@@ -43,9 +43,11 @@ function wobbleSeed(rect: PdfHighlightRect): number {
 
 function CircleMark({ rect }: { rect: PdfHighlightRect }) {
   const seed = wobbleSeed(rect)
-  // Room for the stroke to bulge past the text without clipping.
-  const padX = Math.max(8, rect.height * 0.55)
-  const padY = Math.max(5, rect.height * 0.4)
+  // Room for the stroke to bulge past the text, capped so a long match cannot
+  // turn into a loop sweeping across the page. A circle round half a paragraph
+  // is not a circle; it is a rendering fault the reader has to decode.
+  const padX = Math.min(22, Math.max(8, rect.height * 0.55))
+  const padY = Math.min(14, Math.max(5, rect.height * 0.4))
   const w = rect.width + padX * 2
   const h = rect.height + padY * 2
   const stroke = Math.max(1.6, Math.min(2.6, rect.height * 0.11))

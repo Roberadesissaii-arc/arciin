@@ -133,6 +133,7 @@ export function AssetAiSidePanel({
   rewriteHandleRef,
   onExportAnnotated,
   exporting,
+  renderReport,
   notesHidden,
   onToggleNotes,
   noteCount = 0,
@@ -162,6 +163,8 @@ export function AssetAiSidePanel({
   >
   onExportAnnotated?: () => void
   exporting?: boolean
+  /** Correction appended when fewer annotations rendered than were requested. */
+  renderReport?: { missedMarks: string[]; missedNotes: number } | null
   notesHidden?: boolean
   onToggleNotes?: () => void
   noteCount?: number
@@ -1061,7 +1064,42 @@ export function AssetAiSidePanel({
                       : undefined
                   }
                   footer={
-                    m.marks?.length && onFocusPdfMark ? (
+                    m.id === lastAssistantId && renderReport &&
+                    (renderReport.missedMarks.length > 0 || renderReport.missedNotes > 0) ? (
+                      <>
+                        {/* The answer describes what the model intended. This
+                            describes the page. When they disagree the page
+                            wins, and the student is told rather than left to
+                            hunt for a mark that was never drawn. */}
+                        <p className="mt-2 rounded-md border border-amber-300/60 bg-amber-50 px-2 py-1.5 text-[11px] leading-snug text-amber-900">
+                          {renderReport.missedMarks.length > 0 ? (
+                            <>
+                              Could not find on this page:{" "}
+                              <span className="font-medium">
+                                {renderReport.missedMarks.map((q) => `“${q}”`).join(", ")}
+                              </span>
+                              . {renderReport.missedMarks.length === 1 ? "That mark was" : "Those marks were"}{" "}
+                              not drawn.
+                            </>
+                          ) : null}
+                          {renderReport.missedNotes > 0 ? (
+                            <>
+                              {renderReport.missedMarks.length > 0 ? " " : ""}
+                              {renderReport.missedNotes}{" "}
+                              {renderReport.missedNotes === 1 ? "note" : "notes"} could not be placed
+                              on this page.
+                            </>
+                          ) : null}
+                        </p>
+                        {m.marks?.length && onFocusPdfMark ? (
+                          <PdfMarkBadges
+                            targets={m.marks}
+                            currentPage={pdfPage}
+                            onFocus={(target) => onFocusPdfMark(target)}
+                          />
+                        ) : null}
+                      </>
+                    ) : m.marks?.length && onFocusPdfMark ? (
                       <PdfMarkBadges
                         targets={m.marks}
                         currentPage={pdfPage}

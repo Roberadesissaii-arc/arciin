@@ -223,6 +223,7 @@ export function DesktopPdfViewer({
   highlightAt,
   annotations,
   onSelectNote,
+  onRenderReport,
   onPageChange,
 }: {
   fileUrl: string
@@ -236,6 +237,11 @@ export function DesktopPdfViewer({
   /** Handwritten teaching notes the assistant wrote for a page. */
   annotations?: PdfPageAnnotation[]
   onSelectNote?: (id: string) => void
+  /** What actually rendered, so the answer can be corrected to match the page. */
+  onRenderReport?: (report: {
+    marks: { quote: string; page: number; rendered: boolean }[]
+    notes: { id: string; text: string; rendered: boolean }[]
+  }) => void
   onPageChange?: (page: number, total: number) => void
 }) {
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -259,6 +265,17 @@ export function DesktopPdfViewer({
   const [placedNotes, setPlacedNotes] = useState<Map<number, PlacedNote[]>>(EMPTY_PLACED_NOTES)
   /** Font size the current placement was computed at — the renderer must match. */
   const [noteFontSize, setNoteFontSize] = useState(NOTE_FONT_SIZE)
+  /**
+   * What the last resolution pass managed to draw.
+   *
+   * Held in refs and reported together, because the answer shown to the student
+   * must describe the page as it is — claiming four circles when the text layer
+   * only yielded three is the failure mode that makes the whole feature
+   * untrustworthy.
+   */
+  const markReportRef = useRef<{ quote: string; page: number; rendered: boolean }[]>([])
+  const noteReportRef = useRef<{ id: string; text: string; rendered: boolean }[]>([])
+  const reportRenderRef = useRef<(() => void) | null>(null)
   const [pageHighlights, setPageHighlights] = useState<Map<number, StyledRect[]>>(
     () => new Map(),
   )
@@ -354,6 +371,7 @@ export function DesktopPdfViewer({
     let cancelled = false
     void (async () => {
       const next = new Map<number, StyledRect[]>()
+      const markReport: { quote: string; page: number; rendered: boolean }[] = []
       for (const target of highlightTargets) {
         const rects = await findHighlightRectsOnPage(
           pdf,
@@ -363,6 +381,7 @@ export function DesktopPdfViewer({
           target.kind === "heading" ? "heading" : "default",
         )
         if (cancelled) return
+        markReport.push({ quote: target.quote, page: target.page, rendered: rects.length > 0 })
         if (rects.length > 0) {
           const prev = next.get(target.page) ?? []
           const styled = rects.map((r) => ({
@@ -373,7 +392,11 @@ export function DesktopPdfViewer({
           next.set(target.page, [...prev, ...styled])
         }
       }
-      if (!cancelled) setPageHighlights(next)
+      if (!cancelled) {
+        setPageHighlights(next)
+        markReportRef.current = markReport
+        reportRenderRef.current?.()
+      }
     })()
 
     return () => {
@@ -580,6 +603,7 @@ export function DesktopPdfViewer({
         return
       }
 
+      const noteReport: { id: string; text: string; rendered: boolean }[] = []
       const byPage = new Map<number, PdfPageAnnotation[]>()
       for (const note of annotations) {
         byPage.set(note.page, [...(byPage.get(note.page) ?? []), note])
@@ -600,23 +624,47 @@ export function DesktopPdfViewer({
             ? await findHighlightRectsOnPage(pdf, page, note.target, width, "default")
             : []
           if (cancelled) return
-          withRects.push({ ...note, rect: rects[0] ?? null })
+          // A note whose target is not on the page has nothing to point at, and
+          // a summary legitimately has no target at all.
+          const anchored = !note.target || rects.length > 0
+          withRects.push({ ...note, rect: rects[0] ?? null, anchored })
         }
         // Handwriting is written *on* the page, so it scales with it: at 150%
         // the notes grow like the printed words rather than shrinking beside
         // them.
         const sized = NOTE_FONT_SIZE * geometry.scale
         if (!cancelled) setNoteFontSize(sized)
-        next.set(page, layoutPageAnnotations(withRects, geometry, sized))
+        // Only anchored notes are laid out; an unanchored one would point at
+        // nothing, and is reported as failed rather than drawn adrift.
+        const placed = layoutPageAnnotations(
+          withRects.filter((n) => n.anchored),
+          geometry,
+          sized,
+        )
+        const drawn = new Set(placed.map((n) => n.id))
+        for (const note of withRects) {
+          noteReport.push({ id: note.id, text: note.text, rendered: drawn.has(note.id) })
+        }
+        next.set(page, placed)
       }
 
-      if (!cancelled) setPlacedNotes(next)
+      if (!cancelled) {
+        setPlacedNotes(next)
+        noteReportRef.current = noteReport
+        reportRenderRef.current?.()
+      }
     })()
 
     return () => {
       cancelled = true
     }
   }, [annotations, layoutWidth, pdfDoc, renderWidth])
+
+  useEffect(() => {
+    reportRenderRef.current = onRenderReport
+      ? () => onRenderReport({ marks: markReportRef.current, notes: noteReportRef.current })
+      : null
+  }, [onRenderReport])
 
   /**
    * Bring one mark into view.

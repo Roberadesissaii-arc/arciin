@@ -324,3 +324,85 @@ describe("a page with no room to write", () => {
     }
   })
 })
+
+describe("the answer must describe the page, not the plan", () => {
+  // The reported failure: the assistant said it circled four terms and the page
+  // showed fewer. The reconciliation is a set difference, so a mark whose text
+  // is not on the page is named rather than silently missing.
+  function reconcile(report: {
+    marks: { quote: string; page: number; rendered: boolean }[]
+    notes: { id: string; text: string; rendered: boolean }[]
+  }) {
+    const missedMarks = report.marks.filter((m) => !m.rendered).map((m) => m.quote)
+    const missedNotes = report.notes.filter((n) => !n.rendered).length
+    return missedMarks.length === 0 && missedNotes === 0 ? null : { missedMarks, missedNotes }
+  }
+
+  it("says nothing when every annotation landed", () => {
+    expect(
+      reconcile({
+        marks: [{ quote: "RuBisCO", page: 2, rendered: true }],
+        notes: [{ id: "n1", text: "fixes CO2", rendered: true }],
+      }),
+    ).toBeNull()
+  })
+
+  it("names the marks that were not drawn", () => {
+    const out = reconcile({
+      marks: [
+        { quote: "RuBisCO", page: 2, rendered: true },
+        { quote: "photorespiration", page: 2, rendered: false },
+        { quote: "chlorophyll b", page: 2, rendered: false },
+      ],
+      notes: [],
+    })
+    expect(out!.missedMarks).toEqual(["photorespiration", "chlorophyll b"])
+  })
+
+  it("counts notes that could not be placed", () => {
+    const out = reconcile({
+      marks: [],
+      notes: [
+        { id: "a", text: "one", rendered: true },
+        { id: "b", text: "two", rendered: false },
+      ],
+    })
+    expect(out!.missedNotes).toBe(1)
+  })
+
+  it("reports four requested and three drawn as one failure, not silence", () => {
+    const out = reconcile({
+      marks: ["RuBisCO", "RuBP", "3-PGA", "G3P"].map((quote, i) => ({
+        quote,
+        page: 2,
+        rendered: i < 3,
+      })),
+      notes: [],
+    })
+    expect(out).not.toBeNull()
+    expect(out!.missedMarks).toEqual(["G3P"])
+  })
+})
+
+describe("a circle stays a circle", () => {
+  // A long match must not become a loop sweeping across the page.
+  const padX = (height: number) => Math.min(22, Math.max(8, height * 0.55))
+  const padY = (height: number) => Math.min(14, Math.max(5, height * 0.4))
+
+  it("pads a normal word modestly", () => {
+    expect(padX(14)).toBeCloseTo(8, 1)
+    expect(padY(14)).toBeCloseTo(5.6, 1)
+  })
+
+  it("caps the padding on a tall match", () => {
+    expect(padX(200)).toBe(22)
+    expect(padY(200)).toBe(14)
+  })
+
+  it("keeps the loop close to the text it surrounds", () => {
+    const width = 120
+    const height = 14
+    const loopWidth = width + padX(height) * 2
+    expect(loopWidth).toBeLessThan(width * 1.6)
+  })
+})

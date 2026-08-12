@@ -125,8 +125,11 @@ export function PdfAnnotationLayer({
       className="pointer-events-none absolute inset-0 flex justify-center py-1.5"
       data-pdf-annotation-layer
     >
-      <div className="relative" style={{ width, height }}>
-        <svg className="absolute inset-0 overflow-visible" width={width} height={height} aria-hidden>
+      {/* Clipped to the sheet: a stroke that runs past the page edge reads as a
+          rendering fault, and nothing drawn outside it could be pointing at
+          anything anyway. */}
+      <div className="relative overflow-hidden" style={{ width, height }}>
+        <svg className="absolute inset-0" width={width} height={height} aria-hidden>
           {notes.map((note) => (
             <ArrowStroke key={`a-${note.id}`} note={note} />
           ))}

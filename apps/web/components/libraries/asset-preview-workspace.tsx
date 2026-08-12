@@ -88,6 +88,7 @@ function PreviewBody({
   focusPdfMark,
   pdfNotes,
   onSelectNote,
+  onRenderReport,
   imageHighlightRegions,
   onPdfPageChange,
 }: {
@@ -100,6 +101,10 @@ function PreviewBody({
   focusPdfMark?: { page: number; ordinal: number; at: number }
   pdfNotes?: PdfPageAnnotation[]
   onSelectNote?: (id: string) => void
+  onRenderReport?: (report: {
+    marks: { quote: string; page: number; rendered: boolean }[]
+    notes: { id: string; text: string; rendered: boolean }[]
+  }) => void
   imageHighlightRegions?: ImageHighlightRegion[]
   onPdfPageChange: (page: number, total: number) => void
 }) {
@@ -133,6 +138,7 @@ function PreviewBody({
           focusHighlight={focusPdfMark}
           annotations={pdfNotes}
           onSelectNote={onSelectNote}
+          onRenderReport={onRenderReport}
           onPageChange={onPdfPageChange}
         />
       ) : isVideo ? (
@@ -180,6 +186,9 @@ function PreviewWorkspaceBody({
   const [pdfNotes, setPdfNotes] = useState<PdfPageAnnotation[]>([])
   const [notesHidden, setNotesHidden] = useState(false)
   const [exporting, setExporting] = useState(false)
+  const [renderReport, setRenderReport] = useState<
+    { missedMarks: string[]; missedNotes: number } | null
+  >(null)
   /** Text the student selected in the viewer — scopes the next study pass. */
   const [studyScope, setStudyScope] = useState<string | null>(null)
   const rewriteHandleRef = useRef<
@@ -345,6 +354,27 @@ function PreviewWorkspaceBody({
     }
   }, [asset, exporting, pdfHighlightTargets, pdfNotes])
 
+  /**
+   * Reconcile what the model said with what the page shows.
+   *
+   * Held as the *difference* rather than the full report, because that is what
+   * the student needs: silence when everything landed, and the specific missing
+   * phrases when it did not.
+   */
+  const handleRenderReport = useCallback(
+    (report: {
+      marks: { quote: string; page: number; rendered: boolean }[]
+      notes: { id: string; text: string; rendered: boolean }[]
+    }) => {
+      const missedMarks = report.marks.filter((m) => !m.rendered).map((m) => m.quote)
+      const missedNotes = report.notes.filter((n) => !n.rendered).length
+      setRenderReport(
+        missedMarks.length === 0 && missedNotes === 0 ? null : { missedMarks, missedNotes },
+      )
+    },
+    [],
+  )
+
   /** Swap one note for its rewrite, leaving every other note where it was. */
   const handleReplaceNote = useCallback((id: string, next: PdfPageAnnotation) => {
     setPdfNotes((prev) => {
@@ -464,6 +494,7 @@ function PreviewWorkspaceBody({
             pdfHighlightAt={pdfHighlightAt}
             focusPdfMark={focusPdfMark}
             pdfNotes={notesHidden ? undefined : pdfNotes}
+            onRenderReport={handleRenderReport}
             onSelectNote={(id) => {
               const note = pdfNotes.find((n) => n.id === id)
               // Clicking the handwriting is how a student says "I do not follow
@@ -558,6 +589,7 @@ function PreviewWorkspaceBody({
             studyScope={studyScope}
             onExportAnnotated={isPdf ? handleExportAnnotated : undefined}
             exporting={exporting}
+            renderReport={renderReport}
               notesHidden={notesHidden}
               onToggleNotes={isPdf && pdfNotes.length > 0 ? () => setNotesHidden((v) => !v) : undefined}
               noteCount={pdfNotes.length}
