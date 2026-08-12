@@ -233,9 +233,20 @@ export function extractHighlightPhrase(userText: string): string | null {
  * the model's own quote to the fallback and highlight the word "it" wherever it
  * appears on the page.
  */
+/**
+ * Phrases that describe the job rather than the page.
+ *
+ * "the key terms on this page" is an instruction; searching for it as text finds
+ * either nothing or, worse, a long fuzzy span that then gets a circle drawn
+ * round half a paragraph.
+ */
+const INSTRUCTION_PHRASE =
+  /\b(?:key\s+terms?|important\s+(?:parts?|bits?|things?)|main\s+(?:ideas?|points?)|each\s+one|every\s+one|what\s+(?:it|they|each)\s+means?|on\s+this\s+page|in\s+this\s+(?:page|document|section)|the\s+whole\s+page)\b/i
+
 function isSearchablePhrase(phrase: string): boolean {
   const p = phrase.trim()
   if (p.length < 3) return false
+  if (INSTRUCTION_PHRASE.test(p)) return false
   if (/^(?:it|that|this|there|them|these|those|here|one)$/i.test(p)) return false
   // "highlight the heading" names a kind of thing, not a thing. Searching the
   // page for the word "heading" would mark whatever prose happened to use it.

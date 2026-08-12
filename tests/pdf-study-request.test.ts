@@ -7,6 +7,7 @@ import {
   studyPassShape,
 } from "@/lib/files/pdf-study-request"
 import { buildAnnotatedPdf, annotatedFilename } from "@/lib/files/pdf-annotated-export"
+import { extractHighlightPhrases } from "@/lib/files/infer-pdf-highlight"
 
 /**
  * Why the study pass instruction exists at all.
@@ -178,5 +179,41 @@ describe("exporting the annotated page", () => {
     expect(annotatedFilename("Photosynthesis The Two-Stage Process.pdf")).toBe(
       "Photosynthesis The Two-Stage Process (annotated).pdf",
     )
+  })
+})
+
+describe("instructions are not search targets", () => {
+  // Reported: "Circle the key terms on this page and explain what each one
+  // means" searched the page for "key terms on this page" and "explain what
+  // each one means", then drew a circle round whatever fuzzily matched.
+  const PLANNING = "Circle the key terms on this page and explain what each one means"
+
+  it("treats the request as a planning turn", () => {
+    expect(isStudyAnnotationRequest(PLANNING)).toBe(true)
+  })
+
+  it("tells the model not to quote the request back", () => {
+    const block = buildStudyPassInstruction(PLANNING, { page: 1 })
+    expect(block).toContain("NEVER target words from this request")
+  })
+
+  it("asks for a note on the same target when explanations were requested", () => {
+    const block = buildStudyPassInstruction(PLANNING, { page: 1 })
+    expect(block).toContain("SAME target")
+  })
+})
+
+describe("phrases that describe the job are not searchable", () => {
+  it.each([
+    "circle the key terms on this page",
+    "highlight the important parts",
+    "mark the main ideas",
+    "underline what each one means",
+  ])("%j yields no search target", (text) => {
+    expect(extractHighlightPhrases(text)).toEqual([])
+  })
+
+  it("still extracts a real phrase from a direct request", () => {
+    expect(extractHighlightPhrases("circle Photolysis of Water")).toEqual(["Photolysis of Water"])
   })
 })

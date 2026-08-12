@@ -679,12 +679,23 @@ export function AssetAiSidePanel({
             currentPdfPage: pdfPage,
             pageIndex: pdfPageIndex ?? undefined,
           })
-          const inferred = inferPdfHighlightTargets({
-            userText: turnUserText,
-            assistantText: finalText,
-            currentPage: pdfPage ?? 0,
-            maxPage: pdfPageCount,
-          })
+          /**
+           * Inference is for a turn that names its own target — "highlight where
+           * it says carbon fixation". A planning request does not: "circle the
+           * key terms on this page" names a *job*, and feeding it to the phrase
+           * extractor searched the page for "key terms on this page" and
+           * "explain what each one means", which are instructions, not text. On
+           * a planning turn the model's tags are the only legitimate source.
+           */
+          const planning = isStudyAnnotationRequest(turnUserText)
+          const inferred = planning
+            ? []
+            : inferPdfHighlightTargets({
+                userText: turnUserText,
+                assistantText: finalText,
+                currentPage: pdfPage ?? 0,
+                maxPage: pdfPageCount,
+              })
 
           // Union, not either/or. Asked for two targets a model often tags one
           // and describes the other in prose, and taking only the tags drops

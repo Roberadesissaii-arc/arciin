@@ -167,16 +167,32 @@ function findHeadingMatch(text: string, query: string): { start: number; end: nu
   return null
 }
 
+/**
+ * A match must be roughly the size of what was asked for.
+ *
+ * The flexible pattern joins query words with `\s+`, so on a page where those
+ * words happen to appear far apart it can match a span several lines long. A
+ * circle drawn round that span sweeps across the page — the reported "giant
+ * line" — and a highlight of it covers unrelated text. Anything far longer than
+ * the query is a coincidence, not the phrase.
+ */
+function matchIsProportionate(query: string, start: number, end: number): boolean {
+  const span = end - start
+  return span <= query.trim().length * 2.5 + 24
+}
+
 export function findMatchRange(text: string, query: string, mode: MatchMode = "default"): { start: number; end: number } | null {
   const q = query.trim()
   if (!q) return null
 
   if (mode === "heading") {
     const heading = findHeadingMatch(text, q)
-    if (heading) return heading
+    if (heading && matchIsProportionate(q, heading.start, heading.end)) return heading
   }
 
-  const candidates = findAllFlexibleMatches(text, q, mode)
+  const candidates = findAllFlexibleMatches(text, q, mode).filter((c) =>
+    matchIsProportionate(q, c.start, c.end),
+  )
   if (candidates.length > 0) {
     candidates.sort((a, b) => b.score - a.score || a.start - b.start)
     const best = candidates[0]!
@@ -185,7 +201,9 @@ export function findMatchRange(text: string, query: string, mode: MatchMode = "d
 
   const compactQuery = q.replace(/\s*\.\s*/g, ".").replace(/\s+/g, " ").trim()
   if (compactQuery !== q) {
-    const compactCandidates = findAllFlexibleMatches(text, compactQuery, mode)
+    const compactCandidates = findAllFlexibleMatches(text, compactQuery, mode).filter((c) =>
+      matchIsProportionate(compactQuery, c.start, c.end),
+    )
     if (compactCandidates.length > 0) {
       compactCandidates.sort((a, b) => b.score - a.score || a.start - b.start)
       const best = compactCandidates[0]!
@@ -194,7 +212,8 @@ export function findMatchRange(text: string, query: string, mode: MatchMode = "d
   }
 
   if (mode === "default") {
-    return findHeadingMatch(text, q)
+    const heading = findHeadingMatch(text, q)
+    if (heading && matchIsProportionate(q, heading.start, heading.end)) return heading
   }
 
   return null

@@ -63,6 +63,11 @@ Scrolling: [goto-page:PAGE] · [goto-printed:PAGE] · [goto-chapter:N]
 
 Rules:
 - Use the mark the user named. If they did not name one, highlight.
+- A request names a job, not a target. "Circle the key terms" does not mean
+  searching the page for "the key terms" — decide which actual terms those are
+  and target each one. Never quote the request back as a target.
+- Asked to circle terms *and* explain them, pair each mark with a note on the
+  same target, so every circled term gets its explanation beside it.
 - The quoted text MUST be copied verbatim from the page text given below. The
   viewer finds the mark by searching the page for that string; a paraphrase, a
   translation, or a title you reworded will match nothing.

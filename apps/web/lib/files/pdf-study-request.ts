@@ -93,7 +93,10 @@ export function buildStudyPassInstruction(
     `- ${notes} notes: [note:important:"exact text it points at":"short handwritten note"]`,
     `  (kinds: note · important · warning · definition · connection)`,
     `- optionally one [note:summary:"":"one-line recap"]`,
-    "Every quoted target MUST be copied verbatim from the page text you were given, or it will match nothing.",
+    "Targets MUST be copied verbatim from the page text you were given.",
+    'NEVER target words from this request. "the key terms", "each one" describe the job —',
+    "work out which real terms on the page they mean, and target those.",
+    "Asked to explain what you mark, pair each mark with a note on the SAME target.",
     voiceLine,
     "Then two or three sentences of reply. The tags are stripped before the student reads it.",
   ]
