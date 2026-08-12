@@ -42,6 +42,11 @@ import { PdfMarkBadges } from "@/components/libraries/pdf-mark-badges"
 import { parseAssistantAnnotations } from "@/lib/files/parse-pdf-annotations"
 import type { PdfPageAnnotation } from "@/lib/files/pdf-annotation-layout"
 import {
+  buildRegenerateNoteInstruction,
+  buildStudyPassInstruction,
+  isStudyAnnotationRequest,
+} from "@/lib/files/pdf-study-request"
+import {
   pointingKeywordsFromUser,
   resolveImageHighlightRegions,
   userWantsImagePointing,
@@ -123,6 +128,11 @@ export function AssetAiSidePanel({
   onHighlightPdf,
   onFocusPdfMark,
   onAnnotatePdf,
+  studyScope,
+  onReplaceNote,
+  rewriteHandleRef,
+  onExportAnnotated,
+  exporting,
   notesHidden,
   onToggleNotes,
   noteCount = 0,
@@ -142,6 +152,16 @@ export function AssetAiSidePanel({
   onFocusPdfMark?: (target: PdfHighlightTarget) => void
   /** Handwritten teaching notes the assistant wrote for the page in view. */
   onAnnotatePdf?: (notes: PdfPageAnnotation[]) => void
+  /** Text the student selected in the viewer — limits the next study pass. */
+  studyScope?: string | null
+  /** Swap one note for its rewrite, leaving the rest of the page alone. */
+  onReplaceNote?: (id: string, next: PdfPageAnnotation) => void
+  /** Filled with a callable so the viewer can ask about a note it was clicked on. */
+  rewriteHandleRef?: React.MutableRefObject<
+    ((note: PdfPageAnnotation, ask: string) => void) | null
+  >
+  onExportAnnotated?: () => void
+  exporting?: boolean
   notesHidden?: boolean
   onToggleNotes?: () => void
   noteCount?: number
@@ -233,6 +253,14 @@ export function AssetAiSidePanel({
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const abortRef = useRef<AbortController | null>(null)
   const speechBaseRef = useRef("")
+  /**
+   * Section the next study pass is limited to, set by the caller when the
+   * student has selected part of the page. Held in a ref so changing it does not
+   * re-create the streaming callback mid-turn.
+   */
+  const studyScopeRef = useRef<string | null>(null)
+  /** Id of the note being rewritten this turn, if the student asked about one. */
+  const rewriteNoteRef = useRef<string | null>(null)
   const lastGotoRef = useRef<number | null>(null)
   const lastHighlightSigRef = useRef("")
   const lastImageRegionSigRef = useRef("")
@@ -435,6 +463,10 @@ export function AssetAiSidePanel({
     [isImageAsset, queryClient],
   )
 
+  useEffect(() => {
+    studyScopeRef.current = studyScope ?? null
+  }, [studyScope])
+
   /** Keep model tag aligned with the selected profile (never ministral on Gemini). */
   useEffect(() => {
     if (!isImageAsset || !profile) return
@@ -503,6 +535,31 @@ export function AssetAiSidePanel({
       }
 
       const payload: OutboundMsg[] = [{ role: "system", content: systemContent }, ...history]
+
+      /**
+       * Restate the output requirement on the user's own turn.
+       *
+       * The system prompt already documents the tags and the model ignores them
+       * there — measured: the same request returned zero tags from the system
+       * block and seven from this one. It goes on the payload only, so the
+       * bubble the student sees stays the words they typed.
+       */
+      if (isPdfAsset && pdfPage && pdfPage > 0) {
+        for (let i = payload.length - 1; i >= 0; i--) {
+          const message = payload[i]!
+          if (message.role !== "user") continue
+          const typed = typeof message.content === "string" ? message.content : ""
+          if (isStudyAnnotationRequest(typed)) {
+            payload[i] = {
+              ...message,
+              content:
+                typed +
+                buildStudyPassInstruction(typed, { page: pdfPage, scope: studyScopeRef.current }),
+            }
+          }
+          break
+        }
+      }
 
       if (need === "vision" && visionCapable) {
         const b64 = await loadAssetImageBase64(asset.id, asset.updatedAt)
@@ -654,10 +711,20 @@ export function AssetAiSidePanel({
         }
         if (onAnnotatePdf && pdfPage && pdfPage > 0) {
           const notes = parseAssistantAnnotations(finalText, { page: pdfPage })
-          // Replace rather than append: "explain this page" asked for a fresh
-          // reading of the page, and stacking two readings on one sheet is how
-          // margins become unreadable.
-          if (notes.length > 0) onAnnotatePdf(notes)
+          const rewriting = rewriteNoteRef.current
+          if (notes.length > 0) {
+            if (rewriting) {
+              // One note was in question, so only that one changes. Re-reading
+              // the whole page would throw away work the student kept.
+              onReplaceNote?.(rewriting, notes[0]!)
+            } else {
+              // Replace rather than append: "explain this page" asked for a
+              // fresh reading, and stacking two readings on one sheet is how
+              // margins become unreadable.
+              onAnnotatePdf(notes)
+            }
+          }
+          rewriteNoteRef.current = null
         }
         if (onNavigateToPage && lastGotoRef.current === null) {
           const page = inferPdfGotoPage({
@@ -708,6 +775,49 @@ export function AssetAiSidePanel({
       pushImageRegions,
     ],
   )
+
+  /**
+   * Rewrite one note the student did not follow.
+   *
+   * Goes through the normal turn so the exchange stays in the transcript — the
+   * student asked a question and should see the answer — but the instruction
+   * pins the model to a single replacement tag, and the result swaps that one
+   * note instead of re-reading the page.
+   */
+  const rewriteNote = useCallback(
+    async (note: PdfPageAnnotation, ask: string) => {
+      if (streaming) return
+      rewriteNoteRef.current = note.id
+      const question = ask.trim() || "Explain that more."
+      const userMsg: PanelMessage = {
+        id: `u-${Date.now()}`,
+        role: "user",
+        content: question,
+      }
+      const assistantId = `a-${Date.now()}`
+      const history = [...messages, userMsg]
+      setMessages([...history, { id: assistantId, role: "assistant", content: "" }])
+      lastGotoRef.current = null
+      lastHighlightSigRef.current = ""
+      await runChatStream(
+        [
+          ...messages,
+          {
+            ...userMsg,
+            content:
+              question + buildRegenerateNoteInstruction({ text: note.text, target: note.target, ask: question }),
+          },
+        ],
+        assistantId,
+      )
+    },
+    [messages, runChatStream, streaming],
+  )
+
+  useEffect(() => {
+    if (!rewriteHandleRef) return
+    rewriteHandleRef.current = rewriteNote
+  }, [rewriteHandleRef, rewriteNote])
 
   const sendMessage = useCallback(
     async (text: string) => {
@@ -987,10 +1097,20 @@ export function AssetAiSidePanel({
               <span className="text-[11px] text-zinc-400">
                 {noteCount} {noteCount === 1 ? "note" : "notes"} on this page
               </span>
+              {onExportAnnotated ? (
+                <button
+                  type="button"
+                  onClick={onExportAnnotated}
+                  disabled={exporting}
+                  className="ml-auto text-[11px] text-zinc-500 underline-offset-2 transition hover:text-[#ff4f12] hover:underline disabled:opacity-50"
+                >
+                  {exporting ? "Exporting…" : "Export PDF"}
+                </button>
+              ) : null}
               <button
                 type="button"
                 onClick={() => onAnnotatePdf?.([])}
-                className="ml-auto text-[11px] text-zinc-400 underline-offset-2 transition hover:text-zinc-600 hover:underline"
+                className={`${onExportAnnotated ? "" : "ml-auto "}text-[11px] text-zinc-400 underline-offset-2 transition hover:text-zinc-600 hover:underline`}
               >
                 Clear
               </button>

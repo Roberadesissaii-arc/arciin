@@ -35,6 +35,9 @@ import {
 import type { PdfHighlightTarget } from "@/lib/files/pdf-highlight-types"
 import type { PdfPageAnnotation } from "@/lib/files/pdf-annotation-layout"
 import { loadStudyLayer, saveStudyLayer } from "@/lib/files/pdf-study-layer-store"
+import { annotatedFilename, buildAnnotatedPdf } from "@/lib/files/pdf-annotated-export"
+import { renderAnnotatedPages } from "@/lib/files/render-annotated-page"
+import { fetchPdfDocument, releasePdfDocument } from "@/lib/files/fetch-pdf-document"
 import type { ImageHighlightRegion } from "@/lib/files/image-highlight-types"
 import type { AssetSummary } from "@/lib/types/models"
 
@@ -84,6 +87,7 @@ function PreviewBody({
   pdfHighlightAt,
   focusPdfMark,
   pdfNotes,
+  onSelectNote,
   imageHighlightRegions,
   onPdfPageChange,
 }: {
@@ -95,6 +99,7 @@ function PreviewBody({
   pdfHighlightAt?: number
   focusPdfMark?: { page: number; ordinal: number; at: number }
   pdfNotes?: PdfPageAnnotation[]
+  onSelectNote?: (id: string) => void
   imageHighlightRegions?: ImageHighlightRegion[]
   onPdfPageChange: (page: number, total: number) => void
 }) {
@@ -127,6 +132,7 @@ function PreviewBody({
           highlightAt={pdfHighlightAt}
           focusHighlight={focusPdfMark}
           annotations={pdfNotes}
+          onSelectNote={onSelectNote}
           onPageChange={onPdfPageChange}
         />
       ) : isVideo ? (
@@ -173,6 +179,12 @@ function PreviewWorkspaceBody({
   const [pdfHighlightAt, setPdfHighlightAt] = useState<number | undefined>()
   const [pdfNotes, setPdfNotes] = useState<PdfPageAnnotation[]>([])
   const [notesHidden, setNotesHidden] = useState(false)
+  const [exporting, setExporting] = useState(false)
+  /** Text the student selected in the viewer — scopes the next study pass. */
+  const [studyScope, setStudyScope] = useState<string | null>(null)
+  const rewriteHandleRef = useRef<
+    ((note: PdfPageAnnotation, ask: string) => void) | null
+  >(null)
   /** Blocks the first save, so restoring a layer is not mistaken for a change. */
   const studyLayerReadyRef = useRef(false)
   const [focusPdfMark, setFocusPdfMark] = useState<
@@ -285,6 +297,65 @@ function PreviewWorkspaceBody({
     [pdfHighlightTargets, pdfPage],
   )
 
+  /**
+   * Download a copy with the study layer burned in.
+   *
+   * Only pages that carry something are exported — a 200-page book annotated on
+   * two pages should not produce a 200-page download. The original file is never
+   * touched; this writes a new one beside it.
+   */
+  const handleExportAnnotated = useCallback(async () => {
+    if (exporting) return
+    const pages = [...new Set([...pdfNotes, ...pdfHighlightTargets].map((a) => a.page))].sort(
+      (a, b) => a - b,
+    )
+    if (pages.length === 0) {
+      toast.info("Nothing to export yet", {
+        description: "Ask the assistant to explain or mark up a page first.",
+      })
+      return
+    }
+
+    setExporting(true)
+    const url = assetInlineUrl(asset)
+    try {
+      const pdf = await fetchPdfDocument(url)
+      const images = await renderAnnotatedPages(pdf, {
+        pages,
+        notes: pdfNotes,
+        marks: pdfHighlightTargets,
+      })
+      if (images.length === 0) throw new Error("No pages could be rendered")
+
+      const blob = buildAnnotatedPdf(images)
+      const href = URL.createObjectURL(blob)
+      const link = document.createElement("a")
+      link.href = href
+      link.download = annotatedFilename(asset.originalFilename)
+      link.click()
+      URL.revokeObjectURL(href)
+      toast.success(`Exported ${images.length} annotated ${images.length === 1 ? "page" : "pages"}`)
+    } catch (error) {
+      toast.error("Could not export the annotated PDF", {
+        description: error instanceof Error ? error.message : undefined,
+      })
+    } finally {
+      releasePdfDocument(url)
+      setExporting(false)
+    }
+  }, [asset, exporting, pdfHighlightTargets, pdfNotes])
+
+  /** Swap one note for its rewrite, leaving every other note where it was. */
+  const handleReplaceNote = useCallback((id: string, next: PdfPageAnnotation) => {
+    setPdfNotes((prev) => {
+      const at = prev.findIndex((n) => n.id === id)
+      if (at < 0) return [...prev, next]
+      const out = [...prev]
+      out[at] = { ...next, id }
+      return out
+    })
+  }, [])
+
   const handlePdfHighlight = useCallback(
     (targets: PdfHighlightTarget[]) => {
       setPdfHighlightTargets((prev) => {
@@ -393,6 +464,12 @@ function PreviewWorkspaceBody({
             pdfHighlightAt={pdfHighlightAt}
             focusPdfMark={focusPdfMark}
             pdfNotes={notesHidden ? undefined : pdfNotes}
+            onSelectNote={(id) => {
+              const note = pdfNotes.find((n) => n.id === id)
+              // Clicking the handwriting is how a student says "I do not follow
+              // this one" — it asks about that note rather than the page.
+              if (note) rewriteHandleRef.current?.(note, "Explain that more.")
+            }}
             imageHighlightRegions={imageHighlightRegions}
             onPdfPageChange={(page, total) => {
               setPdfPage(page)
@@ -476,6 +553,11 @@ function PreviewWorkspaceBody({
               onHighlightPdf={isPdf ? handlePdfHighlight : undefined}
               onFocusPdfMark={isPdf ? handleFocusPdfMark : undefined}
               onAnnotatePdf={isPdf ? setPdfNotes : undefined}
+            onReplaceNote={isPdf ? handleReplaceNote : undefined}
+            rewriteHandleRef={rewriteHandleRef}
+            studyScope={studyScope}
+            onExportAnnotated={isPdf ? handleExportAnnotated : undefined}
+            exporting={exporting}
               notesHidden={notesHidden}
               onToggleNotes={isPdf && pdfNotes.length > 0 ? () => setNotesHidden((v) => !v) : undefined}
               noteCount={pdfNotes.length}
