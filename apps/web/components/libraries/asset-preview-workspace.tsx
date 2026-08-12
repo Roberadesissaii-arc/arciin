@@ -33,6 +33,7 @@ import {
   togglePdfPageBookmark,
 } from "@/lib/files/pdf-preview-bookmarks"
 import type { PdfHighlightTarget } from "@/lib/files/pdf-highlight-types"
+import type { PdfPageAnnotation } from "@/lib/files/pdf-annotation-layout"
 import type { ImageHighlightRegion } from "@/lib/files/image-highlight-types"
 import type { AssetSummary } from "@/lib/types/models"
 
@@ -81,6 +82,7 @@ function PreviewBody({
   pdfHighlightTargets,
   pdfHighlightAt,
   focusPdfMark,
+  pdfNotes,
   imageHighlightRegions,
   onPdfPageChange,
 }: {
@@ -91,6 +93,7 @@ function PreviewBody({
   pdfHighlightTargets?: PdfHighlightTarget[]
   pdfHighlightAt?: number
   focusPdfMark?: { page: number; ordinal: number; at: number }
+  pdfNotes?: PdfPageAnnotation[]
   imageHighlightRegions?: ImageHighlightRegion[]
   onPdfPageChange: (page: number, total: number) => void
 }) {
@@ -122,6 +125,7 @@ function PreviewBody({
           highlightTargets={pdfHighlightTargets}
           highlightAt={pdfHighlightAt}
           focusHighlight={focusPdfMark}
+          annotations={pdfNotes}
           onPageChange={onPdfPageChange}
         />
       ) : isVideo ? (
@@ -166,6 +170,8 @@ function PreviewWorkspaceBody({
   >()
   const [pdfHighlightTargets, setPdfHighlightTargets] = useState<PdfHighlightTarget[]>([])
   const [pdfHighlightAt, setPdfHighlightAt] = useState<number | undefined>()
+  const [pdfNotes, setPdfNotes] = useState<PdfPageAnnotation[]>([])
+  const [notesHidden, setNotesHidden] = useState(false)
   const [focusPdfMark, setFocusPdfMark] = useState<
     { page: number; ordinal: number; at: number } | undefined
   >()
@@ -346,6 +352,7 @@ function PreviewWorkspaceBody({
             pdfHighlightTargets={pdfHighlightTargets}
             pdfHighlightAt={pdfHighlightAt}
             focusPdfMark={focusPdfMark}
+            pdfNotes={notesHidden ? undefined : pdfNotes}
             imageHighlightRegions={imageHighlightRegions}
             onPdfPageChange={(page, total) => {
               setPdfPage(page)
@@ -428,6 +435,10 @@ function PreviewWorkspaceBody({
               }
               onHighlightPdf={isPdf ? handlePdfHighlight : undefined}
               onFocusPdfMark={isPdf ? handleFocusPdfMark : undefined}
+              onAnnotatePdf={isPdf ? setPdfNotes : undefined}
+              notesHidden={notesHidden}
+              onToggleNotes={isPdf && pdfNotes.length > 0 ? () => setNotesHidden((v) => !v) : undefined}
+              noteCount={pdfNotes.length}
               onClearPdfHighlight={isPdf ? () => handlePdfHighlight([]) : undefined}
               onHighlightImage={isImage ? handleImageHighlight : undefined}
               onClearImageHighlight={isImage ? () => handleImageHighlight([]) : undefined}
@@ -455,6 +466,10 @@ function PreviewWorkspaceBody({
             }
             onHighlightPdf={isPdf ? handlePdfHighlight : undefined}
             onFocusPdfMark={isPdf ? handleFocusPdfMark : undefined}
+            onAnnotatePdf={isPdf ? setPdfNotes : undefined}
+            notesHidden={notesHidden}
+            onToggleNotes={isPdf && pdfNotes.length > 0 ? () => setNotesHidden((v) => !v) : undefined}
+            noteCount={pdfNotes.length}
             onClearPdfHighlight={isPdf ? () => handlePdfHighlight([]) : undefined}
             onHighlightImage={isImage ? handleImageHighlight : undefined}
             onClearImageHighlight={isImage ? () => handleImageHighlight([]) : undefined}

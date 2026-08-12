@@ -56,6 +56,7 @@ export function parseAssistantGotoPage(text: string, maxPage?: number): number |
 }
 
 import { stripHighlightTags } from "@/lib/files/parse-pdf-highlight-request"
+import { stripNoteTags } from "@/lib/files/parse-pdf-annotations"
 import { stripImageHighlightDisplayMarkup } from "@/lib/files/strip-image-highlight-display"
 
 const NAV_TAGS =
@@ -64,6 +65,8 @@ const NAV_TAGS =
 /** Remove navigation + highlight control tags before showing assistant text in the UI. */
 export function stripGotoPageTags(text: string): string {
   return stripImageHighlightDisplayMarkup(
-    stripHighlightTags(text.replace(NAV_TAGS, "").replace(/\n{3,}/g, "\n\n")),
+    stripNoteTags(stripHighlightTags(text.replace(NAV_TAGS, "")))
+      .replace(/\n{3,}/g, "\n\n")
+      .trim(),
   )
 }

@@ -4,7 +4,7 @@
 import Link from "next/link"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useQueryClient } from "@tanstack/react-query"
-import { Loader2, Mic, SendHorizontal, Sparkles, Square, X } from "lucide-react"
+import { Eye, EyeOff, Loader2, Mic, SendHorizontal, Sparkles, Square, X } from "lucide-react"
 
 import {
   ChatModelPicker,
@@ -39,6 +39,8 @@ import { parseAssistantHighlights } from "@/lib/files/parse-pdf-highlight-reques
 import { inferPdfHighlightTargets } from "@/lib/files/infer-pdf-highlight"
 import { inferPdfGotoPage } from "@/lib/files/infer-pdf-page-request"
 import { PdfMarkBadges } from "@/components/libraries/pdf-mark-badges"
+import { parseAssistantAnnotations } from "@/lib/files/parse-pdf-annotations"
+import type { PdfPageAnnotation } from "@/lib/files/pdf-annotation-layout"
 import {
   pointingKeywordsFromUser,
   resolveImageHighlightRegions,
@@ -84,10 +86,12 @@ function suggestionsFor(
           ? `What page am I on? (PDF page ${page})`
           : "Which page mentions the main topic?"
     return [
-      "Summarize this document",
-      pageLabel,
+      // Leads with the annotation feature: it is the thing a student would
+      // never guess is there, and the thing the panel is best at.
+      page ? "Explain this page to me" : "Summarize this document",
+      page ? "Make study notes for this page" : "List the main sections",
+      page ? "What should I remember from this page?" : pageLabel,
       page ? "Highlight the section heading on this page" : "Highlight the About This Book heading",
-      page ? "Explain the key ideas on this page" : "List the main sections",
     ]
   }
   if (asset.mediaType === "IMAGE") {
@@ -118,6 +122,10 @@ export function AssetAiSidePanel({
   onNavigateToPage,
   onHighlightPdf,
   onFocusPdfMark,
+  onAnnotatePdf,
+  notesHidden,
+  onToggleNotes,
+  noteCount = 0,
   onClearPdfHighlight,
   onHighlightImage,
   onClearImageHighlight,
@@ -132,6 +140,11 @@ export function AssetAiSidePanel({
   onHighlightPdf?: (targets: PdfHighlightTarget[]) => void
   /** Scroll one already-drawn mark into view (badge click). */
   onFocusPdfMark?: (target: PdfHighlightTarget) => void
+  /** Handwritten teaching notes the assistant wrote for the page in view. */
+  onAnnotatePdf?: (notes: PdfPageAnnotation[]) => void
+  notesHidden?: boolean
+  onToggleNotes?: () => void
+  noteCount?: number
   onClearPdfHighlight?: () => void
   onHighlightImage?: (regions: ImageHighlightRegion[], options?: { replace?: boolean }) => void
   onClearImageHighlight?: () => void
@@ -639,6 +652,13 @@ export function AssetAiSidePanel({
             )
           }
         }
+        if (onAnnotatePdf && pdfPage && pdfPage > 0) {
+          const notes = parseAssistantAnnotations(finalText, { page: pdfPage })
+          // Replace rather than append: "explain this page" asked for a fresh
+          // reading of the page, and stacking two readings on one sheet is how
+          // margins become unreadable.
+          if (notes.length > 0) onAnnotatePdf(notes)
+        }
         if (onNavigateToPage && lastGotoRef.current === null) {
           const page = inferPdfGotoPage({
             userText: turnUserText,
@@ -682,6 +702,7 @@ export function AssetAiSidePanel({
       pdfPageCount,
       pdfPageIndex,
       onNavigateToPage,
+      onAnnotatePdf,
       onHighlightPdf,
       onHighlightImage,
       pushImageRegions,
@@ -945,6 +966,36 @@ export function AssetAiSidePanel({
         </div>
 
         <footer className="shrink-0 border-t border-zinc-200/90 px-3 pb-3 pt-2.5">
+          {/* The notes are a layer over the page, never a change to the file, so
+              hiding them has to be one click away — a student comparing the
+              clean page with the annotated one is the normal case, not an edge
+              case. */}
+          {onToggleNotes && noteCount > 0 ? (
+            <div className="mb-2 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={onToggleNotes}
+                className="inline-flex items-center gap-1.5 rounded-full border border-zinc-300 px-2.5 py-1 text-[11px] font-medium text-zinc-600 transition hover:border-[#ff4f12]/60 hover:text-[#ff4f12]"
+              >
+                {notesHidden ? (
+                  <Eye className="size-3" aria-hidden />
+                ) : (
+                  <EyeOff className="size-3" aria-hidden />
+                )}
+                {notesHidden ? "Show notes" : "Hide notes"}
+              </button>
+              <span className="text-[11px] text-zinc-400">
+                {noteCount} {noteCount === 1 ? "note" : "notes"} on this page
+              </span>
+              <button
+                type="button"
+                onClick={() => onAnnotatePdf?.([])}
+                className="ml-auto text-[11px] text-zinc-400 underline-offset-2 transition hover:text-zinc-600 hover:underline"
+              >
+                Clear
+              </button>
+            </div>
+          ) : null}
           {footerPageText ? (
             <p className="mb-2 text-[11px] leading-snug">
               <span className="font-medium text-zinc-500">

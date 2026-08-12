@@ -1,6 +1,6 @@
 import type { Metadata, Viewport } from "next"
 import localFont from "next/font/local"
-import { Geist, Geist_Mono } from "next/font/google"
+import { Caveat, Geist, Geist_Mono } from "next/font/google"
 
 import { AppAmbientBackground } from "@/components/app-shell/app-ambient-background"
 import { AppProviders } from "@/components/providers/app-providers"
@@ -16,6 +16,20 @@ const geistSans = Geist({
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
   subsets: ["latin"],
+})
+
+/**
+ * The assistant's handwriting on a PDF page. Casual and slightly irregular
+ * rather than formal cursive — it has to read as a student's pencil note at a
+ * glance, and still be legible at 15px over printed text.
+ *
+ * Self-hosted by next/font at build time, so an offline instance still has it.
+ */
+const caveat = Caveat({
+  variable: "--font-caveat",
+  subsets: ["latin"],
+  weight: ["400", "600"],
+  display: "swap",
 })
 
 const spaceGrotesk = localFont({
@@ -63,7 +77,7 @@ export default function RootLayout({
     <html
       lang="en"
       suppressHydrationWarning
-      className={`dark ${geistSans.variable} ${geistMono.variable} ${spaceGrotesk.variable} h-full`}
+      className={`dark ${geistSans.variable} ${geistMono.variable} ${spaceGrotesk.variable} ${caveat.variable} h-full`}
     >
       <head>
         {/* Applies the last-known accent color before hydration so refresh doesn't flash the CSS default. */}

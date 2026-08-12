@@ -11,7 +11,13 @@ import {
   releasePdfDocument,
 } from "@/lib/files/fetch-pdf-document"
 import { useDebouncedValue } from "@/lib/hooks/use-debounced-value"
-import { findHighlightRectsOnPage } from "@/lib/files/pdf-page-text-search"
+import { findHighlightRectsOnPage, measurePageGeometry } from "@/lib/files/pdf-page-text-search"
+import {
+  layoutPageAnnotations,
+  type PdfPageAnnotation,
+  type PlacedNote,
+} from "@/lib/files/pdf-annotation-layout"
+import { PdfAnnotationLayer } from "@/components/libraries/pdf-annotation-layer"
 import type { PdfHighlightRect, PdfHighlightTarget } from "@/lib/files/pdf-highlight-types"
 import type { PdfAnnotationStyle } from "@/lib/files/pdf-annotation-style"
 import { PdfAnnotationMark } from "@/components/libraries/pdf-annotation-mark"
@@ -24,6 +30,7 @@ const RENDER_WIDTH_EPS = 0.12
 type StyledRect = PdfHighlightRect & { style?: PdfAnnotationStyle }
 
 const EMPTY_PAGE_HIGHLIGHTS = new Map<number, StyledRect[]>()
+const EMPTY_PLACED_NOTES = new Map<number, PlacedNote[]>()
 
 function defaultPageHeight(layoutWidth: number) {
   return Math.round(layoutWidth * 1.294) + PAGE_PAD
@@ -37,6 +44,8 @@ function PdfPageCanvas({
   numPages,
   onHeight,
   highlightRects,
+  notes,
+  onSelectNote,
 }: {
   pdf: PDFDocumentProxy
   pageNumber: number
@@ -45,6 +54,8 @@ function PdfPageCanvas({
   numPages: number
   onHeight: (page: number, height: number) => void
   highlightRects?: StyledRect[]
+  notes?: PlacedNote[]
+  onSelectNote?: (id: string) => void
 }) {
   const hostRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -181,6 +192,14 @@ function PdfPageCanvas({
           </div>
         </div>
       ) : null}
+      {ready && notes && notes.length > 0 ? (
+        <PdfAnnotationLayer
+          notes={notes}
+          width={layoutWidth}
+          height={cssHeight - PAGE_PAD}
+          onSelect={onSelectNote}
+        />
+      ) : null}
     </div>
   )
 }
@@ -193,6 +212,8 @@ export function DesktopPdfViewer({
   focusHighlight,
   highlightTargets,
   highlightAt,
+  annotations,
+  onSelectNote,
   onPageChange,
 }: {
   fileUrl: string
@@ -203,6 +224,9 @@ export function DesktopPdfViewer({
   focusHighlight?: { page: number; ordinal: number; at: number }
   highlightTargets?: PdfHighlightTarget[]
   highlightAt?: number
+  /** Handwritten teaching notes the assistant wrote for a page. */
+  annotations?: PdfPageAnnotation[]
+  onSelectNote?: (id: string) => void
   onPageChange?: (page: number, total: number) => void
 }) {
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -223,6 +247,7 @@ export function DesktopPdfViewer({
   const [viewWidth, setViewWidth] = useState(640)
   const [pageWindow, setPageWindow] = useState({ start: 1, end: 8 })
   const [pageHeights, setPageHeights] = useState<Map<number, number>>(() => new Map())
+  const [placedNotes, setPlacedNotes] = useState<Map<number, PlacedNote[]>>(EMPTY_PLACED_NOTES)
   const [pageHighlights, setPageHighlights] = useState<Map<number, StyledRect[]>>(
     () => new Map(),
   )
@@ -512,6 +537,60 @@ export function DesktopPdfViewer({
   }, [layoutWidth, numPages, pageHeights, scrollToPage, scrollToPageAt])
 
   /**
+   * Turn the assistant's notes into placed handwriting.
+   *
+   * Each note names the text it is about; that phrase is located with the same
+   * search the marks use, so a note and a highlight of the same phrase agree on
+   * where it is. Placement then needs the page's own margins, which is why the
+   * geometry is measured rather than assumed.
+   */
+  useEffect(() => {
+    const pdf = pdfDoc
+    const width = Math.max(layoutWidth, renderWidth)
+
+    let cancelled = false
+    void (async () => {
+      // Clearing happens in here rather than in the effect body: a synchronous
+      // setState during an effect cascades a second render before paint.
+      if (!pdf || width < 1 || !annotations?.length) {
+        setPlacedNotes((prev) => (prev.size === 0 ? prev : EMPTY_PLACED_NOTES))
+        return
+      }
+
+      const byPage = new Map<number, PdfPageAnnotation[]>()
+      for (const note of annotations) {
+        byPage.set(note.page, [...(byPage.get(note.page) ?? []), note])
+      }
+
+      const next = new Map<number, PlacedNote[]>()
+      for (const [page, pageNotes] of byPage) {
+        if (page < 1 || page > pdf.numPages) continue
+        const geometry = await measurePageGeometry(pdf, page, width)
+        if (cancelled) return
+        // No text layer means no trustworthy margins; better to write nothing
+        // than to write over a scan.
+        if (!geometry) continue
+
+        const withRects = []
+        for (const note of pageNotes) {
+          const rects = note.target
+            ? await findHighlightRectsOnPage(pdf, page, note.target, width, "default")
+            : []
+          if (cancelled) return
+          withRects.push({ ...note, rect: rects[0] ?? null })
+        }
+        next.set(page, layoutPageAnnotations(withRects, geometry))
+      }
+
+      if (!cancelled) setPlacedNotes(next)
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [annotations, layoutWidth, pdfDoc, renderWidth])
+
+  /**
    * Bring one mark into view.
    *
    * Scrolling to the page is not enough on a long page: a circle three quarters
@@ -593,6 +672,8 @@ export function DesktopPdfViewer({
               numPages={numPages}
               onHeight={onHeight}
               highlightRects={highlightsForRender.get(pageNumber)}
+              notes={placedNotes.get(pageNumber)}
+              onSelectNote={onSelectNote}
             />
           ),
         )}

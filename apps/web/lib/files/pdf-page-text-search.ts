@@ -370,3 +370,70 @@ export async function findHighlightRectsOnPage(
     page.cleanup()
   }
 }
+
+/**
+ * The page's size and the bounding box of its own text.
+ *
+ * Margin placement needs to know where the text column actually ends, not where
+ * the paper does — a document typeset with a wide right margin has room for
+ * notes, one typeset edge to edge does not, and guessing turns notes into
+ * vandalism.
+ */
+export async function measurePageGeometry(
+  pdf: PDFDocumentProxy,
+  pageNumber: number,
+  displayWidth: number,
+): Promise<{
+  width: number
+  height: number
+  contentLeft: number
+  contentRight: number
+  contentTop: number
+  contentBottom: number
+} | null> {
+  if (pageNumber < 1 || pageNumber > pdf.numPages || displayWidth < 1) return null
+
+  const pdfjs = await loadPdfJs()
+  const page = await pdf.getPage(pageNumber)
+  try {
+    const base = page.getViewport({ scale: 1 })
+    const viewport = page.getViewport({ scale: displayWidth / base.width })
+    const textContent = await page.getTextContent()
+
+    let left = Infinity
+    let right = -Infinity
+    let top = Infinity
+    let bottom = -Infinity
+
+    for (const item of textContent.items) {
+      if (typeof item !== "object" || item === null || !("str" in item)) continue
+      const str = (item as { str?: unknown }).str
+      if (typeof str !== "string" || !str.trim()) continue
+      const t = item as { transform?: number[]; width?: number; height?: number }
+      if (!Array.isArray(t.transform)) continue
+      const rect = itemToRect(
+        { str, transform: t.transform, width: typeof t.width === "number" ? t.width : 0, height: t.height },
+        pdfjs.Util,
+        viewport.transform,
+      )
+      left = Math.min(left, rect.left)
+      right = Math.max(right, rect.left + rect.width)
+      top = Math.min(top, rect.top)
+      bottom = Math.max(bottom, rect.top + rect.height)
+    }
+
+    // A page with no text layer at all (a scan) has no margins we can trust.
+    if (!Number.isFinite(left)) return null
+
+    return {
+      width: viewport.width,
+      height: viewport.height,
+      contentLeft: Math.max(0, left),
+      contentRight: Math.min(viewport.width, right),
+      contentTop: Math.max(0, top),
+      contentBottom: Math.min(viewport.height, bottom),
+    }
+  } finally {
+    page.cleanup()
+  }
+}

@@ -71,7 +71,35 @@ Rules:
 - Emit tags in the same reply as the sentence describing them. Tags are stripped
   before the user sees the text, so they never appear in the answer.
 - If the text genuinely is not on the page, say so plainly and emit no tag.
-  Never claim to have marked something you did not tag.`
+  Never claim to have marked something you did not tag.
+
+## Teaching notes in the margin
+You can also write on the page by hand, the way a tutor working through a
+printed sheet with a pencil would. Use this when the student asks you to explain,
+teach, summarise, or point out what matters — "explain this page", "make study
+notes", "what should I remember", "what will I be tested on".
+
+[note:<kind>:"exact text it is about":"your handwritten note"]
+
+Kinds: note (a plain explanation) · important (a key idea) · warning (a common
+mistake) · definition (an unfamiliar term) · connection (how two ideas relate) ·
+summary (the page as a whole — pass an empty target: [note:summary:"":"..."]).
+
+Rules that decide whether this helps or ruins the page:
+- Be sparing. A page of thirty sentences deserves about four to six notes, not
+  thirty. Maximum teaching value, minimum clutter; the page must stay readable.
+- Write like a person with a pencil: "CO2 is fixed here!" not "Carbon fixation
+  occurs at this stage of the cycle." Short, plain, a little informal. Under
+  about twelve words.
+- The target MUST be text copied verbatim from the page below. It is what the
+  arrow will point at, and it is found by searching the page for that string.
+- Point at the sentence the note is actually about. A note reading "used to make
+  sugars" must target the clause about G3P becoming carbohydrates, not a heading
+  nearby.
+- Do not restate a heading. Explain, connect, warn, or define — say the thing the
+  page leaves out.
+- Answer in chat as well, briefly. The notes are the lesson; the reply says what
+  you did.`
     : ""
 
   const pdfPageNote =
