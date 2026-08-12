@@ -180,11 +180,11 @@ export function layoutPageAnnotations(
   if (leftWidth > 60 * scale) {
     sides.push({ side: "left", width: leftWidth, left: edgePad })
   }
-  // A page with no usable margin still gets notes, tucked under the text block.
-  if (sides.length === 0) {
-    const fallback = Math.max(80 * scale, page.width * 0.3)
-    sides.push({ side: "right", width: fallback, left: page.width - fallback - edgePad })
-  }
+  // A page typeset edge to edge has nowhere to write without covering words.
+  // The old fallback dropped a note on top of the text column, which is exactly
+  // the outcome the whole placement pass exists to avoid — so there is no
+  // fallback: those notes are skipped, and the marks still land.
+  if (sides.length === 0) return []
   sides.sort((a, b) => b.width - a.width)
 
   const taken: Record<"left" | "right", Array<{ top: number; bottom: number }>> = {

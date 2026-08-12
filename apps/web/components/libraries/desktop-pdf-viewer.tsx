@@ -28,7 +28,7 @@ const PAGE_PAD = 12
 const WINDOW_BEFORE = 2
 const WINDOW_AFTER = 5
 const RENDER_WIDTH_EPS = 0.12
-type StyledRect = PdfHighlightRect & { style?: PdfAnnotationStyle }
+type StyledRect = PdfHighlightRect & { style?: PdfAnnotationStyle; heading?: boolean }
 
 const EMPTY_PAGE_HIGHLIGHTS = new Map<number, StyledRect[]>()
 const EMPTY_PLACED_NOTES = new Map<number, PlacedNote[]>()
@@ -190,7 +190,12 @@ function PdfPageCanvas({
         <div className="pointer-events-none absolute inset-0 flex justify-center py-1.5" aria-hidden>
           <div className="relative" style={{ width: layoutWidth, height: cssHeight - PAGE_PAD }}>
             {highlightRects.map((rect, i) => (
-              <PdfAnnotationMark key={i} rect={rect} style={rect.style ?? "highlight"} />
+              <PdfAnnotationMark
+                key={i}
+                rect={rect}
+                style={rect.style ?? "highlight"}
+                heading={rect.heading}
+              />
             ))}
           </div>
         </div>
@@ -339,7 +344,11 @@ export function DesktopPdfViewer({
   useEffect(() => {
     if (!highlightTargets?.length) return
     const pdf = pdfDoc
-    const width = Math.max(layoutWidth, renderWidth)
+    // Must be the container width, not the debounced render width: the overlay
+    // is absolutely positioned inside a box of exactly `layoutWidth`, so rects
+    // measured at any other scale land beside the words they belong to. During a
+    // zoom the two differ, which is when marks drifted off their text.
+    const width = layoutWidth
     if (!pdf || width < 1) return
 
     let cancelled = false
@@ -356,7 +365,11 @@ export function DesktopPdfViewer({
         if (cancelled) return
         if (rects.length > 0) {
           const prev = next.get(target.page) ?? []
-          const styled = rects.map((r) => ({ ...r, style: target.style ?? "highlight" }))
+          const styled = rects.map((r) => ({
+            ...r,
+            style: target.style ?? "highlight",
+            heading: target.kind === "heading",
+          }))
           next.set(target.page, [...prev, ...styled])
         }
       }
@@ -552,7 +565,11 @@ export function DesktopPdfViewer({
    */
   useEffect(() => {
     const pdf = pdfDoc
-    const width = Math.max(layoutWidth, renderWidth)
+    // Must be the container width, not the debounced render width: the overlay
+    // is absolutely positioned inside a box of exactly `layoutWidth`, so rects
+    // measured at any other scale land beside the words they belong to. During a
+    // zoom the two differ, which is when marks drifted off their text.
+    const width = layoutWidth
 
     let cancelled = false
     void (async () => {

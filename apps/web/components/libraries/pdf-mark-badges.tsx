@@ -50,7 +50,9 @@ export function PdfMarkBadges({
             title={`Go to “${target.quote}” on page ${target.page}`}
             className={cn(
               "group inline-flex max-w-full items-center gap-1.5 rounded-full border px-2.5 py-1",
-              "border-[#ff4f12]/40 bg-[#ff4f12]/10 text-[11px] text-zinc-200",
+              // Was orange-on-orange and unreadable against the light panel;
+              // the chip keeps the accent, the label does not.
+              "border-[#ff4f12]/45 bg-[#ff4f12]/8 text-[11px] text-zinc-700",
               "transition hover:border-[#ff4f12]/70 hover:bg-[#ff4f12]/20",
               "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#ff4f12]",
             )}
@@ -59,7 +61,7 @@ export function PdfMarkBadges({
             <span className="truncate">{target.quote}</span>
             {/* Only worth the space when the chip leaves the page you are on. */}
             {elsewhere ? (
-              <span className="shrink-0 text-zinc-400">p{target.page}</span>
+              <span className="shrink-0 text-zinc-500">p{target.page}</span>
             ) : null}
           </button>
         )

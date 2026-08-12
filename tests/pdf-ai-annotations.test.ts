@@ -231,10 +231,14 @@ describe("placing notes in the margin", () => {
     expect(placed!.box.top).toBeGreaterThan(PAGE.height / 2)
   })
 
-  it("still places a note on a page with no usable margin", () => {
+  it("writes nothing on a page with no usable margin", () => {
+    // This previously asserted a note was still placed, which encoded the bug:
+    // the fallback put it on top of the text column. Skipping the note is the
+    // correct outcome — the marks still land, and the page stays readable.
     const edgeToEdge: PageGeometry = { ...PAGE, contentLeft: 4, contentRight: 796 }
-    const placed = layoutPageAnnotations([{ ...note("a", "Key idea"), rect: rect(300) }], edgeToEdge)
-    expect(placed).toHaveLength(1)
+    expect(
+      layoutPageAnnotations([{ ...note("a", "Key idea"), rect: rect(300) }], edgeToEdge),
+    ).toEqual([])
   })
 })
 
@@ -273,5 +277,50 @@ describe("the arrow reaches what the note explains", () => {
     const left = arrowPath({ x: 60, y: 100 }, { x: 300, y: 100 }, "left")
     expect(right[1]!.x).toBeGreaterThan((600 + 300) / 2)
     expect(left[1]!.x).toBeLessThan((60 + 300) / 2)
+  })
+})
+
+describe("a page with no room to write", () => {
+  // The old fallback dropped notes on top of the text column when a page was
+  // typeset edge to edge — the exact outcome placement exists to prevent.
+  const EDGE_TO_EDGE: PageGeometry = {
+    width: 800,
+    height: 1130,
+    contentLeft: 6,
+    contentRight: 794,
+    contentTop: 40,
+    contentBottom: 1090,
+  }
+
+  it("writes nothing rather than writing over the words", () => {
+    const placed = layoutPageAnnotations(
+      [{ ...note("a", "CO2 is fixed here!"), rect: rect(400) }],
+      EDGE_TO_EDGE,
+    )
+    expect(placed).toEqual([])
+  })
+
+  it("still uses a margin that does exist on one side only", () => {
+    const oneSided: PageGeometry = { ...EDGE_TO_EDGE, contentRight: 560 }
+    const placed = layoutPageAnnotations(
+      [{ ...note("a", "CO2 is fixed here!"), rect: rect(400) }],
+      oneSided,
+    )
+    expect(placed).toHaveLength(1)
+    expect(placed[0]!.box.left).toBeGreaterThanOrEqual(560)
+  })
+
+  it("never places a note left of where the text ends", () => {
+    const placed = layoutPageAnnotations(
+      Array.from({ length: 4 }, (_, i) => ({
+        ...note(`n${i}`, "A margin note that needs a couple of lines"),
+        rect: rect(200 + i * 60),
+      })),
+      PAGE,
+    )
+    for (const p of placed) {
+      if (p.side === "right") expect(p.box.left).toBeGreaterThanOrEqual(PAGE.contentRight)
+      else expect(p.box.left + p.box.width).toBeLessThanOrEqual(PAGE.contentLeft)
+    }
   })
 })

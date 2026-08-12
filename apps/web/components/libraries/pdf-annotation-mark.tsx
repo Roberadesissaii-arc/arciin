@@ -18,6 +18,17 @@ import type { PdfHighlightRect } from "@/lib/files/pdf-highlight-types"
 const ACCENT = "#ff4f12"
 
 /**
+ * A highlighter is yellow. The accent orange reads as UI selection rather than
+ * as a marker drawn on paper, and on a study page the difference matters: the
+ * reference a student recognises is a yellow wash on body text, with the warmer
+ * tint reserved for section titles.
+ */
+const MARKER_YELLOW = "rgba(253, 224, 71, 0.55)"
+const MARKER_YELLOW_EDGE = "rgba(202, 138, 4, 0.35)"
+const HEADING_TINT = "rgba(255, 138, 92, 0.34)"
+const HEADING_EDGE = "rgba(255, 79, 18, 0.45)"
+
+/**
  * A stable per-mark wobble.
  *
  * Hand-drawn strokes need to vary or a column of them looks stamped, but the
@@ -119,9 +130,12 @@ function StrokeMark({
 export function PdfAnnotationMark({
   rect,
   style,
+  heading = false,
 }: {
   rect: PdfHighlightRect
   style: PdfAnnotationStyle
+  /** Section titles take the warmer tint; body text takes the yellow marker. */
+  heading?: boolean
 }) {
   if (style === "circle") return <CircleMark rect={rect} />
   // Just below the baseline, so descenders are not cut through.
@@ -145,8 +159,19 @@ export function PdfAnnotationMark({
 
   return (
     <div
-      className="absolute rounded-sm border border-[#ff4f12]/70 bg-[#ff4f12]/30 shadow-[0_0_0_1px_rgba(255,79,18,0.15)] animate-in fade-in duration-300"
-      style={{ left: rect.left, top: rect.top, width: rect.width, height: rect.height }}
+      className="absolute rounded-[2px] animate-in fade-in duration-300"
+      style={{
+        left: rect.left,
+        top: rect.top,
+        width: rect.width,
+        height: rect.height,
+        background: heading ? HEADING_TINT : MARKER_YELLOW,
+        // A marker leaves a denser edge where the nib starts and stops.
+        boxShadow: `inset 0 0 0 1px ${heading ? HEADING_EDGE : MARKER_YELLOW_EDGE}`,
+        // Lets the printed words stay black through the wash instead of being
+        // veiled by it, which is what a real highlighter does.
+        mixBlendMode: "multiply",
+      }}
       aria-hidden
     />
   )

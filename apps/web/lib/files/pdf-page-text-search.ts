@@ -238,10 +238,15 @@ function itemPartialRect(
 ): PdfHighlightRect {
   const t = Util.transform(viewportTransform, item.transform)
   const fontHeight = Math.hypot(t[2] ?? 0, t[3] ?? 0) || item.height || 12
+  const scaleX = Math.hypot(t[0] ?? 0, t[1] ?? 0) || Math.abs(t[0] || 1)
   const leftBase = Math.max(0, t[4] ?? 0)
   const top = (t[5] ?? 0) - fontHeight
-  const charWidth = fontHeight * 0.52
   const len = Math.max(item.str.length, 1)
+  // Divide the run's real measured width rather than assuming a ratio. A fixed
+  // 0.52em guess drifts across a long run in a proportional face, which is how a
+  // highlight of "two high-energy molecules" started mid-word at "gy".
+  const measured = item.width > 0 ? item.width * scaleX : 0
+  const charWidth = measured > 0 ? measured / len : fontHeight * 0.52
   const start = Math.max(0, Math.min(charStart, len))
   const end = Math.max(start + 1, Math.min(charEnd, len))
 
