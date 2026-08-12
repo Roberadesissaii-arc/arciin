@@ -7,10 +7,12 @@ import { cn } from "@/lib/utils"
 /**
  * A row of suggested prompts.
  *
- * Clicking fills the composer instead of sending. A one-click send that guesses
- * wrong costs a whole generation and leaves the reader undoing it, so the chip
- * gets them to a starting point and hands back control — they can edit the
- * wording, add a filename, or ignore it entirely.
+ * Prompt chips fill the composer instead of sending: a one-click send that
+ * guesses wrong costs a whole generation and leaves the reader undoing it.
+ *
+ * Action chips are different — they run immediately, because they do not ask
+ * the model anything. "Save to Documents" used to be a prompt, which meant it
+ * sent a sentence to an assistant that has no save tool and got a refusal back.
  */
 export function ChatSuggestionChips({
   suggestions,

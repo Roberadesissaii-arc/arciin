@@ -19,12 +19,34 @@
  * Pure: no React, no API. Every rule is unit-testable.
  */
 
+/**
+ * Some suggestions are prompts and some are commands.
+ *
+ * "Save to Documents" was originally a prompt, which meant clicking it sent a
+ * sentence to the model — and the model has no save tool, so it correctly
+ * replied that it could not do it. A chip offering something the assistant
+ * cannot perform is worse than no chip. Actions are executed by the client
+ * instead.
+ */
+export type ChatSuggestionKind = "prompt" | "action"
+
+export type ChatSuggestionAction = "save-canvas"
+
 export type ChatSuggestion = {
   id: string
   /** Chip label — short enough to read at a glance. */
   label: string
-  /** Text placed in the composer. May be a slash command. */
+  /** Text placed in the composer. Empty for actions. */
   prompt: string
+  kind: ChatSuggestionKind
+  /** Set when kind is "action": the client runs this instead of sending text. */
+  action?: ChatSuggestionAction
+  /**
+   * True when picking this should turn Canvas on. Long-form templates produce
+   * documents, and a document arriving inline instead of in the panel is a
+   * worse result than the reader asked for.
+   */
+  enablesCanvas?: boolean
 }
 
 export type AttachmentKind = "document" | "image" | "video" | "audio" | "code" | "other"
@@ -69,49 +91,61 @@ export function attachmentSuggestions(input: {
   switch (input.kind) {
     case "document":
       return [
-        { id: "summarize", label: "Summarize", prompt: "/summarize " + (input.filename ?? "") },
+        {
+          id: "summarize",
+          label: "Summarize",
+          prompt: "/summarize " + (input.filename ?? ""),
+          kind: "prompt",
+        },
         {
           id: "essay",
           label: "Write an essay",
           prompt: "Write an essay about this book, with an introduction and a conclusion.",
+          kind: "prompt",
+          enablesCanvas: true,
         },
         {
           id: "research",
           label: "Research paper",
           prompt:
             "Write a research paper based on this document. Include section headings and a reference list.",
+          kind: "prompt",
+          enablesCanvas: true,
         },
         {
           id: "keypoints",
           label: "Key points",
           prompt: "Pull out the key points, chapter by chapter.",
+          kind: "prompt",
         },
         {
           id: "questions",
           label: "Study questions",
           prompt: "Write study questions covering the main arguments in this document.",
+          kind: "prompt",
+          enablesCanvas: true,
         },
       ]
 
     case "image":
       return [
-        { id: "describe", label: "Describe", prompt: "What is in this image?" },
-        { id: "extract", label: "Read the text", prompt: "Read any text in this image." },
-        { id: "highlight", label: "Highlight", prompt: "/highlight " },
+        { id: "describe", label: "Describe", prompt: "What is in this image?", kind: "prompt" },
+        { id: "extract", label: "Read the text", prompt: "Read any text in this image.", kind: "prompt" },
+        { id: "highlight", label: "Highlight", prompt: "/highlight ", kind: "prompt" },
       ]
 
     case "code":
       return [
-        { id: "explain", label: "Explain", prompt: "Explain what this file does." },
-        { id: "review", label: "Review", prompt: "Review this code and flag anything risky." },
-        { id: "docs", label: "Document", prompt: "Write documentation for this file." },
+        { id: "explain", label: "Explain", prompt: "Explain what this file does.", kind: "prompt" },
+        { id: "review", label: "Review", prompt: "Review this code and flag anything risky.", kind: "prompt" },
+        { id: "docs", label: "Document", prompt: "Write documentation for this file.", kind: "prompt", enablesCanvas: true },
       ]
 
     case "video":
     case "audio":
       return [
-        { id: "about", label: "What is this?", prompt: "What is this file?" },
-        { id: "details", label: "Details", prompt: "Show the technical details of this file." },
+        { id: "about", label: "What is this?", prompt: "What is this file?", kind: "prompt" },
+        { id: "details", label: "Details", prompt: "Show the technical details of this file.", kind: "prompt" },
       ]
 
     default:
@@ -120,6 +154,7 @@ export function attachmentSuggestions(input: {
           id: "about",
           label: many ? "About these files" : "About this file",
           prompt: many ? "What are these files?" : "What is this file?",
+          kind: "prompt",
         },
       ]
   }
@@ -160,15 +195,22 @@ export function followUpSuggestions(context: ReplyContext): ChatSuggestion[] {
         id: "expand-section",
         label: `Expand "${truncate(section, 22)}"`,
         prompt: `/modify expand the "${section}" section with more detail`,
+        kind: "prompt",
       })
     }
 
     suggestions.push(
-      { id: "shorter", label: "Make it shorter", prompt: "/modify cut this down by about a third" },
+      {
+        id: "shorter",
+        label: "Make it shorter",
+        prompt: "/modify cut this down by about a third",
+        kind: "prompt",
+      },
       {
         id: "humanize",
         label: "Warmer tone",
         prompt: "/modify rewrite in a warmer, less formal voice",
+        kind: "prompt",
       },
     )
 
@@ -176,7 +218,11 @@ export function followUpSuggestions(context: ReplyContext): ChatSuggestion[] {
       suggestions.push({
         id: "save",
         label: "Save to Documents",
-        prompt: "Save this draft to my Documents library.",
+        // An action, not a prompt: the assistant has no save tool, so sending
+        // this as a sentence produced a polite refusal instead of a saved file.
+        prompt: "",
+        kind: "action",
+        action: "save-canvas",
       })
     }
     return suggestions.slice(0, 4)
@@ -184,15 +230,26 @@ export function followUpSuggestions(context: ReplyContext): ChatSuggestion[] {
 
   if (context.listedAssets) {
     return [
-      { id: "summarize", label: "Summarize one", prompt: "/summarize " },
-      { id: "essay", label: "Write about one", prompt: "Write an essay about " },
+      { id: "summarize", label: "Summarize one", prompt: "/summarize ", kind: "prompt" },
+      {
+        id: "essay",
+        label: "Write about one",
+        prompt: "Write an essay about ",
+        kind: "prompt",
+        enablesCanvas: true,
+      },
     ]
   }
 
   if ((context.replyWordCount ?? 0) >= 60) {
     return [
-      { id: "deeper", label: "Go deeper", prompt: "Go deeper on that." },
-      { id: "simpler", label: "Explain simply", prompt: "Explain that more simply." },
+      { id: "deeper", label: "Go deeper", prompt: "Go deeper on that.", kind: "prompt" },
+      {
+        id: "simpler",
+        label: "Explain simply",
+        prompt: "Explain that more simply.",
+        kind: "prompt",
+      },
     ]
   }
 

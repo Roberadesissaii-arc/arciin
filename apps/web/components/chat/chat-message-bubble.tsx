@@ -14,7 +14,7 @@ import {
   Volume2,
 } from "lucide-react"
 
-import { canvasSectionTitles, followUpSuggestions } from "@arciin/shared"
+import { canvasSectionTitles, followUpSuggestions, type ChatSuggestion } from "@arciin/shared"
 
 import { ChatSuggestionChips } from "@/components/chat/chat-suggestion-chips"
 import { useChatTextToSpeech } from "@/hooks/use-chat-text-to-speech"
@@ -166,8 +166,11 @@ export function MessageBubble({
   onFeedback?: (rating: ChatMessageFeedbackRating | null) => void
   /** Re-open a Canvas draft that was written for this assistant message. */
   onOpenCanvasDraft?: (draft: NonNullable<Message["canvasDraft"]>) => void
-  /** Fill the composer with a suggested follow-up. */
-  onPickSuggestion?: (prompt: string) => void
+  /**
+   * Handle a picked suggestion. Prompt chips fill the composer; action chips
+   * run immediately, because they do not ask the model anything.
+   */
+  onPickSuggestion?: (suggestion: ChatSuggestion) => void
   profileId?: string | null
 }) {
   const isUser = msg.role === "user"
@@ -343,18 +346,6 @@ export function MessageBubble({
           </button>
         ) : null}
 
-        {!isUser && !msg.pending && !isStreaming && canShowAnswerBody && onFeedback && (
-          <MessageActions
-            content={msg.content}
-            usage={msg.usage}
-            feedback={msg.feedback}
-            canRegenerate={canRegenerate}
-            onRegenerate={onRegenerate}
-            onFeedback={onFeedback}
-            profileId={profileId}
-          />
-        )}
-
         {/* Suggested next moves. Derived from what this reply actually did —
             a draft gets /modify edits, a file list gets "summarize one" — so
             they stay true instead of being a fixed menu. Picking one fills the
@@ -373,9 +364,21 @@ export function MessageBubble({
               listedAssets: /\[\[ASSETS?[:_]/i.test(msg.content),
               replyWordCount: msg.content.trim().split(/\s+/).filter(Boolean).length,
             })}
-            onPick={(suggestion) => onPickSuggestion(suggestion.prompt)}
+            onPick={onPickSuggestion}
           />
         ) : null}
+        {!isUser && !msg.pending && !isStreaming && canShowAnswerBody && onFeedback && (
+          <MessageActions
+            content={msg.content}
+            usage={msg.usage}
+            feedback={msg.feedback}
+            canRegenerate={canRegenerate}
+            onRegenerate={onRegenerate}
+            onFeedback={onFeedback}
+            profileId={profileId}
+          />
+        )}
+
       </div>
     </div>
   )

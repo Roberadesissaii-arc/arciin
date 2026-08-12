@@ -1650,10 +1650,29 @@ export function ChatPage() {
                       : undefined
                   }
                   onOpenCanvasDraft={openCanvasDraft}
-                  onPickSuggestion={(prompt) => {
-                    // Fill, do not send: a wrong guess would cost a whole
-                    // generation and leave the reader undoing it.
-                    setInput(prompt)
+                  onPickSuggestion={(suggestion) => {
+                    // Action chips run immediately — they do not ask the model
+                    // anything, and routing "Save to Documents" through the
+                    // assistant produced a refusal because it has no save tool.
+                    if (suggestion.kind === "action") {
+                      if (suggestion.action === "save-canvas") {
+                        if (msg.canvasDraft) openCanvasDraft(msg.canvasDraft)
+                        // PDF by default — the format people expect to hand
+                        // to someone. The Canvas panel offers the others.
+                        void saveCanvasToDocuments("pdf")
+                      }
+                      return
+                    }
+                    // Prompt chips fill, never send: a wrong guess would cost a
+                    // whole generation and leave the reader undoing it.
+                    // Long-form templates produce documents, so turn Canvas
+                    // on rather than letting an essay arrive inline.
+                    if (suggestion.enablesCanvas) {
+                      setPromptTools((prev) =>
+                        prev.includes("canvas") ? prev : [...prev, "canvas"],
+                      )
+                    }
+                    setInput(suggestion.prompt)
                   }}
                   profileId={selectedProfile?.id}
                 />
@@ -1672,6 +1691,9 @@ export function ChatPage() {
         <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 px-4 pb-4 sm:px-6">
           <div className="pointer-events-auto mx-auto max-w-3xl">
             <ChatPromptBox
+              onEnableCanvas={() =>
+                setPromptTools((prev) => (prev.includes("canvas") ? prev : [...prev, "canvas"]))
+              }
               value={input}
               onValueChange={setInput}
               onSend={() => void sendMessage()}

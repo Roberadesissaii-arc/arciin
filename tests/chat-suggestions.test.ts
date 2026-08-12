@@ -142,3 +142,54 @@ describe("describeCanvasDraft", () => {
     expect(describeCanvasDraft({ content: "one two three" })).toContain("3 words")
   })
 })
+
+describe("actions versus prompts", () => {
+  // "Save to Documents" was a prompt at first, so clicking it sent a sentence
+  // to an assistant with no save tool, which correctly refused. A chip that
+  // offers something the assistant cannot do is worse than no chip.
+  it("marks Save to Documents as an action, not a prompt", () => {
+    const save = followUpSuggestions({ hasCanvasDraft: true, canvasUnsaved: true }).find(
+      (s) => s.id === "save",
+    )
+    expect(save?.kind).toBe("action")
+    expect(save?.action).toBe("save-canvas")
+    expect(save?.prompt).toBe("")
+  })
+
+  it("keeps every draft edit a prompt so the reader can adjust it first", () => {
+    const edits = followUpSuggestions({
+      hasCanvasDraft: true,
+      sectionTitles: ["Abstract"],
+    }).filter((s) => s.id !== "save")
+    expect(edits.every((s) => s.kind === "prompt")).toBe(true)
+  })
+
+  it("gives every suggestion an explicit kind", () => {
+    const all = [
+      ...attachmentSuggestions({ kind: "document", filename: "b.pdf" }),
+      ...attachmentSuggestions({ kind: "image" }),
+      ...attachmentSuggestions({ kind: "code" }),
+      ...attachmentSuggestions({ kind: "other" }),
+      ...followUpSuggestions({ hasCanvasDraft: true, canvasUnsaved: true, sectionTitles: ["A"] }),
+      ...followUpSuggestions({ listedAssets: true }),
+      ...followUpSuggestions({ replyWordCount: 200 }),
+    ]
+    expect(all.every((s) => s.kind === "prompt" || s.kind === "action")).toBe(true)
+  })
+
+  it("flags long-form templates so Canvas turns on with them", () => {
+    // An essay arriving inline instead of in the panel is a worse result than
+    // the reader asked for.
+    const docs = attachmentSuggestions({ kind: "document", filename: "b.pdf" })
+    expect(docs.find((s) => s.id === "essay")?.enablesCanvas).toBe(true)
+    expect(docs.find((s) => s.id === "research")?.enablesCanvas).toBe(true)
+    // A summary is a chat answer, not a document.
+    expect(docs.find((s) => s.id === "summarize")?.enablesCanvas).toBeUndefined()
+  })
+
+  it("does not enable Canvas for short-answer chips", () => {
+    expect(
+      attachmentSuggestions({ kind: "image" }).some((s) => s.enablesCanvas),
+    ).toBe(false)
+  })
+})

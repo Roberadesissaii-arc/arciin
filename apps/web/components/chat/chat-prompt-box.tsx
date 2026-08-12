@@ -78,6 +78,8 @@ type ChatPromptBoxProps = {
   onToolsChange?: (tools: ChatPromptToolId[]) => void
   /** Library attachments (images + docs). Images may include base64 for vision. */
   attachments?: ChatComposerAttachment[]
+  /** Turn the Canvas chip on — used when a writing template is picked. */
+  onEnableCanvas?: () => void
   onAttachmentsChange?: (next: ChatComposerAttachment[]) => void
 }
 
@@ -152,6 +154,7 @@ export function ChatPromptBox({
   tools = [],
   onToolsChange,
   attachments = [],
+  onEnableCanvas,
   onAttachmentsChange,
 }: ChatPromptBoxProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -400,6 +403,40 @@ export function ChatPromptBox({
 
   return (
     <TooltipProvider delayDuration={300}>
+      {/* Templates float ABOVE the bordered shell. Inside it they stretched the
+          composer every time a file was attached, shoving the input down. */}
+      {/* Templates offered once something is attached. A blank composer next
+            to a freshly attached book is the moment the reader is least sure
+            what this can do; these fill the input rather than sending. */}
+        {attachments.length > 0 && value.trim().length === 0 ? (
+          <ChatSuggestionChips
+            className="mb-2 px-1"
+            label="Try"
+            suggestions={attachmentSuggestions({
+              kind: attachmentKindFor({
+                mediaType: attachments[0]!.mediaType,
+                filename: attachments[0]!.filename,
+              }),
+              filename: attachments.length === 1 ? attachments[0]!.filename : null,
+              count: attachments.length,
+            })}
+            onPick={(suggestion: ChatSuggestion) => {
+              // A writing template produces a document, so turn Canvas on with it —
+              // otherwise the essay arrives inline and the panel stays empty.
+              if (suggestion.enablesCanvas) onEnableCanvas?.()
+              onValueChange(suggestion.prompt)
+              // Focus and put the caret at the end so a partial prompt like
+              // "/summarize " can be completed straight away.
+              requestAnimationFrame(() => {
+                const el = textareaRef.current
+                if (!el) return
+                el.focus()
+                el.setSelectionRange(suggestion.prompt.length, suggestion.prompt.length)
+              })
+            }}
+          />
+        ) : null}
+
       <div
         ref={boxRef}
         className={cn(
@@ -597,35 +634,6 @@ export function ChatPromptBox({
               </div>
             ))}
           </div>
-        ) : null}
-
-        {/* Templates offered once something is attached. A blank composer next
-            to a freshly attached book is the moment the reader is least sure
-            what this can do; these fill the input rather than sending. */}
-        {attachments.length > 0 && value.trim().length === 0 ? (
-          <ChatSuggestionChips
-            className="mb-1.5 px-2"
-            label="Try"
-            suggestions={attachmentSuggestions({
-              kind: attachmentKindFor({
-                mediaType: attachments[0]!.mediaType,
-                filename: attachments[0]!.filename,
-              }),
-              filename: attachments.length === 1 ? attachments[0]!.filename : null,
-              count: attachments.length,
-            })}
-            onPick={(suggestion: ChatSuggestion) => {
-              onValueChange(suggestion.prompt)
-              // Focus and put the caret at the end so a partial prompt like
-              // "/summarize " can be completed straight away.
-              requestAnimationFrame(() => {
-                const el = textareaRef.current
-                if (!el) return
-                el.focus()
-                el.setSelectionRange(suggestion.prompt.length, suggestion.prompt.length)
-              })
-            }}
-          />
         ) : null}
 
         {/* Input with orange slash-command highlight overlay */}
