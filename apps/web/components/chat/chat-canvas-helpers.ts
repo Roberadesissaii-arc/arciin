@@ -6,6 +6,30 @@
 import { describeCanvasDraft, stripAssistantStreamMarkup } from "@arciin/shared"
 
 /**
+ * Drop the blocks chat-page appends to the outgoing user text.
+ *
+ * The attachment block contains the sentence "Write the full answer (essay,
+ * summary, exam, etc.)", so any classifier run over the augmented text reports
+ * a document request for every message sent with a file in the tray — "hey how
+ * are you" included. Callers are supposed to pass the typed text, but a
+ * classifier that gives the wrong answer when they forget is a trap, so it
+ * strips the markers itself.
+ */
+function typedPortion(userText: string): string {
+  const markers = [
+    "[USER ATTACHED FILE(S)",
+    "CURRENT CANVAS DRAFT",
+    "(Attached:",
+  ]
+  let cut = userText.length
+  for (const marker of markers) {
+    const at = userText.indexOf(marker)
+    if (at >= 0 && at < cut) cut = at
+  }
+  return userText.slice(0, cut).trim()
+}
+
+/**
  * The user naming the canvas itself: "put it in my canvas", "add that to canvas".
  *
  * This has to be its own check because "canvas" is also a word a model can read
@@ -14,13 +38,31 @@ import { describeCanvasDraft, stripAssistantStreamMarkup } from "@arciin/shared"
  * When the user says canvas they mean the panel, always.
  */
 export function mentionsCanvasExplicitly(userText: string): boolean {
-  const t = userText.trim()
+  const t = typedPortion(userText)
   if (!t) return false
   // "in/into/on/to the|my|a canvas", plus verb-first forms like "canvas this".
   if (/\b(in|into|on|to|inside|onto)\s+(the\s+|my\s+|a\s+)?canvas\b/i.test(t)) return true
   if (/\b(open|use|start|switch\s+to)\s+(the\s+|my\s+)?canvas\b/i.test(t)) return true
   if (/\bcanvas\s+(it|this|that)\b/i.test(t)) return true
   return false
+}
+
+/**
+ * "Explain X", "teach me X", "how does X work" — a request to be taught.
+ *
+ * This has to beat the keyword lists rather than sit alongside them: "explain
+ * the essay structure" names a document but is not a request to write one, and
+ * a user who gets a 900-word document instead of an answer has lost the thread
+ * of the conversation. An explicit creation verb in the same sentence ("explain
+ * bonding and write me a note on it") opts back in.
+ */
+export function isExplanationRequest(userText: string): boolean {
+  const t = typedPortion(userText)
+  if (!t) return false
+  if (new RegExp(`\\b(${CREATE_VERB})\\b`, "i").test(t)) return false
+  return /^(explain|teach|tell\s+me\s+about|help\s+me\s+understand|walk\s+me\s+through|describe|what|why|how)\b/i.test(
+    t,
+  )
 }
 
 /** Document nouns that mean "this is a written deliverable", not a chat reply. */
@@ -43,9 +85,10 @@ const CREATE_VERB =
  * so it only fires when the request names a document or names the canvas.
  */
 export function shouldAutoOpenCanvas(userText: string): boolean {
-  const t = userText.trim()
+  const t = typedPortion(userText)
   if (!t) return false
   if (mentionsCanvasExplicitly(t)) return true
+  if (isExplanationRequest(t)) return false
 
   // A bare question stays in chat even if it mentions a document noun:
   // "what is a cheat sheet" is not a request to write one.
@@ -61,13 +104,18 @@ export function shouldAutoOpenCanvas(userText: string): boolean {
 
 /** True when the user is asking for Canvas long-form output (essay, exam, quiz, etc.). */
 export function isCanvasWritingIntent(userText: string): boolean {
-  const t = userText.trim()
+  const t = typedPortion(userText)
   if (!t) return false
 
   // Naming the canvas outranks every heuristic below it. "Put that list in my
   // canvas" reads as a list request to the guards, but the user just said where
   // they want it.
   if (mentionsCanvasExplicitly(t)) return true
+
+  // The chip means "prefer Canvas for deliverables", not "never answer a
+  // question again". Asked to explain ionic bonding with the chip on, the app
+  // wrote a 900-word document and never answered.
+  if (isExplanationRequest(t)) return false
 
   // Explicit non-writing: list / search / status / short Q&A
   if (

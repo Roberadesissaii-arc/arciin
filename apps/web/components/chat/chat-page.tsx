@@ -1064,11 +1064,13 @@ export function ChatPage() {
             typedText,
           ))))
 
-    // Show the chip when routing decided for the user, so the panel opening is
-    // explained rather than surprising — and so the next turn stays in Canvas.
+    // Open the panel for this turn without arming the chip. Latching it on was
+    // wrong: the chip switches routing to a deliberately looser test, so one
+    // auto-routed document turned every following message into a candidate for
+    // Canvas — the user asks a question five turns later and gets a document.
+    // Each turn is now classified on its own words.
     if (forceCanvas && !canvasChipOn) {
-      activeTools = [...activeTools, "canvas"]
-      setPromptTools(activeTools)
+      setCanvasOpen(true)
     }
 
     // The draft itself has to travel with the request. Without it the model has
@@ -1113,17 +1115,22 @@ export function ChatPage() {
     setInput("")
     setStreaming(true)
 
+    // Held in a local, not read back off state at the end of the turn. `canvasTitle`
+    // in this function is the value from the render that started the send, so the
+    // setter below does not change what the finaliser sees — a turn whose document
+    // had no heading kept the *previous* turn's title, which is how a request for
+    // upload documentation came back titled "Photosynthesis Quiz — 10 Questions".
+    let turnCanvasTitle = canvasTitle
     if (forceCanvas) {
       setCanvasOpen(true)
       setCanvasStreaming(true)
       const bookTitle =
         docAttachments[0]?.filename.replace(/\.pdf$/i, "").trim() ||
         deriveCanvasTitle(displayUserText)
-      setCanvasTitle(
-        /\bessay\b/i.test(displayUserText)
-          ? `Essay: ${bookTitle}`.slice(0, 80)
-          : bookTitle.slice(0, 80),
-      )
+      turnCanvasTitle = /\bessay\b/i.test(displayUserText)
+        ? `Essay: ${bookTitle}`.slice(0, 80)
+        : bookTitle.slice(0, 80)
+      setCanvasTitle(turnCanvasTitle)
       setCanvasContent("")
     }
 
@@ -1203,7 +1210,9 @@ export function ChatPage() {
 
     // Only inject Canvas long-form system rules when this turn is actually writing.
     const toolsForSys = forceCanvas
-      ? activeTools
+      ? (activeTools.includes("canvas")
+          ? activeTools
+          : ([...activeTools, "canvas"] as ChatPromptToolId[]))
       : activeTools.filter((t) => t !== "canvas")
     let sysTail = instanceBlock + humanizeBlock + buildPromptToolsSystemAppend(toolsForSys)
     if (visionImages?.length) {
@@ -1366,7 +1375,7 @@ export function ChatPage() {
       let canvasDraftForMsg: Message["canvasDraft"] | undefined
       if (forceCanvas) {
         const docOnly = sanitizeCanvasDocument(finalContent)
-        const nextTitle = refineCanvasTitleFromContent(docOnly, canvasTitle)
+        const nextTitle = refineCanvasTitleFromContent(docOnly, turnCanvasTitle)
         setCanvasContent(docOnly)
         setCanvasStreaming(false)
         setCanvasOpen(true)
@@ -1395,9 +1404,14 @@ export function ChatPage() {
             userText: displayUserText,
             attachedFilenames: docAttachments.map((d) => d.filename),
           })
-          if (looksLikeProcessTalk || (docAttachments.length > 0 && wordCount < 150)) {
+          // A canvas turn that produced a stub is a failure wearing a success
+          // message: "Generate documentation for how uploads work" came back as
+          // 54 words and still announced itself as a finished document.
+          if (looksLikeProcessTalk || wordCount < 150) {
             canvasChatSummary +=
-              `\n\n⚠️ This draft is only ~${wordCount} words. If it is incomplete, re-send the request — the server loads the PDF automatically.`
+              docAttachments.length > 0
+                ? `\n\n⚠️ This draft is only ~${wordCount} words. If it is incomplete, re-send the request — the server loads the PDF automatically.`
+                : `\n\n⚠️ This draft is only ~${wordCount} words, which is short for a document. Re-send the request, or ask for more detail on a specific section.`
           }
         }
         if (docOnly.trim()) {
