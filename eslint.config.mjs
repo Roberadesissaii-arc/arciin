@@ -11,6 +11,8 @@ const eslintConfig = defineConfig([
     "apps/web/.next/**",
     // Development build output — generated bundles, not source.
     "apps/web/.next-dev/**",
+    // Browser-suite build output — generated bundles, not source.
+    "apps/web/.next-e2e/**",
     // Account portal build output — same generated bundles as apps/web/.next.
     // Missing here, `pnpm lint` failed for anyone who had built the portal.
     "apps/account/.next/**",

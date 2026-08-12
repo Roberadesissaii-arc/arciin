@@ -77,3 +77,6 @@ docker-compose.smoke.yml
 # Playwright artifacts
 reports/
 test-results/
+
+# Browser-suite build output
+apps/web/.next-e2e/
