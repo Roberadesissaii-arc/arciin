@@ -260,15 +260,18 @@ function writeSseDelta(
 
 type ToolMode = false | "all" | "read-only" | "sandbox"
 
-function resolveOllamaTools(mode: ToolMode) {
+function resolveOllamaTools(mode: ToolMode, withheld?: ReadonlySet<string>) {
   if (mode === false) return undefined
+  const allowed = withheld?.size
+    ? ARCIIN_CHAT_TOOLS.filter((t) => !withheld.has(t.function.name))
+    : ARCIIN_CHAT_TOOLS
   if (mode === "read-only") {
-    return ARCIIN_CHAT_TOOLS.filter((t) => t.function.name === "vision_search_library")
+    return allowed.filter((t) => t.function.name === "vision_search_library")
   }
   if (mode === "sandbox") {
-    return ARCIIN_CHAT_TOOLS.filter((t) => t.function.name !== "organize_images_library")
+    return allowed.filter((t) => t.function.name !== "organize_images_library")
   }
-  return ARCIIN_CHAT_TOOLS
+  return allowed
 }
 
 async function ollamaChatOnce(
@@ -278,6 +281,7 @@ async function ollamaChatOnce(
   opts: {
     stream: boolean
     tools?: ToolMode
+    withheldTools?: ReadonlySet<string>
     apiKey?: string | null
     thinkingSupported: boolean
   },
@@ -292,7 +296,8 @@ async function ollamaChatOnce(
       stream: opts.stream,
       think: thinkValue,
     }
-    const tools = opts.tools === undefined ? undefined : resolveOllamaTools(opts.tools)
+    const tools =
+      opts.tools === undefined ? undefined : resolveOllamaTools(opts.tools, opts.withheldTools)
     if (tools?.length) body.tools = tools
     return body
   }
@@ -441,6 +446,8 @@ export async function streamOllamaWithArciinTools(opts: {
   security?: Pick<AiSecuritySettingsResolved, "libraryToolAccess" | "readOnlyTools" | "requireToolApproval">
   /** Focused file preview already has PDF/text in context — skip tool rounds. */
   disableTools?: boolean
+  /** Tool names to withhold for this turn (Canvas turns hide the store writers). */
+  withheldTools?: ReadonlySet<string>
 }): Promise<void> {
   const { raw, baseUrl, model, toolCtx, apiKey } = opts
   const agentEnabled = (opts.ai?.agent ?? true) && !opts.disableTools
@@ -624,6 +631,7 @@ export async function streamOllamaWithArciinTools(opts: {
     const res = await ollamaChatOnce(baseUrl, model, messages, {
       stream: true,
       tools: toolMode,
+      withheldTools: opts.withheldTools,
       apiKey,
       thinkingSupported,
     })

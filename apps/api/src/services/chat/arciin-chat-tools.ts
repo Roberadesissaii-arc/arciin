@@ -186,7 +186,7 @@ export const ARCIIN_CHAT_TOOLS = [
     function: {
       name: "add_app_database_rows",
       description:
-        "Insert one or more rows into a table in one of the user's App data databases. Creates the table automatically if it doesn't exist yet. Use when the user asks you to add, insert, or seed sample/test data into a database table from chat.",
+        "Insert one or more rows into a table in one of the user's App data databases. Creates the table automatically if it doesn't exist yet. Use ONLY when the user names a database or table and wants structured records added — orders, contacts, seed/test data. NEVER use this to store prose: a note, essay, summary, report, or study guide is written directly in your reply, not saved as rows. \"Canvas\" is Arciin's writing panel, never a database — if the user says canvas, write the document in your reply.",
       parameters: {
         type: "object",
         properties: {

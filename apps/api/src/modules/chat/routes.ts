@@ -68,7 +68,27 @@ const chatSchema = z.object({
   model:     z.string().max(200).optional(),
   messages:  z.array(messageSchema).min(1),
   focusAsset: focusAssetSchema.optional(),
+  /** This turn writes a Canvas document — see CANVAS_WITHHELD_TOOLS. */
+  canvas: z.boolean().optional(),
 })
+
+/**
+ * Tools a Canvas turn must not be offered.
+ *
+ * A Canvas turn's whole output is the document; the panel is where it goes.
+ * Leaving the App data database tools on the table meant a model asked to "add
+ * that into my canvas" could read "canvas" as a store and answer by creating a
+ * `study_notes` table instead of writing anything — which is exactly what
+ * happened. Withholding beats instructing here: the model cannot misuse a tool
+ * it was never given.
+ */
+const CANVAS_WITHHELD_TOOLS = new Set([
+  "add_app_database_rows",
+  "list_app_database_tables",
+  "create_library_folder",
+  "delete_library_folder",
+  "organize_images_library",
+])
 
 type ChatMessageIn = z.infer<typeof messageSchema>
 
@@ -987,6 +1007,7 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
       }
 
       const { profileId, model: modelOverride, messages, focusAsset } = parsed.data
+      const canvasTurn = parsed.data.canvas === true
 
       let profile = profileId
         ? await fastify.prisma.modelProfile.findUnique({ where: { id: profileId } })
@@ -1112,6 +1133,7 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
             model,
             apiKey: profile.apiKey,
             disableTools: Boolean(focusAsset),
+            ...(canvasTurn ? { withheldTools: CANVAS_WITHHELD_TOOLS } : {}),
             messages: ollamaMessages,
             toolCtx: {
               prisma: fastify.prisma,
@@ -1197,7 +1219,8 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
               : ARCIIN_CHAT_TOOLS.filter(
                   (t) =>
                     t.function.name !== "vision_search_library" &&
-                    t.function.name !== "organize_images_library",
+                    t.function.name !== "organize_images_library" &&
+                    !(canvasTurn && CANVAS_WITHHELD_TOOLS.has(t.function.name)),
                 ),
             toolCtx: {
               prisma: fastify.prisma,

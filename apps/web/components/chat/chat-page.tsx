@@ -72,6 +72,7 @@ import {
   isCanvasWritingIntent,
   refineCanvasTitleFromContent,
   sanitizeCanvasDocument,
+  shouldAutoOpenCanvas,
 } from "@/components/chat/chat-canvas-helpers"
 import { ChatCanvasSaveDialog } from "@/components/chat/chat-canvas-save-dialog"
 import { buildCanvasExportFile, type CanvasExportFormat } from "@/lib/chat/canvas-export"
@@ -1008,6 +1009,11 @@ export function ChatPage() {
       }
     }
 
+    // Canvas routing reads this, not the augmented text below: the attachment
+    // block literally contains the words "essay, summary, exam", so matching
+    // against `text` after augmentation says "canvas" for every attached file.
+    const typedText = text
+
     // Document attachments MUST be part of the outbound user text BEFORE history/payload
     // is built — otherwise the model never sees which book was selected.
     // The API auto-loads PDF/text for attached ids; do NOT tell the model to "call tools"
@@ -1042,14 +1048,28 @@ export function ChatPage() {
     // canvas work.
     const isCanvasEdit = /^\s*\/modify\b/i.test((overrideText ?? input).trim())
 
+    // The chip is a hint, not the only way in. Asking for a document — or
+    // naming the canvas outright — routes there whether or not it is toggled,
+    // because remembering to arm a toggle before every note is not the user's
+    // job.
+    const autoCanvas = shouldAutoOpenCanvas(typedText)
+
     const forceCanvas =
       isCanvasEdit ||
+      autoCanvas ||
       (canvasChipOn &&
-      (isCanvasWritingIntent(text) ||
+      (isCanvasWritingIntent(typedText) ||
         (docAttachments.length > 0 &&
           /\b(essay|article|draft|write|report|story|exam|quiz|test|questions?|worksheet|homework|study\s+guide|documentation|docs?|manual|outline)\b/i.test(
-            text,
+            typedText,
           ))))
+
+    // Show the chip when routing decided for the user, so the panel opening is
+    // explained rather than surprising — and so the next turn stays in Canvas.
+    if (forceCanvas && !canvasChipOn) {
+      activeTools = [...activeTools, "canvas"]
+      setPromptTools(activeTools)
+    }
 
     // The draft itself has to travel with the request. Without it the model has
     // no document to revise and writes a new one — which is the exact
@@ -1225,6 +1245,9 @@ export function ChatPage() {
         body: JSON.stringify({
           profileId: profile.id,
           ...(modelToSend ? { model: modelToSend } : {}),
+          // Tells the API this turn produces a document, so it withholds the
+          // tools that would otherwise write it somewhere instead.
+          ...(forceCanvas ? { canvas: true } : {}),
           messages: payload,
         }),
         signal: abortRef.current.signal,

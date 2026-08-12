@@ -5,10 +5,69 @@
 
 import { describeCanvasDraft, stripAssistantStreamMarkup } from "@arciin/shared"
 
+/**
+ * The user naming the canvas itself: "put it in my canvas", "add that to canvas".
+ *
+ * This has to be its own check because "canvas" is also a word a model can read
+ * as "some store I should write a row into" — asked to "add that one into my
+ * canvas", one went and created a `study_notes` table in an App data database.
+ * When the user says canvas they mean the panel, always.
+ */
+export function mentionsCanvasExplicitly(userText: string): boolean {
+  const t = userText.trim()
+  if (!t) return false
+  // "in/into/on/to the|my|a canvas", plus verb-first forms like "canvas this".
+  if (/\b(in|into|on|to|inside|onto)\s+(the\s+|my\s+|a\s+)?canvas\b/i.test(t)) return true
+  if (/\b(open|use|start|switch\s+to)\s+(the\s+|my\s+)?canvas\b/i.test(t)) return true
+  if (/\bcanvas\s+(it|this|that)\b/i.test(t)) return true
+  return false
+}
+
+/** Document nouns that mean "this is a written deliverable", not a chat reply. */
+const DOCUMENT_NOUN =
+  "essays?|articles?|stor(?:y|ies)|reports?|letters?|papers?|blog\\s*posts?|white\\s*papers?|" +
+  "poems?|screenplays?|manuscripts?|documentation|docs?|manuals?|handbooks?|guides?|outlines?|" +
+  "notes?|note-?sheets?|study\\s+guides?|revision\\s+notes?|cheat\\s*sheets?|summar(?:y|ies)|" +
+  "exams?|quiz(?:zes)?|tests?|worksheets?|assessments?|flash\\s*cards?|lessons?|tutorials?"
+
+/** Verbs that mean the user wants something produced, not looked up. */
+const CREATE_VERB =
+  "write|writing|create|creating|make|making|draft|drafting|compose|composing|" +
+  "prepare|preparing|build|building|generate|generating|produce|put\\s+together|give\\s+me"
+
+/**
+ * Strong enough to route into Canvas on its own, with no chip toggled.
+ *
+ * The chip-gated path (`isCanvasWritingIntent`) is deliberately loose because
+ * the user already declared intent by toggling it. This one runs on every turn,
+ * so it only fires when the request names a document or names the canvas.
+ */
+export function shouldAutoOpenCanvas(userText: string): boolean {
+  const t = userText.trim()
+  if (!t) return false
+  if (mentionsCanvasExplicitly(t)) return true
+
+  // A bare question stays in chat even if it mentions a document noun:
+  // "what is a cheat sheet" is not a request to write one.
+  if (/^(what|which|where|when|who|why|how\s+(many|much|do|does|is|are)|do\s+i|is\s+there|are\s+there|can\s+you\s+(find|show|list))\b/i.test(t)) {
+    return false
+  }
+  if (/\b(list|show|find|search|open|read)\s+(all\s+)?(my\s+)?(books?|files?|documents?|pdfs?|images?|videos?|music|folders?|libraries?)\b/i.test(t)) {
+    return false
+  }
+
+  return new RegExp(`\\b(${CREATE_VERB})\\b.{0,60}\\b(${DOCUMENT_NOUN})\\b`, "i").test(t)
+}
+
 /** True when the user is asking for Canvas long-form output (essay, exam, quiz, etc.). */
 export function isCanvasWritingIntent(userText: string): boolean {
   const t = userText.trim()
   if (!t) return false
+
+  // Naming the canvas outranks every heuristic below it. "Put that list in my
+  // canvas" reads as a list request to the guards, but the user just said where
+  // they want it.
+  if (mentionsCanvasExplicitly(t)) return true
 
   // Explicit non-writing: list / search / status / short Q&A
   if (
@@ -43,6 +102,15 @@ export function isCanvasWritingIntent(userText: string): boolean {
   // Academic / teaching long-form / docs
   if (
     /\b(essay|article|story|draft|report|letter|blog\s*post|white\s*paper|chapter|poem|screenplay|manuscript|write-?up|writeup|documentation|docs?|manual|outline|how[- ]to|handbook)\b/i.test(
+      t,
+    )
+  ) {
+    return true
+  }
+  // Notes are a document too. "Create a study note explaining X" was falling
+  // through to chat because nothing in this vocabulary covered the word.
+  if (
+    new RegExp(`\\b(${CREATE_VERB})\\b.{0,60}\\b(notes?|cheat\\s*sheets?|lessons?|tutorials?)\\b`, "i").test(
       t,
     )
   ) {
