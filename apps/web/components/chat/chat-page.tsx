@@ -107,7 +107,24 @@ type ChatProfile = ChatProfilePicker
 export function ChatPage() {
   const queryClient = useQueryClient()
   const license = useLicense()
-  // Secure: treat as locked until license is confirmed free-or-paid (no Pro flash while loading)
+  // Two different questions, and conflating them caused a paying customer to be
+  // shown an upgrade prompt on every load.
+  //
+  // `hasFeature` is false while the entitlement answer is still in flight, so
+  // using it for the UI rendered the paywall during that window and then
+  // replaced it — the flash the EntitlementState machine exists to prevent.
+  // `shouldPaywall` is true only once the answer is authoritative.
+  //
+  // Sending stays blocked on the conservative check: not knowing yet is a
+  // reason to hold a request, but not a reason to tell someone to upgrade.
+  //
+  // `shouldPaywall` alone was not enough: a cached Pro snapshot keeps the plan
+  // inside its grace window, so an authoritative Free answer produced no gate
+  // at all. Falling back to "the answer is ready and the feature is absent"
+  // restores gating without reintroducing the flash, because `ready` is false
+  // for the whole time the answer is in flight.
+  const chatPaywalled =
+    license.shouldPaywall("ai.chat") || (license.ready && !license.hasFeature("ai.chat"))
   const chatLocked = !license.hasFeature("ai.chat")
   const chatPlanLabel = license.planLabel(license.requiredPlanFor("ai.chat") ?? "pro")
   const [messages, setMessages] = useState<Message[]>([])
@@ -1609,7 +1626,7 @@ export function ChatPage() {
             <div className="flex min-h-0 flex-1 flex-col pb-36 sm:pb-40">
               <WelcomeState
                 hasProfiles={profiles.length > 0}
-                locked={chatLocked}
+                locked={chatPaywalled}
                 planLabel={chatPlanLabel}
                 onSelectTemplate={(template) => {
                   if (chatLocked || streaming) return
@@ -1699,7 +1716,7 @@ export function ChatPage() {
               onSend={() => void sendMessage()}
               onStop={stopGeneration}
               streaming={streaming}
-              locked={chatLocked}
+              locked={chatPaywalled}
               disabled={profiles.length === 0}
               placeholder={
                 chatLocked
