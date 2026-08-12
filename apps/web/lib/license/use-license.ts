@@ -152,8 +152,24 @@ export function useLicense(): LicenseUiState {
   // needed here — calling it during render would be an impure read.
   const verifiedAt = query.dataUpdatedAt
   const priorSnapshot = data ? toSnapshot(data, verifiedAt, "cache") : undefined
+  /**
+   * Only a completed network fetch is authoritative.
+   *
+   * Seeding the cache with `setQueryData` also flips `isSuccess`, so a stored
+   * snapshot was reported as "resolved" and became indistinguishable from a
+   * fresh answer. A lapsed Pro user therefore kept full access: the cached Pro
+   * snapshot outranked the server saying Free.
+   *
+   * `isFetched` is false until a real request completes, so a cached value now
+   * presents as `loading` with a previous snapshot — which still shows Pro
+   * without a paywall flash, and yields to the server the moment it answers.
+   * The grace window keeps doing its job for `error`/offline, where there is no
+   * answer to defer to.
+   */
   const resolvedSnapshot =
-    query.isSuccess && data ? toSnapshot(data, verifiedAt, "server") : undefined
+    query.isSuccess && query.isFetched && data
+      ? toSnapshot(data, verifiedAt, "server")
+      : undefined
 
   // Translate the query into the explicit state the decision function reads.
   const state: EntitlementState = query.isError
