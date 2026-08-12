@@ -447,3 +447,102 @@ export function assetSupportsDocumentThumbnail(
 
   return false
 }
+
+// ---------------------------------------------------------------------------
+// Upload routing
+// ---------------------------------------------------------------------------
+
+/**
+ * Whether a library is a sensible home for a given media type.
+ *
+ * INBOX and CUSTOM accept anything by design — Inbox is the catch-all and a
+ * custom library has no declared type. The fixed libraries accept only their
+ * own kind.
+ */
+export function libraryAcceptsMediaType(
+  libraryKind: string | null | undefined,
+  mediaType: string,
+): boolean {
+  switch (libraryKind) {
+    case "VIDEO":
+      return mediaType === "VIDEO"
+    case "IMAGE":
+      return mediaType === "IMAGE"
+    case "AUDIO":
+      return mediaType === "AUDIO"
+    case "DOCUMENT":
+      return mediaType === "DOCUMENT"
+    case "INBOX":
+    case "CUSTOM":
+      return true
+    default:
+      // Unknown kind: don't reroute on a guess.
+      return true
+  }
+}
+
+/** The library kind a media type belongs in when nothing else is specified. */
+export function libraryKindForMediaType(mediaType: string): string {
+  switch (mediaType) {
+    case "VIDEO":
+      return "VIDEO"
+    case "IMAGE":
+      return "IMAGE"
+    case "AUDIO":
+      return "AUDIO"
+    case "DOCUMENT":
+      return "DOCUMENT"
+    default:
+      // ARCHIVE, APPLICATION, CODE and OTHER have no dedicated library.
+      return "INBOX"
+  }
+}
+
+export type UploadRouteDecision = {
+  /** Library kind the upload should actually land in. */
+  libraryKind: string
+  /** True when the requested library was overridden. */
+  rerouted: boolean
+  /**
+   * True when a requested folder must be dropped.
+   *
+   * A folder belongs to exactly one library, so rerouting the library makes
+   * the folder invalid — keeping it would either fail a foreign-key check or
+   * file the asset somewhere unreachable from both library views.
+   */
+  dropFolder: boolean
+}
+
+/**
+ * Decide where an upload lands when the requested library disagrees with what
+ * the file actually is.
+ *
+ * An `.apk` dropped while browsing Videos was filed under Videos: the explicit
+ * target won outright and nothing checked that a VIDEO library has no business
+ * holding an Android package. The type is detected from content, so it is
+ * better evidence than which page happened to be open.
+ *
+ * Rerouting only happens on a genuine mismatch. Anything dropped into Inbox or
+ * a custom library stays put, so deliberate filing is never second-guessed.
+ */
+export function resolveUploadRoute(input: {
+  mediaType: string
+  requestedLibraryKind?: string | null
+  hasRequestedFolder?: boolean
+}): UploadRouteDecision {
+  const requested = input.requestedLibraryKind
+
+  if (!requested) {
+    return { libraryKind: libraryKindForMediaType(input.mediaType), rerouted: false, dropFolder: false }
+  }
+
+  if (libraryAcceptsMediaType(requested, input.mediaType)) {
+    return { libraryKind: requested, rerouted: false, dropFolder: false }
+  }
+
+  return {
+    libraryKind: libraryKindForMediaType(input.mediaType),
+    rerouted: true,
+    dropFolder: Boolean(input.hasRequestedFolder),
+  }
+}

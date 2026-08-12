@@ -9,6 +9,7 @@ import {
   apiOwnsCompletionEvent,
   assetSupportsDocumentThumbnail,
   requiresWorkerProcessing,
+  resolveUploadRoute,
 } from "@arciin/shared"
 
 import { commitUpload } from "@/services/uploads/commit-upload"
@@ -61,42 +62,50 @@ function principalFromRequest(request: {
   }
 }
 
-function libraryKindForMediaType(mediaType: string) {
-  switch (mediaType) {
-    case "VIDEO":
-      return "VIDEO"
-    case "IMAGE":
-      return "IMAGE"
-    case "AUDIO":
-      return "AUDIO"
-    case "DOCUMENT":
-      return "DOCUMENT"
-    case "APPLICATION":
-      return "INBOX"
-    case "CODE":
-      return "INBOX"
-    default:
-      return "INBOX"
-  }
-}
-
+/**
+ * Pick the library an upload lands in.
+ *
+ * An explicit `targetLibraryId` used to win outright, so an .apk dropped while
+ * the Videos page was open was filed under Videos — nothing checked that a
+ * VIDEO library has no business holding an Android package. The media type is
+ * detected from file content, which is better evidence than whichever page
+ * happened to be open, so a genuine mismatch is now rerouted.
+ *
+ * Inbox and custom libraries accept anything, so deliberate filing there is
+ * never overridden.
+ */
 async function resolveUploadTargetLibrary(
   prisma: FastifyInstance["prisma"],
   mediaType: string,
   targetLibraryId?: string,
-) {
-  if (targetLibraryId) {
-    return prisma.library.findUnique({ where: { id: targetLibraryId } })
+): Promise<{
+  library: Awaited<ReturnType<FastifyInstance["prisma"]["library"]["findFirst"]>>
+  rerouted: boolean
+  requestedName: string | null
+}> {
+  const requested = targetLibraryId
+    ? await prisma.library.findUnique({ where: { id: targetLibraryId } })
+    : null
+
+  const decision = resolveUploadRoute({
+    mediaType,
+    requestedLibraryKind: requested?.kind ?? null,
+  })
+
+  if (requested && !decision.rerouted) {
+    return { library: requested, rerouted: false, requestedName: requested.name }
   }
 
-  return (
+  const library =
     (await prisma.library.findFirst({
-      where: { kind: libraryKindForMediaType(mediaType) },
-    })) ??
-    (await prisma.library.findFirst({
-      where: { kind: "INBOX" },
-    }))
-  )
+      where: { kind: decision.libraryKind as never },
+    })) ?? (await prisma.library.findFirst({ where: { kind: "INBOX" } }))
+
+  return {
+    library,
+    rerouted: decision.rerouted,
+    requestedName: requested?.name ?? null,
+  }
 }
 
 export async function registerUploadRoutes(fastify: FastifyInstance) {
@@ -205,11 +214,12 @@ export async function registerUploadRoutes(fastify: FastifyInstance) {
         request.log,
       )
 
-      const targetLibrary = await resolveUploadTargetLibrary(
+      const routed = await resolveUploadTargetLibrary(
         fastify.prisma,
         analysis.mediaType,
         targetLibraryId,
       )
+      const targetLibrary = routed.library
 
       if (!targetLibrary) {
         await removeTempFile(tempResult.tempPath)
@@ -220,6 +230,22 @@ export async function registerUploadRoutes(fastify: FastifyInstance) {
           },
         })
         return
+      }
+
+      // A rerouted library makes the requested folder invalid — a folder
+      // belongs to exactly one library. Drop it rather than fail the upload;
+      // the asset still lands somewhere the user can find it.
+      if (routed.rerouted && targetFolder) {
+        request.log.info(
+          {
+            from: routed.requestedName,
+            to: targetLibrary.name,
+            mediaType: analysis.mediaType,
+            fileName: file.filename,
+          },
+          "Upload rerouted to the library matching its detected type",
+        )
+        targetFolder = null
       }
 
       // The folder must belong to the library the asset is actually filed

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 
 import {
+  resolveUploadRoute,
   inferMediaType,
   isIsoMediaContainerMime,
   refineIsoMediaClassification,
@@ -226,5 +227,89 @@ describe("classification agrees regardless of the client-supplied MIME", () => {
 
   it("routes a genuine mp4 video to VIDEO", () => {
     expect(classify("video/mp4", "movie.mp4", videoWithAudio)).toBe("VIDEO")
+  })
+})
+
+describe("upload routing when the target library disagrees with the file", () => {
+  // An .apk dropped while the Videos page was open was filed under Videos: the
+  // explicit target won outright and nothing checked that a VIDEO library has
+  // no business holding an Android package.
+
+  it("classifies an Android package as an application, not a video", () => {
+    for (const mime of [
+      "application/vnd.android.package-archive",
+      "application/java-archive",
+      "application/zip",
+      "application/octet-stream",
+    ]) {
+      expect(inferMediaType(mime, "Joyhub.apk")).toBe("APPLICATION")
+    }
+  })
+
+  it("reroutes an application away from the Videos library", () => {
+    const route = resolveUploadRoute({
+      mediaType: "APPLICATION",
+      requestedLibraryKind: "VIDEO",
+      hasRequestedFolder: true,
+    })
+    expect(route).toEqual({ libraryKind: "INBOX", rerouted: true, dropFolder: true })
+  })
+
+  it("drops the requested folder only when it actually reroutes", () => {
+    // A folder belongs to exactly one library, so keeping it after a reroute
+    // would file the asset somewhere unreachable from both library views.
+    expect(
+      resolveUploadRoute({
+        mediaType: "VIDEO",
+        requestedLibraryKind: "VIDEO",
+        hasRequestedFolder: true,
+      }).dropFolder,
+    ).toBe(false)
+  })
+
+  it("leaves a matching upload exactly where it was asked to go", () => {
+    for (const [mediaType, kind] of [
+      ["VIDEO", "VIDEO"],
+      ["IMAGE", "IMAGE"],
+      ["AUDIO", "AUDIO"],
+      ["DOCUMENT", "DOCUMENT"],
+    ] as const) {
+      expect(
+        resolveUploadRoute({ mediaType, requestedLibraryKind: kind }),
+      ).toMatchObject({ libraryKind: kind, rerouted: false })
+    }
+  })
+
+  it("never second-guesses Inbox or a custom library", () => {
+    // Those accept anything by design, so dropping a file there is deliberate.
+    for (const kind of ["INBOX", "CUSTOM"]) {
+      expect(
+        resolveUploadRoute({ mediaType: "APPLICATION", requestedLibraryKind: kind }).rerouted,
+      ).toBe(false)
+      expect(
+        resolveUploadRoute({ mediaType: "VIDEO", requestedLibraryKind: kind }).rerouted,
+      ).toBe(false)
+    }
+  })
+
+  it("routes typeless media to Inbox when nothing is requested", () => {
+    for (const mediaType of ["APPLICATION", "ARCHIVE", "CODE", "OTHER"]) {
+      expect(resolveUploadRoute({ mediaType }).libraryKind).toBe("INBOX")
+    }
+  })
+
+  it("does not reroute on an unrecognised library kind", () => {
+    // Better to honour the request than to guess wrong about a kind we do not
+    // model yet.
+    expect(
+      resolveUploadRoute({ mediaType: "APPLICATION", requestedLibraryKind: "SOMETHING_NEW" })
+        .rerouted,
+    ).toBe(false)
+  })
+
+  it("reroutes a mismatched media file too, not just applications", () => {
+    expect(
+      resolveUploadRoute({ mediaType: "AUDIO", requestedLibraryKind: "VIDEO" }),
+    ).toMatchObject({ libraryKind: "AUDIO", rerouted: true })
   })
 })
