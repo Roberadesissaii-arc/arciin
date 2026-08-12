@@ -17,7 +17,16 @@ export function SwRegister() {
       return
     }
 
-    navigator.serviceWorker.register("/sw.js").catch(() => {})
+    navigator.serviceWorker
+      .register("/sw.js")
+      .then((registration) => {
+        // Check for a new worker on every load. Without this a user who already
+        // has the worker installed keeps the old one — and therefore the old
+        // caching policy — until the browser decides to look, which can be a
+        // day. A deploy that cannot reach the client is not a deploy.
+        void registration.update()
+      })
+      .catch(() => {})
   }, [])
 
   return null
