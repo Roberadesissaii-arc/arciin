@@ -34,6 +34,8 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet"
+import { useQueryClient } from "@tanstack/react-query"
+
 import { useUpdateAsset } from "@/hooks/use-assets"
 import { libraryGlassSheetPanel } from "@/lib/library-glass-sheet"
 import {
@@ -143,9 +145,17 @@ export function RenameAssetDialog({
         })
         return
       }
-      toast.success("Cover image generated", {
-        description: "The card will show it on the next load.",
-      })
+      /**
+       * Refetch the asset before claiming success.
+       *
+       * The card asks for `/thumbnail?v=<updatedAt>`, and the server bumps
+       * updatedAt when it writes a cover — but the card is rendered from cached
+       * query data, so without this it keeps the old timestamp, requests the
+       * same URL, and the browser answers from its own cache. The image was
+       * being generated correctly and never shown.
+       */
+      await queryClient.invalidateQueries({ queryKey: ["assets"] })
+      toast.success("Cover image generated", { description: "The card now shows it." })
     } catch {
       toast.error("Could not generate a cover", {
         description: "Check that the API is reachable from this device.",
@@ -155,6 +165,7 @@ export function RenameAssetDialog({
     }
   }
   const updateAssetMutation = useUpdateAsset()
+  const queryClient = useQueryClient()
 
   useEffect(() => {
     if (open) {
