@@ -22,7 +22,8 @@ export type ChatTemplate = {
 
 /**
  * Starter prompts for empty chat.
- * Cover art uses the cinematic stock set (portraits / art) so the deck feels premium.
+ * Covers are generated cinematic stills that thematically match each template.
+ * Click the centre card (or press Enter) to autofill the prompt — no extra button.
  */
 export const CHAT_TEMPLATES: ChatTemplate[] = [
   {
@@ -30,7 +31,7 @@ export const CHAT_TEMPLATES: ChatTemplate[] = [
     title: "Use the REST API",
     description: "List libraries, upload files, or call endpoints with real instance context.",
     linkText: "Start",
-    imageSrc: "/assets/chat-templates/cover-tidewater.jpg?v=1",
+    imageSrc: "/assets/chat-templates/cover-api.jpg?v=3",
     prompt:
       "Help me use the Arciin REST API on this instance. Show practical examples (curl or Python) for listing libraries and uploading a file. Use real library ids from my server when you can.",
   },
@@ -39,7 +40,7 @@ export const CHAT_TEMPLATES: ChatTemplate[] = [
     title: "Find files in my libraries",
     description: "Search Videos, Images, Music, and Documents with library tools.",
     linkText: "Search",
-    imageSrc: "/assets/chat-templates/cover-nightshift.jpg?v=1",
+    imageSrc: "/assets/chat-templates/cover-find-files.jpg?v=3",
     prompt:
       "Help me find files in my Arciin libraries. Ask what I'm looking for, then use library tools if available to search and point me to the right folders.",
   },
@@ -48,7 +49,7 @@ export const CHAT_TEMPLATES: ChatTemplate[] = [
     title: "Organize my media",
     description: "Suggest folders and routing for videos, photos, and music.",
     linkText: "Organize",
-    imageSrc: "/assets/chat-templates/cover-overexposed.jpg?v=2",
+    imageSrc: "/assets/chat-templates/cover-organize.jpg?v=3",
     prompt:
       "Help me organize media on this Arciin server. Suggest a simple folder structure for Videos, Images, and Music, and how uploads should be classified.",
   },
@@ -57,7 +58,7 @@ export const CHAT_TEMPLATES: ChatTemplate[] = [
     title: "Work with documents",
     description: "Summarize PDFs, notes, and text already stored in Documents.",
     linkText: "Open",
-    imageSrc: "/assets/chat-templates/cover-slow-bloom.jpg?v=1",
+    imageSrc: "/assets/chat-templates/cover-documents.jpg?v=3",
     prompt:
       "I want to work with documents in my Arciin library. Explain how to open or point you at a PDF or text file, and summarize what you can do once a file is in context.",
   },
@@ -66,7 +67,7 @@ export const CHAT_TEMPLATES: ChatTemplate[] = [
     title: "Understand an image",
     description: "Describe, tag, or analyze photos from your Images library.",
     linkText: "Analyze",
-    imageSrc: "/assets/chat-templates/cover-open-palm.jpg?v=2",
+    imageSrc: "/assets/chat-templates/cover-vision.jpg?v=3",
     prompt:
       "I want to understand an image on this Arciin server. Explain how to attach or open a photo from my Images library, then describe what you can tell me about it (subject, text, tags, and suggested organization).",
   },
@@ -105,7 +106,9 @@ export function ChatTemplateCards({
           Quick starts
         </h2>
         <p className="mt-1 text-[13px] text-muted-foreground">
-          Swipe the deck — or type your own message below.
+          {disabled
+            ? "Templates unlock with a full AI Chat plan."
+            : "Click a cover to fill the chat — or type your own message below."}
         </p>
       </div>
 
@@ -117,13 +120,24 @@ export function ChatTemplateCards({
         label="Chat quick starts"
         cardWidth="clamp(132px, 28vw, 220px)"
         className="w-full"
-        cardClassName="ring-1 ring-black/5"
         onSelectedChange={setSelected}
         onSlideActivate={activate}
       />
 
-      <div className="mt-4 flex flex-col items-center gap-2">
-        {disabled ? (
+      {/* Caption is tappable too — same autofill path as the centre card */}
+      {!disabled ? (
+        <button
+          type="button"
+          onClick={() => activate(selected)}
+          className={cn(
+            "mt-1 max-w-md text-center text-[12px] font-medium text-zinc-400 transition-colors",
+            "hover:text-[#FF4F12]",
+          )}
+        >
+          Click the image to start · {active.linkText}
+        </button>
+      ) : (
+        <div className="mt-4">
           <Link
             href="/settings?tab=license"
             className={cn(
@@ -135,21 +149,8 @@ export function ChatTemplateCards({
             Upgrade to use templates
             <ArrowRight className="size-3.5" aria-hidden />
           </Link>
-        ) : (
-          <button
-            type="button"
-            onClick={() => activate(selected)}
-            className={cn(
-              "inline-flex items-center gap-1.5 rounded-xl bg-[#FF4F12] px-4 py-2",
-              "text-[13px] font-semibold text-white shadow-sm transition-colors",
-              "hover:bg-[#FF6A33]",
-            )}
-          >
-            {active.linkText}
-            <ArrowRight className="size-3.5" aria-hidden />
-          </button>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   )
 }

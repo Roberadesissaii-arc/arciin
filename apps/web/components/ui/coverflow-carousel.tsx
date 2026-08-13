@@ -302,20 +302,24 @@ export function CoverflowCarousel({
                 }}
                 role="group"
                 aria-roledescription="slide"
-                aria-label={`${index + 1} of ${count}${slide.title ? `: ${slide.title}` : ""}`}
+                aria-label={`${index + 1} of ${count}${slide.title ? `: ${slide.title}` : ""}${
+                  onSlideActivate ? ". Activate to use this quick start." : ""
+                }`}
                 className={cn(
-                  "absolute left-1/2 top-0 aspect-square overflow-hidden rounded-2xl bg-muted shadow-xl will-change-transform",
+                  "group/card absolute left-1/2 top-0 aspect-square overflow-hidden rounded-2xl bg-muted shadow-xl will-change-transform",
+                  "ring-1 ring-black/10 transition-[box-shadow,filter] duration-300 ease-out",
+                  "hover:shadow-[0_18px_40px_-18px_rgba(24,24,27,0.55)] hover:ring-[#FF4F12]/35",
                   onSlideActivate && "cursor-pointer",
                   cardClassName,
                 )}
                 style={{ width: "var(--cf-card)" }}
                 onClick={() => {
                   if (draggedRef.current) return
-                  if (indexAt(posRef.current) === index) {
-                    onSlideActivate?.(index)
-                  } else {
+                  // One click: bring the card forward and run the action (e.g. fill chat).
+                  if (indexAt(posRef.current) !== index) {
                     goTo(index)
                   }
+                  onSlideActivate?.(index)
                 }}
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -323,7 +327,12 @@ export function CoverflowCarousel({
                   src={slide.src}
                   alt={slide.alt}
                   draggable={false}
-                  className="h-full w-full select-none object-cover"
+                  className="h-full w-full select-none object-cover transition-transform duration-500 ease-out group-hover/card:scale-[1.045]"
+                />
+                {/* Soft lift wash — stays subtle so art stays primary */}
+                <div
+                  className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/25 via-transparent to-white/5 opacity-0 transition-opacity duration-300 group-hover/card:opacity-100"
+                  aria-hidden
                 />
               </div>
             ))}
