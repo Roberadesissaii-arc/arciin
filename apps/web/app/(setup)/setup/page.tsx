@@ -1,13 +1,11 @@
 import { Suspense } from "react"
+import Link from "next/link"
 
-import {
-  AuthHeroPanel,
-  AuthLightLegalFooter,
-  AuthLightPageHeader,
-} from "@/components/auth/auth-light"
+import { AUTH_HERO_GRADIENT } from "@/components/auth/auth-light"
 import { AuthRouteGuard } from "@/components/auth/auth-route-guard"
 import { SetupForm } from "@/components/auth/setup-form"
-import { SetupHeroCopy } from "@/components/auth/setup-hero-copy"
+import { SetupHeroShowcase } from "@/components/auth/setup-hero-showcase"
+import { ArciinMarkLetter } from "@/components/ui/arciin-icon"
 
 export const dynamic = "force-dynamic"
 
@@ -26,37 +24,65 @@ export default function SetupPage() {
 
 function SetupPageShell() {
   return (
-    <main className="relative flex h-svh max-h-svh overflow-hidden bg-[#f7f7f7] text-[#222222]">
-      <section className="relative z-0 hidden h-full lg:flex lg:w-[48%] xl:w-[45%] lg:p-5">
-        <AuthHeroPanel>
-          <SetupHeroCopy />
-        </AuthHeroPanel>
-      </section>
-
-      <section className="relative z-0 flex h-full min-h-0 w-full flex-col overflow-hidden lg:w-[52%] xl:w-[55%]">
-        <header className="relative z-10 shrink-0 px-6 sm:px-10 lg:px-16">
-          <div className="flex h-16 items-center justify-between">
-            <div className="lg:hidden">
-              <AuthLightPageHeader contextLabel="First-run setup" />
+    <main className="flex h-svh max-h-svh overflow-hidden bg-white text-[#222222]">
+      <div className="flex h-full w-full">
+        {/* Left — brand + multi-step claim form (viewport-fit, no page scroll) */}
+        <section className="relative flex h-full min-h-0 w-full flex-col px-6 py-5 sm:px-10 sm:py-6 lg:w-1/2 lg:px-12 lg:py-7">
+          <div className="flex shrink-0 items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <ArciinMarkLetter size="sm" />
+              <span className="font-heading text-[17px] font-bold leading-none tracking-tight text-[#111111]">
+                Arciin<span className="text-[#ff4f12]">.</span>
+              </span>
             </div>
-            <div className="hidden text-xs text-[#a0a0a0] lg:block">
-              Private instance configuration
-            </div>
+            <span className="hidden text-[11px] font-medium text-[#a0a0a0] sm:inline">
+              First-run setup
+            </span>
           </div>
-        </header>
 
-        <div className="relative z-10 min-h-0 flex-1 overflow-y-auto px-6 py-4 sm:px-10 sm:py-5 lg:px-16 lg:py-6">
-          <div className="mx-auto w-full max-w-xl py-2">
-            <div className="rounded-3xl border border-[#efefef] bg-white px-6 py-6 shadow-[0_1px_2px_rgba(0,0,0,0.03)] sm:px-8 sm:py-8">
-              <Suspense fallback={<div className="text-sm text-[#a0a0a0]">Loading setup…</div>}>
+          <div className="flex min-h-0 flex-1 flex-col pt-4 sm:pt-6">
+            <div className="mx-auto flex h-full min-h-0 w-full max-w-md flex-col">
+              <Suspense
+                fallback={
+                  <div className="flex flex-1 items-center justify-center text-sm text-[#a0a0a0]">
+                    Loading setup…
+                  </div>
+                }
+              >
                 <SetupForm />
               </Suspense>
             </div>
           </div>
-        </div>
 
-        <AuthLightLegalFooter />
-      </section>
+          <div className="flex shrink-0 items-center justify-between gap-4 pt-3">
+            <p className="text-[11px] text-[#b3b3b3]">Copyright © 2026 Arciin.</p>
+            <div className="flex items-center gap-4">
+              <Link
+                href="/legal/privacy"
+                className="text-[11px] text-[#a0a0a0] underline-offset-4 transition-colors hover:text-[#555555] hover:underline"
+              >
+                Privacy
+              </Link>
+              <Link
+                href="/legal/terms"
+                className="text-[11px] text-[#a0a0a0] underline-offset-4 transition-colors hover:text-[#555555] hover:underline"
+              >
+                Terms
+              </Link>
+            </div>
+          </div>
+        </section>
+
+        {/* Right — orange hero with dashboard preview (matches login) */}
+        <section className="hidden h-full lg:block lg:w-1/2 lg:p-4 lg:pl-0">
+          <div
+            className="h-full w-full overflow-hidden rounded-[22px]"
+            style={{ background: AUTH_HERO_GRADIENT }}
+          >
+            <SetupHeroShowcase />
+          </div>
+        </section>
+      </div>
     </main>
   )
 }

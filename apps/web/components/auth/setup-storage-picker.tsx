@@ -1,22 +1,20 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
-import { Loader2 } from "lucide-react"
+import { useEffect, useState } from "react"
+import {
+  Check,
+  HardDrive,
+  Loader2,
+  PencilLine,
+  Sparkles,
+  Usb,
+} from "lucide-react"
 
 import { getStorageDiscovery, prepareStoragePath } from "@/lib/api/instance-storage"
 import { UnmountedMountInstructions } from "@/components/storage/unmounted-mount-instructions"
 import { formatBytes } from "@/lib/utils/format-bytes"
 import { cn } from "@/lib/utils"
 import type { StorageDiscovery, StorageVolumeOption, UnmountedBlockDevice } from "@/lib/types/models"
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectLabel,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
 import {
   Sheet,
   SheetContent,
@@ -28,18 +26,16 @@ import {
 
 const CUSTOM_CHOICE_ID = "__custom__"
 
-function formatFree(option: StorageVolumeOption) {
-  if (option.availableBytes == null) return "Space unknown"
-  const total = option.totalBytes != null ? formatBytes(option.totalBytes) : "?"
-  return `${formatBytes(option.availableBytes)} free of ${total}`
+function freeRatio(option: StorageVolumeOption) {
+  if (option.availableBytes == null || option.totalBytes == null || option.totalBytes <= 0) {
+    return null
+  }
+  return Math.min(1, Math.max(0, option.availableBytes / option.totalBytes))
 }
 
-function volumeStatus(option: StorageVolumeOption) {
-  const tags: string[] = []
-  if (option.recommended) tags.push("Recommended")
-  if (option.largeExternal) tags.push("More space")
-  if (!option.writable) tags.push("Not writable yet")
-  return tags
+function formatFreeShort(option: StorageVolumeOption) {
+  if (option.availableBytes == null) return "Space unknown"
+  return `${formatBytes(option.availableBytes)} free`
 }
 
 function resolveChoiceId(value: string, discovery: StorageDiscovery): string {
@@ -52,50 +48,28 @@ function resolveChoiceId(value: string, discovery: StorageDiscovery): string {
   return rec?.id ?? CUSTOM_CHOICE_ID
 }
 
-function selectedVolume(
-  discovery: StorageDiscovery,
-  choiceId: string | null,
-): StorageVolumeOption | null {
-  if (!choiceId || choiceId === CUSTOM_CHOICE_ID) return null
-  return discovery.volumes.find((v) => v.id === choiceId) ?? null
-}
-
-function selectedDevice(
-  discovery: StorageDiscovery,
-  choiceId: string | null,
-): UnmountedBlockDevice | null {
-  if (!choiceId || choiceId === CUSTOM_CHOICE_ID) return null
-  return discovery.unmountedDevices.find((d) => d.id === choiceId) ?? null
-}
-
 export function SetupStoragePicker({
   value,
   onChange,
   hint,
   errorMessage,
+  compact = true,
 }: {
   value: string
   onChange: (path: string) => void
   hint?: string | null
   errorMessage?: string
+  /** Tighter layout for the multi-step setup wizard. */
+  compact?: boolean
 }) {
   const [discovery, setDiscovery] = useState<StorageDiscovery | null>(null)
   const [loading, setLoading] = useState(true)
   const [preparing, setPreparing] = useState(false)
   const [choiceId, setChoiceId] = useState<string | null>(null)
   const [prepareError, setPrepareError] = useState<string | null>(null)
+  const [showCustom, setShowCustom] = useState(false)
 
-  const customMode = choiceId === CUSTOM_CHOICE_ID
-  const activeVolume = discovery ? selectedVolume(discovery, choiceId) : null
-  const activeDevice = discovery ? selectedDevice(discovery, choiceId) : null
-
-  const selectPlaceholder = useMemo(() => {
-    if (loading) return "Scanning disks…"
-    if (!discovery?.volumes.length && !discovery?.unmountedDevices.length) {
-      return "No locations found"
-    }
-    return "Choose a storage location"
-  }, [discovery, loading])
+  const customMode = choiceId === CUSTOM_CHOICE_ID || showCustom
 
   useEffect(() => {
     let cancelled = false
@@ -107,12 +81,19 @@ export function SetupStoragePicker({
           onChange(data.recommendedArciinPath)
           const rec = data.volumes.find((v) => v.recommended) ?? data.volumes[0]
           setChoiceId(rec?.id ?? CUSTOM_CHOICE_ID)
+          setShowCustom(!rec)
         } else {
-          setChoiceId(resolveChoiceId(value, data))
+          const id = resolveChoiceId(value, data)
+          setChoiceId(id)
+          setShowCustom(id === CUSTOM_CHOICE_ID)
         }
       })
       .catch(() => {
-        if (!cancelled) setDiscovery(null)
+        if (!cancelled) {
+          setDiscovery(null)
+          setShowCustom(true)
+          setChoiceId(CUSTOM_CHOICE_ID)
+        }
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
@@ -120,11 +101,12 @@ export function SetupStoragePicker({
     return () => {
       cancelled = true
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- only seed default once on load
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- seed default once on load
   }, [])
 
   const selectVolume = async (option: StorageVolumeOption) => {
     setChoiceId(option.id)
+    setShowCustom(false)
     setPrepareError(null)
     setPreparing(true)
     try {
@@ -143,172 +125,211 @@ export function SetupStoragePicker({
     }
   }
 
-  const handleChoiceChange = (nextId: string) => {
-    if (!discovery) return
-
-    setChoiceId(nextId)
-    setPrepareError(null)
-
-    if (nextId === CUSTOM_CHOICE_ID) {
-      return
-    }
-
-    const volume = discovery.volumes.find((v) => v.id === nextId)
-    if (volume) {
-      void selectVolume(volume)
-      return
-    }
-
-    const device = discovery.unmountedDevices.find((d) => d.id === nextId)
-    if (device) {
-      onChange(device.suggestedArciinPath)
-      setPrepareError("Mount this drive on the server first, then rescan.")
-    }
+  const selectDevice = (device: UnmountedBlockDevice) => {
+    setChoiceId(device.id)
+    setShowCustom(false)
+    onChange(device.suggestedArciinPath)
+    setPrepareError("Mount this drive on the server first, then rescan.")
   }
 
+  const enableCustom = () => {
+    setChoiceId(CUSTOM_CHOICE_ID)
+    setShowCustom(true)
+    setPrepareError(null)
+  }
+
+  if (loading) {
+    return (
+      <div
+        className={cn(
+          "flex items-center gap-2 rounded-2xl border border-[#ececec] bg-[#fafafa] px-3.5 text-sm text-[#a0a0a0]",
+          compact ? "h-16" : "h-20",
+        )}
+      >
+        <Loader2 className="size-3.5 animate-spin text-[#ff4f12]" />
+        Scanning disks on this server…
+      </div>
+    )
+  }
+
+  const volumes = discovery?.volumes ?? []
+  const unmounted = discovery?.unmountedDevices ?? []
+  const recommended = volumes.find((v) => v.recommended) ?? volumes[0]
+  const others = volumes.filter((v) => v.id !== recommended?.id)
+
   return (
-    <div className="space-y-2">
-      {loading ? (
-        <div className="flex h-11 items-center gap-2 rounded-2xl border border-[#e8e8e8] bg-[#f7f7f7] px-4 text-sm text-[#a0a0a0]">
-          <Loader2 className="size-3.5 animate-spin" />
-          Scanning disks…
-        </div>
-      ) : discovery ? (
-        <>
-          <Select
-            value={choiceId ?? undefined}
-            onValueChange={handleChoiceChange}
-            disabled={preparing}
-          >
-            <SelectTrigger
-              className="h-11 w-full rounded-2xl border-[#e8e8e8] bg-[#f7f7f7] px-4 text-left text-sm text-[#222222] shadow-none [&_svg]:text-[#c0c0c0]"
-              size="default"
+    <div className={cn("space-y-2", compact && "space-y-1.5")}>
+      {discovery && recommended ? (
+        <button
+          type="button"
+          disabled={preparing}
+          onClick={() => void selectVolume(recommended)}
+          className={cn(
+            "group relative w-full overflow-hidden rounded-2xl border text-left transition-all",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff4f12]/35",
+            choiceId === recommended.id && !customMode
+              ? "border-[#ffb59a] bg-gradient-to-br from-[#fff8f4] to-white shadow-[0_1px_0_rgba(255,79,18,0.08)]"
+              : "border-[#ececec] bg-white hover:border-[#e0e0e0]",
+            compact ? "p-3" : "p-3.5",
+          )}
+        >
+          <div className="flex items-start gap-3">
+            <div
+              className={cn(
+                "flex size-9 shrink-0 items-center justify-center rounded-xl border",
+                choiceId === recommended.id && !customMode
+                  ? "border-[#ffcab5] bg-white text-[#ff4f12]"
+                  : "border-[#f0f0f0] bg-[#f7f7f7] text-[#8a8a8a]",
+              )}
             >
-              <SelectValue placeholder={selectPlaceholder} />
-            </SelectTrigger>
-            <SelectContent
-              surface="dashboard"
-              position="popper"
-              align="start"
-              viewportClassName="max-h-56 min-w-[var(--radix-select-trigger-width)]"
-            >
-              {discovery.volumes.length > 0 ? (
-                <SelectGroup>
-                  <SelectLabel>Mounted locations</SelectLabel>
-                  {discovery.volumes.map((option) => (
-                    <SelectItem
-                      key={option.id}
-                      value={option.id}
-                      textValue={option.label}
-                      className="py-2"
-                    >
-                      <span className="flex w-full items-center justify-between gap-3">
-                        <span className="truncate">{option.label}</span>
-                        <span className="shrink-0 text-[11px] text-muted-foreground">
-                          {formatFree(option)}
-                        </span>
-                      </span>
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              ) : null}
-
-              {discovery.unmountedDevices.length > 0 ? (
-                <SelectGroup>
-                  <SelectLabel>Unmounted drives</SelectLabel>
-                  {discovery.unmountedDevices.map((device) => (
-                    <SelectItem
-                      key={device.id}
-                      value={device.id}
-                      textValue={`${device.device} ${device.sizeLabel}`}
-                      className="py-2"
-                    >
-                      <span className="flex w-full items-center justify-between gap-3">
-                        <span className="truncate">
-                          {device.device}{" "}
-                          <span className="text-muted-foreground">({device.sizeLabel})</span>
-                        </span>
-                        <span className="shrink-0 text-[11px] text-amber-600">Mount first</span>
-                      </span>
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              ) : null}
-
-              <SelectGroup>
-                <SelectItem value={CUSTOM_CHOICE_ID} textValue="Custom path">
-                  Custom path…
-                </SelectItem>
-              </SelectGroup>
-            </SelectContent>
-          </Select>
-
-          {!customMode && (activeVolume || activeDevice) ? (
-            <div className="rounded-2xl border border-[#ececec] bg-white px-3.5 py-2.5">
-              <p className="truncate font-mono text-[11px] text-[#717171]">
-                {activeVolume?.arciinPath ?? activeDevice?.suggestedArciinPath}
-              </p>
-              {activeVolume ? (
-                <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-[#a0a0a0]">
-                  <span>{formatFree(activeVolume)}</span>
-                  {volumeStatus(activeVolume).map((tag) => (
-                    <span
-                      key={tag}
-                      className={cn(
-                        "rounded px-1 py-px text-[10px] font-medium",
-                        tag === "Not writable yet"
-                          ? "bg-amber-100 text-amber-700"
-                          : "bg-[#fff0e9] text-[#e04a12]",
-                      )}
-                    >
-                      {tag}
-                    </span>
-                  ))}
-                </div>
-              ) : activeDevice ? (
-                <p className="mt-1 text-[11px] text-amber-600">
-                  Mount on the server before using this path.
-                </p>
-              ) : null}
+              <HardDrive className="size-4" />
             </div>
-          ) : null}
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="truncate text-[13px] font-semibold text-[#111111]">
+                  {recommended.label}
+                </span>
+                <span className="inline-flex items-center gap-0.5 rounded-full bg-[#ff4f12]/10 px-1.5 py-px text-[10px] font-semibold text-[#e04a12]">
+                  <Sparkles className="size-2.5" />
+                  Recommended
+                </span>
+                {choiceId === recommended.id && !customMode ? (
+                  <span className="ml-auto flex size-5 items-center justify-center rounded-full bg-[#ff4f12] text-white">
+                    <Check className="size-3" strokeWidth={3} />
+                  </span>
+                ) : null}
+              </div>
+              <p className="mt-0.5 truncate font-mono text-[11px] text-[#8a8a8a]">
+                {recommended.arciinPath}
+              </p>
+              {(() => {
+                const ratio = freeRatio(recommended)
+                return (
+                  <div className="mt-2 space-y-1">
+                    <div className="flex items-center justify-between gap-2 text-[10px] text-[#a0a0a0]">
+                      <span>{formatFreeShort(recommended)}</span>
+                      {recommended.totalBytes != null ? (
+                        <span className="tabular-nums">
+                          of {formatBytes(recommended.totalBytes)}
+                        </span>
+                      ) : null}
+                    </div>
+                    <div className="h-1.5 overflow-hidden rounded-full bg-[#f0f0f0]">
+                      <div
+                        className="h-full rounded-full bg-gradient-to-r from-[#ff4f12] to-[#ff8a55]"
+                        style={{ width: `${ratio != null ? Math.round(ratio * 100) : 62}%` }}
+                      />
+                    </div>
+                  </div>
+                )
+              })()}
+            </div>
+          </div>
+        </button>
+      ) : null}
 
-          {discovery.unmountedDevices.length > 0 ? (
-            <Sheet>
-              <SheetTrigger
+      {(others.length > 0 || unmounted.length > 0) && (
+        <div className="flex flex-wrap gap-1.5">
+          {others.map((option) => {
+            const selected = choiceId === option.id && !customMode
+            return (
+              <button
+                key={option.id}
                 type="button"
-                className="text-[11px] font-medium text-[#a0a0a0] underline-offset-2 hover:text-[#555555] hover:underline"
+                disabled={preparing}
+                onClick={() => void selectVolume(option)}
+                className={cn(
+                  "inline-flex max-w-full items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-left text-[11px] font-medium transition-colors",
+                  selected
+                    ? "border-[#ffb59a] bg-[#fff5f0] text-[#c2410c]"
+                    : "border-[#ececec] bg-white text-[#555555] hover:border-[#ddd]",
+                )}
+                title={option.arciinPath}
               >
-                {discovery.unmountedDevices.length} unmounted drive
-                {discovery.unmountedDevices.length === 1 ? "" : "s"} — mount instructions
-              </SheetTrigger>
-              <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-md">
-                <SheetHeader>
-                  <SheetTitle>Mount unmounted drives</SheetTitle>
-                  <SheetDescription>
-                    Run on the server over SSH, then pick the drive from the dropdown and rescan.
-                  </SheetDescription>
-                </SheetHeader>
-                <div className="mt-4">
-                  <UnmountedMountInstructions devices={discovery.unmountedDevices} />
-                </div>
-              </SheetContent>
-            </Sheet>
-          ) : null}
-        </>
-      ) : (
-        <p className="text-xs text-[#a0a0a0]">
-          Could not scan storage. Enter a custom path or run ./install.sh on the server.
-        </p>
+                <HardDrive className="size-3 shrink-0 opacity-70" />
+                <span className="truncate">{option.label}</span>
+                <span className="shrink-0 text-[10px] font-normal text-[#a0a0a0]">
+                  {formatFreeShort(option)}
+                </span>
+              </button>
+            )
+          })}
+          {unmounted.map((device) => {
+            const selected = choiceId === device.id && !customMode
+            return (
+              <button
+                key={device.id}
+                type="button"
+                disabled={preparing}
+                onClick={() => selectDevice(device)}
+                className={cn(
+                  "inline-flex max-w-full items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-left text-[11px] font-medium transition-colors",
+                  selected
+                    ? "border-amber-300 bg-amber-50 text-amber-800"
+                    : "border-[#ececec] bg-white text-[#555555] hover:border-[#ddd]",
+                )}
+                title={device.suggestedArciinPath}
+              >
+                <Usb className="size-3 shrink-0 opacity-70" />
+                <span className="truncate">
+                  {device.device} · {device.sizeLabel}
+                </span>
+                <span className="shrink-0 text-[10px] font-normal text-amber-600">Mount</span>
+              </button>
+            )
+          })}
+        </div>
       )}
 
-      {customMode || !discovery ? (
-        <div className="flex items-center rounded-2xl border border-[#e8e8e8] bg-[#f7f7f7] px-4 py-3">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <button
+          type="button"
+          onClick={enableCustom}
+          className={cn(
+            "inline-flex items-center gap-1 text-[11px] font-medium underline-offset-2 transition-colors",
+            customMode ? "text-[#ff4f12]" : "text-[#a0a0a0] hover:text-[#555555] hover:underline",
+          )}
+        >
+          <PencilLine className="size-3" />
+          Custom path
+        </button>
+        {unmounted.length > 0 ? (
+          <Sheet>
+            <SheetTrigger
+              type="button"
+              className="text-[11px] font-medium text-[#a0a0a0] underline-offset-2 hover:text-[#555555] hover:underline"
+            >
+              Mount guide ({unmounted.length})
+            </SheetTrigger>
+            <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-md">
+              <SheetHeader>
+                <SheetTitle>Mount unmounted drives</SheetTitle>
+                <SheetDescription>
+                  Run on the server over SSH, then pick the drive again.
+                </SheetDescription>
+              </SheetHeader>
+              <div className="mt-4">
+                <UnmountedMountInstructions devices={unmounted} />
+              </div>
+            </SheetContent>
+          </Sheet>
+        ) : null}
+        {preparing ? (
+          <span className="inline-flex items-center gap-1 text-[11px] text-[#a0a0a0]">
+            <Loader2 className="size-3 animate-spin" />
+            Preparing…
+          </span>
+        ) : null}
+      </div>
+
+      {customMode ? (
+        <div className="flex items-center rounded-2xl border border-[#e8e8e8] bg-[#f7f7f7] px-3.5 py-2.5">
           <input
             id="storageRoot"
             value={value}
             onChange={(e) => {
               setChoiceId(CUSTOM_CHOICE_ID)
+              setShowCustom(true)
               onChange(e.target.value)
             }}
             className="min-w-0 flex-1 bg-transparent font-mono text-[12px] text-[#222222] outline-none placeholder:text-[#c0c0c0]"
@@ -319,17 +340,19 @@ export function SetupStoragePicker({
         </div>
       ) : null}
 
-      {hint ? <p className="px-1 text-[11px] leading-relaxed text-[#a0a0a0]">{hint}</p> : null}
-      {prepareError ? <p className="px-1 text-[11px] text-amber-600">{prepareError}</p> : null}
-      {errorMessage ? (
-        <p className="px-1 text-[11px] font-medium text-[#dc2626]" role="alert">
-          {errorMessage}
+      {!discovery ? (
+        <p className="text-[11px] text-[#a0a0a0]">
+          Could not scan storage. Enter a custom path or re-run install on the server.
         </p>
       ) : null}
-      {preparing ? (
-        <p className="flex items-center gap-1.5 px-1 text-[11px] text-[#a0a0a0]">
-          <Loader2 className="size-3 animate-spin" />
-          Preparing folder…
+
+      {hint && !compact ? (
+        <p className="px-0.5 text-[11px] leading-relaxed text-[#a0a0a0]">{hint}</p>
+      ) : null}
+      {prepareError ? <p className="px-0.5 text-[11px] text-amber-600">{prepareError}</p> : null}
+      {errorMessage ? (
+        <p className="px-0.5 text-[11px] font-medium text-[#dc2626]" role="alert">
+          {errorMessage}
         </p>
       ) : null}
     </div>
