@@ -27,3 +27,5 @@ export * from "./grok-models"
 export * from "@arciin/types"
 export * from "@arciin/config"
 export * from "@arciin/ui"
+
+export * from "./cover-prompt"

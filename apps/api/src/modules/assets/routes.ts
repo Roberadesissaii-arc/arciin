@@ -37,6 +37,7 @@ import {
   resolveReadableObjectPath,
   resolvedThumbnailPath,
 } from "@/services/media/thumbnail-cache"
+import { generateAssetCoverImage } from "@/services/media/generate-cover-image"
 import { streamFileResponse } from "@/services/media/stream-file-response"
 import {
   assetIsInJellyfinFolder,
@@ -820,6 +821,39 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
         },
       })
     }
+  )
+
+  /**
+   * Draw a cover for a document from what it is about.
+   *
+   * Writes to the same path the thumbnail route already serves, so the card
+   * picks it up on the next load with no schema change and no new plumbing.
+   * Regenerating overwrites; deleting the file falls back to the page render.
+   */
+  fastify.post(
+    "/assets/:assetId/cover",
+    {
+      preHandler: requireSessionRolesOrApiKeyScopes(
+        ["OWNER", "ADMIN", "MEMBER"],
+        ["assets:write"],
+      ),
+    },
+    async (request, reply) => {
+      const { assetId } = request.params as { assetId?: string }
+      if (!assetId) {
+        reply.status(400).send({ error: { code: "BAD_REQUEST", message: "Missing asset id." } })
+        return
+      }
+
+      const result = await generateAssetCoverImage(fastify, assetId)
+      if (!result.ok) {
+        reply
+          .status(result.code === "NOT_FOUND" ? 404 : 400)
+          .send({ error: { code: result.code, message: result.message } })
+        return
+      }
+      reply.send({ data: { assetId, prompt: result.prompt } })
+    },
   )
 
   fastify.get(

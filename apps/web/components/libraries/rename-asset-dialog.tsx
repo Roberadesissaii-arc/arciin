@@ -2,7 +2,7 @@
 /* eslint-disable react-hooks/set-state-in-effect -- intentional prop-sync: reset the form state when the dialog opens or the target asset changes. */
 
 import { useEffect, useMemo, useState } from "react"
-import { Globe, Pencil, RotateCcw, Tag, X } from "lucide-react"
+import { Globe, Loader2, Pencil, RotateCcw, Sparkles, Tag, X } from "lucide-react"
 import { toast } from "@/lib/notifications/arciin-toast"
 
 import { notifyFileUpdated } from "@/lib/notifications/toast-actions"
@@ -106,6 +106,45 @@ export function RenameAssetDialog({
   const [name, setName] = useState(asset.originalFilename)
   const [badgeDraft, setBadgeDraft] = useState<BadgeDraft>(() => buildBadgeDraft(asset))
   const [error, setError] = useState<string | undefined>()
+
+  const [coverPending, setCoverPending] = useState(false)
+
+  /**
+   * Draw a cover for this file.
+   *
+   * The image replaces the cached thumbnail on disk, so the card picks it up on
+   * its next load. The URL is cache-busted afterwards because the filename does
+   * not change — without that the browser keeps showing the page render it
+   * already has.
+   */
+  async function generateCover() {
+    if (coverPending) return
+    setCoverPending(true)
+    try {
+      const response = await fetch(`/api/assets/${asset.id}/cover`, {
+        method: "POST",
+        credentials: "include",
+      })
+      const body = (await response.json().catch(() => null)) as
+        | { error?: { message?: string } }
+        | null
+      if (!response.ok) {
+        toast.error("Could not generate a cover", {
+          description: body?.error?.message ?? "The image service did not return an image.",
+        })
+        return
+      }
+      toast.success("Cover image generated", {
+        description: "The card will show it on the next load.",
+      })
+    } catch {
+      toast.error("Could not generate a cover", {
+        description: "Check that the API is reachable from this device.",
+      })
+    } finally {
+      setCoverPending(false)
+    }
+  }
   const updateAssetMutation = useUpdateAsset()
 
   useEffect(() => {
@@ -394,6 +433,33 @@ export function RenameAssetDialog({
               </>
             ) : null}
           </div>
+
+          {/* A shelf of PDFs rendered as their own first page is a shelf of
+              grey rectangles. This reads the file and draws a cover from what
+              it is about, written over the same thumbnail the card already
+              shows — so it can be regenerated, and deleting it falls back to
+              the page render. */}
+          <Field>
+            <FieldLabel>COVER IMAGE</FieldLabel>
+            <p className="text-[12px] leading-snug text-muted-foreground">
+              Read this file and draw a cover from what it is about, instead of showing the first
+              page.
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              className="mt-2 h-9 w-full gap-1.5 text-[12px]"
+              disabled={coverPending}
+              onClick={() => void generateCover()}
+            >
+              {coverPending ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                <Sparkles className="size-3.5" />
+              )}
+              {coverPending ? "Drawing the cover…" : "Generate cover image"}
+            </Button>
+          </Field>
 
           <FieldError errors={[error ? { message: error } : undefined]} />
         </div>
