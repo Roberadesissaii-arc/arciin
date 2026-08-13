@@ -322,14 +322,23 @@ export function SetupStoragePicker({
                     <X className="size-4" />
                   </Button>
                 </SheetClose>
-                <SheetTitle className="text-[15px] font-semibold text-foreground">
-                  Mount unmounted drives
-                </SheetTitle>
-                <SheetDescription className="mt-0.5 text-[12px] text-muted-foreground">
-                  Run these on the server over SSH, then pick the drive again.
-                </SheetDescription>
+                <div className="flex items-center gap-3">
+                  <div className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-[#ffcab5] bg-[#fff5f0] text-[#ff4f12]">
+                    <HardDrive className="size-5" />
+                  </div>
+                  <div>
+                    <SheetTitle className="text-[15px] font-semibold text-foreground">
+                      Mount a drive for Arciin
+                    </SheetTitle>
+                    <SheetDescription className="mt-0.5 text-[12px] text-muted-foreground">
+                      {unmounted.length} unmounted device
+                      {unmounted.length === 1 ? "" : "s"} found — step through SSH commands,
+                      then reselect storage.
+                    </SheetDescription>
+                  </div>
+                </div>
               </SheetHeader>
-              <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+              <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
                 <UnmountedMountInstructions devices={unmounted} />
               </div>
             </SheetContent>

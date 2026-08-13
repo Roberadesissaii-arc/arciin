@@ -84,57 +84,51 @@ function SetupFieldError({ message }: { message?: string }) {
 }
 
 /**
- * Progress: Step X of 3 pill, then numbered circles + labels,
- * then the progress bars underneath (not above the numbers).
+ * Side-by-side steps: [1 Server] —— [2 Owner] —— [3 Libraries]
+ * No duplicate “Step X of 3” / current-label row.
  */
 function StepProgress({ step }: { step: SetupStep }) {
   return (
-    <nav aria-label="Setup steps" className="space-y-2.5">
-      <div className="flex items-center justify-between gap-3">
-        <span className="inline-flex items-center rounded-full border border-[#ffd9c9] bg-[#fff3ee] px-3 py-1 text-[11px] font-semibold text-[#e04a12]">
-          Step {step} of 3
-        </span>
-        <span className="text-[12px] font-medium text-[#717171]">{STEPS[step].label}</span>
-      </div>
-      <ol className="flex items-start gap-2">
-        {([1, 2, 3] as const).map((n) => {
+    <nav aria-label="Setup steps">
+      <ol className="flex items-center">
+        {([1, 2, 3] as const).map((n, index) => {
           const done = n < step
           const active = n === step
           return (
-            <li key={n} className="flex min-w-0 flex-1 flex-col items-start gap-1.5">
-              <span
-                className={cn(
-                  "flex size-8 items-center justify-center rounded-full text-[12px] font-bold transition-colors",
-                  done && "bg-[#ff4f12] text-white",
-                  active && "bg-[#ff4f12] text-white ring-4 ring-[#ff4f12]/15",
-                  !done && !active && "border border-[#e5e5e5] bg-white text-[#b0b0b0]",
-                )}
-              >
-                {done ? <Check className="size-3.5" strokeWidth={3} /> : n}
-              </span>
-              <span
-                className={cn(
-                  "text-[11px] font-semibold",
-                  active ? "text-[#ff4f12]" : done ? "text-[#717171]" : "text-[#c0c0c0]",
-                )}
-              >
-                {STEPS[n].label}
-              </span>
+            <li key={n} className="flex min-w-0 flex-1 items-center">
+              <div className="flex min-w-0 items-center gap-2">
+                <span
+                  className={cn(
+                    "flex size-8 shrink-0 items-center justify-center rounded-full text-[12px] font-bold transition-colors",
+                    done && "bg-[#ff4f12] text-white",
+                    active && "bg-[#ff4f12] text-white ring-4 ring-[#ff4f12]/15",
+                    !done && !active && "border border-[#e5e5e5] bg-white text-[#b0b0b0]",
+                  )}
+                >
+                  {done ? <Check className="size-3.5" strokeWidth={3} /> : n}
+                </span>
+                <span
+                  className={cn(
+                    "truncate text-[12px] font-semibold",
+                    active ? "text-[#111111]" : done ? "text-[#717171]" : "text-[#c0c0c0]",
+                  )}
+                >
+                  {STEPS[n].label}
+                </span>
+              </div>
+              {index < 2 ? (
+                <span
+                  aria-hidden
+                  className={cn(
+                    "mx-2 h-1 min-w-[12px] flex-1 rounded-full transition-colors",
+                    n < step ? "bg-[#ff4f12]" : "bg-[#e8e8e8]",
+                  )}
+                />
+              ) : null}
             </li>
           )
         })}
       </ol>
-      <div className="flex items-center gap-2" aria-hidden>
-        {([1, 2, 3] as const).map((n) => (
-          <span
-            key={n}
-            className={cn(
-              "h-1.5 flex-1 rounded-full transition-colors",
-              n <= step ? "bg-[#ff4f12]" : "bg-[#e8e8e8]",
-            )}
-          />
-        ))}
-      </div>
     </nav>
   )
 }
@@ -517,7 +511,8 @@ export function SetupForm() {
         ) : null}
       </div>
 
-      <div className="mt-auto flex shrink-0 items-center justify-between gap-3 border-t border-[#f0f0f0] pt-3">
+      {/* Bottom padding matches left hero outer inset (p-5) */}
+      <div className="mt-auto flex shrink-0 items-center justify-between gap-3 border-t border-[#f0f0f0] pt-4 pb-5 lg:pb-5">
         {step > 1 ? (
           <AuthSecondaryButton
             type="button"

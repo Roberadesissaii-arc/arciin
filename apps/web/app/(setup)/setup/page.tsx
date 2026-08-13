@@ -38,9 +38,9 @@ function SetupPageShell() {
         </AuthHeroPanel>
       </section>
 
-      <section className="relative z-0 flex h-full min-h-0 w-full flex-col overflow-hidden lg:w-[52%] xl:w-[55%]">
+      <section className="relative z-0 flex h-full min-h-0 w-full flex-col overflow-hidden lg:w-[52%] xl:w-[55%] lg:py-5">
         <header className="relative z-10 shrink-0 px-6 sm:px-10 lg:px-16">
-          <div className="flex h-14 items-center justify-between lg:h-16">
+          <div className="flex h-12 items-center justify-between lg:h-10">
             <div className="lg:hidden">
               <AuthLightPageHeader contextLabel="First-run setup" />
             </div>
@@ -50,8 +50,8 @@ function SetupPageShell() {
           </div>
         </header>
 
-        {/* Floating form — no second outer card; fields sit on the canvas */}
-        <div className="relative z-10 flex min-h-0 flex-1 flex-col overflow-hidden px-6 pb-2 sm:px-10 lg:px-16">
+        {/* Floating form — bottom inset matches left hero section p-5 */}
+        <div className="relative z-10 flex min-h-0 flex-1 flex-col overflow-hidden px-6 sm:px-10 lg:px-16">
           <div className="mx-auto flex h-full min-h-0 w-full max-w-lg flex-col">
             <Suspense
               fallback={
@@ -65,7 +65,7 @@ function SetupPageShell() {
           </div>
         </div>
 
-        <AuthLightLegalFooter className="border-t-0 px-6 py-3 sm:px-10 lg:px-16" />
+        <AuthLightLegalFooter className="shrink-0 border-t-0 px-6 pt-1 pb-5 sm:px-10 lg:px-16 lg:pb-0" />
       </section>
     </main>
   )
