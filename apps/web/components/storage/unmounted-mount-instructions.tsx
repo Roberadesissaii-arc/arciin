@@ -15,7 +15,14 @@ import { Button } from "@/components/ui/button"
 
 type InstructionTheme = "light" | "dark"
 
-function buildCommands(device: UnmountedBlockDevice) {
+type MountStep = {
+  title: string
+  detail: string
+  command: string
+  warning?: boolean
+}
+
+function buildCommands(device: UnmountedBlockDevice): MountStep[] {
   return [
     {
       title: "Create mount point",
@@ -43,7 +50,7 @@ function buildCommands(device: UnmountedBlockDevice) {
       detail: "Let your user write into the mount.",
       command: `sudo chown -R $(id -u):$(id -g) ${device.suggestedMountPoint}`,
     },
-  ] as const
+  ]
 }
 
 function CopyLine({
