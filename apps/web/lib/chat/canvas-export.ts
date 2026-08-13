@@ -15,6 +15,7 @@
  * engine, so the readable-text fallback is the honest ceiling for now.
  */
 
+import type { TrueTypeMetrics } from "@/lib/chat/truetype-metrics"
 import { extractBlockMath, latexToReadableText, splitInlineMath } from "@arciin/shared"
 
 export type CanvasExportFormat = "md" | "pdf" | "doc"
@@ -256,8 +257,44 @@ type PdfRun = {
   center?: boolean
 }
 
-/** Approx average glyph width as fraction of font size (Times). */
-function avgCharWidth(size: number, bold: boolean): number {
+/** A font the writer can embed, with the metrics a PDF must declare for it. */
+export type EmbeddedHandFont = {
+  bytes: Uint8Array
+  metrics: TrueTypeMetrics
+}
+
+function concatBytes(...parts: Uint8Array[]): Uint8Array {
+  const total = parts.reduce((sum, p) => sum + p.length, 0)
+  const out = new Uint8Array(total)
+  let at = 0
+  for (const part of parts) {
+    out.set(part, at)
+    at += part.length
+  }
+  return out
+}
+
+/**
+ * Average glyph width as a fraction of font size, used for wrapping.
+ *
+ * Measured from the embedded font when there is one. Wrapping with Times'
+ * proportions while drawing in a much narrower hand leaves every line short of
+ * the margin, which reads as a broken column rather than as handwriting.
+ */
+function avgCharWidth(size: number, bold: boolean, hand?: EmbeddedHandFont): number {
+  if (hand) {
+    let total = 0
+    let count = 0
+    for (let code = 97; code <= 122; code++) {
+      const w = hand.metrics.widths.get(code)
+      if (w) {
+        total += w
+        count += 1
+      }
+    }
+    const ratio = count > 0 ? total / count / 1000 : 0.45
+    return size * ratio
+  }
   return size * (bold ? 0.52 : 0.48)
 }
 
@@ -266,10 +303,11 @@ function wrapText(
   maxWidth: number,
   size: number,
   bold: boolean,
+  hand?: EmbeddedHandFont,
 ): string[] {
   const t = text.trim()
   if (!t) return [""]
-  const cw = avgCharWidth(size, bold)
+  const cw = avgCharWidth(size, bold, hand)
   const maxChars = Math.max(20, Math.floor(maxWidth / cw))
   const words = t.split(/\s+/).filter(Boolean)
   const lines: string[] = []
@@ -293,7 +331,11 @@ function wrapText(
  * - Title, H2/H3 hierarchy, body paragraphs, lists
  * - Paragraph spacing + page numbers
  */
-export function markdownToPdfBytes(title: string, markdown: string): Uint8Array {
+export function markdownToPdfBytes(
+  title: string,
+  markdown: string,
+  handFont?: EmbeddedHandFont,
+): Uint8Array {
   const PAGE_W = 612
   const PAGE_H = 792
   const MARGIN_L = 72 // 1 inch
@@ -318,7 +360,7 @@ export function markdownToPdfBytes(title: string, markdown: string): Uint8Array 
     text: string,
     opts: { font: "F1" | "F2"; size: number; after: number; indent?: number; center?: boolean; leading: number },
   ) => {
-    const lines = wrapText(text, contentW - (opts.indent ?? 0), opts.size, opts.font === "F2")
+    const lines = wrapText(text, contentW - (opts.indent ?? 0), opts.size, opts.font === "F2", handFont)
     lines.forEach((line, i) => {
       runs.push({
         text: line,
@@ -453,9 +495,11 @@ export function markdownToPdfBytes(title: string, markdown: string): Uint8Array 
   if (!pages.length) pages.push([{ text: "Document", font: "F2", size: H1, after: 0, indent: 0 }])
 
   // Build PDF objects
-  type PdfObj = { id: number; body: string }
+  // Bodies may be binary: an embedded font is a stream of raw TrueType bytes,
+  // and re-encoding it as text would corrupt the file.
+  type PdfObj = { id: number; body: string | Uint8Array }
   const objs: PdfObj[] = []
-  const pushObj = (body: string) => {
+  const pushObj = (body: string | Uint8Array) => {
     const id = objs.length + 1
     objs.push({ id, body })
     return id
@@ -463,8 +507,49 @@ export function markdownToPdfBytes(title: string, markdown: string): Uint8Array 
 
   const catalogId = pushObj("")
   const pagesId = pushObj("")
-  const fontRegularId = pushObj("<< /Type /Font /Subtype /Type1 /BaseFont /Times-Roman >>")
-  const fontBoldId = pushObj("<< /Type /Font /Subtype /Type1 /BaseFont /Times-Bold >>")
+  /**
+   * Handwriting has to be embedded; the fourteen fonts every reader ships with
+   * are all serif, sans or mono. Without the file in the document the export
+   * silently reverts to Times, which is the bug this exists to fix.
+   *
+   * A Widths array is not optional. A reader lays out text from the numbers the
+   * document declares, not by measuring the font, so an embedded face with no
+   * widths draws every glyph at a default advance and the line either bunches
+   * up or crawls apart.
+   */
+  let fontRegularId: number
+  let fontBoldId: number
+  if (handFont) {
+    const fileId = pushObj(
+      concatBytes(
+        new TextEncoder().encode(
+          `<< /Length ${handFont.bytes.length} /Length1 ${handFont.bytes.length} >>\nstream\n`,
+        ),
+        handFont.bytes,
+        new TextEncoder().encode("\nendstream"),
+      ),
+    )
+    const { metrics } = handFont
+    const descriptorId = pushObj(
+      `<< /Type /FontDescriptor /FontName /Caveat /Flags 32 ` +
+        `/FontBBox [ ${metrics.bbox.join(" ")} ] /ItalicAngle 0 ` +
+        `/Ascent ${metrics.ascent} /Descent ${metrics.descent} /CapHeight ${metrics.ascent} ` +
+        `/StemV 80 /FontFile2 ${fileId} 0 R >>`,
+    )
+    const widths: number[] = []
+    for (let code = 32; code <= 255; code++) widths.push(metrics.widths.get(code) ?? 0)
+    const fontObj =
+      `<< /Type /Font /Subtype /TrueType /BaseFont /Caveat /FirstChar 32 /LastChar 255 ` +
+      `/Widths [ ${widths.join(" ")} ] /FontDescriptor ${descriptorId} 0 R ` +
+      `/Encoding /WinAnsiEncoding >>`
+    fontRegularId = pushObj(fontObj)
+    // One weight: Caveat's bold is a separate file, and faking it by reusing the
+    // regular is honest about what was embedded rather than inventing a face.
+    fontBoldId = fontRegularId
+  } else {
+    fontRegularId = pushObj("<< /Type /Font /Subtype /Type1 /BaseFont /Times-Roman >>")
+    fontBoldId = pushObj("<< /Type /Font /Subtype /Type1 /BaseFont /Times-Bold >>")
+  }
 
   const pageIds: number[] = []
 
@@ -477,7 +562,7 @@ export function markdownToPdfBytes(title: string, markdown: string): Uint8Array 
       const font = run.font === "F2" ? "F2" : "F1"
       let x = MARGIN_L + run.indent
       if (run.center && run.text) {
-        const w = run.text.length * avgCharWidth(run.size, run.font === "F2")
+        const w = run.text.length * avgCharWidth(run.size, run.font === "F2", handFont)
         x = Math.max(MARGIN_L, (PAGE_W - w) / 2)
       }
       // Tm: a b c d e f — position baseline
@@ -491,7 +576,7 @@ export function markdownToPdfBytes(title: string, markdown: string): Uint8Array 
 
     // Page number centered in bottom margin
     const pageLabel = `Page ${pageIndex + 1} of ${pages.length}`
-    const pnW = pageLabel.length * avgCharWidth(9, false)
+    const pnW = pageLabel.length * avgCharWidth(9, false, handFont)
     const pnX = (PAGE_W - pnW) / 2
     ops.push("BT")
     ops.push(`/F1 9 Tf`)
@@ -555,7 +640,7 @@ export function buildCanvasExportFile(
   title: string,
   markdown: string,
   format: CanvasExportFormat,
-  options: { handwriting?: boolean } = {},
+  options: { handwriting?: boolean; handFont?: EmbeddedHandFont } = {},
 ): File {
   const safeBase =
     title
@@ -591,7 +676,7 @@ export function buildCanvasExportFile(
   }
 
   // pdf — copy into a fresh ArrayBuffer so File/Blob gets a real buffer
-  const bytes = markdownToPdfBytes(title, exportBody)
+  const bytes = markdownToPdfBytes(title, exportBody, options.handFont)
   const copy = new Uint8Array(bytes.byteLength)
   copy.set(bytes)
   return new File([copy], `${safeBase}.pdf`, {

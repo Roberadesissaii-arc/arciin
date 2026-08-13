@@ -76,6 +76,7 @@ import {
 } from "@/components/chat/chat-canvas-helpers"
 import { ChatCanvasSaveDialog } from "@/components/chat/chat-canvas-save-dialog"
 import { buildCanvasExportFile, type CanvasExportFormat } from "@/lib/chat/canvas-export"
+import { loadHandFont } from "@/lib/chat/load-hand-font"
 import {
   listCanvasDraftsForConversation,
   rekeyCanvasDraftsForConversation,
@@ -1573,8 +1574,13 @@ export function ChatPage() {
 
         const title = refineCanvasTitleFromContent(body, canvasTitle)
         setCanvasTitle(title)
+        // Only fetched when a handwritten PDF is actually being made — the face
+        // is 112 KB and every other export needs none of it.
+        const handFont =
+          canvasHandwriting && format === "pdf" ? await loadHandFont() : undefined
         const file = buildCanvasExportFile(title, body, format, {
           handwriting: canvasHandwriting,
+          handFont,
         })
 
         await uploadFile(file, { targetLibraryId: docsLib.id })
