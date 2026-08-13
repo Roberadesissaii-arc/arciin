@@ -6,6 +6,15 @@ export type AiSettingsResolved = {
   autonomy: boolean
   planning: boolean
   showThinking: boolean
+  /**
+   * Let the assistant illustrate a Canvas draft.
+   *
+   * Off by default because every picture is a paid generation, and a document
+   * that did not need one has spent money to become slower to read. On, the
+   * assistant adds an illustration only where a picture explains something
+   * words are labouring over.
+   */
+  canvasImages: boolean
   emojiUsage: AiEmojiUsage
 }
 
@@ -14,6 +23,7 @@ export const DEFAULT_AI_SETTINGS: AiSettingsResolved = {
   autonomy: false,
   planning: true,
   showThinking: true,
+  canvasImages: false,
   emojiUsage: "none",
 }
 
@@ -29,6 +39,7 @@ export function parseAiConfig(cfg: unknown): AiSettingsResolved {
     autonomy: Boolean(c.autonomy ?? DEFAULT_AI_SETTINGS.autonomy),
     planning: Boolean(c.planning ?? DEFAULT_AI_SETTINGS.planning),
     showThinking: Boolean(c.showThinking ?? DEFAULT_AI_SETTINGS.showThinking),
+    canvasImages: Boolean(c.canvasImages ?? DEFAULT_AI_SETTINGS.canvasImages),
     emojiUsage,
   }
 }

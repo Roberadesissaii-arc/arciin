@@ -646,6 +646,8 @@ export type AiSettings = {
   autonomy: boolean
   planning: boolean
   showThinking: boolean
+  /** Let the assistant illustrate a Canvas draft. Off by default: each picture is paid for. */
+  canvasImages: boolean
   emojiUsage: AiEmojiUsage
 }
 

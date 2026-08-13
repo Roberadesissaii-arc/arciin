@@ -81,16 +81,22 @@ export function AiPanel() {
   })
 
   const PLANNING_LABELS: Record<
-    keyof Pick<AiSettings, "agent" | "autonomy" | "planning" | "showThinking">,
+    keyof Pick<AiSettings, "agent" | "autonomy" | "planning" | "showThinking" | "canvasImages">,
     string
   > = {
     agent: "Agent",
     autonomy: "Autonomy",
     planning: "Planning",
     showThinking: "Show thinking",
+    canvasImages: "Canvas illustrations",
   }
 
-  function toggle(key: keyof Pick<AiSettings, "agent" | "autonomy" | "planning" | "showThinking">) {
+  function toggle(
+    key: keyof Pick<
+      AiSettings,
+      "agent" | "autonomy" | "planning" | "showThinking" | "canvasImages"
+    >,
+  ) {
     if (!data) return
     const enabled = !data[key]
     mutation.mutate(
@@ -171,6 +177,19 @@ export function AiPanel() {
           </SettingRow>
           <SettingRow label="Planning" hint="Outline a plan before complex multi-step tasks">
             <PillSwitch on={s.planning} onChange={() => toggle("planning")} disabled={busy} />
+          </SettingRow>
+          {/* Off by default on purpose: every illustration is a paid generation,
+              and a document that did not need one has spent money to become
+              slower to read. */}
+          <SettingRow
+            label="Canvas illustrations"
+            hint="Let the assistant add generated pictures inside a Canvas draft where they help. Each picture is a paid image generation."
+          >
+            <PillSwitch
+              on={s.canvasImages}
+              onChange={() => toggle("canvasImages")}
+              disabled={busy}
+            />
           </SettingRow>
           {!hideShowThinkingSetting && (
             <SettingRow

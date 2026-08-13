@@ -127,6 +127,69 @@ async function writeCoverBrief(
   }
 }
 
+/**
+ * Draw one image from a prompt the caller already has.
+ *
+ * Shares the credential lookup and the request shape with covers so there is one
+ * place that knows how to reach the image API — a second copy is a second thing
+ * to fix when the endpoint or the model name moves.
+ */
+export async function generateImageFromPrompt(
+  fastify: FastifyInstance,
+  prompt: string,
+): Promise<{ ok: true; base64: string } | { ok: false; code: string; message: string }> {
+  const credentials = await resolveImageCredentials(fastify.prisma)
+  if (!credentials) {
+    return {
+      ok: false,
+      code: "NO_IMAGE_MODEL",
+      message: "Add a Grok model under Models first — its key is used to generate images.",
+    }
+  }
+
+  try {
+    const response = await fetch(`${credentials.baseUrl}${XAI_IMAGE_PATH}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${credentials.apiKey}`,
+      },
+      body: JSON.stringify({
+        model: IMAGE_MODEL,
+        prompt,
+        n: 1,
+        aspect_ratio: "16:9",
+        response_format: "b64_json",
+      }),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    })
+    if (!response.ok) {
+      return {
+        ok: false,
+        code: "IMAGE_FAILED",
+        message: `The image service returned HTTP ${response.status}.`,
+      }
+    }
+    const data = (await response.json()) as { data?: Array<{ b64_json?: string; url?: string }> }
+    const first = data.data?.[0]
+    if (first?.b64_json) return { ok: true, base64: first.b64_json }
+    if (first?.url) {
+      const image = await fetch(first.url, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) })
+      if (image.ok) {
+        return { ok: true, base64: Buffer.from(await image.arrayBuffer()).toString("base64") }
+      }
+    }
+    return { ok: false, code: "IMAGE_FAILED", message: "The image service returned no image." }
+  } catch (error) {
+    const timedOut = error instanceof Error && error.name === "TimeoutError"
+    return {
+      ok: false,
+      code: "IMAGE_FAILED",
+      message: timedOut ? "The image service did not respond in time." : "Could not reach the image service.",
+    }
+  }
+}
+
 export async function generateAssetCoverImage(
   fastify: FastifyInstance,
   assetId: string,

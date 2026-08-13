@@ -7,6 +7,8 @@
 
 import type React from "react"
 import { extractBlockMath, readMathBlockPlaceholder, stripAssistantStreamMarkup } from "@arciin/shared"
+
+import { CanvasIllustration } from "@/components/chat/canvas-illustration"
 import { MathBlock, renderInlineWithMath } from "@/components/chat/math"
 import { cn } from "@/lib/utils"
 
@@ -261,6 +263,17 @@ export function CanvasMarkdownContent({
       continue
     }
     flushTable()
+
+    // An illustration marker owns its line, so it is handled before the block
+    // rules — otherwise the leading bracket reads as ordinary prose.
+    const illustration = line.trim().match(/^\[image:\s*([^\]\n]{4,200})\]$/i)
+    if (illustration) {
+      flushList()
+      nodes.push(
+        <CanvasIllustration key={k++} description={illustration[1]!.replace(/\s+/g, " ").trim()} />,
+      )
+      continue
+    }
 
     const mathIndex = readMathBlockPlaceholder(line)
     if (mathIndex !== null && mathBlocks[mathIndex] !== undefined) {

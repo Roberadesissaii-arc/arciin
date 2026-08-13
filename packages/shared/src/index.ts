@@ -29,3 +29,4 @@ export * from "@arciin/config"
 export * from "@arciin/ui"
 
 export * from "./cover-prompt"
+export * from "./canvas-images"

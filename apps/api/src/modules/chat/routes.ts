@@ -8,6 +8,7 @@ import {
   isPasswordRelatedConversation,
   isVaultListingQuery,
   recentUserVaultContextText,
+  buildCanvasImageInstruction,
   parseAiConfig,
   parseAiSecurityConfig,
   sanitizeOutboundChatText,
@@ -993,6 +994,49 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
     },
   )
 
+  /**
+   * One illustration for a Canvas draft.
+   *
+   * Gated on the same setting the prompt is gated on, so a client that asks
+   * without the feature enabled is refused rather than quietly billed.
+   */
+  fastify.post(
+    "/chat/illustration",
+    { preHandler: requireAiChat },
+    async (request, reply) => {
+      const parsed = z
+        .object({ description: z.string().min(4).max(300) })
+        .safeParse(request.body)
+      if (!parsed.success) {
+        reply.status(400).send({ error: { code: "VALIDATION_ERROR", message: "Invalid payload." } })
+        return
+      }
+
+      const instance = await fastify.prisma.instanceConfig.findFirst({ select: { aiConfig: true } })
+      if (!parseAiConfig(instance?.aiConfig).canvasImages) {
+        reply.status(403).send({
+          error: {
+            code: "IMAGES_DISABLED",
+            message: "Turn on Canvas illustrations under Settings → AI first.",
+          },
+        })
+        return
+      }
+
+      const { generateImageFromPrompt } = await import("@/services/media/generate-cover-image")
+      const result = await generateImageFromPrompt(
+        fastify,
+        `${parsed.data.description}. Clean editorial illustration, uncluttered. ` +
+          `No text, no lettering, no labels, no watermarks.`,
+      )
+      if (!result.ok) {
+        reply.status(400).send({ error: { code: result.code, message: result.message } })
+        return
+      }
+      reply.send({ data: { base64: result.base64 } })
+    },
+  )
+
   fastify.post(
     "/chat",
     {
@@ -1108,6 +1152,12 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
         })
         let systemAppend =
           buildAiSystemAppend(aiSettings) + buildAiSecuritySystemAppend(security)
+
+        // Only offered when the instance has turned it on: a model told it can
+        // illustrate will, and every picture is a paid generation.
+        if (aiSettings.canvasImages) {
+          systemAppend += `\n${buildCanvasImageInstruction()}`
+        }
         if (vaultSnapshot.contextLine) {
           systemAppend += `\n\n--- Password vault (redacted for assistant) ---\n${vaultSnapshot.contextLine}\n---`
         }
