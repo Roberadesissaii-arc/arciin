@@ -1740,6 +1740,11 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
     },
   )
 
+  const mobileInstallBodySchema = z.object({
+    /** Optional host sudo password for apt. Never logged. */
+    sudoPassword: z.string().max(256).optional(),
+  })
+
   fastify.post(
     "/settings/mobile-app/install",
     { preHandler: requireRole(["OWNER"]) },
@@ -1754,8 +1759,24 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
         return
       }
 
+      const parsed = mobileInstallBodySchema.safeParse(request.body ?? {})
+      if (!parsed.success) {
+        reply.status(400).send({
+          error: {
+            code: "VALIDATION_ERROR",
+            message: "Invalid install payload.",
+            details: parsed.error.flatten(),
+          },
+        })
+        return
+      }
+
       try {
-        reply.status(202).send({ data: await startMobileAppInstall() })
+        reply.status(202).send({
+          data: await startMobileAppInstall({
+            sudoPassword: parsed.data.sudoPassword,
+          }),
+        })
       } catch (err) {
         reply.status(400).send({
           error: {

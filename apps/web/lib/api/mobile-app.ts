@@ -5,6 +5,9 @@ export function getMobileAppInstallStatus(signal?: AbortSignal) {
   return fetchApi<MobileAppInstallStatus>("/settings/mobile-app", { method: "GET", signal })
 }
 
-export function startMobileAppInstall() {
-  return fetchApi<MobileAppInstallStatus>("/settings/mobile-app/install", { method: "POST" })
+export function startMobileAppInstall(body?: { sudoPassword?: string }) {
+  return fetchApi<MobileAppInstallStatus>("/settings/mobile-app/install", {
+    method: "POST",
+    body: body ?? {},
+  })
 }

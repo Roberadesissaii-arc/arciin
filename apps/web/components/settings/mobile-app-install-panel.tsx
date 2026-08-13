@@ -1,10 +1,12 @@
 "use client"
 
 import Link from "next/link"
+import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   CheckCircle2,
   ExternalLink,
+  KeyRound,
   Loader2,
   Smartphone,
   Terminal,
@@ -14,7 +16,17 @@ import { toast } from "@/lib/notifications/arciin-toast"
 
 import { CopyableShellBlock } from "@/components/settings/copyable-shell-block"
 import { SettingsPanelError } from "@/components/settings/settings-panel-error"
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { Skeleton } from "@/components/ui/skeleton"
 import { getMobileAppInstallStatus, startMobileAppInstall } from "@/lib/api/mobile-app"
 import { queryKeys } from "@/lib/api/query-keys"
@@ -52,6 +64,9 @@ export function MobileAppInstallPanel({
   showSkip?: boolean
 }) {
   const queryClient = useQueryClient()
+  const [sudoDialogOpen, setSudoDialogOpen] = useState(false)
+  const [sudoPassword, setSudoPassword] = useState("")
+
   const statusQuery = useQuery({
     queryKey: queryKeys.mobileAppInstall,
     queryFn: ({ signal }) => getMobileAppInstallStatus(signal),
@@ -63,8 +78,10 @@ export function MobileAppInstallPanel({
   })
 
   const installMutation = useMutation({
-    mutationFn: startMobileAppInstall,
+    mutationFn: (opts?: { sudoPassword?: string }) => startMobileAppInstall(opts),
     onSuccess: async () => {
+      setSudoDialogOpen(false)
+      setSudoPassword("")
       toast.success("Mobile install started.", {
         description: "This may take a few minutes — status updates below.",
       })
@@ -115,6 +132,10 @@ export function MobileAppInstallPanel({
         : data.clonePresent
           ? "Cloned, not running"
           : "Not installed"
+
+  const startInstall = (password?: string) => {
+    installMutation.mutate(password?.trim() ? { sudoPassword: password.trim() } : {})
+  }
 
   return (
     <div
@@ -188,7 +209,7 @@ export function MobileAppInstallPanel({
               size="sm"
               className="bg-primary text-primary-foreground hover:bg-primary/90"
               disabled={data.installRunning || installMutation.isPending}
-              onClick={() => installMutation.mutate()}
+              onClick={() => setSudoDialogOpen(true)}
             >
               {data.installRunning || installMutation.isPending ? (
                 <>
@@ -218,28 +239,17 @@ export function MobileAppInstallPanel({
 
         {data.installState === "failed" && !data.installRunning ? (
           <div className="rounded-xl border border-amber-200/80 bg-amber-50/90 px-3.5 py-3 text-[12px] leading-relaxed text-amber-950">
-            <p className="font-semibold text-amber-900">Web install could not finish</p>
+            <p className="font-semibold text-amber-900">Last install did not finish</p>
             <p className="mt-1 text-amber-900/90">
-              The API runs without a terminal, so it cannot enter a sudo password. Use the manual
-              commands below in SSH (or re-run install with system packages skipped if Node/pnpm
-              are already on this host).
-            </p>
-            <p className="mt-2 font-mono text-[11px] text-amber-950/80">
-              ARCIIN_MOBILE_SKIP_SYSTEM_PACKAGES=1 ./install.sh
+              Try again with your server sudo password in the install dialog, or run the manual SSH
+              commands below on this host.
             </p>
           </div>
         ) : null}
 
         {data.installRunning || data.installLogTail ? (
-          <div
-            className={cn(
-              "rounded-xl border px-3 py-2.5 text-[12px]",
-              data.installState === "failed"
-                ? "border-border bg-muted/10 text-muted-foreground"
-                : "border-border bg-muted/10 text-muted-foreground",
-            )}
-          >
-            <p className="font-medium text-foreground">
+          <div className="rounded-xl border border-border bg-zinc-950 px-3.5 py-3 text-[12px] text-zinc-300">
+            <p className="font-medium text-zinc-100">
               {data.installRunning
                 ? "Install in progress"
                 : data.installState === "failed"
@@ -247,11 +257,11 @@ export function MobileAppInstallPanel({
                   : "Install log"}
             </p>
             {data.installLogTail ? (
-              <pre className="mt-2 max-h-36 overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-zinc-600">
+              <pre className="mt-2 max-h-72 min-h-[12rem] overflow-y-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-zinc-400 [scrollbar-width:thin]">
                 {data.installLogTail}
               </pre>
             ) : (
-              <p className="mt-1">Cloning and building — this can take several minutes.</p>
+              <p className="mt-2 text-zinc-500">Cloning and building — this can take several minutes.</p>
             )}
           </div>
         ) : null}
@@ -259,7 +269,7 @@ export function MobileAppInstallPanel({
         {!data.installed ? (
           <CopyableShellBlock
             title="Manual install (SSH)"
-            description="Run these on the server in a real terminal (sudo works there). Desktop install first, then mobile."
+            description="Optional alternative if you prefer a terminal. Desktop install first, then mobile."
             script={data.installCommands}
             copyLabel="Copy install commands"
           />
@@ -286,6 +296,77 @@ export function MobileAppInstallPanel({
           </a>
         </p>
       </div>
+
+      <AlertDialog
+        open={sudoDialogOpen}
+        onOpenChange={(open) => {
+          setSudoDialogOpen(open)
+          if (!open) setSudoPassword("")
+        }}
+      >
+        <AlertDialogContent className="max-w-[min(100vw-2rem,26rem)] gap-0 overflow-hidden p-0 sm:max-w-md">
+          <AlertDialogHeader className="space-y-1 border-b border-border px-5 py-4 text-left sm:place-items-start">
+            <div className="mb-1 flex size-10 items-center justify-center rounded-xl border border-border bg-muted/40 text-primary">
+              <KeyRound className="size-5" />
+            </div>
+            <AlertDialogTitle className="text-[16px] font-semibold">
+              Install Arciin Mobile
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-[12.5px] leading-relaxed text-muted-foreground">
+              The API has no terminal. If system packages need installing, enter the{" "}
+              <span className="font-medium text-foreground">server sudo password</span> for this
+              machine. Leave blank to skip apt (when Node/pnpm are already installed).
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+
+          <div className="space-y-2 px-5 py-4">
+            <Label htmlFor="mobile-sudo-password" className="text-[12px]">
+              Sudo password (optional)
+            </Label>
+            <Input
+              id="mobile-sudo-password"
+              type="password"
+              autoComplete="current-password"
+              placeholder="Host Linux password for sudo"
+              value={sudoPassword}
+              onChange={(e) => setSudoPassword(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !installMutation.isPending) {
+                  e.preventDefault()
+                  startInstall(sudoPassword)
+                }
+              }}
+              className="font-mono text-[13px]"
+            />
+            <p className="text-[11px] leading-relaxed text-muted-foreground">
+              Password is sent once over your session, used only for this install, and never stored
+              or written to install logs.
+            </p>
+          </div>
+
+          <div className="flex flex-col-reverse gap-2 border-t border-border bg-muted/40 px-5 py-3 sm:flex-row sm:justify-end">
+            <AlertDialogCancel disabled={installMutation.isPending}>Cancel</AlertDialogCancel>
+            <Button
+              type="button"
+              className="bg-primary text-primary-foreground hover:bg-primary/90"
+              disabled={installMutation.isPending || data.installRunning}
+              onClick={() => startInstall(sudoPassword)}
+            >
+              {installMutation.isPending ? (
+                <>
+                  <Loader2 className="size-3.5 animate-spin" />
+                  Starting…
+                </>
+              ) : (
+                <>
+                  <Terminal className="size-3.5" />
+                  Start install
+                </>
+              )}
+            </Button>
+          </div>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

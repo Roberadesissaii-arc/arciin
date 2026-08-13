@@ -144,7 +144,14 @@ export async function getMobileAppInstallStatus(): Promise<MobileAppInstallStatu
   }
 }
 
-export async function startMobileAppInstall(): Promise<MobileAppInstallStatus> {
+export type StartMobileAppInstallInput = {
+  /** Optional host sudo password for apt during web install. Never logged or stored. */
+  sudoPassword?: string
+}
+
+export async function startMobileAppInstall(
+  input: StartMobileAppInstallInput = {},
+): Promise<MobileAppInstallStatus> {
   const serverRoot = resolveServerRoot()
   const scriptPath = path.join(serverRoot, "scripts", "install-mobile-pwa.sh")
 
@@ -162,28 +169,41 @@ export async function startMobileAppInstall(): Promise<MobileAppInstallStatus> {
     throw new Error("Arciin Mobile is already installed and running.")
   }
 
+  const sudoPassword = input.sudoPassword?.trim() ?? ""
+  if (sudoPassword.length > 256) {
+    throw new Error("Sudo password is too long.")
+  }
+
   const logsDir = path.join(serverRoot, "logs")
   await fs.mkdir(logsDir, { recursive: true })
   await fs.writeFile(path.join(logsDir, "mobile-install.status"), "running\n", "utf8")
 
   const logPath = path.join(logsDir, "mobile-install.log")
-  const logFd = await fs.open(logPath, "a")
+  // Truncate previous run so the UI shows a clean log for this attempt.
+  const logFd = await fs.open(logPath, "w")
 
-  // Web-triggered install has no TTY for sudo password prompts. Skip apt/sudo
-  // system package steps when the host already has Node/pnpm from the desktop install.
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    ARCIIN_SERVER_DIR: serverRoot,
+    ARCIIN_MOBILE_DIR: resolveMobileDir(serverRoot),
+    ARCIIN_MOBILE_SKIP_INSTALL_CHOICE: "1",
+    DEBIAN_FRONTEND: "noninteractive",
+  }
+
+  if (sudoPassword) {
+    // Child process only — never write this value to logs or status files.
+    env.ARCIIN_SUDO_PASSWORD = sudoPassword
+    env.ARCIIN_MOBILE_SKIP_SYSTEM_PACKAGES = "0"
+  } else {
+    // No password: skip apt (desktop stack usually already has Node/pnpm).
+    env.ARCIIN_MOBILE_SKIP_SYSTEM_PACKAGES = "1"
+  }
+
   const proc = spawn("bash", [scriptPath], {
     cwd: serverRoot,
     detached: true,
     stdio: ["ignore", logFd.fd, logFd.fd],
-    env: {
-      ...process.env,
-      ARCIIN_SERVER_DIR: serverRoot,
-      ARCIIN_MOBILE_DIR: resolveMobileDir(serverRoot),
-      ARCIIN_MOBILE_SKIP_SYSTEM_PACKAGES: "1",
-      ARCIIN_MOBILE_SKIP_INSTALL_CHOICE: "1",
-      // Non-interactive — never block on password prompts
-      DEBIAN_FRONTEND: "noninteractive",
-    },
+    env,
   })
   proc.unref()
   void logFd.close()
