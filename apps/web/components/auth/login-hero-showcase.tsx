@@ -19,15 +19,10 @@ import {
   Settings,
   ShieldCheck,
   Terminal,
-  Trash2,
-  Upload,
 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
-import {
-  DASHBOARD_ACTIVITY_LIMIT,
-  DASHBOARD_UPLOADS_LIMIT,
-} from "@/lib/dashboard-card-styles"
+import { DASHBOARD_UPLOADS_LIMIT } from "@/lib/dashboard-card-styles"
 
 /**
  * Hero panel for the sign-in screens: a dashboard preview blended into the
@@ -74,65 +69,6 @@ const LIBRARY_SHORTCUTS = [
   { label: "Images", count: 357 },
   { label: "Music", count: 1 },
   { label: "Documents", count: 10 },
-] as const
-
-const RECENT_ACTIVITY = [
-  {
-    title: "Link imported",
-    badge: "Upload · Completed",
-    message: "TikTok clip saved to Videos.",
-    meta: "1m ago",
-    icon: Upload,
-  },
-  {
-    title: "Asset deleted",
-    badge: "Asset · Deleted",
-    message: "Vacation 2024.mp4 was moved to deleted state.",
-    meta: "12m ago",
-    icon: Trash2,
-  },
-  {
-    title: "Upload stored",
-    badge: "Upload · Completed",
-    message: "IMG_7823.jpg finished processing in Images.",
-    meta: "28m ago",
-    icon: Upload,
-  },
-  {
-    title: "Import failed",
-    badge: "Upload · Failed",
-    message: "Invalid IP address: undefined",
-    meta: "45m ago",
-    icon: MonitorDot,
-  },
-  {
-    title: "Folder created",
-    badge: "Folder · Created",
-    message: "Summer trip folder added to Videos.",
-    meta: "1h ago",
-    icon: FileText,
-  },
-  {
-    title: "Upload stored",
-    badge: "Upload · Completed",
-    message: "Family Dinner.mp4 finished processing in Videos.",
-    meta: "2h ago",
-    icon: Upload,
-  },
-  {
-    title: "Public URL changed",
-    badge: "Remote · Changed",
-    message: "Instance public URL updated for remote access.",
-    meta: "4h ago",
-    icon: MonitorDot,
-  },
-  {
-    title: "System backup completed",
-    badge: "Instance · Completed",
-    message: "Nightly backup finished without errors.",
-    meta: "6h ago",
-    icon: Database,
-  },
 ] as const
 
 const UPLOADS_PLACEHOLDER_ICONS = [
@@ -322,38 +258,6 @@ function MiniStorageCard() {
   )
 }
 
-function MiniMediaSpotlight() {
-  return (
-    <MiniPanel title="Media library" description="Browse your default libraries on this server.">
-      <div className="relative flex h-[4.5rem] overflow-hidden rounded-lg border border-white/10 bg-white/[0.08]">
-        <div className="flex min-w-0 flex-1 flex-col justify-between p-1.5">
-          <div className="max-w-full">
-            <p className="text-[8.5px] font-semibold text-white/88">Videos</p>
-            <p className="mt-0.5 line-clamp-2 text-[6.5px] leading-snug text-white/55">
-              Video files route to Videos — ready for Plex folders.
-            </p>
-          </div>
-          <div className="flex justify-start gap-1">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <span
-                key={i}
-                className={cn(
-                  "size-1 rounded-full",
-                  i === 0 ? "w-2.5 bg-white/85" : "bg-white/30",
-                )}
-              />
-            ))}
-          </div>
-        </div>
-
-        <div className="flex w-[38%] shrink-0 items-center justify-center border-l border-white/10 bg-white/[0.05]">
-          <FileVideo className="size-5 text-white/35" strokeWidth={1.75} />
-        </div>
-      </div>
-    </MiniPanel>
-  )
-}
-
 function MiniUploadsGrid() {
   return (
     <MiniPanel title="Recent uploads" description="Latest files saved on this server.">
@@ -364,39 +268,6 @@ function MiniUploadsGrid() {
             className="flex aspect-square items-center justify-center rounded-md border border-white/10 bg-white/[0.08]"
           >
             <Icon className="size-2.5 text-white/35" strokeWidth={1.75} />
-          </div>
-        ))}
-      </div>
-    </MiniPanel>
-  )
-}
-
-function MiniActivityFeed() {
-  return (
-    <MiniPanel
-      fill
-      title="Recent activity"
-      description={`Top ${DASHBOARD_ACTIVITY_LIMIT} events on this instance.`}
-    >
-      <div className="flex min-h-0 flex-1 flex-col divide-y divide-white/10">
-        {RECENT_ACTIVITY.slice(0, DASHBOARD_ACTIVITY_LIMIT).map((row) => (
-          <div
-            key={`${row.title}-${row.meta}`}
-            className="flex min-h-0 min-w-0 flex-1 items-center gap-1.5 px-0.5 py-1"
-          >
-            <span className="flex size-[18px] shrink-0 items-center justify-center rounded-md bg-white/15 text-white/80">
-              <row.icon className="size-3" />
-            </span>
-            <div className="min-w-0 flex-1 overflow-hidden">
-              <p className="truncate text-[7.5px] font-semibold leading-tight text-white/88">
-                {row.title}
-              </p>
-              <p className="truncate text-[6.5px] leading-snug text-white/55">{row.message}</p>
-            </div>
-            <span className="shrink-0 whitespace-nowrap rounded bg-white/12 px-1 py-px text-[4.5px] font-semibold uppercase text-white/50">
-              {row.badge.split(" · ")[0]}
-            </span>
-            <span className="shrink-0 text-[6px] tabular-nums text-white/45">{row.meta}</span>
           </div>
         ))}
       </div>
@@ -425,6 +296,11 @@ function MiniSystemStrip() {
   )
 }
 
+/**
+ * Mirrors the live dashboard home stack:
+ * intro → storage → recent uploads → system health
+ * (decorative glass skin for auth heroes).
+ */
 function MiniMain() {
   return (
     <div className="min-w-0 flex-1 space-y-1.5 p-3">
@@ -437,17 +313,11 @@ function MiniMain() {
         </p>
       </div>
 
-      <div className="grid grid-cols-2 gap-1.5">
-        <MiniStorageCard />
-        <MiniMediaSpotlight />
-      </div>
+      <MiniStorageCard />
 
       <div className="h-px bg-white/10" />
 
-      <div className="grid grid-cols-[1.2fr_0.8fr] items-stretch gap-1.5">
-        <MiniUploadsGrid />
-        <MiniActivityFeed />
-      </div>
+      <MiniUploadsGrid />
 
       <div className="h-px bg-white/10" />
 

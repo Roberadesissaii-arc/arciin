@@ -6,9 +6,9 @@ import { DashboardPreview } from "@/components/auth/login-hero-showcase"
 import { cn } from "@/lib/utils"
 
 /**
- * Left setup hero (original panel proportions):
- * - Dashboard preview image (from login) in the upper area
- * - Original claim copy + pill dots at the bottom (same as SetupHeroCopy)
+ * Left setup hero:
+ * - Same dashboard preview placement/scale/mask as {@link LoginHeroShowcase}
+ * - Original claim copy + pill dots at the bottom
  */
 const slides = [
   {
@@ -58,24 +58,22 @@ export function SetupHeroShowcase() {
 
   return (
     <div className="relative flex h-full min-h-0 flex-col overflow-hidden">
-      {/* Dashboard preview — same image language as login, sits in the panel */}
+      {/* Exact login preview geometry: left bleed, scale, fade mask */}
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-x-0 top-14 z-0 mx-auto w-[108%] max-w-none origin-top scale-[0.92] opacity-90 sm:top-16"
+        className="absolute left-0 top-2 z-0 w-[118%] origin-top-left scale-[0.84] opacity-85"
         style={{
           maskImage:
-            "linear-gradient(to bottom, black 40%, black 58%, rgba(0,0,0,0.55) 78%, transparent 100%)",
+            "linear-gradient(to bottom, black 52%, black 72%, rgba(0,0,0,0.65) 86%, transparent 100%)",
           WebkitMaskImage:
-            "linear-gradient(to bottom, black 40%, black 58%, rgba(0,0,0,0.55) 78%, transparent 100%)",
+            "linear-gradient(to bottom, black 52%, black 72%, rgba(0,0,0,0.65) 86%, transparent 100%)",
         }}
       >
-        <div className="px-2">
-          <DashboardPreview />
-        </div>
+        <DashboardPreview />
       </div>
 
-      {/* Original bottom copy + dots (SetupHeroCopy) */}
-      <div className="relative z-10 mt-auto max-w-md space-y-4 pt-8">
+      {/* Original bottom copy + dots */}
+      <div className="relative z-10 mt-auto max-w-md space-y-4 pt-6">
         <span className="inline-flex items-center rounded-full border border-white/25 bg-white/10 px-3 py-1 text-[11px] font-semibold text-white/90">
           Your server, your control.
         </span>

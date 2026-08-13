@@ -83,52 +83,55 @@ function SetupFieldError({ message }: { message?: string }) {
   )
 }
 
-/** Compact 1 → 2 → 3 indicator — single row, no wasted vertical space. */
+/** Progress like the earlier wizard: Step X of 3 + larger circles + labels under bars. */
 function StepProgress({ step }: { step: SetupStep }) {
   return (
-    <nav aria-label="Setup steps" className="flex items-center gap-2">
-      <ol className="flex min-w-0 flex-1 items-center gap-0">
-        {([1, 2, 3] as const).map((n, index) => {
+    <nav aria-label="Setup steps" className="space-y-2.5">
+      <div className="flex items-center justify-between gap-3">
+        <span className="inline-flex items-center rounded-full border border-[#ffd9c9] bg-[#fff3ee] px-3 py-1 text-[11px] font-semibold text-[#e04a12]">
+          Step {step} of 3
+        </span>
+        <span className="text-[12px] font-medium text-[#717171]">{STEPS[step].label}</span>
+      </div>
+      <div className="flex items-center gap-2" aria-hidden>
+        {([1, 2, 3] as const).map((n) => (
+          <span
+            key={n}
+            className={cn(
+              "h-1.5 flex-1 rounded-full transition-colors",
+              n <= step ? "bg-[#ff4f12]" : "bg-[#e8e8e8]",
+            )}
+          />
+        ))}
+      </div>
+      <ol className="flex items-start gap-2">
+        {([1, 2, 3] as const).map((n) => {
           const done = n < step
           const active = n === step
           return (
-            <li key={n} className="flex min-w-0 flex-1 items-center">
-              <div className="flex min-w-0 items-center gap-1.5">
-                <span
-                  className={cn(
-                    "flex size-6 shrink-0 items-center justify-center rounded-full text-[10px] font-bold transition-colors",
-                    done && "bg-[#ff4f12] text-white",
-                    active && "bg-[#ff4f12] text-white ring-[3px] ring-[#ff4f12]/15",
-                    !done && !active && "border border-[#e5e5e5] bg-white text-[#b0b0b0]",
-                  )}
-                >
-                  {done ? <Check className="size-3" strokeWidth={3} /> : n}
-                </span>
-                <span
-                  className={cn(
-                    "truncate text-[11px] font-semibold",
-                    active ? "text-[#111111]" : done ? "text-[#717171]" : "text-[#c0c0c0]",
-                  )}
-                >
-                  {STEPS[n].label}
-                </span>
-              </div>
-              {index < 2 ? (
-                <span
-                  aria-hidden
-                  className={cn(
-                    "mx-2 h-0.5 min-w-[10px] flex-1 rounded-full",
-                    n < step ? "bg-[#ff4f12]" : "bg-[#ececec]",
-                  )}
-                />
-              ) : null}
+            <li key={n} className="flex min-w-0 flex-1 flex-col items-start gap-1.5">
+              <span
+                className={cn(
+                  "flex size-8 items-center justify-center rounded-full text-[12px] font-bold transition-colors",
+                  done && "bg-[#ff4f12] text-white",
+                  active && "bg-[#ff4f12] text-white ring-4 ring-[#ff4f12]/15",
+                  !done && !active && "border border-[#e5e5e5] bg-white text-[#b0b0b0]",
+                )}
+              >
+                {done ? <Check className="size-3.5" strokeWidth={3} /> : n}
+              </span>
+              <span
+                className={cn(
+                  "text-[11px] font-semibold",
+                  active ? "text-[#ff4f12]" : done ? "text-[#717171]" : "text-[#c0c0c0]",
+                )}
+              >
+                {STEPS[n].label}
+              </span>
             </li>
           )
         })}
       </ol>
-      <span className="shrink-0 text-[10px] font-semibold uppercase tracking-[0.12em] text-[#a0a0a0]">
-        {step}/3
-      </span>
     </nav>
   )
 }
@@ -286,18 +289,18 @@ export function SetupForm() {
         void submitClaim(event)
       }}
     >
-      <div className="shrink-0 space-y-2">
+      <div className="shrink-0 space-y-3">
         <StepProgress step={step} />
         <div>
-          <h1 className="font-heading text-[20px] font-bold tracking-tight text-[#111111] sm:text-[22px]">
+          <h1 className="font-heading text-[22px] font-bold tracking-tight text-[#111111] sm:text-[24px]">
             {STEPS[step].title}
           </h1>
-          <p className="mt-0.5 text-[12px] leading-snug text-[#a0a0a0]">{STEPS[step].subtitle}</p>
+          <p className="mt-1 text-[13px] leading-snug text-[#a0a0a0]">{STEPS[step].subtitle}</p>
         </div>
       </div>
 
-      {/* Fixed viewport body — no page scroll, no empty top/bottom waste */}
-      <div className="mt-3 flex min-h-0 flex-1 flex-col justify-start space-y-2.5 overflow-hidden">
+      {/* Floating fields on the canvas — no nested card wrapper */}
+      <div className="mt-4 flex min-h-0 flex-1 flex-col justify-start space-y-3 overflow-hidden">
         {step === 1 ? (
           <>
             {tokenFromUrl && setupTokenValue ? (
