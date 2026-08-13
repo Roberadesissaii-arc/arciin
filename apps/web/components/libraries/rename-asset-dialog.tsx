@@ -454,6 +454,11 @@ export function RenameAssetDialog({
             ) : null}
           </div>
 
+          {/* Documents only: a cover is drawn from what the file says, and the
+              assistant cannot read a video or a photograph — offering it there
+              would spend a generation on a guess from the filename. */}
+          {asset.mediaType !== "VIDEO" && asset.mediaType !== "IMAGE" ? (
+          <>
           {/* Same shell as the badge block above: this is another per-file
               setting, and a bare field beneath a bordered one reads as an
               afterthought rather than part of the same dialog. */}
@@ -485,6 +490,8 @@ export function RenameAssetDialog({
               {coverPending ? "Drawing the cover…" : "Generate cover image"}
             </Button>
           </div>
+          </>
+          ) : null}
 
           <FieldError errors={[error ? { message: error } : undefined]} />
         </div>

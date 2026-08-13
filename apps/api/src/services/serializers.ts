@@ -127,6 +127,9 @@ export function serializeAsset(asset: Asset) {
     uploadClient: asset.uploadClient,
     badgeLabel: asset.badgeLabel,
     badgeColor: asset.badgeColor,
+    // The card uses this to decide whether to ask the server for a thumbnail
+    // instead of rendering the PDF's first page itself.
+    coverImageAt: asset.coverImageAt ? asset.coverImageAt.toISOString() : null,
     showBadge: asset.showBadge,
     createdAt: asset.createdAt.toISOString(),
     updatedAt: asset.updatedAt.toISOString(),

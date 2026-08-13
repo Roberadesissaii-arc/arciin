@@ -79,6 +79,17 @@ export async function generateAssetCoverImage(
   })
   if (!asset) return { ok: false, code: "NOT_FOUND", message: "That file no longer exists." }
 
+  // Only documents. A cover is drawn from what the file says, and the assistant
+  // cannot read a video or a photograph — it would be inventing a picture from
+  // a filename and charging for it.
+  if (asset.mediaType === "VIDEO" || asset.mediaType === "IMAGE") {
+    return {
+      ok: false,
+      code: "UNSUPPORTED",
+      message: "Covers are drawn from a document's text, so only documents can have one.",
+    }
+  }
+
   const credentials = await resolveImageCredentials(fastify.prisma)
   if (!credentials) {
     return {
@@ -176,7 +187,10 @@ export async function generateAssetCoverImage(
   // never appears. Touching the row changes the URL.
   await fastify.prisma.asset.update({
     where: { id: asset.id },
-    data: { updatedAt: new Date() },
+    // coverImageAt is what tells the card to ask the server for a thumbnail at
+    // all: a PDF renders its own first page in the browser, so without this the
+    // cover sits on disk and is never requested.
+    data: { updatedAt: new Date(), coverImageAt: new Date() },
   })
 
   return { ok: true, prompt }

@@ -242,6 +242,8 @@ export type AssetSummary = {
   badgeLabel?: string | null
   badgeColor?: string | null
   showBadge?: boolean
+  /** Set when an AI cover exists, so the card asks the server for it. */
+  coverImageAt?: string | null
   createdAt: string
   updatedAt: string
   deletedAt?: string | null

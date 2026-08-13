@@ -462,6 +462,10 @@ model Asset {
   badgeColor       String?
   /// When false, the source badge is hidden on cards and lists.
   showBadge        Boolean         @default(true)
+  /// Set when an AI cover has been drawn for this file. The card needs to know:
+  /// PDFs render their own first page in the browser, so without this signal a
+  /// generated cover sits on disk and is never asked for.
+  coverImageAt     DateTime?
   /// Relative path under storage root for Plex-visible library mirror (e.g. libraries/videos/plex/file.mp4).
   libraryMirrorPath String?
   /// Set when this asset arrived through a File Request rather than an owner

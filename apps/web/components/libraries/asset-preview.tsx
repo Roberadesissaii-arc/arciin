@@ -51,8 +51,18 @@ function DocumentThumbnailPlaceholder({
 }
 
 function PdfDocumentPreview({ asset }: { asset: AssetSummary }) {
+  /**
+   * A generated cover wins over the first page.
+   *
+   * PDFs normally render page one in the browser, which is why a cover written
+   * on the server was never shown: the card was not asking for it. When one
+   * exists, take the server thumbnail instead.
+   */
+  const hasCover = Boolean(asset.coverImageAt)
   const pdfUrl = pdfThumbnailSourceKey(asset.id, asset.updatedAt)
-  const thumb = usePdfThumbnail(pdfUrl, true)
+  const thumb = usePdfThumbnail(pdfUrl, !hasCover)
+  if (hasCover) return <ServerAssetThumbnail asset={asset} />
+
   const ext = (
     asset.extension ??
     asset.originalFilename.split(".").pop() ??
