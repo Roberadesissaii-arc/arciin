@@ -26,7 +26,7 @@ export function WelcomeState({
   return (
     <div className="flex flex-1 flex-col items-center justify-center px-4 py-10 sm:px-6 sm:py-12">
       {locked ? (
-        <div className="flex w-full max-w-5xl flex-col items-center gap-8">
+        <div className="flex w-full max-w-lg flex-col items-center">
           <SoftLockBanner
             plan={planLabel ?? "Pro"}
             title="Full AI Chat is locked on Free"
@@ -46,8 +46,6 @@ export function WelcomeState({
               </>
             }
           />
-          {/* Preview only — no second page title; cards section keeps its own “Quick starts” label */}
-          <ChatTemplateCards disabled onSelect={() => {}} />
         </div>
       ) : !hasProfiles ? (
         <div className="flex flex-col items-center gap-4 text-center">
