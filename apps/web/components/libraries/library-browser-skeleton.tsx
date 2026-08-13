@@ -27,22 +27,18 @@ export function LibraryBrowserToolbarSkeleton() {
   )
 }
 
-/** Mirrors AssetCard: 4/3 preview + meta block. */
+/** Mirrors AssetCard: ~216px white tile (104px preview + meta + badges). */
 export function AssetCardSkeleton() {
   return (
-    <div className="isolate flex flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
-      <Skeleton className="aspect-[4/3] w-full shrink-0 rounded-none rounded-t-2xl" />
-      <div className="flex min-h-[8.75rem] flex-col gap-2.5 p-3">
-        <Skeleton className="h-4 w-[85%]" />
-        <Skeleton className="h-3 w-[45%]" />
-        <div className="flex flex-wrap gap-1.5">
-          <Skeleton className="h-5 w-14 rounded-md" />
-          <Skeleton className="h-5 w-12 rounded-md" />
-        </div>
-        <div className="mt-auto flex gap-1.5 pt-1">
-          <Skeleton className="h-8 flex-1 rounded-md" />
-          <Skeleton className="size-8 shrink-0 rounded-md" />
-        </div>
+    <div className="h-[13.5rem] overflow-hidden rounded-2xl border border-zinc-200/80 bg-white p-2.5 shadow-sm">
+      <Skeleton className="h-[6.5rem] w-full rounded-xl" />
+      <div className="mt-2.5 space-y-1">
+        <Skeleton className="h-3.5 w-[85%]" />
+        <Skeleton className="h-3 w-[55%]" />
+      </div>
+      <div className="mt-2 flex items-center justify-between gap-1.5">
+        <Skeleton className="h-5 w-16 rounded-md" />
+        <Skeleton className="h-5 w-14 rounded-md" />
       </div>
     </div>
   )
@@ -52,7 +48,7 @@ export function AssetCardSkeleton() {
 export function AssetGridSkeleton({ count = 10 }: { count?: number }) {
   return (
     <div
-      className="grid items-start gap-2.5 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5"
+      className="grid grid-cols-2 items-start gap-2.5 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5"
       aria-busy
       aria-label="Loading files"
     >

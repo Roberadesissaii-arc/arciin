@@ -1,158 +1,320 @@
 "use client"
 
 import { useState } from "react"
-import { Download, Pencil } from "lucide-react"
+import {
+  AlertTriangle,
+  Archive,
+  Check,
+  Code2,
+  File,
+  FileText,
+  Image as ImageIcon,
+  Loader2,
+  MinusCircle,
+  Music,
+  Play,
+  Video,
+  type LucideIcon,
+} from "lucide-react"
 
 import { useAssetSelection } from "@/components/libraries/asset-selection"
-import { AssetPreview } from "@/components/libraries/asset-preview"
-import { AssetSourceBadge } from "@/components/libraries/asset-source-badge"
-import { RenameAssetDialog } from "@/components/libraries/rename-asset-dialog"
-import { Button } from "@/components/ui/button"
+import { useAssetViewerOptional } from "@/components/libraries/asset-viewer-context"
 import { resolveAssetBadge } from "@/lib/utils/asset-badge"
-import { dashboardTableActionOutline } from "@/lib/dashboard-table-styles"
 import { formatBytes } from "@/lib/utils/format-bytes"
-import { formatMediaTypeLabel } from "@/lib/utils/media-type"
+import { formatCardRelativeTime } from "@/lib/utils/format-card-relative-time"
+import { inferDestinationLabel } from "@/lib/utils/media-type"
 import { cn } from "@/lib/utils"
-import type { AssetSummary } from "@/lib/types/models"
-import { RelativeTime } from "@/components/shared/relative-time"
+import { isViewableAsset } from "@/lib/utils/viewable-asset"
+import type { AssetStatus, AssetSummary, MediaType } from "@/lib/types/models"
 
-const metaPillClass =
-  "inline-flex shrink-0 items-center rounded-md border border-border bg-muted/70 px-2 py-0.5 text-[10px] font-semibold text-foreground"
+/** Soft accent for the empty preview wash — zinc/orange family only, no purple. */
+function accentForMediaType(mediaType: MediaType): string {
+  switch (mediaType) {
+    case "IMAGE":
+      return "#71717a"
+    case "VIDEO":
+      return "#FF4F12"
+    case "AUDIO":
+      return "#52525b"
+    case "DOCUMENT":
+      return "#a1a1aa"
+    case "ARCHIVE":
+      return "#a1a1aa"
+    case "CODE":
+      return "#71717a"
+    default:
+      return "#a1a1aa"
+  }
+}
 
-const tagPillClass =
-  "inline-flex shrink-0 items-center rounded-md border border-border bg-muted/40 px-2 py-0.5 text-[10px] font-medium text-muted-foreground"
+function IconForMediaType(mediaType: MediaType): LucideIcon {
+  switch (mediaType) {
+    case "IMAGE":
+      return ImageIcon
+    case "VIDEO":
+      return Video
+    case "AUDIO":
+      return Music
+    case "DOCUMENT":
+      return FileText
+    case "ARCHIVE":
+      return Archive
+    case "CODE":
+      return Code2
+    default:
+      return File
+  }
+}
 
-/** Minimum metadata block height — must fit title, status, tags, and action row without clipping. */
-const CARD_META_MIN_HEIGHT = "min-h-[8.75rem]"
+type AiStatusTone =
+  | "indexed"
+  | "working"
+  | "queued"
+  | "failed"
+  | "skipped"
+
+type AiStatusView = {
+  label: string
+  tone: AiStatusTone
+  Icon?: LucideIcon
+  spin?: boolean
+}
+
+function resolveAiStatus(asset: AssetSummary): AiStatusView {
+  const status: AssetStatus = asset.status
+
+  if (status === "READY") {
+    return { label: "Indexed", tone: "indexed", Icon: Check }
+  }
+  if (status === "FAILED") {
+    return { label: "Failed", tone: "failed", Icon: AlertTriangle }
+  }
+  if (status === "DELETED") {
+    return { label: "Skipped", tone: "skipped", Icon: MinusCircle }
+  }
+  if (status === "UPLOADING") {
+    return { label: "Queued", tone: "queued" }
+  }
+  // PROCESSING
+  if (asset.mediaType === "DOCUMENT") {
+    return { label: "Summarizing", tone: "working", Icon: Loader2, spin: true }
+  }
+  if (asset.mediaType === "AUDIO" || asset.mediaType === "VIDEO") {
+    return { label: "Transcribing", tone: "working", Icon: Loader2, spin: true }
+  }
+  if (asset.mediaType === "IMAGE") {
+    return { label: "Thumbnail", tone: "working", Icon: Loader2, spin: true }
+  }
+  return { label: "Classifying", tone: "working", Icon: Loader2, spin: true }
+}
+
+function sourceChipLabel(asset: AssetSummary): string {
+  const badge = resolveAssetBadge(asset)
+  if (badge?.label) return badge.label
+  return inferDestinationLabel(asset.mimeType, asset.originalFilename)
+}
+
+function MediaPreview({ asset }: { asset: AssetSummary }) {
+  const [thumbFailed, setThumbFailed] = useState(false)
+  const accent = accentForMediaType(asset.mediaType)
+  const TypeIcon = IconForMediaType(asset.mediaType)
+  const ext = (
+    asset.extension ||
+    asset.originalFilename.split(".").pop() ||
+    ""
+  ).toUpperCase()
+
+  const thumbSrc = `/api/assets/${asset.id}/thumbnail?v=${encodeURIComponent(asset.updatedAt)}`
+  const streamSrc = `/api/assets/${asset.id}/download?inline=1&v=${encodeURIComponent(asset.updatedAt)}#t=0.5`
+
+  const isImage = asset.mediaType === "IMAGE" && !thumbFailed
+  const isVideo = asset.mediaType === "VIDEO"
+
+  return (
+    <div
+      className="relative h-[6.5rem] w-full overflow-hidden rounded-xl border border-zinc-200/80"
+      style={{
+        background: `linear-gradient(140deg, ${accent}14 0%, #ffffff 55%, ${accent}0d 100%)`,
+      }}
+    >
+      {/* Decorative blur orb */}
+      <span
+        className="pointer-events-none absolute -right-5 -top-6 size-20 rounded-full blur-xl"
+        style={{ backgroundColor: `${accent}1f` }}
+        aria-hidden
+      />
+
+      {/* Center type chip (always under media so slow loads never flash empty) */}
+      <div className="absolute inset-0 flex items-center justify-center">
+        <span
+          className="flex size-11 items-center justify-center rounded-xl bg-white/85 shadow-sm"
+          style={{ boxShadow: `inset 0 0 0 1px ${accent}26` }}
+        >
+          <TypeIcon className="size-5" style={{ color: accent }} aria-hidden />
+        </span>
+      </div>
+
+      {!isImage && !isVideo && ext ? (
+        <span className="absolute bottom-1.5 right-2 text-[9px] font-bold uppercase tracking-wider text-zinc-400">
+          {ext}
+        </span>
+      ) : null}
+
+      {isImage ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={thumbSrc}
+          alt=""
+          loading="lazy"
+          draggable={false}
+          className="absolute inset-0 size-full bg-white object-cover"
+          onError={() => setThumbFailed(true)}
+        />
+      ) : null}
+
+      {isVideo ? (
+        <>
+          {/* Prefer server thumbnail as first frame; fall back to seek frame. */}
+          {!thumbFailed ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={thumbSrc}
+              alt=""
+              loading="lazy"
+              draggable={false}
+              className="absolute inset-0 size-full bg-black object-cover"
+              onError={() => setThumbFailed(true)}
+            />
+          ) : (
+            <video
+              src={streamSrc}
+              muted
+              playsInline
+              preload="metadata"
+              draggable={false}
+              className="absolute inset-0 size-full bg-black object-cover"
+              aria-hidden
+            />
+          )}
+          <span className="pointer-events-none absolute inset-0 flex items-center justify-center">
+            <span className="flex size-8 items-center justify-center rounded-full bg-black/45 text-white backdrop-blur-sm">
+              <Play className="size-3.5 translate-x-px fill-current" aria-hidden />
+            </span>
+          </span>
+        </>
+      ) : null}
+    </div>
+  )
+}
+
+function AiStatusPill({ asset }: { asset: AssetSummary }) {
+  const view = resolveAiStatus(asset)
+  const Icon = view.Icon
+
+  return (
+    <span
+      className={cn(
+        "inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
+        view.tone === "indexed" && "bg-emerald-50 text-emerald-700",
+        view.tone === "working" && "text-[#FF4F12]",
+        view.tone === "queued" && "bg-zinc-100 text-zinc-600",
+        view.tone === "failed" && "bg-red-50 text-red-700",
+        view.tone === "skipped" && "bg-zinc-100 text-zinc-600",
+      )}
+      style={
+        view.tone === "working"
+          ? { backgroundColor: "color-mix(in srgb, #FF4F12 10%, transparent)" }
+          : undefined
+      }
+    >
+      {Icon ? (
+        <Icon
+          className={cn("size-3", view.spin && "animate-spin")}
+          aria-hidden
+        />
+      ) : null}
+      {view.label}
+    </span>
+  )
+}
 
 export function AssetCard({ asset }: { asset: AssetSummary }) {
   const selection = useAssetSelection()
+  const viewer = useAssetViewerOptional()
   const selected = selection?.isSelected(asset.id) ?? false
-  const [renameOpen, setRenameOpen] = useState(false)
-
-  const dimensionLabel =
-    asset.width && asset.height ? `${asset.width} × ${asset.height}` : null
-
-  const typeLabel = formatMediaTypeLabel(asset.mediaType, {
-    filename: asset.originalFilename,
-    mimeType: asset.mimeType,
-    extension: asset.extension,
-  })
-
-  const sourceBadge = resolveAssetBadge(asset)
+  const canOpen = isViewableAsset(asset) && Boolean(viewer?.canOpen(asset))
+  const source = sourceChipLabel(asset)
+  const metaLine = `${formatBytes(asset.sizeBytes)} · ${formatCardRelativeTime(asset.createdAt)}`
 
   const onCardClick = (event: React.MouseEvent) => {
-    if (!selection) return
     if (event.defaultPrevented) return
-    const target = event.target as HTMLElement
-    if (target.closest("button, a, input, [data-no-marquee]")) return
 
-    event.preventDefault()
     const additive = event.metaKey || event.ctrlKey
     const range = event.shiftKey
 
-    if (range || additive) {
+    if (selection && (range || additive)) {
+      event.preventDefault()
       selection.toggle(asset.id, { additive: additive || range, range })
       return
     }
 
-    if (selected) {
-      selection.toggle(asset.id, { additive: true })
-    } else {
-      selection.selectOnly(asset.id)
+    if (canOpen && viewer) {
+      event.preventDefault()
+      viewer.openViewer(asset.id)
+      return
+    }
+
+    if (selection) {
+      event.preventDefault()
+      if (selected) {
+        selection.toggle(asset.id, { additive: true })
+      } else {
+        selection.selectOnly(asset.id)
+      }
     }
   }
 
   return (
-    <article
+    <button
+      type="button"
       data-asset-id={asset.id}
       data-asset-selectable
-      onClick={selection ? onCardClick : undefined}
+      onClick={onCardClick}
+      title={asset.originalFilename}
       className={cn(
-        "isolate flex flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-sm",
-        "transition-[border-color,box-shadow,transform] duration-200 ease-out",
-        "hover:-translate-y-px hover:border-primary/30 hover:shadow-md",
-        selection && "cursor-pointer",
-        selected && "border-primary/50 ring-2 ring-primary/30 ring-offset-0",
+        "flex h-full flex-col overflow-hidden rounded-2xl border border-zinc-200/80 bg-white p-2.5 text-left shadow-sm",
+        "transition-all duration-200 ease-out",
+        "hover:-translate-y-0.5 hover:border-[rgba(255,79,18,0.3)] hover:shadow-md",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(255,79,18,0.18)]",
+        selected && "border-[rgba(255,79,18,0.45)] ring-2 ring-[rgba(255,79,18,0.18)]",
       )}
     >
-      <div className="relative aspect-[4/3] shrink-0 overflow-hidden rounded-t-2xl bg-muted/30">
-        <div className="absolute inset-0 [&_*:not([data-preview-chrome])]:!rounded-none">
-          <AssetPreview asset={asset} />
-        </div>
+      <MediaPreview asset={asset} />
 
-        {sourceBadge ? (
-          <AssetSourceBadge
-            asset={asset}
-            className="absolute left-2 top-2 z-10 max-w-[calc(100%-2.75rem)]"
-          />
-        ) : null}
+      <div className="mt-2.5 min-w-0">
+        <p
+          className="truncate text-[12.5px] font-medium leading-snug text-zinc-900"
+          title={asset.originalFilename}
+        >
+          {asset.originalFilename}
+        </p>
+        <p
+          className="mt-1 truncate text-[11px] tabular-nums text-zinc-400"
+          suppressHydrationWarning
+        >
+          {metaLine}
+        </p>
       </div>
 
-      <div
-        className={cn(
-          "flex shrink-0 flex-col gap-2 rounded-b-2xl px-3 py-2.5",
-          CARD_META_MIN_HEIGHT,
-        )}
-      >
-        <div className="flex min-w-0 flex-col gap-1.5">
-          <div className="flex min-w-0 items-center gap-2">
-            <h3
-              className="min-w-0 flex-1 truncate text-[13px] font-semibold leading-5 text-foreground"
-              title={asset.originalFilename}
-            >
-              {asset.originalFilename}
-            </h3>
-            <span className={metaPillClass}>{formatBytes(asset.sizeBytes)}</span>
-          </div>
-
-          <p className="truncate text-[11px] leading-4 text-muted-foreground">
-            <span className="capitalize">{asset.status.toLowerCase()}</span>
-            {" · "}
-            <RelativeTime value={asset.createdAt} />
-          </p>
-
-          <div className="flex min-w-0 flex-wrap items-center gap-1">
-            <span className={tagPillClass}>{typeLabel}</span>
-            {asset.extension ? (
-              <span className={cn(tagPillClass, "uppercase")}>{asset.extension}</span>
-            ) : null}
-            {dimensionLabel ? (
-              <span className={cn(tagPillClass, "max-w-[5.5rem] truncate")}>{dimensionLabel}</span>
-            ) : null}
-          </div>
-        </div>
-
-        <div className="mt-auto flex shrink-0 items-center gap-1.5 pt-0.5" data-no-marquee>
-          <Button
-            type="button"
-            variant="outline"
-            size="icon-sm"
-            className={cn(dashboardTableActionOutline, "size-8 w-9 shrink-0 rounded-lg")}
-            aria-label="Rename"
-            title="Rename"
-            onClick={(e) => {
-              e.stopPropagation()
-              setRenameOpen(true)
-            }}
-          >
-            <Pencil className="size-3.5" />
-          </Button>
-
-          <Button
-            asChild
-            size="sm"
-            className="h-9 min-w-0 flex-1 rounded-lg bg-primary text-[11px] font-semibold text-primary-foreground hover:bg-primary/90"
-          >
-            <a href={`/api/assets/${asset.id}/download`}>
-              <Download className="size-3.5" />
-              Download
-            </a>
-          </Button>
-        </div>
+      <div className="mt-2 flex items-center justify-between gap-1.5">
+        <span
+          className="max-w-[7rem] truncate rounded-md border border-zinc-200 bg-zinc-50 px-1.5 py-0.5 text-[11px] font-medium text-zinc-600"
+          title={source}
+        >
+          {source}
+        </span>
+        <AiStatusPill asset={asset} />
       </div>
-
-      <RenameAssetDialog asset={asset} open={renameOpen} onOpenChange={setRenameOpen} />
-    </article>
+    </button>
   )
 }
