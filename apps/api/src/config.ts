@@ -40,14 +40,11 @@ assertEnvironmentIsolation({
   queuePrefix,
 })
 
-const defaultSetupToken =
-  parsed.NODE_ENV !== "production" ? parsed.ARCIIN_SETUP_TOKEN || "dev-token" : parsed.ARCIIN_SETUP_TOKEN
-
 /** Values that must never ship as live production secrets for a public self-hosted instance. */
 function isWeakProductionSecret(value: string, { minLen }: { minLen: number }): boolean {
   const v = value.trim().toLowerCase()
   if (v.length < minLen) return true
-  // Exact placeholders only (avoid false positives on random hex that happens to include "test")
+  // Exact placeholders only (avoid false positives on random hex)
   const exact = new Set([
     "dev-token",
     "change-me",
@@ -60,23 +57,30 @@ function isWeakProductionSecret(value: string, { minLen }: { minLen: number }): 
     "default",
   ])
   if (exact.has(v)) return true
-  // Known install-template prefixes
   if (v.startsWith("change-this-in-production")) return true
   if (v.startsWith("change-me")) return true
   return false
 }
 
-if (parsed.NODE_ENV === "production") {
-  if (!defaultSetupToken || isWeakProductionSecret(defaultSetupToken, { minLen: 16 })) {
+function resolveSetupToken(): string {
+  if (parsed.NODE_ENV !== "production") {
+    return parsed.ARCIIN_SETUP_TOKEN?.trim() || "dev-token"
+  }
+  const token = parsed.ARCIIN_SETUP_TOKEN?.trim() ?? ""
+  if (!token || isWeakProductionSecret(token, { minLen: 16 })) {
     throw new Error(
       "ARCIIN_SETUP_TOKEN must be a strong random value in production (not empty, not dev-token/change-me). Generate one with: openssl rand -hex 24",
     )
   }
-  if (isWeakProductionSecret(parsed.SESSION_SECRET, { minLen: 32 })) {
-    throw new Error(
-      "SESSION_SECRET must be a strong random value in production (min 32 chars). Generate one with: openssl rand -hex 32",
-    )
-  }
+  return token
+}
+
+const setupToken = resolveSetupToken()
+
+if (parsed.NODE_ENV === "production" && isWeakProductionSecret(parsed.SESSION_SECRET, { minLen: 32 })) {
+  throw new Error(
+    "SESSION_SECRET must be a strong random value in production (min 32 chars). Generate one with: openssl rand -hex 32",
+  )
 }
 
 /**
@@ -98,7 +102,7 @@ function resolveTrustProxy(): string | number {
 
 export const apiConfig = {
   ...parsed,
-  setupToken: defaultSetupToken,
+  setupToken,
   appVersion: APP_VERSION,
   updateManifestUrl: parsed.ARCIIN_UPDATE_MANIFEST_URL,
   isProduction: parsed.NODE_ENV === "production",
