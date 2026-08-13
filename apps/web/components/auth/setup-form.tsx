@@ -89,14 +89,14 @@ function SetupFieldError({ message }: { message?: string }) {
  */
 function StepProgress({ step }: { step: SetupStep }) {
   return (
-    <nav aria-label="Setup steps">
-      <ol className="flex items-center">
+    <nav aria-label="Setup steps" className="min-w-0 max-w-full overflow-hidden px-0.5">
+      <ol className="flex min-w-0 max-w-full items-center">
         {([1, 2, 3] as const).map((n, index) => {
           const done = n < step
           const active = n === step
           return (
             <li key={n} className="flex min-w-0 flex-1 items-center">
-              <div className="flex min-w-0 items-center gap-2">
+              <div className="flex min-w-0 items-center gap-1.5 sm:gap-2">
                 <span
                   className={cn(
                     "flex size-8 shrink-0 items-center justify-center rounded-full text-[12px] font-bold transition-colors",
@@ -109,7 +109,7 @@ function StepProgress({ step }: { step: SetupStep }) {
                 </span>
                 <span
                   className={cn(
-                    "truncate text-[12px] font-semibold",
+                    "truncate text-[11px] font-semibold sm:text-[12px]",
                     active ? "text-[#111111]" : done ? "text-[#717171]" : "text-[#c0c0c0]",
                   )}
                 >
@@ -120,7 +120,7 @@ function StepProgress({ step }: { step: SetupStep }) {
                 <span
                   aria-hidden
                   className={cn(
-                    "mx-2 h-1 min-w-[12px] flex-1 rounded-full transition-colors",
+                    "mx-1.5 h-1 min-w-0 flex-1 rounded-full transition-colors sm:mx-2",
                     n < step ? "bg-[#ff4f12]" : "bg-[#e8e8e8]",
                   )}
                 />
@@ -271,7 +271,7 @@ export function SetupForm() {
 
   return (
     <form
-      className="flex h-full min-h-0 flex-1 flex-col"
+      className="flex h-full min-h-0 w-full min-w-0 max-w-full flex-1 flex-col overflow-x-hidden"
       method="post"
       onSubmit={(event) => {
         if (step === 1) {
@@ -298,7 +298,7 @@ export function SetupForm() {
       </div>
 
       {/* Fields grow; actions stay pinned under empty space */}
-      <div className="mt-4 min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain">
+      <div className="mt-4 min-h-0 w-full min-w-0 flex-1 space-y-3 overflow-x-hidden overflow-y-auto overscroll-contain">
         {step === 1 ? (
           <>
             {showTokenChip ? (
@@ -411,7 +411,7 @@ export function SetupForm() {
 
         {step === 3 ? (
           <>
-            <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
+            <div className="grid w-full min-w-0 grid-cols-2 gap-1.5 sm:grid-cols-3">
               {setupLibraryOptions.map((library) => {
                 const checked = selectedLibraries.includes(library)
                 const Icon = libraryMeta[library].icon
@@ -419,7 +419,7 @@ export function SetupForm() {
                   <label
                     key={library}
                     className={cn(
-                      "flex cursor-pointer flex-col gap-0.5 rounded-xl border p-2 transition-colors",
+                      "flex min-w-0 cursor-pointer flex-col gap-0.5 rounded-xl border p-2 transition-colors",
                       checked
                         ? "border-[#ffb59a] bg-[#fff5f0]"
                         : "border-[#ececec] bg-white hover:border-[#e0e0e0]",
@@ -515,37 +515,41 @@ export function SetupForm() {
       {/*
         Last child of a full-height form. Parent page uses the same p-5 bottom
         inset as the left hero, so this row sits level with the orange panel.
+        Primary button defaults to w-full — force w-auto so it cannot force
+        horizontal scroll when sitting beside Back.
       */}
-      <div className="mt-auto flex shrink-0 items-center justify-between gap-3 border-t border-[#ececec] pt-5">
+      <div className="mt-auto flex w-full min-w-0 shrink-0 items-center justify-between gap-2 border-t border-[#ececec] pt-5 sm:gap-3">
         {step > 1 ? (
           <AuthSecondaryButton
             type="button"
             onClick={() => setStep((step - 1) as SetupStep)}
-            className="h-10 rounded-xl sm:w-auto"
+            className="h-10 w-auto shrink-0 rounded-xl px-4"
           >
             <ArrowLeft className="size-4" />
             Back
           </AuthSecondaryButton>
         ) : (
-          <span className="text-[12px] text-[#a0a0a0]">Locks after claim</span>
+          <span className="min-w-0 truncate text-[12px] text-[#a0a0a0]">Locks after claim</span>
         )}
 
         {step < 3 ? (
           <AuthPrimaryButton
             type="submit"
-            className="h-10 rounded-xl shadow-none sm:w-auto sm:min-w-[8.5rem] sm:px-5"
+            className="h-10 w-auto max-w-full shrink-0 rounded-xl px-5 shadow-none sm:min-w-[8.5rem]"
           >
             Continue
-            <ArrowRight className="size-4" />
+            <ArrowRight className="size-4 shrink-0" />
           </AuthPrimaryButton>
         ) : (
           <AuthPrimaryButton
             type="submit"
             disabled={claimMutation.isPending || !acceptedTermsAndPrivacy}
-            className="h-10 rounded-xl shadow-none sm:w-auto sm:min-w-[8.5rem] sm:px-5"
+            className="h-10 w-auto max-w-full shrink-0 rounded-xl px-4 shadow-none sm:min-w-[8.5rem] sm:px-5"
           >
-            <Sparkles className="size-4" />
-            {claimMutation.isPending ? "Claiming…" : "Claim instance"}
+            <Sparkles className="size-4 shrink-0" />
+            <span className="truncate">
+              {claimMutation.isPending ? "Claiming…" : "Claim instance"}
+            </span>
           </AuthPrimaryButton>
         )}
       </div>

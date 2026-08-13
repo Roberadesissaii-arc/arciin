@@ -37,9 +37,9 @@ export default function SetupPage() {
  */
 function SetupPageShell() {
   return (
-    <main className="relative flex h-svh max-h-svh overflow-hidden bg-[#f7f7f7] text-[#222222]">
+    <main className="relative flex h-svh max-h-svh overflow-x-hidden overflow-y-hidden bg-[#f7f7f7] text-[#222222]">
       <section
-        className={`relative z-0 hidden h-full min-h-0 lg:flex lg:w-[48%] xl:w-[45%] ${SETUP_INSET}`}
+        className={`relative z-0 hidden h-full min-h-0 min-w-0 lg:flex lg:w-[48%] xl:w-[45%] ${SETUP_INSET}`}
       >
         <AuthHeroPanel fill>
           <SetupHeroShowcase />
@@ -47,16 +47,16 @@ function SetupPageShell() {
       </section>
 
       <section
-        className={`relative z-0 flex h-full min-h-0 w-full flex-col overflow-hidden lg:w-[52%] xl:w-[55%] ${SETUP_INSET}`}
+        className={`relative z-0 flex h-full min-h-0 w-full min-w-0 flex-col overflow-x-hidden overflow-y-hidden lg:w-[52%] xl:w-[55%] ${SETUP_INSET}`}
       >
-        <header className="relative z-10 flex shrink-0 items-center justify-between gap-4">
-          <div className="lg:hidden">
+        <header className="relative z-10 flex min-w-0 shrink-0 items-center justify-between gap-3">
+          <div className="min-w-0 lg:hidden">
             <AuthLightPageHeader contextLabel="First-run setup" />
           </div>
-          <p className="hidden text-xs text-[#a0a0a0] lg:block">
+          <p className="hidden min-w-0 truncate text-xs text-[#a0a0a0] lg:block">
             Private instance configuration
           </p>
-          <div className="flex items-center gap-4">
+          <div className="flex shrink-0 items-center gap-3 sm:gap-4">
             <Link
               href="/legal/privacy"
               className="text-[11px] text-[#a0a0a0] underline-offset-4 transition-colors hover:text-[#555555] hover:underline"
@@ -72,8 +72,8 @@ function SetupPageShell() {
           </div>
         </header>
 
-        <div className="relative z-10 mt-5 flex min-h-0 flex-1 flex-col">
-          <div className="mx-auto flex h-full min-h-0 w-full max-w-lg flex-col">
+        <div className="relative z-10 mt-5 flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden">
+          <div className="mx-auto flex h-full min-h-0 w-full min-w-0 max-w-lg flex-col">
             <Suspense
               fallback={
                 <div className="flex flex-1 items-center justify-center text-sm text-[#a0a0a0]">
