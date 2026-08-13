@@ -17,20 +17,15 @@ export const dashboardPanelCard = "flex h-full min-h-[28rem] flex-col md:min-h-[
 /** Dashboard overview row — natural height (do not stretch with h-full). */
 export const dashboardOverviewPanelCard = "flex shrink-0 flex-col"
 
-/**
- * Fixed body height for the 7×2 overview uploads grid
- * (2 tile rows + gap). Keeps the section stable when loading/empty.
- * Tall enough for the larger tile rows so previews don’t feel cramped.
- */
-export const dashboardOverviewUploadsBody =
-  "flex h-[20.5rem] shrink-0 flex-col sm:h-[21.75rem] lg:h-[23.25rem]"
+/** Natural-height body for recent uploads (library-style asset cards). */
+export const dashboardOverviewUploadsBody = "flex shrink-0 flex-col"
 
 export const dashboardOverviewActivityBody =
   "flex min-h-0 flex-1 flex-col overflow-hidden"
 
-/** Dashboard uploads grid: 7 columns × 2 rows on wide screens. */
-export const DASHBOARD_UPLOADS_GRID_COLS = 7
-export const DASHBOARD_UPLOADS_GRID_ROWS = 2
+/** Dashboard recent uploads: 5 columns × 3 rows on large screens. */
+export const DASHBOARD_UPLOADS_GRID_COLS = 5
+export const DASHBOARD_UPLOADS_GRID_ROWS = 3
 export const DASHBOARD_UPLOADS_LIMIT =
   DASHBOARD_UPLOADS_GRID_COLS * DASHBOARD_UPLOADS_GRID_ROWS
 
@@ -41,11 +36,10 @@ export const DASHBOARD_ACTIVITY_LIMIT = 6
 export const DASHBOARD_ACTIVITY_LIMIT_TABLET = 5
 
 /**
- * Full-width 7×2 grid. Tile rows are taller so cover previews and
- * thumbnails read more clearly in Recent uploads.
+ * Same breakpoints as library AssetGrid, capped at 5 columns for a 5×3 overview.
  */
 export const dashboardUploadsGrid =
-  "grid h-full grid-cols-3 gap-2 content-start [grid-auto-rows:9.75rem] sm:grid-cols-4 sm:gap-2.5 sm:[grid-auto-rows:10.25rem] md:grid-cols-5 lg:grid-cols-7 lg:grid-rows-2 lg:[grid-auto-rows:11rem]"
+  "grid grid-cols-2 items-start gap-2.5 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5"
 
 /** Activity list on the dashboard — rows grow to fill height on large screens only. */
 export const dashboardActivityList =
