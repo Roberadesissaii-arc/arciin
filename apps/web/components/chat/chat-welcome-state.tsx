@@ -29,8 +29,8 @@ export function WelcomeState({
         <div className="flex w-full max-w-5xl flex-col items-center gap-8">
           <SoftLockBanner
             plan={planLabel ?? "Pro"}
-            title={`Full AI Chat is available on ${planLabel ?? "Pro"}.`}
-            description={`Free lets you connect and test one Ollama model from the Models page. Upgrade to ${planLabel ?? "Pro"} to chat with files, analyze PDFs and images, and use multiple AI providers.`}
+            title="Full AI Chat is locked on Free"
+            description="Connect and test one Ollama model from Models. Upgrade to chat with files, analyze PDFs and images, and use multiple AI providers."
             actions={
               <>
                 <Button
@@ -46,6 +46,7 @@ export function WelcomeState({
               </>
             }
           />
+          {/* Preview only — no second page title; cards section keeps its own “Quick starts” label */}
           <ChatTemplateCards disabled onSelect={() => {}} />
         </div>
       ) : !hasProfiles ? (

@@ -30,9 +30,12 @@ export function SoftLockBanner({
         strokeWidth={1.5}
         aria-hidden
       />
-      <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
-        <p className="text-sm font-semibold tracking-tight text-foreground">{title}</p>
+      {/* Badge first as a label, then one title — avoids “two titles” (title + Pro). */}
+      <div className="mt-4 flex flex-col items-center gap-2">
         <PlanBadge plan={plan} />
+        <p className="text-base font-semibold tracking-tight text-foreground sm:text-[17px]">
+          {title}
+        </p>
       </div>
       <p className="mt-1.5 max-w-md text-sm leading-relaxed text-muted-foreground">
         {description ??
