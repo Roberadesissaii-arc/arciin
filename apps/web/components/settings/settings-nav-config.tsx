@@ -92,10 +92,7 @@ export const SETTINGS_NAV: SettingsNavItem[][] = [
     { id: "data-reset", label: "Data reset", icon: Eraser },
   ],
   [
-    // "Planning" described this panel when planning was all it held. It now
-    // carries agent, autonomy, thinking, illustrations and emoji usage, and a
-    // user looking for an AI setting looked for "AI" and did not find it.
-    { id: "ai", label: "AI", icon: Layers },
+    { id: "ai", label: "Planning", icon: Layers },
     { id: "ai-security", label: "AI Security", icon: ShieldAlert },
   ],
   [

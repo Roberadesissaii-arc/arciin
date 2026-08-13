@@ -91,3 +91,24 @@ describe("what the assistant is told", () => {
     expect(block).toContain("never mid-sentence")
   })
 })
+
+describe("the setting survives a round trip", () => {
+  // It did not: the settings PATCH schema listed every AI field except this one,
+  // so the value was stripped, the write was a no-op, and the switch sprang back
+  // on the next refetch — which reads as a UI that refuses to stay on.
+  const AI_FIELDS = ["agent", "autonomy", "planning", "showThinking", "canvasImages"]
+
+  it("every boolean the panel can toggle is a settable field", () => {
+    for (const field of AI_FIELDS) {
+      expect(Object.keys(parseAiConfig({}))).toContain(field)
+    }
+  })
+
+  it("an enabled value parses back as enabled", () => {
+    expect(parseAiConfig({ canvasImages: true }).canvasImages).toBe(true)
+  })
+
+  it("an explicit false stays false rather than falling back to the default", () => {
+    expect(parseAiConfig({ canvasImages: false }).canvasImages).toBe(false)
+  })
+})

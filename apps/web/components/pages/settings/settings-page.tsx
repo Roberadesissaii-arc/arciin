@@ -99,7 +99,7 @@ export function SettingsPage() {
         title="Settings"
         subtitle="Instance · security · intelligence · personalization"
         cornerDecoration={<IntroCornerIcon icon={Settings2} />}
-        description="Storage, domain, license, passwords, trash, sessions, access control, API protection, AI behaviour, and account-level preferences."
+        description="Storage, domain, license, passwords, trash, sessions, access control, API protection, AI planning, and account-level preferences."
         stats={settingsIntroStats()}
         statsGridClassName="grid-cols-2 xl:grid-cols-4"
       />

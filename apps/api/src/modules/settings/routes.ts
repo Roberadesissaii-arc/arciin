@@ -128,6 +128,10 @@ const aiSchema = z.object({
   autonomy:     z.boolean().optional(),
   planning:     z.boolean().optional(),
   showThinking: z.boolean().optional(),
+  // Without this the field is stripped by the schema, the write is a no-op, and
+  // the switch springs back on the next refetch — indistinguishable from a UI
+  // that refuses to stay on.
+  canvasImages: z.boolean().optional(),
   emojiUsage:   z.enum(AI_EMOJI_USAGE_LEVELS).optional(),
 })
 
