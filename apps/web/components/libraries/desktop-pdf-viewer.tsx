@@ -18,7 +18,6 @@ import {
   type PdfPageAnnotation,
   type PlacedNote,
 } from "@/lib/files/pdf-annotation-layout"
-import { PdfAnnotationLayer } from "@/components/libraries/pdf-annotation-layer"
 import type { PdfHighlightRect, PdfHighlightTarget } from "@/lib/files/pdf-highlight-types"
 import type { PdfAnnotationStyle } from "@/lib/files/pdf-annotation-style"
 import { PdfAnnotationMark } from "@/components/libraries/pdf-annotation-mark"
@@ -45,10 +44,6 @@ function PdfPageCanvas({
   numPages,
   onHeight,
   highlightRects,
-  notes,
-  noteFontSize,
-  noteGutter = 0,
-  onSelectNote,
 }: {
   pdf: PDFDocumentProxy
   pageNumber: number
@@ -57,10 +52,6 @@ function PdfPageCanvas({
   numPages: number
   onHeight: (page: number, height: number) => void
   highlightRects?: StyledRect[]
-  notes?: PlacedNote[]
-  noteFontSize?: number
-  noteGutter?: number
-  onSelectNote?: (id: string) => void
 }) {
   const hostRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -208,15 +199,6 @@ function PdfPageCanvas({
             ))}
           </div>
         </div>
-      ) : null}
-      {ready && notes && notes.length > 0 ? (
-        <PdfAnnotationLayer
-          notes={notes}
-          width={layoutWidth + noteGutter * 2}
-          height={cssHeight - PAGE_PAD}
-          fontSize={noteFontSize}
-          onSelect={onSelectNote}
-        />
       ) : null}
     </div>
   )
@@ -782,10 +764,6 @@ export function DesktopPdfViewer({
               numPages={numPages}
               onHeight={onHeight}
               highlightRects={highlightsForRender.get(pageNumber)}
-              notes={placedNotes.get(pageNumber)}
-              noteFontSize={noteFontSize}
-              noteGutter={noteGutter}
-              onSelectNote={onSelectNote}
             />
           ),
         )}

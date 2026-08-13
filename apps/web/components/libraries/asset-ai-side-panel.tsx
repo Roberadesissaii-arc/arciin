@@ -4,7 +4,7 @@
 import Link from "next/link"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useQueryClient } from "@tanstack/react-query"
-import { Eye, EyeOff, Loader2, Mic, SendHorizontal, Sparkles, Square, X } from "lucide-react"
+import { Loader2, Mic, SendHorizontal, Sparkles, Square, X } from "lucide-react"
 
 import {
   ChatModelPicker,
@@ -43,7 +43,6 @@ import { parseAssistantHighlights } from "@/lib/files/parse-pdf-highlight-reques
 import { inferPdfHighlightTargets } from "@/lib/files/infer-pdf-highlight"
 import { inferPdfGotoPage } from "@/lib/files/infer-pdf-page-request"
 import { PdfMarkBadges } from "@/components/libraries/pdf-mark-badges"
-import { parseAssistantAnnotations } from "@/lib/files/parse-pdf-annotations"
 import type { PdfPageAnnotation } from "@/lib/files/pdf-annotation-layout"
 import {
   buildRegenerateNoteInstruction,
@@ -131,15 +130,9 @@ export function AssetAiSidePanel({
   onNavigateToPage,
   onHighlightPdf,
   onFocusPdfMark,
-  onAnnotatePdf,
-  studyScope,
-  onReplaceNote,
-  rewriteHandleRef,
   onExportAnnotated,
   exporting,
   renderReport,
-  notesHidden,
-  onToggleNotes,
   noteCount = 0,
   onClearPdfHighlight,
   onHighlightImage,
@@ -480,9 +473,6 @@ export function AssetAiSidePanel({
     [isImageAsset, queryClient],
   )
 
-  useEffect(() => {
-    studyScopeRef.current = studyScope ?? null
-  }, [studyScope])
 
   /** Keep model tag aligned with the selected profile (never ministral on Gemini). */
   useEffect(() => {
@@ -765,23 +755,6 @@ export function AssetAiSidePanel({
             )
           }
         }
-        if (onAnnotatePdf && pdfPage && pdfPage > 0) {
-          const notes = parseAssistantAnnotations(finalText, { page: pdfPage })
-          const rewriting = rewriteNoteRef.current
-          if (notes.length > 0) {
-            if (rewriting) {
-              // One note was in question, so only that one changes. Re-reading
-              // the whole page would throw away work the student kept.
-              onReplaceNote?.(rewriting, notes[0]!)
-            } else {
-              // Replace rather than append: "explain this page" asked for a
-              // fresh reading, and stacking two readings on one sheet is how
-              // margins become unreadable.
-              onAnnotatePdf(notes)
-            }
-          }
-          rewriteNoteRef.current = null
-        }
         if (onNavigateToPage && lastGotoRef.current === null) {
           const page = inferPdfGotoPage({
             userText: turnUserText,
@@ -825,55 +798,11 @@ export function AssetAiSidePanel({
       pdfPageCount,
       pdfPageIndex,
       onNavigateToPage,
-      onAnnotatePdf,
       onHighlightPdf,
       onHighlightImage,
       pushImageRegions,
     ],
   )
-
-  /**
-   * Rewrite one note the student did not follow.
-   *
-   * Goes through the normal turn so the exchange stays in the transcript — the
-   * student asked a question and should see the answer — but the instruction
-   * pins the model to a single replacement tag, and the result swaps that one
-   * note instead of re-reading the page.
-   */
-  const rewriteNote = useCallback(
-    async (note: PdfPageAnnotation, ask: string) => {
-      if (streaming) return
-      rewriteNoteRef.current = note.id
-      const question = ask.trim() || "Explain that more."
-      const userMsg: PanelMessage = {
-        id: `u-${Date.now()}`,
-        role: "user",
-        content: question,
-      }
-      const assistantId = `a-${Date.now()}`
-      const history = [...messages, userMsg]
-      setMessages([...history, { id: assistantId, role: "assistant", content: "" }])
-      lastGotoRef.current = null
-      lastHighlightSigRef.current = ""
-      await runChatStream(
-        [
-          ...messages,
-          {
-            ...userMsg,
-            content:
-              question + buildRegenerateNoteInstruction({ text: note.text, target: note.target, ask: question }),
-          },
-        ],
-        assistantId,
-      )
-    },
-    [messages, runChatStream, streaming],
-  )
-
-  useEffect(() => {
-    if (!rewriteHandleRef) return
-    rewriteHandleRef.current = rewriteNote
-  }, [rewriteHandleRef, rewriteNote])
 
   const sendMessage = useCallback(
     async (text: string) => {
@@ -1167,41 +1096,25 @@ export function AssetAiSidePanel({
         </div>
 
         <footer className="shrink-0 border-t border-zinc-200/90 px-3 pb-3 pt-2.5">
-          {/* The notes are a layer over the page, never a change to the file, so
-              hiding them has to be one click away — a student comparing the
-              clean page with the annotated one is the normal case, not an edge
-              case. */}
-          {onToggleNotes && noteCount > 0 ? (
+          {/* Marks are a layer over the page, never a change to the file, so
+              exporting a copy and clearing the layer both belong here. */}
+          {onExportAnnotated && noteCount > 0 ? (
             <div className="mb-2 flex items-center gap-2">
-              <button
-                type="button"
-                onClick={onToggleNotes}
-                className="inline-flex items-center gap-1.5 rounded-full border border-zinc-300 px-2.5 py-1 text-[11px] font-medium text-zinc-600 transition hover:border-[#ff4f12]/60 hover:text-[#ff4f12]"
-              >
-                {notesHidden ? (
-                  <Eye className="size-3" aria-hidden />
-                ) : (
-                  <EyeOff className="size-3" aria-hidden />
-                )}
-                {notesHidden ? "Show notes" : "Hide notes"}
-              </button>
-              <span className="text-[11px] text-zinc-400">
-                {noteCount} {noteCount === 1 ? "note" : "notes"} on this page
+              <span className="text-[11px] text-zinc-500">
+                {noteCount} {noteCount === 1 ? "mark" : "marks"} on this document
               </span>
-              {onExportAnnotated ? (
-                <button
-                  type="button"
-                  onClick={onExportAnnotated}
-                  disabled={exporting}
-                  className="ml-auto text-[11px] text-zinc-500 underline-offset-2 transition hover:text-[#ff4f12] hover:underline disabled:opacity-50"
-                >
-                  {exporting ? "Exporting…" : "Export PDF"}
-                </button>
-              ) : null}
               <button
                 type="button"
-                onClick={() => onAnnotatePdf?.([])}
-                className={`${onExportAnnotated ? "" : "ml-auto "}text-[11px] text-zinc-400 underline-offset-2 transition hover:text-zinc-600 hover:underline`}
+                onClick={onExportAnnotated}
+                disabled={exporting}
+                className="ml-auto text-[11px] text-zinc-500 underline-offset-2 transition hover:text-[#ff4f12] hover:underline disabled:opacity-50"
+              >
+                {exporting ? "Exporting…" : "Export PDF"}
+              </button>
+              <button
+                type="button"
+                onClick={onClearPdfHighlight}
+                className="text-[11px] text-zinc-400 underline-offset-2 transition hover:text-zinc-600 hover:underline"
               >
                 Clear
               </button>

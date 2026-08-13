@@ -66,8 +66,9 @@ export function buildStudyPassInstruction(
   options: { page?: number; scope?: string | null } = {},
 ): string {
   const { emphasis, voice } = studyPassShape(userText)
-  const marks = emphasis === "marks" ? "3 to 5" : emphasis === "notes" ? "1 to 2" : "2 to 4"
-  const notes = emphasis === "notes" ? "3 to 4" : emphasis === "marks" ? "1" : "2 to 3"
+  // Marks are the whole visual layer now, so a pass carries more of them than
+  // when they shared the page with margin notes.
+  const marks = emphasis === "marks" ? "4 to 6 marks" : emphasis === "notes" ? "3 to 4 marks" : "3 to 5 marks"
 
   const voiceLine =
     voice === "exam"
@@ -88,17 +89,16 @@ export function buildStudyPassInstruction(
     "[STUDY PASS — REQUIRED OUTPUT]",
     "Do not answer only in prose. You MUST mark up the page with control tags, or the student sees nothing.",
     scopeLine,
-    `Emit, each on its own line, before your reply:`,
-    `- ${marks} marks: [highlight-current:"exact text"] / [circle-heading:"exact heading"] / [underline-current:"exact text"]`,
-    `- ${notes} notes: [note:important:"exact text it points at":"short handwritten note"]`,
-    `  (kinds: note · important · warning · definition · connection)`,
-    `- optionally one [note:summary:"":"one-line recap"]`,
+    `Emit ${marks}, each on its own line, before your reply:`,
+    `- [highlight-current:"exact text"] for a term, phrase or formula worth remembering`,
+    `- [circle-heading:"exact heading"] for a concept worth finding again`,
+    `- [underline-current:"exact text"] for an important phrase`,
     "Targets MUST be copied verbatim from the page text you were given.",
     'NEVER target words from this request. "the key terms", "each one" describe the job —',
     "work out which real terms on the page they mean, and target those.",
-    "Asked to explain what you mark, pair each mark with a note on the SAME target.",
     voiceLine,
-    "Then two or three sentences of reply. The tags are stripped before the student reads it.",
+    "Then explain them in your reply — in the chat, in a sentence or two each. The marks show",
+    "the student where to look; your reply is where the explaining happens.",
   ]
     .filter((line) => line !== null && line !== undefined)
     .join("\n")

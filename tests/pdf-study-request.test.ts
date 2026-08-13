@@ -70,8 +70,15 @@ describe("the instruction block", () => {
 
   it("demands tags rather than prose", () => {
     expect(block).toContain("REQUIRED OUTPUT")
-    expect(block).toContain("[note:")
     expect(block).toContain("[highlight-current:")
+    expect(block).toContain("[circle-heading:")
+  })
+
+  it("asks only for marks — the explaining happens in the reply", () => {
+    // Margin notes and their arrows were removed: they landed on the text, the
+    // arrows crossed the page, and the explanation reads better in the chat.
+    expect(block).not.toContain("[note:")
+    expect(block).toContain("explain them in your reply")
   })
 
   it("names the page in view", () => {
@@ -197,9 +204,9 @@ describe("instructions are not search targets", () => {
     expect(block).toContain("NEVER target words from this request")
   })
 
-  it("asks for a note on the same target when explanations were requested", () => {
+  it("still explains the terms it marks, in the reply", () => {
     const block = buildStudyPassInstruction(PLANNING, { page: 1 })
-    expect(block).toContain("SAME target")
+    expect(block).toContain("explain them in your reply")
   })
 })
 

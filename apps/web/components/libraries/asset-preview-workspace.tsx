@@ -583,16 +583,10 @@ function PreviewWorkspaceBody({
               }
               onHighlightPdf={isPdf ? handlePdfHighlight : undefined}
               onFocusPdfMark={isPdf ? handleFocusPdfMark : undefined}
-              onAnnotatePdf={isPdf ? setPdfNotes : undefined}
-            onReplaceNote={isPdf ? handleReplaceNote : undefined}
-            rewriteHandleRef={rewriteHandleRef}
-            studyScope={studyScope}
             onExportAnnotated={isPdf ? handleExportAnnotated : undefined}
             exporting={exporting}
             renderReport={renderReport}
-              notesHidden={notesHidden}
-              onToggleNotes={isPdf && pdfNotes.length > 0 ? () => setNotesHidden((v) => !v) : undefined}
-              noteCount={pdfNotes.length}
+              noteCount={pdfHighlightTargets.length}
               onClearPdfHighlight={isPdf ? () => handlePdfHighlight([]) : undefined}
               onHighlightImage={isImage ? handleImageHighlight : undefined}
               onClearImageHighlight={isImage ? () => handleImageHighlight([]) : undefined}
@@ -620,10 +614,7 @@ function PreviewWorkspaceBody({
             }
             onHighlightPdf={isPdf ? handlePdfHighlight : undefined}
             onFocusPdfMark={isPdf ? handleFocusPdfMark : undefined}
-            onAnnotatePdf={isPdf ? setPdfNotes : undefined}
-            notesHidden={notesHidden}
-            onToggleNotes={isPdf && pdfNotes.length > 0 ? () => setNotesHidden((v) => !v) : undefined}
-            noteCount={pdfNotes.length}
+            noteCount={pdfHighlightTargets.length}
             onClearPdfHighlight={isPdf ? () => handlePdfHighlight([]) : undefined}
             onHighlightImage={isImage ? handleImageHighlight : undefined}
             onClearImageHighlight={isImage ? () => handleImageHighlight([]) : undefined}

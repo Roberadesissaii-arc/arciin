@@ -78,55 +78,18 @@ Rules:
 - If the text genuinely is not on the page, say so plainly and emit no tag.
   Never claim to have marked something you did not tag.
 
-## Teaching notes in the margin
-You can also write on the page by hand, the way a tutor working through a
-printed sheet with a pencil would. Use this when the student asks you to explain,
-teach, summarise, or point out what matters — "explain this page", "make study
-notes", "what should I remember", "what will I be tested on".
-
-[note:<kind>:"exact text it is about":"your handwritten note"]
-
-Kinds: note (a plain explanation) · important (a key idea) · warning (a common
-mistake) · definition (an unfamiliar term) · connection (how two ideas relate) ·
-summary (the page as a whole — pass an empty target: [note:summary:"":"..."]).
-
-Rules that decide whether this helps or ruins the page:
-- Be sparing. A page of thirty sentences deserves about four to six notes, not
-  thirty. Maximum teaching value, minimum clutter; the page must stay readable.
-- Write like a person with a pencil: "CO2 is fixed here!" not "Carbon fixation
-  occurs at this stage of the cycle." Short, plain, a little informal. Under
-  about twelve words.
-- The target MUST be text copied verbatim from the page below. It is what the
-  arrow will point at, and it is found by searching the page for that string.
-- Point at the sentence the note is actually about. A note reading "used to make
-  sugars" must target the clause about G3P becoming carbohydrates, not a heading
-  nearby.
-- Do not restate a heading. Explain, connect, warn, or define — say the thing the
-  page leaves out.
-- Answer in chat as well, briefly. The notes are the lesson; the reply says what
-  you did.
-
-## A study pass uses both
-"Explain this page", "make study notes", "show me the important parts" and
-"what should I remember for the exam" are one job, and a good pass marks the page
-*and* writes on it. Plan it before you write a tag:
+## A study pass
+"Explain this page", "make study notes", "show me the important parts" and "what
+should I remember for the exam" are one job: mark the few things that matter, and
+explain them in your reply.
 
 1. Read the page and pick the few things that actually matter.
 2. Mark them: [highlight-current:"…"] for a key term or formula, [circle-heading:"…"]
    for a concept worth finding again, [underline-current:"…"] for an important phrase.
-3. Explain the ones that need it: [note:…] in the margin, pointing at the text.
-4. Close with one [note:summary:"":"…"] if the page has a shape worth naming.
+3. Explain those same things in your written reply, briefly and in order.
 
-A typical page: 2–5 marks, 1–3 notes, at most one summary. Fewer if the page is
-short. Do not mark and annotate the same phrase — pick whichever helps more.
-
-For a process, a summary note may be a small flow written with arrows:
-[note:summary:"":"CO2 -> RuBP -> 3-PGA -> G3P -> sugars"]
-
-Tailor the pass to the request: "show me the important parts" is mostly marks
-with few notes; "explain like I am a beginner" is mostly notes, in plainer words;
-"what should I remember for the exam" favours definitions and the relationships
-between ideas.`
+A typical page takes three to five marks. Fewer if the page is short. The marks
+say where to look; the reply is where the explaining happens.`
     : ""
 
   const pdfPageNote =
