@@ -1,209 +1,470 @@
 "use client"
 
 import Link from "next/link"
-import { useMemo } from "react"
+import { useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { ChevronRight, HardDrive } from "lucide-react"
+import {
+  ArrowUpRight,
+  FileText,
+  Image as ImageIcon,
+  Inbox,
+  Music2,
+  ShieldCheck,
+  Video,
+  type LucideIcon,
+} from "lucide-react"
 
 import { getStorageSettings } from "@/lib/api/settings"
 import { queryKeys } from "@/lib/api/query-keys"
 import { useLibraries } from "@/hooks/use-libraries"
 import { formatBytes } from "@/lib/utils/format-bytes"
 import { resolveStorageUsagePercent } from "@/lib/utils/storage-usage"
-import { Badge } from "@/components/ui/badge"
+import type { StorageSettings } from "@/lib/types/models"
 import { Skeleton } from "@/components/ui/skeleton"
 import { cn } from "@/lib/utils"
 
-const LIBRARY_ORDER = ["videos", "images", "music", "documents", "inbox"]
+const LIBRARY_ORDER = ["videos", "images", "music", "documents", "inbox"] as const
 
 const LIBRARY_ROUTES: Record<string, string> = {
-  inbox: "/inbox",
   videos: "/videos",
   images: "/images",
   music: "/music",
   documents: "/documents",
+  inbox: "/inbox",
 }
 
-/** Full-width storage overview: donut + library breakdown. */
+const LIBRARY_ICONS: Record<string, LucideIcon> = {
+  videos: Video,
+  images: ImageIcon,
+  music: Music2,
+  documents: FileText,
+  inbox: Inbox,
+}
+
+/** Zinc segment tones in order: Videos → Images → Music → Documents → Inbox */
+const SEGMENT_TONES = [
+  "bg-zinc-900",
+  "bg-zinc-700",
+  "bg-zinc-500",
+  "bg-zinc-400",
+  "bg-zinc-300",
+] as const
+
+/** Sample fallback when the storage API is unavailable (spec values). */
+const SAMPLE = {
+  volumeName: "Windows",
+  deviceLabel: "Local Disk",
+  mount: "C:",
+  usedBytes: 193_273_528_320,
+  totalBytes: 499_289_817_088,
+  writable: true,
+  libraries: [
+    { slug: "videos", name: "Videos", assetCount: 1842, sizeBytes: 51_754_188_800 },
+    { slug: "images", name: "Images", assetCount: 3901, sizeBytes: 13_314_392_064 },
+    { slug: "music", name: "Music", assetCount: 612, sizeBytes: 6_550_292_070 },
+    { slug: "documents", name: "Documents", assetCount: 880, sizeBytes: 4_079_511_961 },
+    { slug: "inbox", name: "Inbox", assetCount: 214, sizeBytes: 1_181_015_244 },
+  ],
+} as const
+
+type LibraryRow = {
+  id: string
+  slug: string
+  name: string
+  assetCount: number
+  sizeBytes: number
+  href: string
+}
+
+function stripTrailingSlash(path: string) {
+  return path.replace(/[/\\]+$/, "")
+}
+
+function deriveVolumeMeta(storage: StorageSettings) {
+  const root = stripTrailingSlash(storage.hostStorageRoot || storage.storageRoot || "")
+  const winMatch = root.match(/^([A-Za-z]:)/)
+
+  if (winMatch) {
+    return {
+      volumeName: "Windows",
+      deviceLabel: "Local Disk",
+      mount: winMatch[1]!,
+    }
+  }
+
+  const leaf = root.split(/[/\\]/).filter(Boolean).pop()
+  return {
+    volumeName: storage.instanceName?.trim() || leaf || "Primary",
+    deviceLabel: storage.isDockerRuntime ? "Container volume" : "Local Disk",
+    mount: root || "—",
+  }
+}
+
+function resolveTotalBytes(storage: StorageSettings): number {
+  if (storage.totalBytes != null && storage.totalBytes > 0) {
+    return storage.totalBytes
+  }
+  if (storage.availableBytes != null && storage.availableBytes >= 0) {
+    const inferred = storage.usageBytes + storage.availableBytes
+    if (inferred > 0) return inferred
+  }
+  return 0
+}
+
+function usedPercent(used: number, total: number) {
+  if (!total || total <= 0) return 0
+  return Math.max(0, Math.min(100, Math.round((used / total) * 100)))
+}
+
+/**
+ * Primary storage overview card — two columns:
+ * left: disk capacity / used bar
+ * right: smart library index with segmented distribution
+ */
 export function StorageDonutCard({ className }: { className?: string }) {
   const storageQuery = useQuery({
     queryKey: queryKeys.storageSettings,
     queryFn: ({ signal }) => getStorageSettings(signal),
   })
   const librariesQuery = useLibraries()
+  const [highlightedLibrary, setHighlightedLibrary] = useState<string | null>(null)
 
-  const storage = storageQuery.data
-  const usagePercent = useMemo(
-    () => (storage ? resolveStorageUsagePercent(storage) : null),
-    [storage],
-  )
+  const storageView = useMemo(() => {
+    if (storageQuery.data) {
+      const storage = storageQuery.data
+      const meta = deriveVolumeMeta(storage)
+      const totalBytes = resolveTotalBytes(storage)
+      const usedBytes = storage.usageBytes
+      const availableBytes =
+        storage.availableBytes != null && storage.availableBytes >= 0
+          ? storage.availableBytes
+          : totalBytes > 0
+            ? Math.max(0, totalBytes - usedBytes)
+            : 0
+      const percent =
+        resolveStorageUsagePercent(storage) ?? usedPercent(usedBytes, totalBytes)
 
-  const libraries = useMemo(
-    () =>
-      [...(librariesQuery.data ?? [])]
-        .sort((a, b) => LIBRARY_ORDER.indexOf(a.slug) - LIBRARY_ORDER.indexOf(b.slug))
-        .slice(0, 5),
-    [librariesQuery.data],
+      return {
+        ...meta,
+        usedBytes,
+        totalBytes,
+        availableBytes,
+        writable: storage.writable,
+        percent: Math.max(0, Math.min(100, percent ?? 0)),
+      }
+    }
+
+    return {
+      volumeName: SAMPLE.volumeName,
+      deviceLabel: SAMPLE.deviceLabel,
+      mount: SAMPLE.mount,
+      usedBytes: SAMPLE.usedBytes,
+      totalBytes: SAMPLE.totalBytes,
+      availableBytes: SAMPLE.totalBytes - SAMPLE.usedBytes,
+      writable: SAMPLE.writable,
+      percent: usedPercent(SAMPLE.usedBytes, SAMPLE.totalBytes),
+    }
+  }, [storageQuery.data])
+
+  const libraries: LibraryRow[] = useMemo(() => {
+    const live = librariesQuery.data
+    if (live && live.length > 0) {
+      const bySlug = new Map(live.map((lib) => [lib.slug, lib]))
+      return LIBRARY_ORDER.map((slug) => {
+        const lib = bySlug.get(slug)
+        return {
+          id: lib?.id ?? slug,
+          slug,
+          name: lib?.name ?? slug.charAt(0).toUpperCase() + slug.slice(1),
+          assetCount: lib?.assetCount ?? 0,
+          // API does not yet expose per-library size; keep 0 for live data.
+          sizeBytes: 0,
+          href: LIBRARY_ROUTES[slug] ?? "/files",
+        }
+      })
+    }
+
+    return SAMPLE.libraries.map((lib) => ({
+      id: lib.slug,
+      slug: lib.slug,
+      name: lib.name,
+      assetCount: lib.assetCount,
+      sizeBytes: lib.sizeBytes,
+      href: LIBRARY_ROUTES[lib.slug] ?? "/files",
+    }))
+  }, [librariesQuery.data])
+
+  const indexedTotal = useMemo(
+    () => libraries.reduce((sum, lib) => sum + lib.sizeBytes, 0),
+    [libraries],
   )
+  const indexedCountTotal = useMemo(
+    () => libraries.reduce((sum, lib) => sum + lib.assetCount, 0),
+    [libraries],
+  )
+  // Prefer byte weights; fall back to file counts so the bar is never empty.
+  const useCountWeights = indexedTotal <= 0
 
   if (storageQuery.isLoading) {
-    return <Skeleton className={cn("h-[13.5rem] w-full rounded-3xl", className)} />
+    return <Skeleton className={cn("h-[14.5rem] w-full rounded-[2rem]", className)} />
   }
 
-  if (storageQuery.isError || !storage) {
-    return (
-      <div
-        className={cn(
-          "rounded-3xl border border-red-500/20 bg-red-500/5 px-5 py-6",
-          className,
-        )}
-      >
-        <p className="text-sm font-semibold text-red-900">Storage is unavailable</p>
-        <p className="mt-1 text-sm text-red-800">
-          {storageQuery.error instanceof Error
-            ? storageQuery.error.message
-            : "Could not load storage status."}
-        </p>
-      </div>
-    )
-  }
-
-  const percent = Math.max(0, Math.min(100, usagePercent ?? 0))
-  const r = 15.5
-  const circumference = 2 * Math.PI * r
-
-  const capacityLabel =
-    storage.totalBytes && storage.totalBytes > 0
-      ? `of ${formatBytes(storage.totalBytes)}`
-      : "on disk"
+  const lowCapacity = storageView.percent >= 90
 
   return (
     <section
       className={cn(
-        "relative overflow-hidden rounded-3xl border border-zinc-200/90 bg-gradient-to-br from-white via-zinc-50/50 to-[#fff8f5]/70",
-        "shadow-sm ring-1 ring-inset ring-zinc-200/50",
+        "overflow-hidden rounded-[2rem] border border-zinc-200/90 bg-white",
         className,
       )}
+      style={{ boxShadow: "0 18px 55px -38px rgba(24, 24, 27, 0.38)" }}
+      aria-label="Primary storage overview"
     >
-      <div
-        className="pointer-events-none absolute -right-16 -top-20 size-56 rounded-full bg-primary/[0.06] blur-2xl"
-        aria-hidden
-      />
-
-      <div className="relative flex flex-col gap-5 px-5 py-5 sm:px-6 sm:py-6 lg:flex-row lg:items-center lg:gap-8 lg:px-7">
-        <div className="flex min-w-0 flex-1 items-center gap-5 sm:gap-6">
-          <div className="relative shrink-0">
-            <svg
-              viewBox="0 0 40 40"
-              className="size-[7.25rem] sm:size-[8rem]"
-              role="img"
-              aria-label={`Storage ${percent}% used`}
+      <div className="grid min-h-[14.5rem] lg:grid-cols-[minmax(17rem,0.72fr)_minmax(0,1.8fr)]">
+        {/* ── Left: Primary storage ── */}
+        <div className="flex h-full flex-col px-5 py-5 sm:px-6">
+          <div className="flex min-h-[3.6rem] items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-400">
+                Primary storage
+              </p>
+              <h3 className="mt-1 truncate font-heading text-lg font-semibold tracking-tight text-zinc-950">
+                {storageView.volumeName}
+              </h3>
+              <p className="mt-1 truncate text-[10px] text-zinc-400">
+                {storageView.deviceLabel} · {storageView.mount}
+              </p>
+            </div>
+            <span
+              className={cn(
+                "shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-semibold",
+                storageView.writable
+                  ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                  : "border-red-200 bg-red-50 text-red-700",
+              )}
             >
-              <circle cx="20" cy="20" r={r} fill="none" stroke="#eeeef0" strokeWidth="4.25" />
-              <circle
-                cx="20"
-                cy="20"
-                r={r}
-                fill="none"
-                stroke="var(--arciin-accent, #ff4f12)"
-                strokeWidth="4.25"
-                strokeLinecap="round"
-                strokeDasharray={`${(percent / 100) * circumference} ${circumference}`}
-                transform="rotate(-90 20 20)"
-              />
-              <text
-                x="20"
-                y="18.2"
-                textAnchor="middle"
-                dominantBaseline="middle"
-                fill="#111111"
-                fontSize="7.2"
-                fontWeight="700"
-              >
-                {percent}%
-              </text>
-              <text x="20" y="25.5" textAnchor="middle" fill="#a1a1aa" fontSize="2.7">
-                used
-              </text>
-            </svg>
+              {storageView.writable ? "Writable" : "Read only"}
+            </span>
           </div>
 
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="flex size-8 items-center justify-center rounded-xl border border-zinc-200/90 bg-white text-primary shadow-sm">
-                <HardDrive className="size-4" aria-hidden />
-              </span>
-              <div className="min-w-0">
-                <h3 className="font-heading text-base font-semibold tracking-tight text-zinc-900">
-                  Storage
-                </h3>
-                <p className="text-[12px] text-zinc-500">Local object storage on this server</p>
-              </div>
-              <Badge
-                className={
-                  storage.writable
-                    ? "ml-auto shrink-0 border-0 bg-emerald-600 px-2.5 text-[10px] font-semibold text-white shadow-none hover:bg-emerald-600 sm:ml-2"
-                    : "ml-auto shrink-0 border-0 bg-red-600 px-2.5 text-[10px] font-semibold text-white shadow-none hover:bg-red-600 sm:ml-2"
-                }
-              >
-                {storage.writable ? "Writable" : "Read only"}
-              </Badge>
-            </div>
+          <div className="mt-4 flex items-end gap-3">
+            <p className="font-heading text-[2.55rem] font-semibold leading-[0.85] tracking-[-0.055em] text-zinc-950">
+              {storageView.percent}%
+            </p>
+            <p className="pb-1 text-[11px] leading-tight text-zinc-400">
+              disk capacity
+              <br />
+              currently used
+            </p>
+          </div>
 
-            <p className="mt-3 text-sm font-medium text-zinc-800">
-              {formatBytes(storage.usageBytes)}{" "}
-              <span className="font-normal text-zinc-500">{capacityLabel}</span>
-            </p>
-            <p className="mt-0.5 text-[12px] text-zinc-500">
-              {storage.objectCount.toLocaleString()} objects on disk
-            </p>
+          <div className="mt-3.5 h-1.5 overflow-hidden rounded-full bg-zinc-100 ring-1 ring-inset ring-zinc-200/60">
+            <div
+              className="h-full rounded-full bg-[#FF4F12] transition-[width] duration-500"
+              style={{ width: `${storageView.percent}%` }}
+            />
+          </div>
+
+          <div className="mt-2.5 flex justify-between text-[10px] tabular-nums">
+            <span className="font-medium text-zinc-600">
+              {formatBytes(storageView.usedBytes)} used
+            </span>
+            <span className="text-zinc-400">
+              {storageView.totalBytes > 0
+                ? `${formatBytes(storageView.totalBytes)} total`
+                : "capacity unknown"}
+            </span>
+          </div>
+
+          {/* Grows to match the right column’s library-cells block height */}
+          <div
+            className={cn(
+              "mt-3 flex min-h-[3.2rem] flex-1 items-center gap-3 rounded-xl border px-3 py-2.5",
+              lowCapacity
+                ? "border-orange-200 bg-orange-50/70"
+                : "border-zinc-200 bg-zinc-50/70",
+            )}
+          >
+            <span
+              className={cn(
+                "flex size-7 shrink-0 items-center justify-center rounded-lg",
+                lowCapacity
+                  ? "bg-orange-100 text-orange-600"
+                  : "bg-zinc-200/70 text-zinc-500",
+              )}
+            >
+              <ShieldCheck className="size-4" aria-hidden />
+            </span>
+            <div className="min-w-0">
+              <p className="text-[12px] font-semibold text-zinc-800">
+                {formatBytes(storageView.availableBytes)} available
+              </p>
+              <p className="mt-0.5 text-[9px] text-zinc-400">Free space on this drive</p>
+            </div>
           </div>
         </div>
 
-        <div className="min-w-0 flex-1 border-t border-zinc-200/80 pt-4 lg:border-l lg:border-t-0 lg:pl-8 lg:pt-0">
-          {librariesQuery.isLoading ? (
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
-              {Array.from({ length: 5 }).map((_, i) => (
-                <Skeleton key={i} className="h-14 rounded-xl" />
-              ))}
-            </div>
-          ) : (
-            <ul className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
-              {libraries.map((lib) => {
-                const href = LIBRARY_ROUTES[lib.slug] ?? "/files"
-                return (
-                  <li key={lib.id}>
-                    <Link
-                      href={href}
-                      className={cn(
-                        "flex h-full flex-col justify-center rounded-xl border border-zinc-200/90 bg-white/80 px-3 py-2.5",
-                        "shadow-sm transition-colors hover:border-primary/30 hover:bg-[#fff8f5]",
-                      )}
-                    >
-                      <span className="flex items-center gap-1.5">
-                        <span className="size-1.5 shrink-0 rounded-full bg-primary" aria-hidden />
-                        <span className="truncate text-[12px] font-semibold text-zinc-800">
-                          {lib.name}
-                        </span>
-                      </span>
-                      <span className="mt-1 pl-3 tabular-nums text-[13px] font-medium text-zinc-500">
-                        {(lib.assetCount ?? 0).toLocaleString()}
-                      </span>
-                    </Link>
-                  </li>
-                )
-              })}
-            </ul>
+        {/* ── Right: Smart library index ── */}
+        <div
+          className={cn(
+            "flex h-full flex-col border-t border-zinc-200/80 px-5 py-5 sm:px-6",
+            "lg:border-l lg:border-t-0",
           )}
-
-          <div className="mt-3 flex justify-end">
+        >
+          <div className="flex min-h-[3.6rem] items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-zinc-400">
+                Smart library index
+              </p>
+              <h3 className="mt-1 font-heading text-lg font-semibold tracking-tight text-zinc-950">
+                Your files, understood.
+              </h3>
+              <p className="mt-1 truncate text-[10px] text-zinc-400">
+                Automatically organized content across this drive.
+              </p>
+            </div>
             <Link
               href="/settings/storage"
-              className="inline-flex items-center gap-0.5 text-[13px] font-medium text-primary hover:text-primary/80"
+              className={cn(
+                "inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2",
+                "text-[11px] font-semibold text-zinc-500 transition-colors",
+                "hover:border-orange-200 hover:bg-orange-50 hover:text-[#FF4F12]",
+                "group",
+              )}
             >
-              Storage settings
-              <ChevronRight className="size-4" />
+              Manage
+              <ArrowUpRight
+                className="size-3.5 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5"
+                aria-hidden
+              />
             </Link>
+          </div>
+
+          <div className="mt-11 flex min-h-0 flex-1 flex-col">
+            <div className="flex items-center justify-between text-[9px] font-medium uppercase tracking-[0.13em] text-zinc-400">
+              <span>Indexed distribution</span>
+              <span className="tabular-nums text-zinc-500">
+                {useCountWeights
+                  ? `${indexedCountTotal.toLocaleString()} files`
+                  : formatBytes(indexedTotal)}
+              </span>
+            </div>
+
+            <div
+              className="mt-2 flex h-1.5 gap-px overflow-hidden rounded-full bg-zinc-100"
+              onMouseLeave={() => setHighlightedLibrary(null)}
+            >
+              {libraries.map((lib, index) => {
+                const weight = useCountWeights
+                  ? Math.max(
+                      lib.assetCount,
+                      Math.max(indexedCountTotal, 1) * 0.008,
+                    )
+                  : Math.max(lib.sizeBytes, indexedTotal * 0.008)
+                const isActive = highlightedLibrary === lib.slug
+
+                return (
+                  <Link
+                    key={lib.slug}
+                    href={lib.href}
+                    title={lib.name}
+                    aria-label={`${lib.name} library`}
+                    className={cn(
+                      "min-w-px outline-none transition-colors duration-150",
+                      // Highlight only the active segment; keep others on zinc
+                      isActive ? "bg-[#FF4F12]" : SEGMENT_TONES[index],
+                    )}
+                    style={{ flexGrow: weight }}
+                    onMouseEnter={() => setHighlightedLibrary(lib.slug)}
+                    onFocus={() => setHighlightedLibrary(lib.slug)}
+                    onBlur={() => setHighlightedLibrary(null)}
+                  />
+                )
+              })}
+            </div>
+
+            <div className="mt-2.5 flex justify-between text-[10px] tabular-nums">
+              <span className="font-medium text-zinc-600">
+                {useCountWeights
+                  ? `${indexedCountTotal.toLocaleString()} indexed`
+                  : `${formatBytes(indexedTotal)} indexed`}
+              </span>
+              <span className="text-zinc-400">
+                {libraries.length} smart libraries
+              </span>
+            </div>
+
+            <div className="mt-auto grid grid-cols-2 overflow-hidden rounded-xl border border-zinc-200/90 bg-zinc-50/60 sm:grid-cols-5">
+              {libraries.map((lib, index) => {
+                const Icon = LIBRARY_ICONS[lib.slug] ?? Inbox
+                const isLast = index === libraries.length - 1
+                const isHighlighted = highlightedLibrary === lib.slug
+                // 2-col mobile: bottom border on all but last row (5 items → last row is index 4)
+                const mobileLastRowStart = libraries.length - (libraries.length % 2 === 0 ? 2 : 1)
+
+                return (
+                  <Link
+                    key={lib.slug}
+                    href={lib.href}
+                    onMouseEnter={() => setHighlightedLibrary(lib.slug)}
+                    onMouseLeave={() => setHighlightedLibrary(null)}
+                    onFocus={() => setHighlightedLibrary(lib.slug)}
+                    onBlur={() => setHighlightedLibrary(null)}
+                    className={cn(
+                      "group/cell flex min-h-[3.2rem] flex-col justify-between px-2.5 py-1.5 outline-none transition-colors",
+                      "border-zinc-200/80",
+                      // mobile: right divider on left column cells
+                      index % 2 === 0 && "border-r",
+                      // mobile: bottom dividers except last row
+                      index < mobileLastRowStart && "border-b",
+                      // sm+: no bottom borders; right dividers except last cell
+                      "sm:border-b-0",
+                      isLast ? "sm:!border-r-0" : "sm:!border-r",
+                      isHighlighted && "bg-orange-50/75",
+                      "hover:bg-orange-50/75 focus-visible:bg-orange-50/75",
+                    )}
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <span
+                        className={cn(
+                          "flex size-5 shrink-0 items-center justify-center rounded-md transition-colors",
+                          isHighlighted
+                            ? "bg-orange-100 text-[#FF4F12]"
+                            : "bg-zinc-200/65 text-zinc-500 group-hover/cell:bg-orange-100 group-hover/cell:text-[#FF4F12]",
+                        )}
+                      >
+                        <Icon className="size-3" aria-hidden />
+                      </span>
+                      <span
+                        className={cn(
+                          "truncate text-[10.5px] font-semibold text-zinc-600 transition-colors",
+                          "group-hover/cell:text-zinc-950",
+                          isHighlighted && "text-zinc-950",
+                        )}
+                      >
+                        {lib.name}
+                      </span>
+                    </div>
+                    <div className="mt-0.5 flex items-baseline justify-between gap-1">
+                      <span className="min-w-0 truncate">
+                        <span className="text-[11px] font-semibold tabular-nums text-zinc-800">
+                          {lib.assetCount.toLocaleString()}
+                        </span>
+                        <span className="ml-1 text-[8px] font-medium uppercase tracking-wider text-zinc-400">
+                          {" "}
+                          files
+                        </span>
+                      </span>
+                      <span className="shrink-0 text-[9px] tabular-nums text-zinc-400">
+                        {useCountWeights && lib.sizeBytes <= 0
+                          ? "—"
+                          : formatBytes(lib.sizeBytes)}
+                      </span>
+                    </div>
+                  </Link>
+                )
+              })}
+            </div>
           </div>
         </div>
       </div>

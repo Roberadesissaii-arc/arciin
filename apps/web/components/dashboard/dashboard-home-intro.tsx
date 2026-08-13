@@ -88,21 +88,21 @@ export function DashboardHomeIntro() {
       className={cn(
         "relative shrink-0 overflow-hidden rounded-3xl border border-zinc-200/90 bg-white",
         "shadow-sm ring-1 ring-inset ring-zinc-200/60",
-        "min-h-[17.5rem] sm:min-h-[18.5rem] lg:min-h-[19.5rem]",
+        "min-h-[15rem] sm:min-h-[15.75rem] lg:min-h-[16.25rem]",
       )}
     >
       {/* Left copy */}
-      <div className="relative z-10 flex max-w-full flex-col justify-center px-5 py-6 sm:px-7 sm:py-7 lg:max-w-[46%] lg:px-8 lg:py-8">
+      <div className="relative z-10 flex max-w-full flex-col justify-center px-5 py-5 sm:px-7 sm:py-6 lg:max-w-[46%] lg:px-8 lg:py-6">
         <div className="flex flex-wrap items-start justify-between gap-3 lg:block">
           <div className="min-w-0">
-            <h2 className="font-heading text-[1.65rem] font-semibold tracking-tight text-zinc-900 sm:text-[1.85rem]">
+            <h2 className="font-heading text-[1.5rem] font-semibold tracking-tight text-zinc-900 sm:text-[1.7rem]">
               Arciin
               <span className="text-primary">.</span>
             </h2>
             {identityLoading ? (
-              <Skeleton className="mt-2 h-4 w-56 max-w-full rounded-md" />
+              <Skeleton className="mt-1.5 h-4 w-56 max-w-full rounded-md" />
             ) : (
-              <p className="mt-1.5 text-sm font-medium text-zinc-500">{subtitle}</p>
+              <p className="mt-1 text-sm font-medium text-zinc-500">{subtitle}</p>
             )}
           </div>
           {/* Mobile / tablet: badge sits with title; desktop badge lives on the image */}
@@ -117,14 +117,14 @@ export function DashboardHomeIntro() {
           ) : null}
         </div>
 
-        <p className="mt-4 max-w-[36ch] text-[13px] leading-relaxed text-zinc-600 sm:mt-5 sm:text-sm sm:leading-relaxed">
+        <p className="mt-3 max-w-[36ch] text-[13px] leading-relaxed text-zinc-600 sm:mt-3.5 sm:text-sm sm:leading-relaxed">
           Your private command center for files, libraries, and background work on this
           server. Drop files anywhere — Arciin classifies them, stores metadata here, and
           keeps activity visible in real time.
         </p>
 
         <span
-          className="mt-5 inline-block h-0.5 w-16 rounded-full bg-primary sm:mt-6 sm:w-[4.5rem]"
+          className="mt-4 inline-block h-0.5 w-16 rounded-full bg-primary sm:mt-5 sm:w-[4.5rem]"
           aria-hidden
         />
       </div>
@@ -132,7 +132,7 @@ export function DashboardHomeIntro() {
       {/* Right media — 45° diagonal cut on large screens */}
       <div
         className={cn(
-          "relative h-48 w-full overflow-hidden sm:h-56",
+          "relative h-40 w-full overflow-hidden sm:h-48",
           "lg:absolute lg:inset-y-0 lg:right-0 lg:h-auto lg:w-[58%]",
           "lg:[clip-path:polygon(16%_0,100%_0,100%_100%,0%_100%)]",
         )}
