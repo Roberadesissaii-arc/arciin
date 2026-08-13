@@ -180,24 +180,27 @@ export function FolderBrowser({
         ) : assets.length > 0 ? (
           <div
             className={cn(
-              "space-y-3",
+              "flex min-h-[min(28rem,calc(100dvh-18rem))] flex-col gap-3",
               assetsRefetching && "opacity-70 transition-opacity",
             )}
           >
-            <SelectableAssetsContainer assets={assets} defaultLibraryId={library?.id}>
-              {view === "grid" ? (
-                <AssetGrid assets={pageAssets} />
-              ) : (
-                <AssetTable
-                  assets={pageAssets}
-                  title="Files"
-                  totalCount={assets.length}
-                  page={safePage}
-                  totalPages={totalPages}
-                  onPageChange={setPage}
-                />
-              )}
-            </SelectableAssetsContainer>
+            <div className="min-h-0 flex-1">
+              <SelectableAssetsContainer assets={assets} defaultLibraryId={library?.id}>
+                {view === "grid" ? (
+                  <AssetGrid assets={pageAssets} />
+                ) : (
+                  <AssetTable
+                    assets={pageAssets}
+                    title="Files"
+                    totalCount={assets.length}
+                    page={safePage}
+                    totalPages={totalPages}
+                    onPageChange={setPage}
+                    alwaysShowPagination
+                  />
+                )}
+              </SelectableAssetsContainer>
+            </div>
             {view === "grid" ? (
               <GridPaginationBar
                 page={safePage}

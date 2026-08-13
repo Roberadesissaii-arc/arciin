@@ -204,25 +204,28 @@ export function LibraryBrowser({
         ) : assets.length ? (
           <div
             className={cn(
-              "space-y-3",
+              "flex min-h-[min(28rem,calc(100dvh-18rem))] flex-col gap-3",
               assetsRefetching && "opacity-70 transition-opacity",
             )}
           >
             {/* Full filtered set for selection/viewer; page slice for display only. */}
-            <SelectableAssetsContainer assets={assets} defaultLibraryId={library?.id}>
-              {view === "grid" ? (
-                <AssetGrid assets={pageAssets} />
-              ) : (
-                <AssetTable
-                  assets={pageAssets}
-                  title={librarySlug ? "Assets" : "Files"}
-                  totalCount={assets.length}
-                  page={safePage}
-                  totalPages={totalPages}
-                  onPageChange={setPage}
-                />
-              )}
-            </SelectableAssetsContainer>
+            <div className="min-h-0 flex-1">
+              <SelectableAssetsContainer assets={assets} defaultLibraryId={library?.id}>
+                {view === "grid" ? (
+                  <AssetGrid assets={pageAssets} />
+                ) : (
+                  <AssetTable
+                    assets={pageAssets}
+                    title={librarySlug ? "Assets" : "Files"}
+                    totalCount={assets.length}
+                    page={safePage}
+                    totalPages={totalPages}
+                    onPageChange={setPage}
+                    alwaysShowPagination
+                  />
+                )}
+              </SelectableAssetsContainer>
+            </div>
             {view === "grid" ? (
               <GridPaginationBar
                 page={safePage}
@@ -255,7 +258,7 @@ export function LibraryBrowser({
               </EmptyTitle>
               <EmptyDescription>
                 {filtersActive
-                  ? "Try a different search term, pick another badge, or clear filters to see everything in this library."
+                  ? "Try a different search term, pick another source, or clear filters to see everything in this library."
                   : "Upload files from anywhere in the app. Arciin detects the content type, organizes it into the right library, and keeps the activity visible in real time."}
               </EmptyDescription>
             </EmptyHeader>

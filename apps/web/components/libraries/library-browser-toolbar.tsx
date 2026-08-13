@@ -65,7 +65,7 @@ export function LibraryBrowserToolbar({
   onViewChange: (view: LibraryViewMode) => void
   /** Total matches for the count chip (hide when 0). */
   resultCount?: number
-  /** All Files only — kind chips. */
+  /** All Files only — kind chips on the left. */
   showKindChips?: boolean
   kindFilter?: LibraryKindFilter
   onKindFilterChange?: (value: LibraryKindFilter) => void
@@ -83,6 +83,16 @@ export function LibraryBrowserToolbar({
           { value: "Downloads", label: "Downloads" },
           { value: "NAS", label: "NAS" },
         ]
+
+  const sourceControl = onSourceFilterChange ? (
+    <FilterDropdown
+      ariaLabel="Source filter"
+      value={sourceFilter}
+      onValueChange={(v) => onSourceFilterChange(v as SourceFilterValue)}
+      options={sourceDropdownOptions}
+      minWidthClass="min-w-[9.5rem]"
+    />
+  ) : null
 
   return (
     <div
@@ -111,7 +121,7 @@ export function LibraryBrowserToolbar({
         ) : null}
       </div>
 
-      {/* Row B — filters + view */}
+      {/* Row B — left: kind chips (All Files); right: Source + Grid/List */}
       <div className="flex flex-wrap items-center justify-between gap-3 px-3 py-2.5 sm:px-4">
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2 sm:gap-3">
           {showKindChips && onKindFilterChange ? (
@@ -148,37 +158,30 @@ export function LibraryBrowserToolbar({
               })}
             </div>
           ) : null}
-
-          {onSourceFilterChange ? (
-            <FilterDropdown
-              ariaLabel="Source filter"
-              value={sourceFilter}
-              onValueChange={(v) => onSourceFilterChange(v as SourceFilterValue)}
-              options={sourceDropdownOptions}
-              minWidthClass="min-w-[9.5rem]"
-            />
-          ) : null}
         </div>
 
-        <div
-          className="flex shrink-0 items-center gap-1 rounded-lg border border-zinc-200/80 bg-zinc-50/60 p-1"
-          role="group"
-          aria-label="View mode"
-        >
-          <ViewModeButton
-            active={view === "grid"}
-            label="Grid"
-            onClick={() => onViewChange("grid")}
+        <div className="flex shrink-0 flex-wrap items-center gap-2 sm:gap-2.5">
+          {sourceControl}
+          <div
+            className="flex shrink-0 items-center gap-1 rounded-lg border border-zinc-200/80 bg-zinc-50/60 p-1"
+            role="group"
+            aria-label="View mode"
           >
-            <Grid3X3 className="size-3.5 shrink-0" />
-          </ViewModeButton>
-          <ViewModeButton
-            active={view === "table"}
-            label="List"
-            onClick={() => onViewChange("table")}
-          >
-            <List className="size-3.5 shrink-0" />
-          </ViewModeButton>
+            <ViewModeButton
+              active={view === "grid"}
+              label="Grid"
+              onClick={() => onViewChange("grid")}
+            >
+              <Grid3X3 className="size-3.5 shrink-0" />
+            </ViewModeButton>
+            <ViewModeButton
+              active={view === "table"}
+              label="List"
+              onClick={() => onViewChange("table")}
+            >
+              <List className="size-3.5 shrink-0" />
+            </ViewModeButton>
+          </div>
         </div>
       </div>
     </div>
