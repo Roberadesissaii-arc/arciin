@@ -138,11 +138,13 @@ export function SetupForm() {
   const searchParams = useSearchParams()
   const claimMutation = useClaimInstance()
   const [step, setStep] = useState<SetupStep>(1)
-  const [tokenFromUrl, setTokenFromUrl] = useState(false)
+  /** When true, show the editable token field even if URL already provided one. */
+  const [editTokenField, setEditTokenField] = useState(false)
   const [storageRootHint, setStorageRootHint] = useState<string | null>(null)
+  const urlToken = searchParams.get("token")?.trim() ?? ""
   const form = useForm<SetupSchema>({
     defaultValues: {
-      setupToken: "",
+      setupToken: urlToken,
       instanceName: "Local Instance",
       adminName: "",
       adminEmail: "",
@@ -162,14 +164,13 @@ export function SetupForm() {
   })
   const storageRoot = useWatch({ control: form.control, name: "storageRoot" })
   const setupTokenValue = useWatch({ control: form.control, name: "setupToken" })
+  const showTokenChip = Boolean(urlToken) && !editTokenField && Boolean(setupTokenValue)
 
   useEffect(() => {
-    const fromUrl = searchParams.get("token")?.trim()
-    if (fromUrl) {
-      form.setValue("setupToken", fromUrl)
-      setTokenFromUrl(true)
+    if (urlToken) {
+      form.setValue("setupToken", urlToken)
     }
-  }, [form, searchParams])
+  }, [form, urlToken])
 
   useEffect(() => {
     let cancelled = false
@@ -300,7 +301,7 @@ export function SetupForm() {
       <div className="mt-4 min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain">
         {step === 1 ? (
           <>
-            {tokenFromUrl && setupTokenValue ? (
+            {showTokenChip ? (
               <div className="flex items-center gap-2 rounded-2xl border border-[#ffd9c9] bg-[#fff8f4] px-3 py-2">
                 <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-white text-[#ff4f12]">
                   <KeyRound className="size-3.5" />
@@ -312,7 +313,7 @@ export function SetupForm() {
                 <button
                   type="button"
                   className="shrink-0 text-[11px] font-medium text-[#ff4f12] underline-offset-2 hover:underline"
-                  onClick={() => setTokenFromUrl(false)}
+                  onClick={() => setEditTokenField(true)}
                 >
                   Edit
                 </button>

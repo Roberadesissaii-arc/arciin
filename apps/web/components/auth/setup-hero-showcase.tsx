@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useState } from "react"
 
 import { DashboardPreview } from "@/components/auth/login-hero-showcase"
 import { cn } from "@/lib/utils"
@@ -41,14 +41,9 @@ const slides = [
 ] as const
 
 export function SetupHeroShowcase() {
-  const [index, setIndex] = useState(0)
-
-  useEffect(() => {
-    const id = window.requestAnimationFrame(() => {
-      setIndex(Math.floor(Math.random() * slides.length))
-    })
-    return () => window.cancelAnimationFrame(id)
-  }, [])
+  const [index, setIndex] = useState(
+    () => Math.floor(Math.random() * slides.length),
+  )
 
   const goTo = useCallback((next: number) => {
     setIndex(Math.min(slides.length - 1, Math.max(0, next)))

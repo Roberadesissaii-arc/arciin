@@ -11,7 +11,6 @@ concurrency:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/arciin
 
 jobs:
   # ── build & push all three images in parallel ─────────────────────────────
@@ -23,6 +22,7 @@ jobs:
       packages: write
 
     strategy:
+      fail-fast: false
       matrix:
         include:
           - service: api
@@ -34,6 +34,12 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Lowercase image prefix (GHCR requires lowercase paths)
+        id: image
+        run: |
+          owner="$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
+          echo "prefix=ghcr.io/${owner}/arciin" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -49,7 +55,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.IMAGE_PREFIX }}-${{ matrix.service }}
+          images: ${{ steps.image.outputs.prefix }}-${{ matrix.service }}
           tags: |
             # branch push → :latest
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
@@ -76,14 +82,20 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
     steps:
+      - name: Lowercase image prefix
+        id: image
+        run: |
+          owner="$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
+          echo "prefix=ghcr.io/${owner}/arciin" >> "$GITHUB_OUTPUT"
+
       - name: Print image URLs
         run: |
           echo "### Docker images pushed" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Image | Tag |" >> $GITHUB_STEP_SUMMARY
           echo "|-------|-----|" >> $GITHUB_STEP_SUMMARY
-          echo "| \`${{ env.IMAGE_PREFIX }}-api\` | \`${{ github.ref_name }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| \`${{ env.IMAGE_PREFIX }}-web\` | \`${{ github.ref_name }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| \`${{ env.IMAGE_PREFIX }}-worker\` | \`${{ github.ref_name }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| \`${{ steps.image.outputs.prefix }}-api\` | \`${{ github.ref_name }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| \`${{ steps.image.outputs.prefix }}-web\` | \`${{ github.ref_name }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| \`${{ steps.image.outputs.prefix }}-worker\` | \`${{ github.ref_name }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Pull: \`docker pull ${{ env.IMAGE_PREFIX }}-api:latest\`" >> $GITHUB_STEP_SUMMARY
+          echo "Pull: \`docker pull ${{ steps.image.outputs.prefix }}-api:latest\`" >> $GITHUB_STEP_SUMMARY

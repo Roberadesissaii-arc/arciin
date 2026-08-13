@@ -11,6 +11,9 @@ import { SetupHeroShowcase } from "@/components/auth/setup-hero-showcase"
 
 export const dynamic = "force-dynamic"
 
+/** Shared outer inset — same distance from viewport edges as left orange panel. */
+const SETUP_INSET = "p-5" // 1.25rem all sides
+
 export default function SetupPage() {
   return (
     <AuthRouteGuard
@@ -25,21 +28,28 @@ export default function SetupPage() {
 }
 
 /**
- * Left and right share the same outer inset (`p-5` / `1.25rem`).
- * Continue / “Locks after claim” are the last block on the right so their
- * bottom edge lines up with the orange hero panel bottom.
+ * Measurement model (desktop):
+ * - Viewport: 100svh, no page scroll
+ * - Left:  [inset][orange panel fills][inset]
+ * - Right: [inset][header + form + actions fill][inset]
+ * - Actions are the last block on the right → same bottom inset as the panel
+ * - Privacy/Terms live in the header (same column, no second bottom container)
  */
 function SetupPageShell() {
   return (
     <main className="relative flex h-svh max-h-svh overflow-hidden bg-[#f7f7f7] text-[#222222]">
-      <section className="relative z-0 hidden h-full min-h-0 lg:flex lg:w-[48%] xl:w-[45%] lg:p-5">
+      <section
+        className={`relative z-0 hidden h-full min-h-0 lg:flex lg:w-[48%] xl:w-[45%] ${SETUP_INSET}`}
+      >
         <AuthHeroPanel fill>
           <SetupHeroShowcase />
         </AuthHeroPanel>
       </section>
 
-      <section className="relative z-0 flex h-full min-h-0 w-full flex-col overflow-hidden p-5 sm:p-6 lg:w-[52%] lg:p-5 xl:w-[55%]">
-        <header className="relative z-10 flex shrink-0 items-center justify-between gap-4 px-1 sm:px-2 lg:px-8">
+      <section
+        className={`relative z-0 flex h-full min-h-0 w-full flex-col overflow-hidden lg:w-[52%] xl:w-[55%] ${SETUP_INSET}`}
+      >
+        <header className="relative z-10 flex shrink-0 items-center justify-between gap-4">
           <div className="lg:hidden">
             <AuthLightPageHeader contextLabel="First-run setup" />
           </div>
@@ -62,11 +72,7 @@ function SetupPageShell() {
           </div>
         </header>
 
-        {/*
-          Form fills remaining height. Actions stay at the bottom of this
-          section — section already has p-5, so no extra footer under them.
-        */}
-        <div className="relative z-10 mt-4 flex min-h-0 flex-1 flex-col px-1 sm:px-2 lg:mt-5 lg:px-8">
+        <div className="relative z-10 mt-5 flex min-h-0 flex-1 flex-col">
           <div className="mx-auto flex h-full min-h-0 w-full max-w-lg flex-col">
             <Suspense
               fallback={
