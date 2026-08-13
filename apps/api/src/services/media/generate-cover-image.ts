@@ -55,6 +55,20 @@ async function resolveImageCredentials(
   return { apiKey, baseUrl }
 }
 
+/**
+ * Drop the reader's own instructions from the extracted text.
+ *
+ * `readPdfAssetContent` prefixes the page text with guidance written for the
+ * chat model — how to read the status bar, which tag to use for a page jump.
+ * Handed to an image model that reads as part of the document, so a cover was
+ * being drawn partly from instructions about [goto-page:N].
+ */
+function stripReaderPreamble(content: string): string {
+  const firstPage = content.indexOf("--- PDF page")
+  const body = firstPage >= 0 ? content.slice(firstPage) : content
+  return body.replace(/^---\s*PDF page[^\n]*\n?/gm, " ").trim()
+}
+
 export async function generateAssetCoverImage(
   fastify: FastifyInstance,
   assetId: string,
@@ -81,7 +95,7 @@ export async function generateAssetCoverImage(
   let excerpt = ""
   if (isPdf) {
     const read = await readPdfAssetContent(fastify.prisma, { assetId, maxPages: 3 })
-    if (typeof read.content === "string") excerpt = read.content
+    if (typeof read.content === "string") excerpt = stripReaderPreamble(read.content)
   }
 
   const prompt = buildCoverPrompt({ filename: asset.originalFilename, excerpt })
@@ -156,6 +170,14 @@ export async function generateAssetCoverImage(
   // Written as webp at the same path and shape the page render uses, so the
   // existing thumbnail route serves it without knowing the difference.
   await writeFile(target, await sharp(bytes).resize(640, 853, { fit: "cover" }).webp({ quality: 82 }).toBuffer())
+
+  // The card requests its thumbnail with ?v=<updatedAt>, so without this the
+  // browser keeps serving the page render it already cached and the new cover
+  // never appears. Touching the row changes the URL.
+  await fastify.prisma.asset.update({
+    where: { id: asset.id },
+    data: { updatedAt: new Date() },
+  })
 
   return { ok: true, prompt }
 }

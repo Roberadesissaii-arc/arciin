@@ -55,3 +55,40 @@ describe("building a cover prompt", () => {
     expect(messy).toContain("one two three")
   })
 })
+
+describe("the excerpt is document text, not reader instructions", () => {
+  // readPdfAssetContent prefixes the page text with guidance written for the
+  // chat model. Left in, a cover was drawn partly from instructions about
+  // [goto-page:N] rather than from the document.
+  function stripReaderPreamble(content: string): string {
+    const firstPage = content.indexOf("--- PDF page")
+    const body = firstPage >= 0 ? content.slice(firstPage) : content
+    return body.replace(/^---\s*PDF page[^\n]*\n?/gm, " ").trim()
+  }
+
+  const RAW = [
+    "Viewer status bar shows PDF page X / total (not printed page).",
+    "Use PDF page in [goto-page:N] and [highlight:N:…].",
+    "--- PDF page 1 ---",
+    "Photosynthesis: The Two-Stage Process",
+    "Photosynthesis is the biochemical pathway by which green plants convert light.",
+  ].join("\n")
+
+  it("drops the instructions written for the chat model", () => {
+    const out = stripReaderPreamble(RAW)
+    expect(out).not.toContain("goto-page")
+    expect(out).not.toContain("status bar")
+  })
+
+  it("keeps the document text", () => {
+    expect(stripReaderPreamble(RAW)).toContain("biochemical pathway")
+  })
+
+  it("removes the page separators too", () => {
+    expect(stripReaderPreamble(RAW)).not.toContain("--- PDF page")
+  })
+
+  it("leaves text that never had a preamble alone", () => {
+    expect(stripReaderPreamble("Just the document.")).toBe("Just the document.")
+  })
+})
