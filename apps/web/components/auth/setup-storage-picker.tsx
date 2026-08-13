@@ -8,6 +8,7 @@ import {
   PencilLine,
   Sparkles,
   Usb,
+  X,
 } from "lucide-react"
 
 import { getStorageDiscovery, prepareStoragePath } from "@/lib/api/instance-storage"
@@ -17,12 +18,15 @@ import { cn } from "@/lib/utils"
 import type { StorageDiscovery, StorageVolumeOption, UnmountedBlockDevice } from "@/lib/types/models"
 import {
   Sheet,
+  SheetClose,
   SheetContent,
   SheetDescription,
   SheetHeader,
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet"
+import { Button } from "@/components/ui/button"
+import { libraryGlassSheetPanel } from "@/lib/library-glass-sheet"
 
 const CUSTOM_CHOICE_ID = "__custom__"
 
@@ -165,11 +169,11 @@ export function SetupStoragePicker({
           disabled={preparing}
           onClick={() => void selectVolume(recommended)}
           className={cn(
-            "group relative w-full overflow-hidden rounded-2xl border text-left transition-all",
+            "group relative w-full overflow-hidden rounded-2xl border text-left transition-all duration-150",
             "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff4f12]/35",
             choiceId === recommended.id && !customMode
-              ? "border-[#ffb59a] bg-gradient-to-br from-[#fff8f4] to-white shadow-[0_1px_0_rgba(255,79,18,0.08)]"
-              : "border-[#ececec] bg-white hover:border-[#e0e0e0]",
+              ? "border-[#ffb59a] bg-gradient-to-br from-[#fff8f4] to-white shadow-[0_1px_0_rgba(255,79,18,0.08)] hover:border-[#ff9a70] hover:bg-[#fff1ea] hover:shadow-[0_4px_16px_-6px_rgba(255,79,18,0.35)]"
+              : "border-[#ececec] bg-white hover:border-[#ffc4a8] hover:bg-[#fffaf7] hover:shadow-[0_4px_14px_-8px_rgba(0,0,0,0.18)]",
             compact ? "px-3.5 py-3.5" : "p-3.5",
           )}
         >
@@ -239,10 +243,10 @@ export function SetupStoragePicker({
                 disabled={preparing}
                 onClick={() => void selectVolume(option)}
                 className={cn(
-                  "inline-flex max-w-full items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-left text-[11px] font-medium transition-colors",
+                  "inline-flex max-w-full items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-left text-[11px] font-medium transition-all duration-150",
                   selected
-                    ? "border-[#ffb59a] bg-[#fff5f0] text-[#c2410c]"
-                    : "border-[#ececec] bg-white text-[#555555] hover:border-[#ddd]",
+                    ? "border-[#ffb59a] bg-[#fff5f0] text-[#c2410c] hover:border-[#ff9a70] hover:bg-[#ffeee6]"
+                    : "border-[#ececec] bg-white text-[#555555] hover:border-[#ffc4a8] hover:bg-[#fff8f4] hover:text-[#333] hover:shadow-sm",
                 )}
                 title={option.arciinPath}
               >
@@ -263,10 +267,10 @@ export function SetupStoragePicker({
                 disabled={preparing}
                 onClick={() => selectDevice(device)}
                 className={cn(
-                  "inline-flex max-w-full items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-left text-[11px] font-medium transition-colors",
+                  "inline-flex max-w-full items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-left text-[11px] font-medium transition-all duration-150",
                   selected
-                    ? "border-amber-300 bg-amber-50 text-amber-800"
-                    : "border-[#ececec] bg-white text-[#555555] hover:border-[#ddd]",
+                    ? "border-amber-300 bg-amber-50 text-amber-800 hover:border-amber-400 hover:bg-amber-100/80"
+                    : "border-[#ececec] bg-white text-[#555555] hover:border-amber-300 hover:bg-amber-50/70 hover:text-[#333] hover:shadow-sm",
                 )}
                 title={device.suggestedArciinPath}
               >
@@ -297,18 +301,35 @@ export function SetupStoragePicker({
           <Sheet>
             <SheetTrigger
               type="button"
-              className="text-[11px] font-medium text-[#a0a0a0] underline-offset-2 hover:text-[#555555] hover:underline"
+              className="text-[11px] font-medium text-[#a0a0a0] underline-offset-2 transition-colors hover:text-[#ff4f12] hover:underline"
             >
               Mount guide ({unmounted.length})
             </SheetTrigger>
-            <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-md">
-              <SheetHeader>
-                <SheetTitle>Mount unmounted drives</SheetTitle>
-                <SheetDescription>
-                  Run on the server over SSH, then pick the drive again.
+            <SheetContent
+              side="right"
+              showCloseButton={false}
+              className={cn(libraryGlassSheetPanel, "dashboard-main text-foreground")}
+            >
+              <SheetHeader className="relative shrink-0 border-b border-border px-5 py-4 pr-12">
+                <SheetClose asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    className="absolute right-4 top-4 text-muted-foreground hover:text-foreground"
+                    aria-label="Close"
+                  >
+                    <X className="size-4" />
+                  </Button>
+                </SheetClose>
+                <SheetTitle className="text-[15px] font-semibold text-foreground">
+                  Mount unmounted drives
+                </SheetTitle>
+                <SheetDescription className="mt-0.5 text-[12px] text-muted-foreground">
+                  Run these on the server over SSH, then pick the drive again.
                 </SheetDescription>
               </SheetHeader>
-              <div className="mt-4">
+              <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
                 <UnmountedMountInstructions devices={unmounted} />
               </div>
             </SheetContent>

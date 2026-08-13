@@ -83,7 +83,10 @@ function SetupFieldError({ message }: { message?: string }) {
   )
 }
 
-/** Progress like the earlier wizard: Step X of 3 + larger circles + labels under bars. */
+/**
+ * Progress: Step X of 3 pill, then numbered circles + labels,
+ * then the progress bars underneath (not above the numbers).
+ */
 function StepProgress({ step }: { step: SetupStep }) {
   return (
     <nav aria-label="Setup steps" className="space-y-2.5">
@@ -92,17 +95,6 @@ function StepProgress({ step }: { step: SetupStep }) {
           Step {step} of 3
         </span>
         <span className="text-[12px] font-medium text-[#717171]">{STEPS[step].label}</span>
-      </div>
-      <div className="flex items-center gap-2" aria-hidden>
-        {([1, 2, 3] as const).map((n) => (
-          <span
-            key={n}
-            className={cn(
-              "h-1.5 flex-1 rounded-full transition-colors",
-              n <= step ? "bg-[#ff4f12]" : "bg-[#e8e8e8]",
-            )}
-          />
-        ))}
       </div>
       <ol className="flex items-start gap-2">
         {([1, 2, 3] as const).map((n) => {
@@ -132,6 +124,17 @@ function StepProgress({ step }: { step: SetupStep }) {
           )
         })}
       </ol>
+      <div className="flex items-center gap-2" aria-hidden>
+        {([1, 2, 3] as const).map((n) => (
+          <span
+            key={n}
+            className={cn(
+              "h-1.5 flex-1 rounded-full transition-colors",
+              n <= step ? "bg-[#ff4f12]" : "bg-[#e8e8e8]",
+            )}
+          />
+        ))}
+      </div>
     </nav>
   )
 }
@@ -519,7 +522,7 @@ export function SetupForm() {
           <AuthSecondaryButton
             type="button"
             onClick={() => setStep((step - 1) as SetupStep)}
-            className="h-10 sm:w-auto"
+            className="h-10 rounded-xl sm:w-auto"
           >
             <ArrowLeft className="size-4" />
             Back
@@ -529,7 +532,10 @@ export function SetupForm() {
         )}
 
         {step < 3 ? (
-          <AuthPrimaryButton type="submit" className="h-10 sm:w-auto sm:min-w-[8.5rem] sm:px-5">
+          <AuthPrimaryButton
+            type="submit"
+            className="h-10 rounded-xl shadow-none sm:w-auto sm:min-w-[8.5rem] sm:px-5"
+          >
             Continue
             <ArrowRight className="size-4" />
           </AuthPrimaryButton>
@@ -537,7 +543,7 @@ export function SetupForm() {
           <AuthPrimaryButton
             type="submit"
             disabled={claimMutation.isPending || !acceptedTermsAndPrivacy}
-            className="h-10 sm:w-auto sm:min-w-[8.5rem] sm:px-5"
+            className="h-10 rounded-xl shadow-none sm:w-auto sm:min-w-[8.5rem] sm:px-5"
           >
             <Sparkles className="size-4" />
             {claimMutation.isPending ? "Claiming…" : "Claim instance"}
