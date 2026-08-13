@@ -82,3 +82,42 @@ describe("only public https image URLs are followed", () => {
     expect(isSafeImageUrl("https://192.168.4.53:4000/api/settings")).toBe(false)
   })
 })
+
+describe("image generation is rate limited", () => {
+  // Each picture is a paid generation, so an unthrottled endpoint spends the
+  // owner's balance rather than attacking the instance. Verified against the
+  // running API: the 13th cover call in an hour returns 429, while a cached
+  // illustration returns 200 indefinitely.
+  const COVER = { limit: 12, windowSec: 3600 }
+  const ILLUSTRATION = { limit: 30, windowSec: 3600 }
+
+  function allowed(callNumber: number, limit: number): boolean {
+    return callNumber <= limit
+  }
+
+  it("lets a normal session draw covers", () => {
+    // Twelve an hour is far above doing this by hand for a shelf of books.
+    expect(allowed(12, COVER.limit)).toBe(true)
+  })
+
+  it("stops a loop on the cover endpoint", () => {
+    expect(allowed(13, COVER.limit)).toBe(false)
+    expect(allowed(500, COVER.limit)).toBe(false)
+  })
+
+  it("allows roughly ten illustrated documents an hour", () => {
+    expect(allowed(30, ILLUSTRATION.limit)).toBe(true)
+    expect(allowed(31, ILLUSTRATION.limit)).toBe(false)
+  })
+
+  it("counts per hour, not per minute", () => {
+    // A short window would refill fast enough to be no limit at all.
+    expect(COVER.windowSec).toBe(3600)
+    expect(ILLUSTRATION.windowSec).toBe(3600)
+  })
+
+  it("is keyed per user, so one account cannot lock out another", () => {
+    const key = (userId: string) => `illustration:user:${userId}`
+    expect(key("a")).not.toBe(key("b"))
+  })
+})

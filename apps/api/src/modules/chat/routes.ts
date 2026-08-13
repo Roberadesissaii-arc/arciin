@@ -53,6 +53,7 @@ import {
 } from "@/services/chat/vision-library"
 import { generateConversationTitle } from "@/services/chat/auto-title"
 import { requireFeature, requireRole } from "@/services/security/auth"
+import { checkEndpointRateLimit } from "@/services/security/endpoint-rate-limit"
 import { getStoragePaths } from "@/services/storage/local-storage"
 
 import { corsHeadersForRequestOrigin } from "@/plugins/cors-origins"
@@ -1028,6 +1029,24 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
       const description = parsed.data.description.replace(/\s+/g, " ").trim()
       const id = createHash("sha256").update(description.toLowerCase()).digest("hex").slice(0, 32)
 
+      /**
+       * Counted only when a picture is actually drawn.
+       *
+       * Reopening a saved draft asks for every illustration in it, and those are
+       * served from disk for nothing — charging them against the limit would
+       * lock a reader out of their own notes. The check therefore sits below the
+       * cache hit, guarding the paid path alone. Thirty an hour is roughly ten
+       * illustrated documents.
+       */
+      const limited = async () =>
+        request.auth
+          ? await checkEndpointRateLimit(request, reply, {
+              key: `illustration:user:${request.auth.user.id}`,
+              limit: 30,
+              windowSec: 3600,
+            })
+          : false
+
       const instance = await fastify.prisma.instanceConfig.findFirst({
         select: { aiConfig: true, storageRoot: true },
       })
@@ -1054,6 +1073,8 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
         })
         return
       }
+
+      if (await limited()) return
 
       const { generateImageFromPrompt } = await import("@/services/media/generate-cover-image")
       const result = await generateImageFromPrompt(

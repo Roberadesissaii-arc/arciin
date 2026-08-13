@@ -16,6 +16,7 @@ import { apiConfig } from "@/config"
 import { buildRealtimeEvent } from "@/services/events/publish-event"
 import { recordAndBroadcastActivity } from "@/services/activity/record-and-broadcast-activity"
 import { assertAssetFolderAccess, assertFolderAccess } from "@/services/folders/folder-lock"
+import { checkEndpointRateLimit } from "@/services/security/endpoint-rate-limit"
 import { resolveHiddenFromAllFilesFolderIds } from "@/services/folders/hidden-from-all-files"
 import {
   buildVisibleAssetWhere,
@@ -838,6 +839,24 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
       ),
     },
     async (request, reply) => {
+      if (!request.auth) return
+
+      /**
+       * Each cover is a paid image generation, so an unthrottled endpoint is a
+       * way to spend the instance owner's balance rather than to attack it.
+       * Twelve an hour is far above drawing covers for a shelf of books by hand
+       * and far below what a loop would manage.
+       */
+      if (
+        await checkEndpointRateLimit(request, reply, {
+          key: `cover:user:${request.auth.user.id}`,
+          limit: 12,
+          windowSec: 3600,
+        })
+      ) {
+        return
+      }
+
       const { assetId } = request.params as { assetId?: string }
       if (!assetId) {
         reply.status(400).send({ error: { code: "BAD_REQUEST", message: "Missing asset id." } })
