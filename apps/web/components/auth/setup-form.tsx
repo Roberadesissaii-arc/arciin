@@ -7,6 +7,7 @@ import { useForm, useWatch } from "react-hook-form"
 import {
   ArrowLeft,
   ArrowRight,
+  Check,
   Clapperboard,
   FileText,
   ImageIcon,
@@ -55,24 +56,21 @@ const libraryMeta = {
 const lightCheckboxClass =
   "border-[#d4d4d4] bg-white data-[state=checked]:border-[#ff4f12] data-[state=checked]:bg-[#ff4f12] data-[state=checked]:text-white"
 
-const STEP_META: Record<
-  SetupStep,
-  { label: string; title: string; subtitle: string }
-> = {
+const STEPS: Record<SetupStep, { label: string; title: string; subtitle: string }> = {
   1: {
-    label: "Instance",
+    label: "Server",
     title: "Server & storage",
-    subtitle: "Setup token, instance name, and where files are stored.",
+    subtitle: "Token, instance name, and where files are stored.",
   },
   2: {
     label: "Owner",
-    title: "Create the owner",
-    subtitle: "This account becomes OWNER and signs in after claim.",
+    title: "Owner account",
+    subtitle: "Admin name, email, and password for this server.",
   },
   3: {
     label: "Libraries",
     title: "Default libraries",
-    subtitle: "Pick what Arciin creates on first claim, then accept terms.",
+    subtitle: "What Arciin creates on claim — then accept terms.",
   },
 }
 
@@ -85,40 +83,53 @@ function SetupFieldError({ message }: { message?: string }) {
   )
 }
 
+/** Clear 1 → 2 → 3 indicator (not the old 2-step bar). */
 function StepProgress({ step }: { step: SetupStep }) {
   return (
-    <div className="space-y-2.5">
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#a0a0a0]">
-          Step {step} of 3
-        </span>
-        <span className="text-[11px] font-medium text-[#717171]">{STEP_META[step].label}</span>
-      </div>
-      <div className="flex items-center gap-1.5" aria-hidden>
-        {([1, 2, 3] as const).map((n) => (
-          <span
-            key={n}
-            className={cn(
-              "h-1 flex-1 rounded-full transition-colors",
-              n <= step ? "bg-[#ff4f12]" : "bg-[#ececec]",
-            )}
-          />
-        ))}
-      </div>
-      <div className="flex items-start gap-2">
-        {([1, 2, 3] as const).map((n) => (
-          <div
-            key={n}
-            className={cn(
-              "min-w-0 flex-1 text-[10px] font-medium",
-              n === step ? "text-[#ff4f12]" : n < step ? "text-[#717171]" : "text-[#c0c0c0]",
-            )}
-          >
-            {STEP_META[n].label}
-          </div>
-        ))}
-      </div>
-    </div>
+    <nav aria-label="Setup steps" className="space-y-2">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#a0a0a0]">
+        Step {step} of 3
+      </p>
+      <ol className="flex items-center gap-0">
+        {([1, 2, 3] as const).map((n, index) => {
+          const done = n < step
+          const active = n === step
+          return (
+            <li key={n} className="flex min-w-0 flex-1 items-center">
+              <div className="flex min-w-0 flex-col items-center gap-1">
+                <span
+                  className={cn(
+                    "flex size-7 items-center justify-center rounded-full text-[11px] font-bold transition-colors",
+                    done && "bg-[#ff4f12] text-white",
+                    active && "bg-[#ff4f12] text-white ring-4 ring-[#ff4f12]/15",
+                    !done && !active && "border border-[#e5e5e5] bg-white text-[#b0b0b0]",
+                  )}
+                >
+                  {done ? <Check className="size-3.5" strokeWidth={3} /> : n}
+                </span>
+                <span
+                  className={cn(
+                    "truncate text-[10px] font-semibold",
+                    active ? "text-[#ff4f12]" : done ? "text-[#717171]" : "text-[#c0c0c0]",
+                  )}
+                >
+                  {STEPS[n].label}
+                </span>
+              </div>
+              {index < 2 ? (
+                <span
+                  aria-hidden
+                  className={cn(
+                    "mx-1 mb-4 h-0.5 min-w-[12px] flex-1 rounded-full",
+                    n < step ? "bg-[#ff4f12]" : "bg-[#ececec]",
+                  )}
+                />
+              ) : null}
+            </li>
+          )
+        })}
+      </ol>
+    </nav>
   )
 }
 
@@ -127,6 +138,7 @@ export function SetupForm() {
   const searchParams = useSearchParams()
   const claimMutation = useClaimInstance()
   const [step, setStep] = useState<SetupStep>(1)
+  const [tokenFromUrl, setTokenFromUrl] = useState(false)
   const [storageRootHint, setStorageRootHint] = useState<string | null>(null)
   const form = useForm<SetupSchema>({
     defaultValues: {
@@ -143,23 +155,19 @@ export function SetupForm() {
   })
 
   const selectedLibraries =
-    useWatch({
-      control: form.control,
-      name: "libraries",
-    }) ?? []
+    useWatch({ control: form.control, name: "libraries" }) ?? []
   const acceptedTermsAndPrivacy = useWatch({
     control: form.control,
     name: "acceptedTermsAndPrivacy",
   })
-  const storageRoot = useWatch({
-    control: form.control,
-    name: "storageRoot",
-  })
+  const storageRoot = useWatch({ control: form.control, name: "storageRoot" })
+  const setupTokenValue = useWatch({ control: form.control, name: "setupToken" })
 
   useEffect(() => {
     const fromUrl = searchParams.get("token")?.trim()
     if (fromUrl) {
       form.setValue("setupToken", fromUrl)
+      setTokenFromUrl(true)
     }
   }, [form, searchParams])
 
@@ -190,18 +198,11 @@ export function SetupForm() {
     fields?: readonly (keyof SetupSchema)[],
   ) => {
     const allowedFields = fields ? new Set<string>(fields) : null
-
     Object.entries(fieldErrors).forEach(([field, messages]) => {
-      if (allowedFields && !allowedFields.has(field)) {
-        return
-      }
-
+      if (allowedFields && !allowedFields.has(field)) return
       const message = messages?.[0]
       if (message) {
-        form.setError(field as keyof SetupSchema, {
-          type: "manual",
-          message,
-        })
+        form.setError(field as keyof SetupSchema, { type: "manual", message })
       }
     })
   }
@@ -288,33 +289,49 @@ export function SetupForm() {
       <div className="shrink-0 space-y-3">
         <StepProgress step={step} />
         <div>
-          <h1 className="font-heading text-[24px] font-bold tracking-tight text-[#111111] sm:text-[26px]">
-            {STEP_META[step].title}
+          <h1 className="font-heading text-[22px] font-bold tracking-tight text-[#111111] sm:text-[24px]">
+            {STEPS[step].title}
           </h1>
-          <p className="mt-1 text-[13px] leading-relaxed text-[#a0a0a0]">
-            {STEP_META[step].subtitle}
-          </p>
+          <p className="mt-0.5 text-[12.5px] leading-snug text-[#a0a0a0]">{STEPS[step].subtitle}</p>
         </div>
       </div>
 
-      <div className="mt-5 min-h-0 flex-1 space-y-3.5 overflow-y-auto overscroll-contain pr-0.5 sm:mt-6">
+      {/* One step at a time — keeps the column short so no page scroll */}
+      <div className="mt-4 min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain">
         {step === 1 ? (
           <>
-            <AuthLightField
-              id="setupToken"
-              label="Setup token"
-              icon={KeyRound}
-              type="password"
-              autoComplete="off"
-              placeholder="From install summary or .env"
-              error={form.formState.errors.setupToken?.message}
-              inputProps={form.register("setupToken")}
-              description={
-                searchParams.get("token")
-                  ? "Prefixed from your install link."
-                  : "Printed by install.sh · ARCIIN_SETUP_TOKEN"
-              }
-            />
+            {tokenFromUrl && setupTokenValue ? (
+              <div className="flex items-center gap-2.5 rounded-2xl border border-[#ffd9c9] bg-[#fff8f4] px-3.5 py-2.5">
+                <span className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-white text-[#ff4f12] shadow-sm">
+                  <KeyRound className="size-3.5" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[12px] font-semibold text-[#111111]">Setup token ready</p>
+                  <p className="truncate text-[11px] text-[#8a8a8a]">
+                    Prefixed from your install link
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="shrink-0 text-[11px] font-medium text-[#ff4f12] underline-offset-2 hover:underline"
+                  onClick={() => setTokenFromUrl(false)}
+                >
+                  Edit
+                </button>
+                <input type="hidden" {...form.register("setupToken")} />
+              </div>
+            ) : (
+              <AuthLightField
+                id="setupToken"
+                label="Setup token"
+                icon={KeyRound}
+                type="password"
+                autoComplete="off"
+                placeholder="From install summary or .env"
+                error={form.formState.errors.setupToken?.message}
+                inputProps={form.register("setupToken")}
+              />
+            )}
             <AuthLightField
               id="instanceName"
               label="Instance name"
@@ -324,12 +341,9 @@ export function SetupForm() {
               inputProps={form.register("instanceName")}
             />
             <div className="flex flex-col gap-1.5">
-              <label
-                htmlFor="storageRoot"
-                className="text-[11px] font-semibold uppercase tracking-widest text-[#a0a0a0]"
-              >
+              <span className="text-[11px] font-semibold uppercase tracking-widest text-[#a0a0a0]">
                 Storage location
-              </label>
+              </span>
               <SetupStoragePicker
                 value={storageRoot ?? ""}
                 onChange={(path) => form.setValue("storageRoot", path, { shouldValidate: true })}
@@ -384,9 +398,9 @@ export function SetupForm() {
                 inputProps={form.register("confirmPassword")}
               />
             </div>
-            <p className="rounded-xl border border-[#f0f0f0] bg-[#fafafa] px-3 py-2.5 text-[12px] leading-relaxed text-[#8a8a8a]">
-              Passwords are hashed on the server. There is no cloud recovery — store this
-              password safely.
+            <p className="text-[11px] leading-relaxed text-[#a0a0a0]">
+              First user becomes OWNER. Passwords are hashed on this server — there is no cloud
+              recovery.
             </p>
           </>
         ) : null}
@@ -401,7 +415,7 @@ export function SetupForm() {
                   <label
                     key={library}
                     className={cn(
-                      "flex cursor-pointer flex-col gap-1.5 rounded-2xl border p-2.5 transition-colors",
+                      "flex cursor-pointer flex-col gap-1 rounded-2xl border p-2.5 transition-colors",
                       checked
                         ? "border-[#ffb59a] bg-[#fff5f0]"
                         : "border-[#ececec] bg-white hover:border-[#e0e0e0]",
@@ -481,7 +495,7 @@ export function SetupForm() {
                   >
                     Privacy Policy
                   </Link>
-                  . This software runs on infrastructure I control.
+                  .
                 </label>
               </div>
               <div className="mt-1.5 pl-7">
@@ -494,24 +508,22 @@ export function SetupForm() {
         ) : null}
       </div>
 
-      <div className="mt-4 flex shrink-0 flex-col gap-2.5 border-t border-[#f0f0f0] pt-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="mt-3 flex shrink-0 items-center justify-between gap-3 border-t border-[#f0f0f0] pt-3">
         {step > 1 ? (
           <AuthSecondaryButton
             type="button"
             onClick={() => setStep((step - 1) as SetupStep)}
-            className="sm:w-auto"
+            className="h-11 sm:w-auto"
           >
             <ArrowLeft className="size-4" />
             Back
           </AuthSecondaryButton>
         ) : (
-          <span className="hidden text-[11px] text-[#c0c0c0] sm:inline">
-            Setup locks after claim
-          </span>
+          <span className="text-[11px] text-[#c0c0c0]">Locks after claim</span>
         )}
 
         {step < 3 ? (
-          <AuthPrimaryButton type="submit" className="sm:ml-auto sm:w-auto sm:px-6">
+          <AuthPrimaryButton type="submit" className="h-11 sm:w-auto sm:min-w-[9rem] sm:px-6">
             Continue
             <ArrowRight className="size-4" />
           </AuthPrimaryButton>
@@ -519,7 +531,7 @@ export function SetupForm() {
           <AuthPrimaryButton
             type="submit"
             disabled={claimMutation.isPending || !acceptedTermsAndPrivacy}
-            className="sm:ml-auto sm:w-auto sm:px-6"
+            className="h-11 sm:w-auto sm:min-w-[9rem] sm:px-6"
           >
             <Sparkles className="size-4" />
             {claimMutation.isPending ? "Claiming…" : "Claim instance"}

@@ -22,26 +22,26 @@ export default function SetupPage() {
   )
 }
 
+/**
+ * Mirrors the login shell:
+ * - Left: form column (viewport-locked, no page scroll)
+ * - Right: orange rounded panel with the same dashboard preview image as login
+ */
 function SetupPageShell() {
   return (
     <main className="flex h-svh max-h-svh overflow-hidden bg-white text-[#222222]">
       <div className="flex h-full w-full">
-        {/* Left — brand + multi-step claim form (viewport-fit, no page scroll) */}
-        <section className="relative flex h-full min-h-0 w-full flex-col px-6 py-5 sm:px-10 sm:py-6 lg:w-1/2 lg:px-12 lg:py-7">
-          <div className="flex shrink-0 items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <ArciinMarkLetter size="sm" />
-              <span className="font-heading text-[17px] font-bold leading-none tracking-tight text-[#111111]">
-                Arciin<span className="text-[#ff4f12]">.</span>
-              </span>
-            </div>
-            <span className="hidden text-[11px] font-medium text-[#a0a0a0] sm:inline">
-              First-run setup
+        {/* Left — multi-step claim form */}
+        <section className="relative flex h-full min-h-0 w-full flex-col px-6 py-5 sm:px-10 sm:py-6 lg:w-1/2 lg:px-12 lg:py-6">
+          <div className="flex shrink-0 items-center gap-2">
+            <ArciinMarkLetter size="sm" />
+            <span className="font-heading text-[17px] font-bold leading-none tracking-tight text-[#111111]">
+              Arciin<span className="text-[#ff4f12]">.</span>
             </span>
           </div>
 
-          <div className="flex min-h-0 flex-1 flex-col pt-4 sm:pt-6">
-            <div className="mx-auto flex h-full min-h-0 w-full max-w-md flex-col">
+          <div className="flex min-h-0 flex-1 flex-col justify-center py-3">
+            <div className="mx-auto flex h-full max-h-[40rem] min-h-0 w-full max-w-md flex-col">
               <Suspense
                 fallback={
                   <div className="flex flex-1 items-center justify-center text-sm text-[#a0a0a0]">
@@ -54,14 +54,14 @@ function SetupPageShell() {
             </div>
           </div>
 
-          <div className="flex shrink-0 items-center justify-between gap-4 pt-3">
+          <div className="flex shrink-0 items-center justify-between gap-4">
             <p className="text-[11px] text-[#b3b3b3]">Copyright © 2026 Arciin.</p>
             <div className="flex items-center gap-4">
               <Link
                 href="/legal/privacy"
                 className="text-[11px] text-[#a0a0a0] underline-offset-4 transition-colors hover:text-[#555555] hover:underline"
               >
-                Privacy
+                Privacy Policy
               </Link>
               <Link
                 href="/legal/terms"
@@ -73,7 +73,7 @@ function SetupPageShell() {
           </div>
         </section>
 
-        {/* Right — orange hero with dashboard preview (matches login) */}
+        {/* Right — same orange container + dashboard image as /login */}
         <section className="hidden h-full lg:block lg:w-1/2 lg:p-4 lg:pl-0">
           <div
             className="h-full w-full overflow-hidden rounded-[22px]"
