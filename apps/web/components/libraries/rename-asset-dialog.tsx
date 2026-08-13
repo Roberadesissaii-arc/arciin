@@ -2,7 +2,16 @@
 /* eslint-disable react-hooks/set-state-in-effect -- intentional prop-sync: reset the form state when the dialog opens or the target asset changes. */
 
 import { useEffect, useMemo, useState } from "react"
-import { Globe, Loader2, Pencil, RotateCcw, Sparkles, Tag, X } from "lucide-react"
+import {
+  Globe,
+  Image as ImageIcon,
+  Loader2,
+  Pencil,
+  RotateCcw,
+  Sparkles,
+  Tag,
+  X,
+} from "lucide-react"
 import { toast } from "@/lib/notifications/arciin-toast"
 
 import { notifyFileUpdated } from "@/lib/notifications/toast-actions"
@@ -434,21 +443,26 @@ export function RenameAssetDialog({
             ) : null}
           </div>
 
-          {/* A shelf of PDFs rendered as their own first page is a shelf of
-              grey rectangles. This reads the file and draws a cover from what
-              it is about, written over the same thumbnail the card already
-              shows — so it can be regenerated, and deleting it falls back to
-              the page render. */}
-          <Field>
-            <FieldLabel>COVER IMAGE</FieldLabel>
-            <p className="text-[12px] leading-snug text-muted-foreground">
-              Read this file and draw a cover from what it is about, instead of showing the first
-              page.
-            </p>
+          {/* Same shell as the badge block above: this is another per-file
+              setting, and a bare field beneath a bordered one reads as an
+              afterthought rather than part of the same dialog. */}
+          <div className="space-y-3 rounded-xl border border-border bg-muted/15 p-3">
+            <div>
+              <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                <ImageIcon className="size-3.5" />
+                Cover image
+              </p>
+              <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
+                Read this file and draw a cover from what it is about, instead of showing the
+                first page.
+              </p>
+            </div>
+
             <Button
               type="button"
               variant="outline"
-              className="mt-2 h-9 w-full gap-1.5 text-[12px]"
+              size="sm"
+              className="h-8 w-full gap-1.5 text-[11px] font-semibold"
               disabled={coverPending}
               onClick={() => void generateCover()}
             >
@@ -459,7 +473,7 @@ export function RenameAssetDialog({
               )}
               {coverPending ? "Drawing the cover…" : "Generate cover image"}
             </Button>
-          </Field>
+          </div>
 
           <FieldError errors={[error ? { message: error } : undefined]} />
         </div>
