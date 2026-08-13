@@ -164,6 +164,8 @@ export function FolderBrowser({
           placeholder="Search files in this folder"
         />
 
+        <div className="border-b border-zinc-200/90" aria-hidden />
+
         {assetsBootLoading ? (
           view === "table" ? (
             <AssetTableSkeleton />

@@ -35,8 +35,8 @@ export function LibraryBrowserToolbarSkeleton() {
 /** Mirrors AssetCard: ~216px white tile (104px preview + meta + badges). */
 export function AssetCardSkeleton() {
   return (
-    <div className="h-[13.5rem] overflow-hidden rounded-2xl border border-zinc-200/80 bg-white p-2.5 shadow-sm">
-      <Skeleton className="h-[6.5rem] w-full rounded-xl" />
+    <div className="h-[14.25rem] overflow-hidden rounded-2xl border border-zinc-200/80 bg-white p-2.5 shadow-sm">
+      <Skeleton className="h-[7.25rem] w-full rounded-xl" />
       <div className="mt-2.5 space-y-1">
         <Skeleton className="h-3.5 w-[85%]" />
         <Skeleton className="h-3 w-[55%]" />

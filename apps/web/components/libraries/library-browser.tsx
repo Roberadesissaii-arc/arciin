@@ -179,6 +179,9 @@ export function LibraryBrowser({
           placeholder="Search files and metadata"
         />
 
+        {/* Same hierarchy hairline as Folders / Assets section titles */}
+        <div className="border-b border-zinc-200/90" aria-hidden />
+
         {assetsBootLoading ? (
           view === "table" ? (
             <AssetTableSkeleton />

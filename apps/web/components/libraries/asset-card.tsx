@@ -200,7 +200,7 @@ function MediaPreview({
 
   return (
     <div
-      className="relative h-[6.5rem] w-full overflow-hidden rounded-xl border border-zinc-200/80"
+      className="relative h-[7.25rem] w-full overflow-hidden rounded-xl border border-zinc-200/80"
       style={{
         background: `linear-gradient(140deg, ${accent}14 0%, #ffffff 55%, ${accent}0d 100%)`,
       }}
