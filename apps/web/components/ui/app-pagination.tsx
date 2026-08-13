@@ -32,14 +32,14 @@ interface AppPaginationProps {
 /**
  * Library / table pager — outlined current page (not orange fill).
  * Previous / Next stay ghost; words hide on mobile.
- * Always shows at least page 1 when alwaysShow is true.
+ * Hidden when there is only one page (unless alwaysShow).
  */
 export function AppPagination({
   page,
   totalPages,
   onPageChange,
   className,
-  alwaysShow = true,
+  alwaysShow = false,
 }: AppPaginationProps) {
   const safeTotal = Math.max(1, totalPages)
   if (!alwaysShow && safeTotal <= 1) return null
@@ -119,8 +119,8 @@ export function AppPagination({
 }
 
 /**
- * White rounded bar under a card grid — always rendered (even for one page)
- * so Previous/Next stay available. Not sticky; scrolls with the page.
+ * White rounded bar under a card grid.
+ * Only renders when there is more than one page — sits after the grid, not floating mid-page.
  */
 export function GridPaginationBar({
   page,
@@ -128,10 +128,11 @@ export function GridPaginationBar({
   onPageChange,
   className,
 }: AppPaginationProps) {
+  if (totalPages <= 1) return null
   return (
     <div
       className={cn(
-        "flex w-full items-center justify-center rounded-2xl border border-zinc-200 bg-white px-4 py-2.5 shadow-sm",
+        "mt-3 flex w-full items-center justify-center rounded-2xl border border-zinc-200 bg-white px-4 py-2.5 shadow-sm",
         className,
       )}
     >
@@ -139,7 +140,7 @@ export function GridPaginationBar({
         page={page}
         totalPages={totalPages}
         onPageChange={onPageChange}
-        alwaysShow
+        alwaysShow={false}
       />
     </div>
   )

@@ -186,12 +186,7 @@ export function LibraryBrowser({
             <AssetGridSkeleton />
           )
         ) : assets.length ? (
-          <div
-            className={cn(
-              "flex flex-col gap-3",
-              assetsRefetching && "opacity-70 transition-opacity",
-            )}
-          >
+          <div className={cn(assetsRefetching && "opacity-70 transition-opacity")}>
             {/* Full filtered set for selection/viewer; page slice for display only. */}
             <SelectableAssetsContainer assets={assets} defaultLibraryId={library?.id}>
               {view === "grid" ? (
@@ -204,7 +199,6 @@ export function LibraryBrowser({
                   page={safePage}
                   totalPages={totalPages}
                   onPageChange={setPage}
-                  alwaysShowPagination
                 />
               )}
             </SelectableAssetsContainer>

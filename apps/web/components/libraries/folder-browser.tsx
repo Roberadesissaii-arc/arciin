@@ -171,12 +171,7 @@ export function FolderBrowser({
             <AssetGridSkeleton />
           )
         ) : assets.length > 0 ? (
-          <div
-            className={cn(
-              "flex flex-col gap-3",
-              assetsRefetching && "opacity-70 transition-opacity",
-            )}
-          >
+          <div className={cn(assetsRefetching && "opacity-70 transition-opacity")}>
             <SelectableAssetsContainer assets={assets} defaultLibraryId={library?.id}>
               {view === "grid" ? (
                 <AssetGrid assets={pageAssets} />
@@ -188,7 +183,6 @@ export function FolderBrowser({
                   page={safePage}
                   totalPages={totalPages}
                   onPageChange={setPage}
-                  alwaysShowPagination
                 />
               )}
             </SelectableAssetsContainer>

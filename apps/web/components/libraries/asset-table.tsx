@@ -180,7 +180,6 @@ export function AssetTable({
   page: controlledPage,
   totalPages: controlledTotalPages,
   onPageChange,
-  alwaysShowPagination = false,
 }: {
   assets: AssetSummary[]
   title?: string
@@ -188,8 +187,6 @@ export function AssetTable({
   page?: number
   totalPages?: number
   onPageChange?: (page: number) => void
-  /** Keep Previous/Next footer visible even on a single page. */
-  alwaysShowPagination?: boolean
 }) {
   const [internalPage, setInternalPage] = useState(1)
   const selection = useAssetSelection()
@@ -265,16 +262,11 @@ export function AssetTable({
         </TableBody>
       </Table>
 
-      {(alwaysShowPagination || totalPages > 1) && (
+      {totalPages > 1 ? (
         <div className="border-t border-zinc-200 bg-white px-5 py-3">
-          <AppPagination
-            page={page}
-            totalPages={totalPages}
-            onPageChange={setPage}
-            alwaysShow={alwaysShowPagination}
-          />
+          <AppPagination page={page} totalPages={totalPages} onPageChange={setPage} />
         </div>
-      )}
+      ) : null}
     </div>
   )
 }
