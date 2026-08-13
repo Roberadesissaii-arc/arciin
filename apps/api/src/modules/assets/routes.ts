@@ -844,6 +844,24 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
         return
       }
 
+      /**
+       * A locked folder must gate this too.
+       *
+       * Drawing a cover reads the document's text and sends it to a third-party
+       * image service. Without this check any MEMBER could have the contents of
+       * a folder they cannot open shipped off the instance — the picture is the
+       * visible part, the exfiltration is the real one.
+       */
+      const target = await fastify.prisma.asset.findFirst({
+        where: { id: assetId, deletedAt: null },
+        select: { folderId: true },
+      })
+      if (!target) {
+        reply.status(404).send({ error: { code: "NOT_FOUND", message: "That file no longer exists." } })
+        return
+      }
+      if (!(await assertAssetFolderAccess(fastify, request, reply, target.folderId))) return
+
       const result = await generateAssetCoverImage(fastify, assetId)
       if (!result.ok) {
         reply
