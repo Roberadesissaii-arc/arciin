@@ -163,7 +163,12 @@ export function markdownToSimpleHtml(markdown: string): string {
   return out.join("\n")
 }
 
-function wrapHtmlDocument(title: string, bodyHtml: string): string {
+/**
+ * Word has no Caveat, so the handwriting stack names faces that ship with the
+ * operating systems this runs on and falls back to generic cursive. The draft
+ * opens in a hand on any machine rather than silently reverting to serif.
+ */
+function wrapHtmlDocument(title: string, bodyHtml: string, handwriting = false): string {
   const safeTitle = title.replace(/</g, "").replace(/>/g, "")
   return `<!DOCTYPE html>
 <html lang="en">
@@ -173,7 +178,11 @@ function wrapHtmlDocument(title: string, bodyHtml: string): string {
 <style>
   @page { margin: 1in; }
   body {
-    font-family: "Georgia", "Times New Roman", serif;
+    font-family: ${
+      handwriting
+        ? '"Segoe Script", "Bradley Hand", "Comic Sans MS", cursive'
+        : '"Georgia", "Times New Roman", serif'
+    };
     font-size: 12pt;
     line-height: 1.65;
     color: #111;
@@ -546,6 +555,7 @@ export function buildCanvasExportFile(
   title: string,
   markdown: string,
   format: CanvasExportFormat,
+  options: { handwriting?: boolean } = {},
 ): File {
   const safeBase =
     title
@@ -569,7 +579,11 @@ export function buildCanvasExportFile(
   const exportBody = flattenMathForExport(body)
 
   if (format === "doc") {
-    const html = wrapHtmlDocument(title, markdownToSimpleHtml(exportBody))
+    const html = wrapHtmlDocument(
+      title,
+      markdownToSimpleHtml(exportBody),
+      options.handwriting === true,
+    )
     return new File([html], `${safeBase}.doc`, {
       type: canvasExportMime("doc"),
       lastModified: Date.now(),

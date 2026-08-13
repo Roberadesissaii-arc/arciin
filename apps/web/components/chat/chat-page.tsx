@@ -974,13 +974,29 @@ export function ChatPage() {
     // Slash commands (/summarize …) expand to full prompts + tool chips.
     let activeTools: ChatPromptToolId[] = overrideText ? [] : [...promptTools]
     if (!overrideText && text) {
-      // Handled here and nowhere else: /font is a change of typeface, so it
-      // takes effect at once instead of costing a round trip to a model that
-      // might rewrite the prose while it was there.
-      if (/^\s*\/font\b/i.test(text)) {
-        setCanvasHandwriting((on) => !on)
+      /**
+       * Handled here and nowhere else: /font is a change of typeface, so it
+       * takes effect at once instead of costing a round trip to a model that
+       * might rewrite the prose while it was there.
+       *
+       * `on` and `off` are accepted explicitly because a bare toggle is
+       * invisible when the Canvas is empty: switching it on with no draft
+       * showing looks like nothing happened, and then the next draft arrives in
+       * handwriting nobody asked for — which reads as the command doing the
+       * opposite of what it says. The state is always announced.
+       */
+      const fontCommand = text.match(/^\s*\/font\b[.\s]*(on|off)?\b/i)
+      if (fontCommand) {
+        const asked = fontCommand[1]?.toLowerCase()
+        const next = asked === "on" ? true : asked === "off" ? false : !canvasHandwriting
+        setCanvasHandwriting(next)
         setCanvasOpen(true)
         setInput("")
+        toast.success(next ? "Canvas is in handwriting" : "Canvas is back to the reading face", {
+          description: next
+            ? "Saved and copied drafts keep their normal text."
+            : "Type /font to switch back.",
+        })
         return
       }
 
@@ -1557,7 +1573,9 @@ export function ChatPage() {
 
         const title = refineCanvasTitleFromContent(body, canvasTitle)
         setCanvasTitle(title)
-        const file = buildCanvasExportFile(title, body, format)
+        const file = buildCanvasExportFile(title, body, format, {
+          handwriting: canvasHandwriting,
+        })
 
         await uploadFile(file, { targetLibraryId: docsLib.id })
         void queryClient.invalidateQueries({ queryKey: queryKeys.assetsRoot })

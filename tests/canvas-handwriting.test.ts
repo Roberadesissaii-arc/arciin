@@ -53,3 +53,29 @@ describe("the commands that still go to the model", () => {
     }
   })
 })
+
+describe("exporting a handwritten draft", () => {
+  it("uses a hand face in the Word export", async () => {
+    const { buildCanvasExportFile } = await import("@/lib/chat/canvas-export")
+    const file = buildCanvasExportFile("Notes", "# Notes\n\nSome prose.", "doc", {
+      handwriting: true,
+    })
+    const html = await file.text()
+    expect(html).toContain("cursive")
+    expect(html).not.toContain('"Georgia"')
+  })
+
+  it("keeps the reading face when handwriting is off", async () => {
+    const { buildCanvasExportFile } = await import("@/lib/chat/canvas-export")
+    const file = buildCanvasExportFile("Notes", "# Notes\n\nSome prose.", "doc")
+    const html = await file.text()
+    expect(html).toContain('"Georgia"')
+  })
+
+  it("leaves markdown alone — it carries no fonts", async () => {
+    const { buildCanvasExportFile } = await import("@/lib/chat/canvas-export")
+    const a = await buildCanvasExportFile("N", "# N\n\nx", "md", { handwriting: true }).text()
+    const b = await buildCanvasExportFile("N", "# N\n\nx", "md").text()
+    expect(a).toBe(b)
+  })
+})
