@@ -131,6 +131,22 @@ export function extractHighlightPhrases(userText: string): string[] {
   const raw = (userText || "").trim()
   if (!raw || !wantsPdfHighlight(raw)) return []
 
+  /**
+   * A question asks for something only the model can identify.
+   *
+   * "Where do the light-dependent reactions take place? locate where the answer
+   * is" contains a locate verb, but the thing to locate is the *answer* — which
+   * is not in the request. Extracting from the words anyway searched the page
+   * for "answer found". When the turn asks a question, the model's tags are the
+   * only honest source of a target.
+   */
+  if (/\?/.test(raw)) {
+    const quoted = raw.match(/["“'‘]([^"”'’]{2,80})["”'’]/)
+    // Unless the student quoted the phrase outright, in which case they did
+    // name it and the quote is exactly what they meant.
+    if (!quoted) return []
+  }
+
   // Quoted spans are unambiguous; if the user quoted, take every quote.
   const quotes = [...raw.matchAll(/["“'‘]([^"”'’]{2,80})["”'’]/g)]
     .map((m) => normalizePhrase(m[1] ?? ""))
@@ -241,7 +257,7 @@ export function extractHighlightPhrase(userText: string): string | null {
  * round half a paragraph.
  */
 const INSTRUCTION_PHRASE =
-  /\b(?:key\s+terms?|important\s+(?:parts?|bits?|things?)|main\s+(?:ideas?|points?)|each\s+one|every\s+one|what\s+(?:it|they|each)\s+means?|on\s+this\s+page|in\s+this\s+(?:page|document|section)|the\s+whole\s+page)\b/i
+  /\b(?:key\s+terms?|important\s+(?:parts?|bits?|things?)|main\s+(?:ideas?|points?)|each\s+one|every\s+one|what\s+(?:it|they|each)\s+means?|on\s+this\s+page|in\s+this\s+(?:page|document|section)|the\s+whole\s+page|answers?(?:\s+(?:is|are|found))?)\b/i
 
 function isSearchablePhrase(phrase: string): boolean {
   const p = phrase.trim()

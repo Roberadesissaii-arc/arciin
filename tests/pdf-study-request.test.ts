@@ -224,3 +224,22 @@ describe("phrases that describe the job are not searchable", () => {
     expect(extractHighlightPhrases("circle Photolysis of Water")).toEqual(["Photolysis of Water"])
   })
 })
+
+describe("a question names no target", () => {
+  // "Where do the light-dependent reactions take place? locate where the answer
+  // is" carries a locate verb, but the thing to locate is the answer — which is
+  // not in the request. Extracting anyway searched the page for "answer found".
+  const ASKED = "Where do the light-dependent reactions take place? locate where the answer found"
+
+  it("extracts nothing from the question", () => {
+    expect(extractHighlightPhrases(ASKED)).toEqual([])
+  })
+
+  it("still honours a phrase the student quoted", () => {
+    expect(extractHighlightPhrases('find "Photolysis of Water"?')).toEqual(["Photolysis of Water"])
+  })
+
+  it("leaves a plain instruction alone", () => {
+    expect(extractHighlightPhrases("highlight the Summary Table")).toEqual(["Summary Table"])
+  })
+})
