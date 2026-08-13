@@ -214,7 +214,6 @@ function PdfPageCanvas({
           notes={notes}
           width={layoutWidth + noteGutter * 2}
           height={cssHeight - PAGE_PAD}
-          offsetX={-noteGutter}
           fontSize={noteFontSize}
           onSelect={onSelectNote}
         />

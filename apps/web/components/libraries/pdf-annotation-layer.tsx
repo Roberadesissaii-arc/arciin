@@ -108,15 +108,12 @@ export function PdfAnnotationLayer({
   notes,
   width,
   height,
-  offsetX = 0,
   fontSize = NOTE_FONT_SIZE,
   onSelect,
 }: {
   notes: PlacedNote[]
   width: number
   height: number
-  /** Shifts the box left so the borrowed gutter sits either side of the sheet. */
-  offsetX?: number
   /** Matches the size the placement was computed at, so text fills its box. */
   fontSize?: number
   onSelect?: (id: string) => void
@@ -131,10 +128,12 @@ export function PdfAnnotationLayer({
       {/* Clipped to the sheet: a stroke that runs past the page edge reads as a
           rendering fault, and nothing drawn outside it could be pointing at
           anything anyway. */}
-      <div
-        className="relative overflow-hidden"
-        style={{ width, height, marginLeft: offsetX * 2 }}
-      >
+      {/* The parent is `flex justify-center`, so a box wider than the sheet is
+          already centred and the borrowed gutter falls evenly either side.
+          Nudging it as well shifted the whole layer by two full gutters, which
+          put the notes off the left edge of the viewer and stretched every
+          arrow across the page. */}
+      <div className="relative overflow-hidden" style={{ width, height }}>
         <svg className="absolute inset-0" width={width} height={height} aria-hidden>
           {notes.map((note) => (
             <ArrowStroke key={`a-${note.id}`} note={note} />
