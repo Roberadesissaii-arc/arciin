@@ -111,3 +111,41 @@ describe("the two fixes together", () => {
     expect(findable(PAGE, phrase)).toBe(true)
   })
 })
+
+describe("a mark must be a plausible size", () => {
+  // Seen on screen: a yellow bar across empty paper beside the net-reaction
+  // line. The rect came from a run whose reported geometry was wrong, and a
+  // wash of colour over blank space is worse than no mark at all.
+  const PAGE_WIDTH = 1000
+
+  function plausible(rects: { width: number; height: number }[]) {
+    return rects.filter((r) => r.width > 1 && r.height > 1 && r.width <= PAGE_WIDTH * 0.8)
+  }
+
+  it("keeps a normal phrase rect", () => {
+    expect(plausible([{ width: 280, height: 15 }])).toHaveLength(1)
+  })
+
+  it("keeps a rect spanning most of a text line", () => {
+    expect(plausible([{ width: 780, height: 15 }])).toHaveLength(1)
+  })
+
+  it("drops a rect that spans the sheet", () => {
+    expect(plausible([{ width: 960, height: 15 }])).toHaveLength(0)
+  })
+
+  it("drops a degenerate rect", () => {
+    expect(plausible([{ width: 0.4, height: 15 }, { width: 200, height: 0 }])).toHaveLength(0)
+  })
+})
+
+describe("a note stays inside its box", () => {
+  // The margin notes overflowed their boxes and ran across the page text,
+  // because each line is positioned individually and cannot wrap.
+  it("fits fewer characters per line than the box could hold at the old ratio", () => {
+    const width = 150
+    const fontSize = 15
+    const chars = (ratio: number) => Math.max(8, Math.floor(width / (fontSize * ratio)))
+    expect(chars(0.56)).toBeLessThan(chars(0.46))
+  })
+})

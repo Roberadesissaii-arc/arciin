@@ -57,8 +57,15 @@ export type PlacedNote = {
   arrow: Point[] | null
 }
 
-/** Roughly how wide one handwritten character is at a given size. */
-const CHAR_WIDTH_RATIO = 0.46
+/**
+ * Roughly how wide one handwritten character is at a given size.
+ *
+ * Deliberately generous. Caveat is narrow, but underestimating here puts too
+ * many characters on a line, and because each line is positioned individually
+ * the overflow does not wrap — it runs straight out of the note and across the
+ * page text, which is what happened to the margin notes on the first page.
+ */
+const CHAR_WIDTH_RATIO = 0.56
 const LINE_HEIGHT_RATIO = 1.28
 
 /** Never write into the very edge of the sheet. */
@@ -173,12 +180,21 @@ export function layoutPageAnnotations(
   const rightWidth = page.width - page.contentRight - gutter - edgePad
   const leftWidth = page.contentLeft - gutter - edgePad
 
-  const sides: Array<{ side: "left" | "right"; width: number; left: number }> = []
+  const sides: Array<{
+    side: "left" | "right"
+    width: number
+    left: number
+    alignEnd?: boolean
+  }> = []
   if (rightWidth > 60 * scale) {
     sides.push({ side: "right", width: rightWidth, left: page.contentRight + gutter })
   }
   if (leftWidth > 60 * scale) {
-    sides.push({ side: "left", width: leftWidth, left: edgePad })
+    // Right-aligned against the text column rather than flush to the far edge,
+    // so a left-hand note hugs the words it explains and uses the sheet's own
+    // margin first. Placed at the outer edge it floated out on the viewer
+    // background with a long arrow reaching back across the paper.
+    sides.push({ side: "left", width: leftWidth, left: edgePad, alignEnd: true })
   }
   // A page typeset edge to edge has nowhere to write without covering words.
   // The old fallback dropped a note on top of the text column, which is exactly
@@ -202,6 +218,11 @@ export function layoutPageAnnotations(
 
     for (const side of sides) {
       const width = Math.min(side.width, maxNoteWidth)
+      // A left-hand note ends where the text begins; a right-hand one starts
+      // there. Both sit against the column instead of against the paper edge.
+      const boxLeft = side.alignEnd
+        ? Math.max(edgePad, page.contentLeft - gutter - width)
+        : side.left
       const { height } = measureNote(annotation.text, width, fontSize)
 
       // Line the note up with what it explains; a summary goes near the bottom,
@@ -234,7 +255,10 @@ export function layoutPageAnnotations(
           : arrowPath(
               {
                 // Leave from the edge of the note nearest the text.
-                x: side.side === "right" ? side.left + 2 * scale : side.left + width - 2 * scale,
+                x:
+                  side.side === "right"
+                    ? boxLeft + 2 * scale
+                    : boxLeft + width - 2 * scale,
                 y: top + height / 2,
               },
               {
@@ -251,7 +275,7 @@ export function layoutPageAnnotations(
         id: annotation.id,
         kind: annotation.kind,
         text: annotation.text,
-        box: { left: side.left, top, width },
+        box: { left: boxLeft, top, width },
         height,
         side: side.side,
         arrow,

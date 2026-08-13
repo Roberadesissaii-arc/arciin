@@ -146,7 +146,10 @@ export function PdfAnnotationLayer({
           return (
             <div
               key={note.id}
-              className="absolute"
+              className="absolute overflow-hidden"
+              // Clipped as well as measured: the estimate decides where the
+              // note sits, and a line that outgrows it must be cut rather than
+              // allowed to run across the words the note is explaining.
               style={{ left: note.box.left, top: note.box.top, width: note.box.width }}
             >
               {framed ? <NoteFrame note={note} /> : null}
@@ -164,7 +167,7 @@ export function PdfAnnotationLayer({
                 {lines.map((line, i) => (
                   <span
                     key={i}
-                    className="block"
+                    className="block truncate"
                     style={{
                       ...HAND,
                       fontSize,

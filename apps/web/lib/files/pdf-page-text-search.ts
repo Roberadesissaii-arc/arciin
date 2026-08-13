@@ -389,7 +389,15 @@ export async function findHighlightRectsOnPage(
       }
     }
 
-    return mergeContiguousRects(rects)
+    // A single phrase cannot occupy most of the sheet. When it appears to, the
+    // rect came from a run whose reported width or transform was wrong, and the
+    // result is a wash of colour over blank paper — seen on screen as a yellow
+    // bar across empty space beside the formula it was meant to mark. Better to
+    // drop the mark and report it as not rendered than to paint the page.
+    const plausible = mergeContiguousRects(rects).filter(
+      (r) => r.width > 1 && r.height > 1 && r.width <= displayWidth * 0.8,
+    )
+    return plausible
   } finally {
     page.cleanup()
   }
