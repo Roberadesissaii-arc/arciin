@@ -1,0 +1,10 @@
+# Keep shell scripts Unix-line-ended so bash on Windows/WSL accepts `set -o pipefail`
+*.sh text eol=lf
+install.sh text eol=lf
+start.sh text eol=lf
+stop.sh text eol=lf
+
+# Workflows / env samples stay LF for CI and containers
+*.yml text eol=lf
+*.yaml text eol=lf
+.env* text eol=lf
