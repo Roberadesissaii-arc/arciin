@@ -1,6 +1,6 @@
 import { PrismaClient, IntegrationType } from "@prisma/client"
 
-import { DEFAULT_LIBRARY_DEFINITIONS } from "../packages/shared/src/constants"
+import { DEFAULT_LIBRARY_DEFINITIONS } from "@arciin/shared"
 
 const prisma = new PrismaClient()
 
