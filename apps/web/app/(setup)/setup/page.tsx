@@ -32,15 +32,17 @@ export default function SetupPage() {
 function SetupPageShell() {
   return (
     <main className="relative flex h-svh max-h-svh overflow-hidden bg-[#f7f7f7] text-[#222222]">
+      {/* Left inset: p-5 matches right column outer inset */}
       <section className="relative z-0 hidden h-full lg:flex lg:w-[48%] xl:w-[45%] lg:p-5">
         <AuthHeroPanel fill>
           <SetupHeroShowcase />
         </AuthHeroPanel>
       </section>
 
-      <section className="relative z-0 flex h-full min-h-0 w-full flex-col overflow-hidden lg:w-[52%] xl:w-[55%] lg:py-5">
-        <header className="relative z-10 shrink-0 px-6 sm:px-10 lg:px-16">
-          <div className="flex h-12 items-center justify-between lg:h-10">
+      {/* Same outer p-5 so Continue / legal sit as low as the hero panel */}
+      <section className="relative z-0 flex h-full min-h-0 w-full flex-col overflow-hidden px-6 py-5 sm:px-10 lg:w-[52%] lg:px-5 lg:py-5 xl:w-[55%]">
+        <header className="relative z-10 shrink-0 px-0 sm:px-2 lg:px-11">
+          <div className="flex h-10 items-center justify-between sm:h-11">
             <div className="lg:hidden">
               <AuthLightPageHeader contextLabel="First-run setup" />
             </div>
@@ -50,8 +52,7 @@ function SetupPageShell() {
           </div>
         </header>
 
-        {/* Floating form — bottom inset matches left hero section p-5 */}
-        <div className="relative z-10 flex min-h-0 flex-1 flex-col overflow-hidden px-6 sm:px-10 lg:px-16">
+        <div className="relative z-10 flex min-h-0 flex-1 flex-col overflow-hidden px-0 sm:px-2 lg:px-11">
           <div className="mx-auto flex h-full min-h-0 w-full max-w-lg flex-col">
             <Suspense
               fallback={
@@ -65,7 +66,7 @@ function SetupPageShell() {
           </div>
         </div>
 
-        <AuthLightLegalFooter className="shrink-0 border-t-0 px-6 pt-1 pb-5 sm:px-10 lg:px-16 lg:pb-0" />
+        <AuthLightLegalFooter className="shrink-0 border-t-0 px-0 pt-2 pb-0 sm:px-2 lg:px-11" />
       </section>
     </main>
   )

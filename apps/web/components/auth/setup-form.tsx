@@ -511,8 +511,11 @@ export function SetupForm() {
         ) : null}
       </div>
 
-      {/* Bottom padding matches left hero outer inset (p-5) */}
-      <div className="mt-auto flex shrink-0 items-center justify-between gap-3 border-t border-[#f0f0f0] pt-4 pb-5 lg:pb-5">
+      {/*
+        Sit low like the left orange panel: grow into remaining height so
+        Locks after claim / Continue are pinned to the bottom of the column.
+      */}
+      <div className="mt-auto flex shrink-0 items-center justify-between gap-3 border-t border-[#ececec] pt-5">
         {step > 1 ? (
           <AuthSecondaryButton
             type="button"
@@ -523,7 +526,7 @@ export function SetupForm() {
             Back
           </AuthSecondaryButton>
         ) : (
-          <span className="text-[11px] text-[#c0c0c0]">Locks after claim</span>
+          <span className="text-[12px] text-[#a0a0a0]">Locks after claim</span>
         )}
 
         {step < 3 ? (
