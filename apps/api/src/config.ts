@@ -43,12 +43,40 @@ assertEnvironmentIsolation({
 const defaultSetupToken =
   parsed.NODE_ENV !== "production" ? parsed.ARCIIN_SETUP_TOKEN || "dev-token" : parsed.ARCIIN_SETUP_TOKEN
 
-if (!defaultSetupToken) {
-  throw new Error("ARCIIN_SETUP_TOKEN is required in production.")
+/** Values that must never ship as live production secrets for a public self-hosted instance. */
+function isWeakProductionSecret(value: string, { minLen }: { minLen: number }): boolean {
+  const v = value.trim().toLowerCase()
+  if (v.length < minLen) return true
+  // Exact placeholders only (avoid false positives on random hex that happens to include "test")
+  const exact = new Set([
+    "dev-token",
+    "change-me",
+    "changeme",
+    "password",
+    "secret",
+    "arciin",
+    "test",
+    "example",
+    "default",
+  ])
+  if (exact.has(v)) return true
+  // Known install-template prefixes
+  if (v.startsWith("change-this-in-production")) return true
+  if (v.startsWith("change-me")) return true
+  return false
 }
 
-if (parsed.NODE_ENV === "production" && parsed.SESSION_SECRET.startsWith("change-this-in-production")) {
-  throw new Error("SESSION_SECRET must be set to a strong random value in production. Generate one with: openssl rand -hex 32")
+if (parsed.NODE_ENV === "production") {
+  if (!defaultSetupToken || isWeakProductionSecret(defaultSetupToken, { minLen: 16 })) {
+    throw new Error(
+      "ARCIIN_SETUP_TOKEN must be a strong random value in production (not empty, not dev-token/change-me). Generate one with: openssl rand -hex 24",
+    )
+  }
+  if (isWeakProductionSecret(parsed.SESSION_SECRET, { minLen: 32 })) {
+    throw new Error(
+      "SESSION_SECRET must be a strong random value in production (min 32 chars). Generate one with: openssl rand -hex 32",
+    )
+  }
 }
 
 /**
