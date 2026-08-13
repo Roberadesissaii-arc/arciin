@@ -18,7 +18,8 @@ COPY packages/types/package.json packages/types/package.json
 COPY packages/storage/package.json packages/storage/package.json
 COPY packages/ui/package.json packages/ui/package.json
 
-RUN pnpm install --frozen-lockfile
+# postinstall needs scripts/ on disk — not available until full COPY.
+RUN pnpm install --frozen-lockfile --ignore-scripts
 
 COPY . .
 

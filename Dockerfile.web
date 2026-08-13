@@ -15,7 +15,8 @@ COPY packages/types/package.json packages/types/package.json
 COPY packages/storage/package.json packages/storage/package.json
 COPY packages/ui/package.json packages/ui/package.json
 
-RUN pnpm install --frozen-lockfile
+# postinstall copies pdfjs wasm via scripts/ — that path is not in the layer yet.
+RUN pnpm install --frozen-lockfile --ignore-scripts
 
 COPY . .
 
@@ -29,7 +30,7 @@ ENV NEXT_PUBLIC_SOCKET_URL=${NEXT_PUBLIC_SOCKET_URL}
 ENV NEXT_PUBLIC_ARCIIN_API_ORIGIN=${NEXT_PUBLIC_ARCIIN_API_ORIGIN}
 ENV ARCIIN_PUBLIC_URL=${ARCIIN_PUBLIC_URL}
 
-RUN pnpm db:generate && pnpm build:web
+RUN pnpm pdfjs:copy-wasm && pnpm db:generate && pnpm build:web
 
 ENV NODE_ENV=production
 ENV PORT=3000
