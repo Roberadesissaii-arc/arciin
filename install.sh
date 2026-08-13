@@ -39,6 +39,7 @@ for _arg in "$@"; do
       echo "  ARCIIN_INSTALL_MODE=docker     Same as --docker"
       echo "  ARCIIN_SKIP_SYSTEM_PACKAGES=1  Skip apt install (native; deps must exist)"
       echo "  ARCIIN_SKIP_INSTALL_CHOICE=1   Skip Docker vs native menu"
+      echo "  ARCIIN_ON_EXISTING_DB=keep|wipe  Non-interactive policy when Postgres already has a claim"
       exit 0
       ;;
   esac
@@ -221,6 +222,8 @@ install_nodejs_nodesource() {
 
 # ── Flags ─────────────────────────────────────────────────────────────────────
 RESET_DB=false
+# missing | empty | claimed | partial | unknown — set during Postgres setup
+ARCIIN_DB_CLAIM_STATE="unknown"
 for arg in "$@"; do
   [[ "$arg" == "--reset-db" ]] && RESET_DB=true
 done
@@ -776,6 +779,138 @@ start_service() {
   fi
 }
 
+# Instance claim state in the local PostgreSQL `arciin` database.
+# Prints one of: missing | empty | claimed | partial | unknown
+# - missing: no database yet
+# - empty: database exists but no owner users (first-run setup is correct)
+# - claimed: at least one User row (login, not setup)
+# - partial: InstanceConfig without users (broken; treat as needs setup after cleanup)
+detect_arciin_db_claim_state() {
+  local pg_port="${ARCIIN_PG_PORT:-${DEFAULT_PG_PORT}}"
+  if ! command -v psql >/dev/null 2>&1; then
+    echo "unknown"
+    return 0
+  fi
+
+  if ! sudo -u postgres env PGPORT="$pg_port" psql -tAc "SELECT 1 FROM pg_database WHERE datname='arciin'" 2>/dev/null | grep -q 1; then
+    echo "missing"
+    return 0
+  fi
+
+  local has_user_table has_instance_table user_count instance_count
+  has_user_table="$(sudo -u postgres env PGPORT="$pg_port" psql -d arciin -tAc \
+    "SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='User'" 2>/dev/null | tr -d '[:space:]' || true)"
+  has_instance_table="$(sudo -u postgres env PGPORT="$pg_port" psql -d arciin -tAc \
+    "SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='InstanceConfig'" 2>/dev/null | tr -d '[:space:]' || true)"
+
+  if [[ "$has_user_table" != "1" && "$has_instance_table" != "1" ]]; then
+    echo "empty"
+    return 0
+  fi
+
+  user_count=0
+  instance_count=0
+  if [[ "$has_user_table" == "1" ]]; then
+    user_count="$(sudo -u postgres env PGPORT="$pg_port" psql -d arciin -tAc 'SELECT COUNT(*)::text FROM "User"' 2>/dev/null | tr -d '[:space:]' || echo 0)"
+  fi
+  if [[ "$has_instance_table" == "1" ]]; then
+    instance_count="$(sudo -u postgres env PGPORT="$pg_port" psql -d arciin -tAc 'SELECT COUNT(*)::text FROM "InstanceConfig"' 2>/dev/null | tr -d '[:space:]' || echo 0)"
+  fi
+  user_count="${user_count:-0}"
+  instance_count="${instance_count:-0}"
+
+  if [[ "$user_count" =~ ^[1-9][0-9]*$ ]]; then
+    echo "claimed"
+  elif [[ "$instance_count" =~ ^[1-9][0-9]*$ ]]; then
+    echo "partial"
+  else
+    echo "empty"
+  fi
+}
+
+drop_arciin_database() {
+  local pg_port="${ARCIIN_PG_PORT:-${DEFAULT_PG_PORT}}"
+  spin_ok "Dropping existing arciin database..." "Database dropped" \
+    bash -c "sudo -u postgres env PGPORT='${pg_port}' psql -c \"SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='arciin' AND pid <> pg_backend_pid();\" >/dev/null 2>&1 || true; \
+      sudo -u postgres env PGPORT='${pg_port}' psql -c \"DROP DATABASE IF EXISTS arciin;\" && \
+      sudo -u postgres env PGPORT='${pg_port}' psql -c \"DROP ROLE IF EXISTS arciin;\"" || true
+}
+
+# When PostgreSQL still has a previous Arciin claim (common after re-clone / new .env
+# on the same WSL/host), detect it and either keep data or wipe for true first-run.
+maybe_handle_existing_arciin_db() {
+  local state
+  state="$(detect_arciin_db_claim_state)"
+  ARCIIN_DB_CLAIM_STATE="$state"
+
+  if $RESET_DB; then
+    return 0
+  fi
+
+  # Automation override: ARCIIN_ON_EXISTING_DB=keep|wipe
+  local policy="${ARCIIN_ON_EXISTING_DB:-}"
+  policy="${policy,,}"
+
+  if [[ "$state" != "claimed" && "$state" != "partial" ]]; then
+    if [[ "$state" == "empty" ]]; then
+      ok "PostgreSQL arciin database is empty (first-run setup will be available)"
+    fi
+    return 0
+  fi
+
+  echo ""
+  if [[ "$state" == "claimed" ]]; then
+    warn "Existing claimed Arciin data found in PostgreSQL (owner account already exists)."
+    echo -e "    ${DIM}Re-installing the app does not wipe the database. That is why /login appears instead of /setup.${RESET}"
+  else
+    warn "Partial instance rows found (config without users). First-run setup should reclaim the instance."
+  fi
+  echo -e "    ${DIM}Same machine / WSL often keeps Postgres data even after a new git clone.${RESET}"
+  echo ""
+
+  local choice="keep"
+  if [[ "$policy" == "wipe" || "$policy" == "reset" || "$policy" == "fresh" ]]; then
+    choice="wipe"
+  elif [[ "$policy" == "keep" ]]; then
+    choice="keep"
+  elif [[ -t 0 ]]; then
+    if [[ "${ARCIIN_FRESH_INSTALL:-0}" == "1" ]]; then
+      # New .env + old DB is the classic “I thought this was a new server” case.
+      echo -e "    ${BOLD}This looks like a fresh install folder with an older database.${RESET}"
+      echo -e "    ${DIM}[k]${RESET} Keep data  → use ${BOLD}/login${RESET} with the existing owner account"
+      echo -e "    ${DIM}[w]${RESET} Wipe DB    → true first-run ${BOLD}/setup${RESET} (destroys users, libraries, file metadata)"
+      echo ""
+      read -r -p "  Keep existing data or wipe for first-run setup? [k/w] (default w): " _db_choice
+      _db_choice="${_db_choice:-w}"
+    else
+      echo -e "    ${DIM}[k]${RESET} Keep data  → upgrade in place, open ${BOLD}/login${RESET}"
+      echo -e "    ${DIM}[w]${RESET} Wipe DB    → first-run ${BOLD}/setup${RESET} again (DESTROYS instance data)"
+      echo ""
+      read -r -p "  Keep existing data or wipe? [k/w] (default k): " _db_choice
+      _db_choice="${_db_choice:-k}"
+    fi
+    case "${_db_choice,,}" in
+      w|wipe|reset|fresh|y|yes) choice="wipe" ;;
+      *) choice="keep" ;;
+    esac
+  else
+    # Non-interactive: never destroy data unless explicitly requested.
+    choice="keep"
+    warn "Non-interactive install — keeping existing database (set ARCIIN_ON_EXISTING_DB=wipe or use --reset-db to start fresh)"
+  fi
+
+  if [[ "$choice" == "wipe" ]]; then
+    drop_arciin_database
+    RESET_DB=true
+    ARCIIN_DB_CLAIM_STATE="missing"
+    ok "Database wiped — install will continue as a first-run claim"
+  else
+    ok "Keeping existing database — after install open /login (not /setup)"
+    ARCIIN_DB_CLAIM_STATE="claimed"
+  fi
+  echo ""
+}
+
 ensure_postgres_role_and_db() {
   if ! command -v psql >/dev/null 2>&1; then
     warn "psql not found — skipping PostgreSQL role/database setup"
@@ -786,9 +921,7 @@ ensure_postgres_role_and_db() {
   export PGPORT="$pg_port"
 
   if $RESET_DB; then
-    spin_ok "Dropping existing arciin database..." "Database dropped" \
-      bash -c "sudo -u postgres env PGPORT='${pg_port}' psql -c \"DROP DATABASE IF EXISTS arciin;\" && \
-        sudo -u postgres env PGPORT='${pg_port}' psql -c \"DROP ROLE IF EXISTS arciin;\"" || true
+    drop_arciin_database
   fi
 
   if sudo -u postgres env PGPORT="$pg_port" psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='arciin'" | grep -q 1; then
@@ -1017,6 +1150,8 @@ else
 fi
 
 configure_postgres_port
+# Detect leftover Postgres claim BEFORE creating role/DB (and optionally wipe).
+maybe_handle_existing_arciin_db
 ensure_postgres_role_and_db
 
 # ── 6. Dependencies ───────────────────────────────────────────────────────────
@@ -1040,6 +1175,23 @@ else
   spin_ok "Applying migrations and seed..." "Database ready" \
     bash "${ROOT_DIR}/scripts/arciin-init.sh"
 fi
+
+# Re-check after migrations/seed so the summary matches reality.
+ARCIIN_DB_CLAIM_STATE="$(detect_arciin_db_claim_state)"
+case "$ARCIIN_DB_CLAIM_STATE" in
+  claimed)
+    ok "Instance state: claimed (owner account exists → use /login)"
+    ;;
+  partial)
+    warn "Instance state: partial (config without users → use /setup to claim)"
+    ;;
+  empty|missing)
+    ok "Instance state: unclaimed (first-run → use /setup)"
+    ;;
+  *)
+    warn "Instance state: could not detect (check API /instance/status after start)"
+    ;;
+esac
 
 chmod +x "${ROOT_DIR}/scripts/arciin-init.sh" "${ROOT_DIR}/scripts/entrypoint-api.sh" 2>/dev/null || true
 
@@ -1088,7 +1240,10 @@ WEB_PORT="$(_env_public_url_port "$ENV_FILE" 2>/dev/null || echo "${DEFAULT_WEB_
 API_PORT="$(grep '^API_PORT=' "$ENV_FILE" 2>/dev/null | cut -d= -f2- || echo "${DEFAULT_API_PORT}")"
 PG_PORT="$(grep '^ARCIIN_PG_PORT=' "$ENV_FILE" 2>/dev/null | cut -d= -f2- || echo "${ARCIIN_PG_PORT:-${DEFAULT_PG_PORT}}")"
 SETUP_URL="${PUBLIC_URL}/setup?token=${SETUP_TOKEN}"
+LOGIN_URL="${PUBLIC_URL}/login"
 LAN_IP="$(_detect_lan_ip)"
+# Prefer post-migration detection; fall back if detect was unavailable earlier.
+ARCIIN_DB_CLAIM_STATE="${ARCIIN_DB_CLAIM_STATE:-$(detect_arciin_db_claim_state)}"
 
 echo ""
 echo ""
@@ -1114,12 +1269,24 @@ elif is_wsl; then
 else
   echo -e "    ${BGREEN}1.${RESET}  Arciin is running under ${BOLD}PM2${RESET} ${DIM}(no systemd — start manually after reboot:${RESET} ${BOLD}bash start.sh${DIM})${RESET}"
 fi
-echo -e "    ${BGREEN}2.${RESET}  Open from this machine or LAN:  ${BOLD}${SETUP_URL}${RESET}"
-echo -e "    ${BGREEN}3.${RESET}  Claim your instance and create the admin account"
-echo ""
-echo -e "  ${BOLD}${WHITE}Setup token${RESET} ${DIM}(also in .env)${RESET}"
-echo -e "    ${SETUP_TOKEN}"
-echo ""
+
+if [[ "$ARCIIN_DB_CLAIM_STATE" == "claimed" ]]; then
+  echo -e "    ${BGREEN}2.${RESET}  This instance is ${BOLD}already claimed${RESET} (owner account exists in PostgreSQL)."
+  echo -e "    ${BGREEN}3.${RESET}  Open sign-in:  ${BOLD}${LOGIN_URL}${RESET}"
+  echo -e "    ${DIM}   Use the owner email/password created when this database was first claimed.${RESET}"
+  echo -e "    ${DIM}   Need a true first-run again? ${BOLD}bash install.sh --reset-db${RESET} or ${BOLD}bash scripts/reset-instance.sh${RESET}"
+  echo ""
+  echo -e "  ${BOLD}${WHITE}Why not /setup?${RESET}"
+  echo -e "    ${DIM}Setup is only for unclaimed databases. Re-installing code does not erase Postgres.${RESET}"
+  echo ""
+else
+  echo -e "    ${BGREEN}2.${RESET}  Open first-run setup:  ${BOLD}${SETUP_URL}${RESET}"
+  echo -e "    ${BGREEN}3.${RESET}  Claim your instance and create the admin account"
+  echo ""
+  echo -e "  ${BOLD}${WHITE}Setup token${RESET} ${DIM}(also in .env)${RESET}"
+  echo -e "    ${SETUP_TOKEN}"
+  echo ""
+fi
 echo -e "  ${BOLD}${WHITE}PM2 commands${RESET}"
 echo -e "    ${DIM}pm2 status${RESET}              Process list"
 echo -e "    ${DIM}pm2 logs arciin-web${RESET}      Web logs"
@@ -1143,7 +1310,9 @@ echo -e "    Large uploads need ${DIM}MAX_UPLOAD_SIZE_MB${RESET} in .env (defaul
 echo -e "    Profile photos: ${DIM}\${ARCIIN_DATA_DIR}/avatars${RESET} — created during init."
 echo ""
 echo -e "  ${BOLD}${WHITE}Options${RESET}"
-echo -e "    ${DIM}bash install.sh --reset-db${RESET}            Drop DB and re-run migrations"
+echo -e "    ${DIM}bash install.sh --reset-db${RESET}            Drop DB and re-run migrations (true first-run)"
+echo -e "    ${DIM}ARCIIN_ON_EXISTING_DB=wipe ./install.sh${RESET}  Auto-wipe if a previous claim is detected"
+echo -e "    ${DIM}ARCIIN_ON_EXISTING_DB=keep ./install.sh${RESET}  Keep previous claim without prompting"
 echo -e "    ${DIM}ARCIIN_SKIP_PM2=1 ./install.sh${RESET}        Install without PM2"
 echo -e "    ${DIM}ARCIIN_SKIP_FIREWALL=1 ./install.sh${RESET}   Skip UFW configuration"
 echo -e "    ${DIM}ARCIIN_UPGRADE_SYSTEM=0 ./install.sh${RESET}   Skip apt upgrade"

@@ -115,6 +115,25 @@ run_seed() {
   return 1
 }
 
+report_claim_state() {
+  # Best-effort; never fails init. Helps operators see why UI shows login vs setup.
+  if ! command -v psql >/dev/null 2>&1; then
+    return 0
+  fi
+  local user_count=0 instance_count=0
+  user_count="$(psql "${DATABASE_URL}" -tAc 'SELECT COUNT(*)::text FROM "User"' 2>/dev/null | tr -d '[:space:]' || echo 0)"
+  instance_count="$(psql "${DATABASE_URL}" -tAc 'SELECT COUNT(*)::text FROM "InstanceConfig"' 2>/dev/null | tr -d '[:space:]' || echo 0)"
+  user_count="${user_count:-0}"
+  instance_count="${instance_count:-0}"
+  if [[ "$user_count" =~ ^[1-9][0-9]*$ ]]; then
+    log "Claim state: claimed (${user_count} user(s)) — open /login, not /setup"
+  elif [[ "$instance_count" =~ ^[1-9][0-9]*$ ]]; then
+    log "Claim state: partial (InstanceConfig without users) — /setup should reclaim"
+  else
+    log "Claim state: unclaimed — open /setup to create the owner account"
+  fi
+}
+
 wait_for_postgres
 run_migrations
 if ! run_seed; then
@@ -122,5 +141,6 @@ if ! run_seed; then
   exit 1
 fi
 ensure_storage_dirs
+report_claim_state
 
 log "Database and storage initialization complete"

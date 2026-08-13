@@ -68,18 +68,46 @@ const claimSchema = z
     }
   })
 
-async function isInitialized(fastify: FastifyInstance) {
-  const [instanceCount, userCount] = await Promise.all([
-    fastify.prisma.instanceConfig.count(),
+/**
+ * Claimed = at least one local user exists.
+ * InstanceConfig alone is not enough (orphan rows must not block first-run setup).
+ */
+async function getClaimState(fastify: FastifyInstance) {
+  const [instance, userCount] = await Promise.all([
+    fastify.prisma.instanceConfig.findFirst(),
     fastify.prisma.user.count(),
   ])
+  const claimed = userCount > 0
+  return {
+    instance,
+    userCount,
+    claimed,
+    /** True when claim/setup must run (no owner yet). */
+    setupRequired: !claimed,
+  }
+}
 
-  return instanceCount > 0 || userCount > 0
+async function isInitialized(fastify: FastifyInstance) {
+  const { claimed } = await getClaimState(fastify)
+  return claimed
+}
+
+/** Drop orphan instance rows so a first claim can proceed after a partial/broken state. */
+async function clearUnclaimedInstanceRows(fastify: FastifyInstance) {
+  if ((await fastify.prisma.user.count()) > 0) return
+
+  await fastify.prisma.$transaction(async (tx) => {
+    await tx.instanceConfig.deleteMany({})
+    // Libraries only exist after a real claim; safe to clear bare storage rows.
+    if ((await tx.library.count()) === 0) {
+      await tx.storageLocation.deleteMany({})
+    }
+  })
 }
 
 export async function registerInstanceRoutes(fastify: FastifyInstance) {
   fastify.get("/instance/status", async (_request, reply) => {
-    const instance = await fastify.prisma.instanceConfig.findFirst()
+    const { instance, claimed, setupRequired } = await getClaimState(fastify)
 
     const discovery = await discoverStorageVolumes()
     const suggested =
@@ -89,8 +117,9 @@ export async function registerInstanceRoutes(fastify: FastifyInstance) {
 
     reply.send({
       data: {
-        initialized: Boolean(instance),
-        setupRequired: !instance,
+        // Must match setup/login routing: only "claimed" when an owner user exists.
+        initialized: claimed,
+        setupRequired,
         instanceName: instance?.instanceName,
         version: apiConfig.appVersion,
         suggestedStorageRoot: suggested,
@@ -306,6 +335,9 @@ export async function registerInstanceRoutes(fastify: FastifyInstance) {
       })
       return
     }
+
+    // Orphan InstanceConfig (no users) must not block a real first claim.
+    await clearUnclaimedInstanceRows(fastify)
 
     const storageRoot = resolveEffectiveStorageRoot(
       parsed.data.storageRoot || apiConfig.dataDir,
