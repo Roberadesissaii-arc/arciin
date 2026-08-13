@@ -1,6 +1,6 @@
 "use client"
 
-import { createElement, useState } from "react"
+import { createElement, useEffect, useRef, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import {
   AlertTriangle,
@@ -141,8 +141,16 @@ function sourceChipLabel(asset: AssetSummary): string {
   return inferDestinationLabel(asset.mimeType, asset.originalFilename)
 }
 
-function MediaPreview({ asset }: { asset: AssetSummary }) {
+function MediaPreview({
+  asset,
+  hover = false,
+}: {
+  asset: AssetSummary
+  /** Whole-card hover — muted video loop while true. */
+  hover?: boolean
+}) {
   const [thumbFailed, setThumbFailed] = useState(false)
+  const videoRef = useRef<HTMLVideoElement>(null)
   const { data: prefs } = useQuery({
     queryKey: queryKeys.userPreferences,
     queryFn: ({ signal }) => getUserPreferences(signal),
@@ -159,7 +167,7 @@ function MediaPreview({ asset }: { asset: AssetSummary }) {
   ).toUpperCase()
 
   const thumbSrc = `/api/assets/${asset.id}/thumbnail?v=${encodeURIComponent(asset.updatedAt)}`
-  const streamSrc = `/api/assets/${asset.id}/download?inline=1&v=${encodeURIComponent(asset.updatedAt)}#t=0.5`
+  const videoSrc = `/api/assets/${asset.id}/download?inline=1&v=${encodeURIComponent(asset.updatedAt)}`
 
   const isImage = asset.mediaType === "IMAGE" && !thumbFailed
   const isVideo = asset.mediaType === "VIDEO"
@@ -173,6 +181,22 @@ function MediaPreview({ asset }: { asset: AssetSummary }) {
       asset.originalFilename,
     )
   const showBitmap = isImage || isDocThumb
+
+  useEffect(() => {
+    const el = videoRef.current
+    if (!el || !isVideo) return
+    if (hover) {
+      el.muted = true
+      void el.play().catch(() => {})
+    } else {
+      el.pause()
+      try {
+        el.currentTime = 0
+      } catch {
+        /* ignore seek race */
+      }
+    }
+  }, [hover, isVideo, asset.id])
 
   return (
     <div
@@ -218,7 +242,19 @@ function MediaPreview({ asset }: { asset: AssetSummary }) {
 
       {isVideo ? (
         <>
-          {/* Prefer server thumbnail as first frame; fall back to seek frame. */}
+          {/* Muted loop — plays while the card is hovered */}
+          <video
+            ref={videoRef}
+            src={videoSrc}
+            muted
+            playsInline
+            loop
+            preload={hover ? "auto" : "metadata"}
+            draggable={false}
+            className="absolute inset-0 size-full bg-black object-cover"
+            aria-hidden
+          />
+          {/* Thumbnail covers the video until hover */}
           {!thumbFailed ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
@@ -226,25 +262,24 @@ function MediaPreview({ asset }: { asset: AssetSummary }) {
               alt=""
               loading="lazy"
               draggable={false}
-              className="absolute inset-0 size-full bg-black object-cover"
+              className={cn(
+                "absolute inset-0 z-[1] size-full bg-black object-cover transition-opacity duration-200",
+                hover ? "opacity-0" : "opacity-100",
+              )}
               onError={() => setThumbFailed(true)}
             />
-          ) : (
-            <video
-              src={streamSrc}
-              muted
-              playsInline
-              preload="metadata"
-              draggable={false}
-              className="absolute inset-0 size-full bg-black object-cover"
-              aria-hidden
-            />
-          )}
-          <span className="pointer-events-none absolute inset-0 flex items-center justify-center">
+          ) : null}
+          <span
+            className={cn(
+              "pointer-events-none absolute inset-0 z-[2] flex items-center justify-center transition-opacity duration-200",
+              hover ? "opacity-0" : "opacity-100",
+            )}
+          >
             <span className="flex size-8 items-center justify-center rounded-full bg-black/45 text-white backdrop-blur-sm">
               <Play className="size-3.5 translate-x-px fill-current" aria-hidden />
             </span>
           </span>
+          <span className="sr-only">Video — hover for muted preview</span>
         </>
       ) : null}
     </div>
@@ -289,6 +324,7 @@ export function AssetCard({ asset }: { asset: AssetSummary }) {
   const canOpen = isViewableAsset(asset) && Boolean(viewer?.canOpen(asset))
   const source = sourceChipLabel(asset)
   const metaLine = `${formatBytes(asset.sizeBytes)} · ${formatCardRelativeTime(asset.createdAt)}`
+  const [hover, setHover] = useState(false)
 
   /** Single click = select (bulk bar). Double-click = open preview. */
   const onCardClick = (event: React.MouseEvent) => {
@@ -317,6 +353,7 @@ export function AssetCard({ asset }: { asset: AssetSummary }) {
     if (event.defaultPrevented) return
     if (canOpen && viewer) {
       event.preventDefault()
+      event.stopPropagation()
       viewer.openViewer(asset.id)
     }
   }
@@ -327,7 +364,9 @@ export function AssetCard({ asset }: { asset: AssetSummary }) {
       data-asset-selectable
       onClick={selection ? onCardClick : undefined}
       onDoubleClick={onCardDoubleClick}
-      title={asset.originalFilename}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      title={`${asset.originalFilename} — double-click to open`}
       className={cn(
         "flex h-full flex-col overflow-hidden rounded-2xl border border-zinc-200/80 bg-white p-2.5 text-left shadow-sm",
         "transition-all duration-200 ease-out",
@@ -336,7 +375,7 @@ export function AssetCard({ asset }: { asset: AssetSummary }) {
         selected && "border-[rgba(255,79,18,0.45)] ring-2 ring-[rgba(255,79,18,0.18)]",
       )}
     >
-      <MediaPreview asset={asset} />
+      <MediaPreview asset={asset} hover={hover} />
 
       <div className="mt-2.5 min-w-0">
         <p
