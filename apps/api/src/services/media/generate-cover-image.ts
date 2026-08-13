@@ -17,7 +17,11 @@ import path from "node:path"
 
 import type { FastifyInstance } from "fastify"
 
-import { buildCoverPrompt } from "@arciin/shared"
+import {
+  buildCoverBriefInstruction,
+  buildCoverPrompt,
+  buildCoverPromptFromBrief,
+} from "@arciin/shared"
 
 import { readPdfAssetContent } from "@/services/chat/read-pdf-asset"
 import { decryptModelApiKey } from "@/services/security/model-profile-key-crypto"
@@ -69,6 +73,60 @@ function stripReaderPreamble(content: string): string {
   return body.replace(/^---\s*PDF page[^\n]*\n?/gm, " ").trim()
 }
 
+/**
+ * Ask the instance's own chat model what this document should look like.
+ *
+ * Uses whichever text model is already configured rather than requiring a
+ * second one, and fails quietly: a cover drawn from the raw excerpt is worth
+ * more than no cover.
+ */
+async function writeCoverBrief(
+  fastify: FastifyInstance,
+  filename: string,
+  excerpt: string,
+): Promise<string | null> {
+  if (!excerpt.trim()) return null
+
+  const profile = await fastify.prisma.modelProfile.findFirst({
+    where: { isEnabled: true },
+    orderBy: { isDefault: "desc" },
+    select: { apiKey: true, baseUrl: true, defaultModel: true, provider: true },
+  })
+  const apiKey = decryptModelApiKey(profile?.apiKey ?? null)
+  const baseUrl = (profile?.baseUrl || "").replace(/\/+$/, "")
+  if (!apiKey || !baseUrl || !profile?.defaultModel) return null
+
+  try {
+    const response = await fetch(`${baseUrl}/chat/completions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        model: profile.defaultModel,
+        stream: false,
+        // One sentence out; the ceiling is generous enough for a reasoning
+        // model to think and still answer.
+        max_tokens: 600,
+        messages: [
+          { role: "system", content: buildCoverBriefInstruction(filename) },
+          { role: "user", content: excerpt.slice(0, 4000) },
+        ],
+      }),
+      signal: AbortSignal.timeout(45_000),
+    })
+    if (!response.ok) return null
+    const data = (await response.json()) as {
+      choices?: Array<{ message?: { content?: string } }>
+    }
+    const text = data.choices?.[0]?.message?.content?.trim()
+    if (!text) return null
+    // Take the last non-empty line: a chatty model prefixes its answer.
+    const line = text.split("\n").map((l) => l.trim()).filter(Boolean).at(-1)
+    return line && line.length > 8 ? line.slice(0, 400) : null
+  } catch {
+    return null
+  }
+}
+
 export async function generateAssetCoverImage(
   fastify: FastifyInstance,
   assetId: string,
@@ -109,7 +167,13 @@ export async function generateAssetCoverImage(
     if (typeof read.content === "string") excerpt = stripReaderPreamble(read.content)
   }
 
-  const prompt = buildCoverPrompt({ filename: asset.originalFilename, excerpt })
+  // A cheap text model reads the document and art-directs; the image model only
+  // draws. If that step is unavailable the excerpt goes straight into the prompt
+  // as before, which still works — it is just a worse brief.
+  const brief = await writeCoverBrief(fastify, asset.originalFilename, excerpt)
+  const prompt = brief
+    ? buildCoverPromptFromBrief(brief)
+    : buildCoverPrompt({ filename: asset.originalFilename, excerpt })
 
   let payload: { data?: Array<{ b64_json?: string; url?: string }> }
   try {

@@ -20,9 +20,10 @@ export const dashboardOverviewPanelCard = "flex shrink-0 flex-col"
 /**
  * Fixed body height for the 7×2 overview uploads grid
  * (2 tile rows + gap). Keeps the section stable when loading/empty.
+ * Tall enough for the larger tile rows so previews don’t feel cramped.
  */
 export const dashboardOverviewUploadsBody =
-  "flex h-[17.75rem] shrink-0 flex-col sm:h-[18.75rem] lg:h-[20rem]"
+  "flex h-[20.5rem] shrink-0 flex-col sm:h-[21.75rem] lg:h-[23.25rem]"
 
 export const dashboardOverviewActivityBody =
   "flex min-h-0 flex-1 flex-col overflow-hidden"
@@ -40,11 +41,11 @@ export const DASHBOARD_ACTIVITY_LIMIT = 6
 export const DASHBOARD_ACTIVITY_LIMIT_TABLET = 5
 
 /**
- * Full-width 7×2 grid. Tile rows are a touch taller than before so
- * previews read more clearly inside the fixed body height.
+ * Full-width 7×2 grid. Tile rows are taller so cover previews and
+ * thumbnails read more clearly in Recent uploads.
  */
 export const dashboardUploadsGrid =
-  "grid h-full grid-cols-3 gap-2 content-start [grid-auto-rows:8.5rem] sm:grid-cols-4 sm:gap-2.5 sm:[grid-auto-rows:9rem] md:grid-cols-5 lg:grid-cols-7 lg:grid-rows-2 lg:[grid-auto-rows:9.625rem]"
+  "grid h-full grid-cols-3 gap-2 content-start [grid-auto-rows:9.75rem] sm:grid-cols-4 sm:gap-2.5 sm:[grid-auto-rows:10.25rem] md:grid-cols-5 lg:grid-cols-7 lg:grid-rows-2 lg:[grid-auto-rows:11rem]"
 
 /** Activity list on the dashboard — rows grow to fill height on large screens only. */
 export const dashboardActivityList =

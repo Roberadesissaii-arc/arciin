@@ -92,3 +92,39 @@ describe("the excerpt is document text, not reader instructions", () => {
     expect(stripReaderPreamble("Just the document.")).toBe("Just the document.")
   })
 })
+
+describe("art-directing the cover with a text model", () => {
+  it("asks for one drawable sentence", async () => {
+    const { buildCoverBriefInstruction } = await import("@arciin/shared")
+    const brief = buildCoverBriefInstruction("Photosynthesis The Two-Stage Process.pdf")
+    expect(brief).toContain("ONE sentence")
+    expect(brief).toContain("one concrete subject")
+    expect(brief).toContain("Under 30 words")
+  })
+
+  it("forbids the things that ruin a thumbnail", async () => {
+    const { buildCoverBriefInstruction } = await import("@arciin/shared")
+    const brief = buildCoverBriefInstruction("A.pdf")
+    // Labels are what the image model produced when handed raw document prose.
+    expect(brief).toContain("No words, letters, numbers, labels")
+    expect(brief).toContain("No mention of the title")
+  })
+
+  it("keeps style rules out of the brief and applies them itself", async () => {
+    const { buildCoverPromptFromBrief } = await import("@arciin/shared")
+    const prompt = buildCoverPromptFromBrief("A chloroplast lit by shafts of sunlight.")
+    expect(prompt).toContain("A chloroplast lit by shafts of sunlight.")
+    expect(prompt).toContain("No text, no lettering")
+    expect(prompt).toContain("readable as a small thumbnail")
+  })
+
+  it("strips quoting a model wraps its answer in", async () => {
+    const { buildCoverPromptFromBrief } = await import("@arciin/shared")
+    expect(buildCoverPromptFromBrief('"A green leaf cell."')).toMatch(/^A green leaf cell\./)
+  })
+
+  it("collapses a brief that arrived across lines", async () => {
+    const { buildCoverPromptFromBrief } = await import("@arciin/shared")
+    expect(buildCoverPromptFromBrief("A leaf\n  cell")).toContain("A leaf cell")
+  })
+})
