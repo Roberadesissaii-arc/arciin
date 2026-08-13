@@ -49,6 +49,14 @@ fi
 
 export ARCIIN_SERVER_DIR="${ARCIIN_SERVER_DIR:-${SERVER_ROOT}}"
 export ARCIIN_MOBILE_SKIP_INSTALL_CHOICE=1
+# When launched from the web UI (no TTY), default to skipping apt/sudo unless overridden.
+if [[ ! -t 0 ]] && [[ -z "${ARCIIN_MOBILE_SKIP_SYSTEM_PACKAGES+x}" ]]; then
+  export ARCIIN_MOBILE_SKIP_SYSTEM_PACKAGES=1
+  log "Non-interactive session — ARCIIN_MOBILE_SKIP_SYSTEM_PACKAGES=1 (no sudo password prompt)"
+fi
+if [[ "${ARCIIN_MOBILE_SKIP_SYSTEM_PACKAGES:-0}" == "1" ]]; then
+  log "Skipping mobile system packages (ARCIIN_MOBILE_SKIP_SYSTEM_PACKAGES=1)"
+fi
 
 log "Running mobile install.sh"
 bash "${MOBILE_DIR}/install.sh" >>"$LOG_FILE" 2>&1

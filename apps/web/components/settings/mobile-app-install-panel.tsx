@@ -216,13 +216,38 @@ export function MobileAppInstallPanel({
           </Button>
         </div>
 
+        {data.installState === "failed" && !data.installRunning ? (
+          <div className="rounded-xl border border-amber-200/80 bg-amber-50/90 px-3.5 py-3 text-[12px] leading-relaxed text-amber-950">
+            <p className="font-semibold text-amber-900">Web install could not finish</p>
+            <p className="mt-1 text-amber-900/90">
+              The API runs without a terminal, so it cannot enter a sudo password. Use the manual
+              commands below in SSH (or re-run install with system packages skipped if Node/pnpm
+              are already on this host).
+            </p>
+            <p className="mt-2 font-mono text-[11px] text-amber-950/80">
+              ARCIIN_MOBILE_SKIP_SYSTEM_PACKAGES=1 ./install.sh
+            </p>
+          </div>
+        ) : null}
+
         {data.installRunning || data.installLogTail ? (
-          <div className="rounded-xl border border-border bg-muted/10 px-3 py-2.5 text-[12px] text-muted-foreground">
+          <div
+            className={cn(
+              "rounded-xl border px-3 py-2.5 text-[12px]",
+              data.installState === "failed"
+                ? "border-border bg-muted/10 text-muted-foreground"
+                : "border-border bg-muted/10 text-muted-foreground",
+            )}
+          >
             <p className="font-medium text-foreground">
-              {data.installRunning ? "Install in progress" : "Last install log"}
+              {data.installRunning
+                ? "Install in progress"
+                : data.installState === "failed"
+                  ? "Last install log"
+                  : "Install log"}
             </p>
             {data.installLogTail ? (
-              <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap font-mono text-[11px] text-zinc-600">
+              <pre className="mt-2 max-h-36 overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-zinc-600">
                 {data.installLogTail}
               </pre>
             ) : (
@@ -234,7 +259,7 @@ export function MobileAppInstallPanel({
         {!data.installed ? (
           <CopyableShellBlock
             title="Manual install (SSH)"
-            description="Recommended order: server first, then mobile. Mobile reads ports from the desktop .env."
+            description="Run these on the server in a real terminal (sudo works there). Desktop install first, then mobile."
             script={data.installCommands}
             copyLabel="Copy install commands"
           />

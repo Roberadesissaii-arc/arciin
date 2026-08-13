@@ -42,11 +42,17 @@ function buildInstallCommands(serverRoot: string, mobileDir: string): string {
   const parent = path.dirname(serverRoot)
   const mobileName = path.basename(mobileDir)
   const serverName = path.basename(serverRoot)
-  return `# 1. Server (desktop + API + DB)
-cd ${serverRoot} && ./install.sh
+  return `# On the server (SSH) — needs a real terminal for sudo if apt packages are missing.
 
-# 2. Mobile PWA (reads desktop port from ../${serverName}/.env)
-cd ${parent}/${mobileName} && ./install.sh`
+# 1. Desktop stack already installed? Skip to step 2.
+# cd ${serverRoot} && ./install.sh
+
+# 2. Mobile PWA next to the server repo (reads ../${serverName}/.env for API URL)
+cd ${parent}
+git clone https://github.com/Roberadesissaii-arc/arciin-app.git ${mobileName} 2>/dev/null || true
+cd ${mobileName}
+# If Node/pnpm already exist (desktop install did apt), skip system packages:
+ARCIIN_MOBILE_SKIP_SYSTEM_PACKAGES=1 ./install.sh`
 }
 
 async function readInstallState(serverRoot: string): Promise<MobileAppInstallStatus["installState"]> {
@@ -60,11 +66,34 @@ async function readInstallState(serverRoot: string): Promise<MobileAppInstallSta
   return "idle"
 }
 
+/** Strip ANSI / spinner junk so UI logs stay readable. */
+function stripAnsi(text: string): string {
+  return text
+    .replace(/\u001b\[[0-9;]*[a-zA-Z]/g, "")
+    .replace(/\r/g, "")
+    .replace(/[^\S\n]+$/gm, "")
+}
+
 async function readInstallLogTail(serverRoot: string): Promise<string | null> {
   try {
     const raw = await fs.readFile(path.join(serverRoot, "logs", "mobile-install.log"), "utf8")
-    const lines = raw.trim().split("\n")
-    return lines.slice(-20).join("\n") || null
+    const clean = stripAnsi(raw)
+    const lines = clean
+      .trim()
+      .split("\n")
+      .map((l) => l.trimEnd())
+      .filter((l) => l.length > 0)
+    // Prefer the last meaningful lines (skip pure banner art)
+    const useful = lines.filter(
+      (l) =>
+        !/^█/.test(l) &&
+        !/^╚/.test(l) &&
+        !/^║/.test(l) &&
+        !/^═/.test(l) &&
+        !/^[─\s]+$/.test(l),
+    )
+    const slice = (useful.length > 0 ? useful : lines).slice(-24)
+    return slice.join("\n") || null
   } catch {
     return null
   }
@@ -140,6 +169,8 @@ export async function startMobileAppInstall(): Promise<MobileAppInstallStatus> {
   const logPath = path.join(logsDir, "mobile-install.log")
   const logFd = await fs.open(logPath, "a")
 
+  // Web-triggered install has no TTY for sudo password prompts. Skip apt/sudo
+  // system package steps when the host already has Node/pnpm from the desktop install.
   const proc = spawn("bash", [scriptPath], {
     cwd: serverRoot,
     detached: true,
@@ -148,6 +179,10 @@ export async function startMobileAppInstall(): Promise<MobileAppInstallStatus> {
       ...process.env,
       ARCIIN_SERVER_DIR: serverRoot,
       ARCIIN_MOBILE_DIR: resolveMobileDir(serverRoot),
+      ARCIIN_MOBILE_SKIP_SYSTEM_PACKAGES: "1",
+      ARCIIN_MOBILE_SKIP_INSTALL_CHOICE: "1",
+      // Non-interactive — never block on password prompts
+      DEBIAN_FRONTEND: "noninteractive",
     },
   })
   proc.unref()
