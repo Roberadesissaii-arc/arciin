@@ -10,6 +10,11 @@ import { ImageOff, Loader2 } from "lucide-react"
  * the text around it, and blocking the draft on it would make the whole
  * document feel slow for the sake of a picture the reader has not reached yet.
  *
+ * Drawn at most once, ever. The server addresses an illustration by a hash of
+ * its description, so reopening a saved draft resolves to the picture already on
+ * disk — reopening used to redraw every image, which spent money to produce a
+ * slightly different version of what the reader had already seen.
+ *
  * A failure degrades to the description as a caption. The marker stays in the
  * draft either way, so what is saved and exported still says where the picture
  * belonged.
@@ -33,14 +38,17 @@ export function CanvasIllustration({ description }: { description: string }) {
           body: JSON.stringify({ description }),
         })
         const body = (await response.json().catch(() => null)) as
-          | { data?: { base64?: string }; error?: { message?: string } }
+          | { data?: { id?: string }; error?: { message?: string } }
           | null
         if (cancelled) return
-        if (!response.ok || !body?.data?.base64) {
+        if (!response.ok || !body?.data?.id) {
           setFailed(body?.error?.message ?? "The picture could not be drawn.")
           return
         }
-        setSrc(`data:image/jpeg;base64,${body.data.base64}`)
+        // A URL rather than inline bytes: the id is a hash of the description,
+        // so the same picture is served from disk and cached by the browser
+        // instead of being redrawn every time the draft is reopened.
+        setSrc(`/api/chat/illustration/${body.data.id}`)
       } catch {
         if (!cancelled) setFailed("Could not reach the image service.")
       }

@@ -1,4 +1,8 @@
 import fs from "node:fs/promises"
+import { createHash } from "node:crypto"
+import { createReadStream } from "node:fs"
+import { access, mkdir, writeFile } from "node:fs/promises"
+import path from "node:path"
 
 import {
   applyPrivacyToChatContext,
@@ -49,6 +53,7 @@ import {
 } from "@/services/chat/vision-library"
 import { generateConversationTitle } from "@/services/chat/auto-title"
 import { requireFeature, requireRole } from "@/services/security/auth"
+import { getStoragePaths } from "@/services/storage/local-storage"
 
 import { corsHeadersForRequestOrigin } from "@/plugins/cors-origins"
 
@@ -1000,6 +1005,14 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
    * Gated on the same setting the prompt is gated on, so a client that asks
    * without the feature enabled is refused rather than quietly billed.
    */
+  /**
+   * One illustration for a Canvas draft, drawn at most once.
+   *
+   * Addressed by a hash of its description and kept on disk, because the same
+   * draft is reopened many times and redrawing on each visit spends real money
+   * to produce a slightly different picture of the same thing. A reopened
+   * document now costs nothing and looks identical.
+   */
   fastify.post(
     "/chat/illustration",
     { preHandler: requireAiChat },
@@ -1012,12 +1025,31 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
         return
       }
 
-      const instance = await fastify.prisma.instanceConfig.findFirst({ select: { aiConfig: true } })
+      const description = parsed.data.description.replace(/\s+/g, " ").trim()
+      const id = createHash("sha256").update(description.toLowerCase()).digest("hex").slice(0, 32)
+
+      const instance = await fastify.prisma.instanceConfig.findFirst({
+        select: { aiConfig: true, storageRoot: true },
+      })
+      const { illustrationsDir } = getStoragePaths(instance?.storageRoot ?? undefined)
+      const file = path.join(illustrationsDir, `${id}.webp`)
+
+      // Served before the setting is consulted: an illustration already paid for
+      // belongs to the document, and turning the feature off should stop new
+      // spending, not blank out drafts that already have pictures.
+      try {
+        await access(file)
+        reply.send({ data: { id } })
+        return
+      } catch {
+        /* not drawn yet */
+      }
+
       if (!parseAiConfig(instance?.aiConfig).canvasImages) {
         reply.status(403).send({
           error: {
             code: "IMAGES_DISABLED",
-            message: "Turn on Canvas illustrations under Settings → AI first.",
+            message: "Turn on Canvas illustrations under Settings → Planning first.",
           },
         })
         return
@@ -1026,14 +1058,50 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
       const { generateImageFromPrompt } = await import("@/services/media/generate-cover-image")
       const result = await generateImageFromPrompt(
         fastify,
-        `${parsed.data.description}. Clean editorial illustration, uncluttered. ` +
+        `${description}. Clean editorial illustration, uncluttered. ` +
           `No text, no lettering, no labels, no watermarks.`,
       )
       if (!result.ok) {
         reply.status(400).send({ error: { code: result.code, message: result.message } })
         return
       }
-      reply.send({ data: { base64: result.base64 } })
+
+      const sharp = (await import("sharp")).default
+      await mkdir(illustrationsDir, { recursive: true })
+      await writeFile(
+        file,
+        await sharp(Buffer.from(result.base64, "base64")).webp({ quality: 82 }).toBuffer(),
+      )
+      reply.send({ data: { id } })
+    },
+  )
+
+  /** Serve a drawn illustration. Immutable: the id is a hash of its prompt. */
+  fastify.get(
+    "/chat/illustration/:id",
+    { preHandler: requireAiChat },
+    async (request, reply) => {
+      const { id } = request.params as { id?: string }
+      if (!id || !/^[a-f0-9]{32}$/.test(id)) {
+        reply.status(400).send({ error: { code: "BAD_REQUEST", message: "Invalid id." } })
+        return
+      }
+      const instance = await fastify.prisma.instanceConfig.findFirst({
+        select: { storageRoot: true },
+      })
+      const file = path.join(
+        getStoragePaths(instance?.storageRoot ?? undefined).illustrationsDir,
+        `${id}.webp`,
+      )
+      try {
+        await access(file)
+      } catch {
+        reply.status(404).send({ error: { code: "NOT_FOUND", message: "No such illustration." } })
+        return
+      }
+      reply.header("content-type", "image/webp")
+      reply.header("Cache-Control", "private, max-age=31536000, immutable")
+      return reply.send(createReadStream(file))
     },
   )
 

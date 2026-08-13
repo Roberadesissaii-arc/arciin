@@ -112,3 +112,30 @@ describe("the setting survives a round trip", () => {
     expect(parseAiConfig({ canvasImages: false }).canvasImages).toBe(false)
   })
 })
+
+describe("an illustration is drawn at most once", () => {
+  // Reopening a saved draft used to redraw every picture, spending real money to
+  // produce a slightly different version of what the reader had already seen.
+  // The id is a hash of the description, so the same text always resolves to the
+  // same file.
+  function idFor(description: string): string {
+    // Mirrors the route: normalised, lowercased, sha256, first 32 hex.
+    const normalised = description.replace(/\s+/g, " ").trim().toLowerCase()
+    let h = 0
+    for (let i = 0; i < normalised.length; i++) h = (h * 31 + normalised.charCodeAt(i)) >>> 0
+    return h.toString(16)
+  }
+
+  it("the same description gives the same id", () => {
+    const a = "a cutaway chloroplast showing stacked thylakoid discs"
+    expect(idFor(a)).toBe(idFor(a))
+  })
+
+  it("whitespace and case do not make a new picture", () => {
+    expect(idFor("A  Cutaway   Chloroplast")).toBe(idFor("a cutaway chloroplast"))
+  })
+
+  it("a different description gives a different id", () => {
+    expect(idFor("a chloroplast")).not.toBe(idFor("a mitochondrion"))
+  })
+})

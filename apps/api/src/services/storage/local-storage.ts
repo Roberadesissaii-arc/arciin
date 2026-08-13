@@ -15,6 +15,8 @@ export function getStoragePaths(rootPath = apiConfig.dataDir) {
     objectsDir: path.resolve(rootPath, "objects"),
     librariesDir: path.resolve(rootPath, "libraries"),
     thumbnailsDir: path.resolve(rootPath, "thumbnails"),
+    /** Generated Canvas illustrations, addressed by a hash of their description. */
+    illustrationsDir: path.resolve(rootPath, "illustrations"),
     tempDir: path.resolve(rootPath, "temp"),
     logsDir: path.resolve(rootPath, "logs"),
   }
