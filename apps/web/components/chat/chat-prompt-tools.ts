@@ -67,7 +67,13 @@ export function buildPromptToolsSystemAppend(tools: ChatPromptToolId[]): string 
         "- Use normal Markdown lists (- item or 1. item). Blank lines between paragraphs.\n" +
         "- Use fenced ```code``` **only for real programming code**. Never wrap ordinary paragraphs, " +
         "numbered questions, or bullet lists in code fences — that makes them look like a terminal.\n" +
-        "- Prefer clean document layout over ASCII art or mono dumps.\n\n" +
+        "- NEVER draw diagrams out of characters. No ASCII art, no box-drawing, no arrows made " +
+        "from dashes, no figures built from | / \\ = or _. Canvas is proportional text, so they " +
+        "arrive as a column of broken lines — this is the single worst-looking thing the panel " +
+        "can produce.\n" +
+        "- When a picture would help and you cannot draw one, use a table of parts and their jobs, " +
+        "or an inline flow written as prose: Dendrites -> cell body -> axon hillock -> axon -> " +
+        "terminals. Both read correctly at any width.\n\n" +
         "## Pick the format from the user request\n" +
         "### A) Essay / paper / report\n" +
         "1. # Title\n2. Optional Author / Course / Date\n3. ## Introduction (thesis)\n" +

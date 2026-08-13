@@ -53,5 +53,8 @@ export function buildCanvasImageInstruction(): string {
     "- Never illustrate for decoration, and never illustrate a heading.",
     "- Ask for no words, labels or captions inside the picture; the prose does that.",
     "- Put it after the paragraph it illustrates, never mid-sentence.",
+    "",
+    "This is how you draw. Do not build diagrams out of characters — no ASCII art, no",
+    "box-drawing, no arrows made from dashes. Ask for the picture instead.",
   ].join("\n")
 }

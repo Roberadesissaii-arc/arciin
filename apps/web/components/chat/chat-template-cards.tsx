@@ -66,10 +66,8 @@ export function ChatTemplateCards({
     description: t.description,
     linkText: t.linkText,
     onSelect: disabled ? undefined : () => onSelect(t),
-    linkHref: disabled ? undefined : undefined,
   }))
 
-  // When disabled, still show cards but without click handlers (locked plan).
   const displayItems: CardGridItem[] = disabled
     ? CHAT_TEMPLATES.map((t) => ({
         id: t.id,
@@ -87,7 +85,8 @@ export function ChatTemplateCards({
       subtitle="Pick a card to jump in — or type your own message below."
       items={displayItems}
       columns={4}
-      className="w-full max-w-5xl"
+      compact
+      className="w-full max-w-3xl sm:max-w-4xl"
     />
   )
 }

@@ -139,3 +139,31 @@ describe("an illustration is drawn at most once", () => {
     expect(idFor("a chloroplast")).not.toBe(idFor("a mitochondrion"))
   })
 })
+
+describe("character diagrams are refused", () => {
+  // A neuron study note came back as ASCII art — "/ | \" and "══════║══════" —
+  // which Canvas renders in proportional text as a column of broken lines. The
+  // model reached for it because it was asked for illustrations and had no
+  // other way to draw.
+  it("the illustration instruction says this replaces character diagrams", async () => {
+    const { buildCanvasImageInstruction } = await import("@arciin/shared")
+    const block = buildCanvasImageInstruction()
+    expect(block).toContain("Do not build diagrams out of characters")
+    expect(block).toContain("Ask for the picture instead")
+  })
+
+  it("the canvas rules forbid them even with illustrations off", async () => {
+    const { buildPromptToolsSystemAppend } = await import("@/components/chat/chat-prompt-tools")
+    const rules = buildPromptToolsSystemAppend(["canvas"])
+    expect(rules).toContain("NEVER draw diagrams out of characters")
+    expect(rules).toContain("No ASCII art")
+  })
+
+  it("offers something that renders instead of leaving a gap", async () => {
+    const { buildPromptToolsSystemAppend } = await import("@/components/chat/chat-prompt-tools")
+    const rules = buildPromptToolsSystemAppend(["canvas"])
+    // A prohibition with no alternative just moves the problem.
+    expect(rules).toContain("table of parts")
+    expect(rules).toContain("written as prose")
+  })
+})
