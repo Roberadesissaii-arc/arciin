@@ -145,6 +145,7 @@ export function ChatPage() {
   const [canvasTitle, setCanvasTitle] = useState("Canvas")
   const [canvasStreaming, setCanvasStreaming] = useState(false)
   const [canvasSaving, setCanvasSaving] = useState(false)
+  const [canvasHandwriting, setCanvasHandwriting] = useState(false)
   const [canvasSaveOpen, setCanvasSaveOpen] = useState(false)
   const [canvasSaveFormat, setCanvasSaveFormat] = useState<CanvasExportFormat>("pdf")
   /** Message id of the draft currently shown in the Canvas panel (for re-save/re-link). */
@@ -973,6 +974,16 @@ export function ChatPage() {
     // Slash commands (/summarize …) expand to full prompts + tool chips.
     let activeTools: ChatPromptToolId[] = overrideText ? [] : [...promptTools]
     if (!overrideText && text) {
+      // Handled here and nowhere else: /font is a change of typeface, so it
+      // takes effect at once instead of costing a round trip to a model that
+      // might rewrite the prose while it was there.
+      if (/^\s*\/font\b/i.test(text)) {
+        setCanvasHandwriting((on) => !on)
+        setCanvasOpen(true)
+        setInput("")
+        return
+      }
+
       const slash = expandSlashMessage(text)
       if (slash) {
         text = slash.text
@@ -1817,6 +1828,8 @@ export function ChatPage() {
           <ChatCanvasPanel
             title={canvasTitle}
             content={canvasContent}
+            handwriting={canvasHandwriting}
+            onToggleHandwriting={() => setCanvasHandwriting((on) => !on)}
             streaming={canvasStreaming}
             saving={canvasSaving}
             onSave={() => setCanvasSaveOpen(true)}
@@ -1841,6 +1854,8 @@ export function ChatPage() {
               content={canvasContent}
               streaming={canvasStreaming}
               saving={canvasSaving}
+              handwriting={canvasHandwriting}
+              onToggleHandwriting={() => setCanvasHandwriting((on) => !on)}
               onSave={() => setCanvasSaveOpen(true)}
               onClear={clearActiveCanvas}
               onClose={() => {

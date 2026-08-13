@@ -17,6 +17,9 @@ type ChatCanvasPanelProps = {
   onSave?: () => void
   /** Clear draft body (keeps panel open). */
   onClear?: () => void
+  /** Render the draft in the assistant's handwriting face. */
+  handwriting?: boolean
+  onToggleHandwriting?: () => void
   className?: string
 }
 
@@ -32,6 +35,8 @@ export function ChatCanvasPanel({
   onClose,
   onSave,
   onClear,
+  handwriting = false,
+  onToggleHandwriting,
   className,
 }: ChatCanvasPanelProps) {
   const handleCopy = async () => {
@@ -142,7 +147,23 @@ export function ChatCanvasPanel({
             <span className="font-semibold text-foreground">Documents</span>.
           </p>
         ) : (
-          <div className="max-w-none">
+          <div
+            className="max-w-none"
+            // The same face the assistant writes with on a PDF page. Applied to
+            // the panel rather than to the text, so the draft itself is
+            // untouched: what is saved, copied or exported is the same
+            // document either way, and switching back costs nothing.
+            style={
+              handwriting
+                ? {
+                    fontFamily: 'var(--font-caveat), "Segoe Print", cursive',
+                    fontSize: "1.18em",
+                    lineHeight: 1.5,
+                    letterSpacing: "0.01em",
+                  }
+                : undefined
+            }
+          >
             <CanvasMarkdownContent content={content} />
             {streaming ? (
               <span

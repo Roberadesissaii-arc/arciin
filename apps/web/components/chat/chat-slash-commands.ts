@@ -41,7 +41,26 @@ export function expandHighlightSlashArgs(args: string): string {
   )
 }
 
+/**
+ * Commands the app carries out itself, with no model call.
+ *
+ * `/font` changes how the draft is drawn, not what it says — sending that to a
+ * model would spend tokens and a wait on a decision the client already has, and
+ * risk it rewriting the prose while it was there.
+ */
+export const CLIENT_SLASH_COMMANDS = new Set(["font"])
+
 export const CHAT_SLASH_COMMANDS: ChatSlashCommand[] = [
+  {
+    id: "font",
+    name: "font",
+    label: "Handwriting",
+    description: "Show the Canvas draft in the assistant's handwriting",
+    hint: "/font",
+    tools: [],
+    // Never reaches a model; `CLIENT_SLASH_COMMANDS` intercepts it first.
+    expand: () => "",
+  },
   {
     id: "modify",
     name: "modify",
