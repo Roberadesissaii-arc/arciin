@@ -30,7 +30,6 @@ import { useAssetsPage } from "@/hooks/use-assets"
 import { useLibraryBrowserFilters } from "@/hooks/use-library-browser-filters"
 import { useFolders, useLibraries } from "@/hooks/use-libraries"
 import { useUploadStore } from "@/lib/stores/upload-store"
-import { collectBadgeFilterOptions } from "@/lib/utils/asset-badge-filter"
 import {
   collectSourceFilterOptions,
   GRID_PAGE_SIZE,
@@ -51,12 +50,8 @@ export function FolderBrowser({
     setSearch,
     view,
     setView,
-    badgeFilter,
-    setBadgeFilter,
     sourceFilter,
     setSourceFilter,
-    sort,
-    setSort,
     page,
     setPage,
   } = useLibraryBrowserFilters()
@@ -114,18 +109,15 @@ export function FolderBrowser({
     () => assetsQuery.data?.pages.flatMap((page) => page.items) ?? [],
     [assetsQuery.data],
   )
-  const badgeOptions = useMemo(() => collectBadgeFilterOptions(rawAssets), [rawAssets])
   const sourceOptions = useMemo(() => collectSourceFilterOptions(rawAssets), [rawAssets])
   const assets = useMemo(
     () =>
       pipelineLibraryAssets(rawAssets, {
-        badgeFilter,
         kindFilter: "all",
         sourceFilter,
-        sort,
         applyKind: false,
       }),
-    [rawAssets, badgeFilter, sourceFilter, sort],
+    [rawAssets, sourceFilter],
   )
   const pageSize = view === "grid" ? GRID_PAGE_SIZE : LIST_PAGE_SIZE
   const totalPages = Math.max(1, Math.ceil(assets.length / pageSize))
@@ -134,8 +126,7 @@ export function FolderBrowser({
     () => assets.slice((safePage - 1) * pageSize, safePage * pageSize),
     [assets, safePage, pageSize],
   )
-  const filtersActive =
-    Boolean(search.trim()) || badgeFilter !== "all" || sourceFilter !== "all"
+  const filtersActive = Boolean(search.trim()) || sourceFilter !== "all"
 
   const librariesLoading = librariesQuery.isLoading
   const foldersBootLoading = foldersQuery.isLoading && foldersQuery.data === undefined
@@ -174,14 +165,9 @@ export function FolderBrowser({
           view={view}
           onViewChange={setView}
           resultCount={assets.length}
-          badgeFilter={badgeFilter}
-          onBadgeFilterChange={setBadgeFilter}
-          badgeOptions={badgeOptions}
           sourceFilter={sourceFilter}
           onSourceFilterChange={setSourceFilter}
           sourceOptions={sourceOptions}
-          sort={sort}
-          onSortChange={setSort}
           placeholder="Search files in this folder"
         />
 
@@ -198,7 +184,7 @@ export function FolderBrowser({
               assetsRefetching && "opacity-70 transition-opacity",
             )}
           >
-            <SelectableAssetsContainer assets={pageAssets} defaultLibraryId={library?.id}>
+            <SelectableAssetsContainer assets={assets} defaultLibraryId={library?.id}>
               {view === "grid" ? (
                 <AssetGrid assets={pageAssets} />
               ) : (

@@ -263,46 +263,49 @@ export function AssetCard({ asset }: { asset: AssetSummary }) {
   const source = sourceChipLabel(asset)
   const metaLine = `${formatBytes(asset.sizeBytes)} · ${formatCardRelativeTime(asset.createdAt)}`
 
+  /** Single click = select (bulk bar). Double-click = open preview. */
   const onCardClick = (event: React.MouseEvent) => {
     if (event.defaultPrevented) return
+    if (!selection) {
+      if (canOpen && viewer) viewer.openViewer(asset.id)
+      return
+    }
 
     const additive = event.metaKey || event.ctrlKey
     const range = event.shiftKey
 
-    if (selection && (range || additive)) {
-      event.preventDefault()
+    if (range || additive) {
       selection.toggle(asset.id, { additive: additive || range, range })
       return
     }
 
+    if (selected) {
+      selection.toggle(asset.id, { additive: true })
+    } else {
+      selection.selectOnly(asset.id)
+    }
+  }
+
+  const onCardDoubleClick = (event: React.MouseEvent) => {
+    if (event.defaultPrevented) return
     if (canOpen && viewer) {
       event.preventDefault()
       viewer.openViewer(asset.id)
-      return
-    }
-
-    if (selection) {
-      event.preventDefault()
-      if (selected) {
-        selection.toggle(asset.id, { additive: true })
-      } else {
-        selection.selectOnly(asset.id)
-      }
     }
   }
 
   return (
-    <button
-      type="button"
+    <article
       data-asset-id={asset.id}
       data-asset-selectable
-      onClick={onCardClick}
+      onClick={selection ? onCardClick : undefined}
+      onDoubleClick={onCardDoubleClick}
       title={asset.originalFilename}
       className={cn(
         "flex h-full flex-col overflow-hidden rounded-2xl border border-zinc-200/80 bg-white p-2.5 text-left shadow-sm",
         "transition-all duration-200 ease-out",
         "hover:-translate-y-0.5 hover:border-[rgba(255,79,18,0.3)] hover:shadow-md",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgba(255,79,18,0.18)]",
+        selection && "cursor-pointer",
         selected && "border-[rgba(255,79,18,0.45)] ring-2 ring-[rgba(255,79,18,0.18)]",
       )}
     >
@@ -332,6 +335,6 @@ export function AssetCard({ asset }: { asset: AssetSummary }) {
         </span>
         <AiStatusPill asset={asset} />
       </div>
-    </button>
+    </article>
   )
 }

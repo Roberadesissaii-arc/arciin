@@ -33,7 +33,6 @@ import { useAssetsPage } from "@/hooks/use-assets"
 import { useLibraryBrowserFilters } from "@/hooks/use-library-browser-filters"
 import { useFolders, useLibraries } from "@/hooks/use-libraries"
 import { useUploadStore } from "@/lib/stores/upload-store"
-import { collectBadgeFilterOptions } from "@/lib/utils/asset-badge-filter"
 import {
   collectSourceFilterOptions,
   GRID_PAGE_SIZE,
@@ -59,14 +58,10 @@ export function LibraryBrowser({
     setSearch,
     view,
     setView,
-    badgeFilter,
-    setBadgeFilter,
     kindFilter,
     setKindFilter,
     sourceFilter,
     setSourceFilter,
-    sort,
-    setSort,
     page,
     setPage,
   } = useLibraryBrowserFilters()
@@ -118,18 +113,15 @@ export function LibraryBrowser({
     () => assetsQuery.data?.pages.flatMap((page) => page.items) ?? [],
     [assetsQuery.data],
   )
-  const badgeOptions = useMemo(() => collectBadgeFilterOptions(rawAssets), [rawAssets])
   const sourceOptions = useMemo(() => collectSourceFilterOptions(rawAssets), [rawAssets])
   const assets = useMemo(
     () =>
       pipelineLibraryAssets(rawAssets, {
-        badgeFilter,
         kindFilter,
         sourceFilter,
-        sort,
         applyKind: isAllFiles,
       }),
-    [rawAssets, badgeFilter, kindFilter, sourceFilter, sort, isAllFiles],
+    [rawAssets, kindFilter, sourceFilter, isAllFiles],
   )
   const pageSize = view === "grid" ? GRID_PAGE_SIZE : LIST_PAGE_SIZE
   const totalPages = Math.max(1, Math.ceil(assets.length / pageSize))
@@ -140,7 +132,6 @@ export function LibraryBrowser({
   )
   const filtersActive =
     Boolean(search.trim()) ||
-    badgeFilter !== "all" ||
     sourceFilter !== "all" ||
     (isAllFiles && kindFilter !== "all")
 
@@ -198,14 +189,9 @@ export function LibraryBrowser({
           showKindChips={isAllFiles}
           kindFilter={kindFilter}
           onKindFilterChange={setKindFilter}
-          badgeFilter={badgeFilter}
-          onBadgeFilterChange={setBadgeFilter}
-          badgeOptions={badgeOptions}
           sourceFilter={sourceFilter}
           onSourceFilterChange={setSourceFilter}
           sourceOptions={sourceOptions}
-          sort={sort}
-          onSortChange={setSort}
           placeholder="Search files and metadata"
         />
 
@@ -222,7 +208,8 @@ export function LibraryBrowser({
               assetsRefetching && "opacity-70 transition-opacity",
             )}
           >
-            <SelectableAssetsContainer assets={pageAssets} defaultLibraryId={library?.id}>
+            {/* Full filtered set for selection/viewer; page slice for display only. */}
+            <SelectableAssetsContainer assets={assets} defaultLibraryId={library?.id}>
               {view === "grid" ? (
                 <AssetGrid assets={pageAssets} />
               ) : (

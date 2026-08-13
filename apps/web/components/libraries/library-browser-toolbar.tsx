@@ -8,13 +8,10 @@ import {
 } from "@/components/ui/filter-dropdown"
 import {
   KIND_CHIP_OPTIONS,
-  SORT_OPTIONS,
   type LibraryKindFilter,
-  type LibrarySortMode,
   type LibraryViewMode,
   type SourceFilterValue,
 } from "@/hooks/use-library-browser-filters"
-import type { BadgeFilterOption, BadgeFilterValue } from "@/lib/utils/asset-badge-filter"
 import { cn } from "@/lib/utils"
 
 function ViewModeButton({
@@ -57,14 +54,9 @@ export function LibraryBrowserToolbar({
   showKindChips = false,
   kindFilter = "all",
   onKindFilterChange,
-  badgeFilter = "all",
-  onBadgeFilterChange,
-  badgeOptions = [],
   sourceFilter = "all",
   onSourceFilterChange,
   sourceOptions = [],
-  sort = "modified",
-  onSortChange,
   placeholder = "Search files and metadata",
 }: {
   search: string
@@ -77,26 +69,11 @@ export function LibraryBrowserToolbar({
   showKindChips?: boolean
   kindFilter?: LibraryKindFilter
   onKindFilterChange?: (value: LibraryKindFilter) => void
-  badgeFilter?: BadgeFilterValue
-  onBadgeFilterChange?: (value: BadgeFilterValue) => void
-  badgeOptions?: BadgeFilterOption[]
   sourceFilter?: SourceFilterValue
   onSourceFilterChange?: (value: SourceFilterValue) => void
   sourceOptions?: FilterDropdownOption[]
-  sort?: LibrarySortMode
-  onSortChange?: (value: LibrarySortMode) => void
   placeholder?: string
 }) {
-  const badgeDropdownOptions: FilterDropdownOption[] = [
-    { value: "all", label: "All badges" },
-    { value: "none", label: "No badge" },
-    ...badgeOptions.map((o) => ({
-      value: o.value,
-      label: o.label,
-      color: o.color,
-    })),
-  ]
-
   const sourceDropdownOptions: FilterDropdownOption[] =
     sourceOptions.length > 0
       ? sourceOptions
@@ -172,16 +149,6 @@ export function LibraryBrowserToolbar({
             </div>
           ) : null}
 
-          {onBadgeFilterChange ? (
-            <FilterDropdown
-              ariaLabel="Badge filter"
-              value={badgeFilter}
-              onValueChange={(v) => onBadgeFilterChange(v as BadgeFilterValue)}
-              options={badgeDropdownOptions}
-              minWidthClass="min-w-[9.5rem]"
-            />
-          ) : null}
-
           {onSourceFilterChange ? (
             <FilterDropdown
               ariaLabel="Source filter"
@@ -189,16 +156,6 @@ export function LibraryBrowserToolbar({
               onValueChange={(v) => onSourceFilterChange(v as SourceFilterValue)}
               options={sourceDropdownOptions}
               minWidthClass="min-w-[9.5rem]"
-            />
-          ) : null}
-
-          {onSortChange ? (
-            <FilterDropdown
-              ariaLabel="Sort"
-              value={sort}
-              onValueChange={(v) => onSortChange(v as LibrarySortMode)}
-              options={SORT_OPTIONS}
-              minWidthClass="min-w-[9rem]"
             />
           ) : null}
         </div>

@@ -2,7 +2,6 @@
 
 import { useMemo, useState } from "react"
 
-import type { BadgeFilterValue } from "@/lib/utils/asset-badge-filter"
 import type { MediaType } from "@/lib/types/models"
 
 export type LibraryViewMode = "grid" | "table"
@@ -17,8 +16,6 @@ export type LibraryKindFilter =
   | "ARCHIVE"
   | "OTHER"
 
-export type LibrarySortMode = "modified" | "name" | "size" | "type"
-
 export type SourceFilterValue = "all" | (string & {})
 
 export const KIND_CHIP_OPTIONS: { value: LibraryKindFilter; label: string }[] = [
@@ -29,13 +26,6 @@ export const KIND_CHIP_OPTIONS: { value: LibraryKindFilter; label: string }[] = 
   { value: "AUDIO", label: "Audio" },
   { value: "ARCHIVE", label: "Archives" },
   { value: "OTHER", label: "Other" },
-]
-
-export const SORT_OPTIONS: { value: LibrarySortMode; label: string }[] = [
-  { value: "modified", label: "Sort: Modified" },
-  { value: "name", label: "Sort: Name" },
-  { value: "size", label: "Sort: Size" },
-  { value: "type", label: "Sort: Type" },
 ]
 
 export function mediaTypeMatchesKind(
@@ -53,23 +43,19 @@ export function mediaTypeMatchesKind(
 export function useLibraryBrowserFilters() {
   const [search, setSearch] = useState("")
   const [view, setView] = useState<LibraryViewMode>("grid")
-  const [badgeFilter, setBadgeFilter] = useState<BadgeFilterValue>("all")
   const [kindFilter, setKindFilter] = useState<LibraryKindFilter>("all")
   const [sourceFilter, setSourceFilter] = useState<SourceFilterValue>("all")
-  const [sort, setSort] = useState<LibrarySortMode>("modified")
   const [page, setPage] = useState(1)
 
   const filters = useMemo(
     () => ({
       search,
       view,
-      badgeFilter,
       kindFilter,
       sourceFilter,
-      sort,
       page,
     }),
-    [search, view, badgeFilter, kindFilter, sourceFilter, sort, page],
+    [search, view, kindFilter, sourceFilter, page],
   )
 
   return {
@@ -82,20 +68,12 @@ export function useLibraryBrowserFilters() {
       setView(value)
       setPage(1)
     },
-    setBadgeFilter: (value: BadgeFilterValue) => {
-      setBadgeFilter(value)
-      setPage(1)
-    },
     setKindFilter: (value: LibraryKindFilter) => {
       setKindFilter(value)
       setPage(1)
     },
     setSourceFilter: (value: SourceFilterValue) => {
       setSourceFilter(value)
-      setPage(1)
-    },
-    setSort: (value: LibrarySortMode) => {
-      setSort(value)
       setPage(1)
     },
     setPage,
