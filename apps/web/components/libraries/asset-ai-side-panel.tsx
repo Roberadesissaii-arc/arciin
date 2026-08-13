@@ -30,6 +30,10 @@ import {
   CHAT_SELECTED_PROFILE_ID_KEY,
 } from "@/lib/chat/chat-selection-storage"
 import { loadAssetImageBase64 } from "@/lib/chat/load-asset-image-base64"
+import {
+  buildPageVisionInstruction,
+  renderPdfPageToImage,
+} from "@/lib/files/render-pdf-page-image"
 import { useAssetChatModel } from "@/hooks/use-asset-chat-model"
 import { useSpeechToText } from "@/hooks/use-speech-to-text"
 import { queryKeys } from "@/lib/api/query-keys"
@@ -188,6 +192,16 @@ export function AssetAiSidePanel({
   const isPdfAsset =
     /\.pdf$/i.test(asset.originalFilename) || asset.mimeType === "application/pdf"
   const pdfPageIndex = usePdfNavigationIndex(asset.id, isPdfAsset)
+
+  /**
+   * The same URL the viewer opened, so rasterising reuses the cached document
+   * instead of downloading the file a second time.
+   */
+  const pdfFileUrl = useMemo(
+    () =>
+      `/api/assets/${asset.id}/download?inline=1&v=${encodeURIComponent(asset.updatedAt)}`,
+    [asset.id, asset.updatedAt],
+  )
   const currentPageLabel = useMemo(
     () =>
       pdfPage && pdfPageIndex?.length
@@ -561,6 +575,34 @@ export function AssetAiSidePanel({
             }
           }
           break
+        }
+      }
+
+      /**
+       * Show the model the page it is annotating.
+       *
+       * Only on a study pass, and only when the model can actually see: an
+       * image sent to a text model is wasted tokens, and rasterising costs real
+       * time. When it cannot, the turn proceeds on the text layer exactly as
+       * before — a page image is an improvement to the assistant's judgement,
+       * not a requirement for the feature to work.
+       */
+      if (isPdfAsset && visionCapable && pdfPage && pdfPage > 0) {
+        const lastUser = [...payload].reverse().find((m) => m.role === "user")
+        const typed = typeof lastUser?.content === "string" ? lastUser.content : ""
+        if (isStudyAnnotationRequest(typed)) {
+          const shot = await renderPdfPageToImage(pdfFileUrl, pdfPage)
+          if (shot) {
+            for (let i = payload.length - 1; i >= 0; i--) {
+              if (payload[i].role !== "user") continue
+              payload[i] = {
+                ...payload[i],
+                images: [shot.base64],
+                content: payload[i].content + buildPageVisionInstruction(),
+              }
+              break
+            }
+          }
         }
       }
 
