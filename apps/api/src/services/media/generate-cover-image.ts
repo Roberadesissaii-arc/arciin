@@ -21,6 +21,9 @@ import {
   buildCoverBriefInstruction,
   buildCoverPrompt,
   buildCoverPromptFromBrief,
+  isUsableCoverBrief,
+  sanitizeDocumentExcerpt,
+  wrapUntrustedExcerpt,
 } from "@arciin/shared"
 
 import { readPdfAssetContent } from "@/services/chat/read-pdf-asset"
@@ -141,7 +144,7 @@ async function writeCoverBrief(
         max_tokens: 600,
         messages: [
           { role: "system", content: buildCoverBriefInstruction(filename) },
-          { role: "user", content: excerpt.slice(0, 4000) },
+          { role: "user", content: wrapUntrustedExcerpt(excerpt) },
         ],
       }),
       signal: AbortSignal.timeout(45_000),
@@ -154,7 +157,10 @@ async function writeCoverBrief(
     if (!text) return null
     // Take the last non-empty line: a chatty model prefixes its answer.
     const line = text.split("\n").map((l) => l.trim()).filter(Boolean).at(-1)
-    return line && line.length > 8 ? line.slice(0, 400) : null
+    // The model has just read attacker-controlled text, so its answer is checked
+    // rather than trusted. A rejected brief falls back to the direct prompt,
+    // which is built from sanitised text and fixed rules.
+    return line && isUsableCoverBrief(line) ? line : null
   } catch {
     return null
   }
@@ -260,7 +266,11 @@ export async function generateAssetCoverImage(
   let excerpt = ""
   if (isPdf) {
     const read = await readPdfAssetContent(fastify.prisma, { assetId, maxPages: 3 })
-    if (typeof read.content === "string") excerpt = stripReaderPreamble(read.content)
+    if (typeof read.content === "string") {
+      // Sanitised at the source, so both the brief path and the direct fallback
+      // get text with the obvious steering removed.
+      excerpt = sanitizeDocumentExcerpt(stripReaderPreamble(read.content))
+    }
   }
 
   // A cheap text model reads the document and art-directs; the image model only
