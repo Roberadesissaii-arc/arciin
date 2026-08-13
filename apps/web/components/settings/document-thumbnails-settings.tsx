@@ -23,8 +23,8 @@ export function DocumentThumbnailsSettings() {
           <div>
             <CardTitle className="text-foreground">Document thumbnails</CardTitle>
             <CardDescription className="text-zinc-600">
-              On by default. Arciin renders the first page of PDFs as preview images in your
-              libraries. Turn off to skip thumbnail generation on the server.
+              On by default. When enabled, Arciin shows first-page previews for PDFs on library
+              cards and queues thumbnail jobs on the server. Turn off if you prefer icons only.
             </CardDescription>
           </div>
         </div>

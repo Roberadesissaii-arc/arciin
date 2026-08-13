@@ -1,10 +1,10 @@
 "use client"
 
 import { useState } from "react"
+import { useQuery } from "@tanstack/react-query"
 import {
   AlertTriangle,
   Archive,
-  Check,
   Code2,
   File,
   FileText,
@@ -16,9 +16,12 @@ import {
   Video,
   type LucideIcon,
 } from "lucide-react"
+import { assetSupportsDocumentThumbnail, DEFAULT_USER_PREFERENCES } from "@arciin/shared"
 
 import { useAssetSelection } from "@/components/libraries/asset-selection"
 import { useAssetViewerOptional } from "@/components/libraries/asset-viewer-context"
+import { getUserPreferences } from "@/lib/api/user-preferences"
+import { queryKeys } from "@/lib/api/query-keys"
 import { resolveAssetBadge } from "@/lib/utils/asset-badge"
 import { formatBytes } from "@/lib/utils/format-bytes"
 import { formatCardRelativeTime } from "@/lib/utils/format-card-relative-time"
@@ -66,12 +69,7 @@ function IconForMediaType(mediaType: MediaType): LucideIcon {
   }
 }
 
-type AiStatusTone =
-  | "indexed"
-  | "working"
-  | "queued"
-  | "failed"
-  | "skipped"
+type AiStatusTone = "ready" | "working" | "queued" | "failed" | "skipped"
 
 type AiStatusView = {
   label: string
@@ -83,8 +81,9 @@ type AiStatusView = {
 function resolveAiStatus(asset: AssetSummary): AiStatusView {
   const status: AssetStatus = asset.status
 
+  // Neutral “Ready” — not a green “Indexed” claim.
   if (status === "READY") {
-    return { label: "Indexed", tone: "indexed", Icon: Check }
+    return { label: "Ready", tone: "ready" }
   }
   if (status === "FAILED") {
     return { label: "Failed", tone: "failed", Icon: AlertTriangle }
@@ -116,6 +115,14 @@ function sourceChipLabel(asset: AssetSummary): string {
 
 function MediaPreview({ asset }: { asset: AssetSummary }) {
   const [thumbFailed, setThumbFailed] = useState(false)
+  const { data: prefs } = useQuery({
+    queryKey: queryKeys.userPreferences,
+    queryFn: ({ signal }) => getUserPreferences(signal),
+    staleTime: 60_000,
+  })
+  const docThumbs =
+    prefs?.media.documentThumbnails ?? DEFAULT_USER_PREFERENCES.media.documentThumbnails
+
   const accent = accentForMediaType(asset.mediaType)
   const TypeIcon = IconForMediaType(asset.mediaType)
   const ext = (
@@ -129,6 +136,16 @@ function MediaPreview({ asset }: { asset: AssetSummary }) {
 
   const isImage = asset.mediaType === "IMAGE" && !thumbFailed
   const isVideo = asset.mediaType === "VIDEO"
+  const isDocThumb =
+    docThumbs &&
+    !thumbFailed &&
+    assetSupportsDocumentThumbnail(
+      asset.mediaType,
+      asset.mimeType,
+      asset.extension,
+      asset.originalFilename,
+    )
+  const showBitmap = isImage || isDocThumb
 
   return (
     <div
@@ -154,13 +171,13 @@ function MediaPreview({ asset }: { asset: AssetSummary }) {
         </span>
       </div>
 
-      {!isImage && !isVideo && ext ? (
+      {!showBitmap && !isVideo && ext ? (
         <span className="absolute bottom-1.5 right-2 text-[9px] font-bold uppercase tracking-wider text-zinc-400">
           {ext}
         </span>
       ) : null}
 
-      {isImage ? (
+      {showBitmap ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
           src={thumbSrc}
@@ -215,7 +232,7 @@ function AiStatusPill({ asset }: { asset: AssetSummary }) {
     <span
       className={cn(
         "inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
-        view.tone === "indexed" && "bg-emerald-50 text-emerald-700",
+        view.tone === "ready" && "bg-zinc-100 text-zinc-600",
         view.tone === "working" && "text-[#FF4F12]",
         view.tone === "queued" && "bg-zinc-100 text-zinc-600",
         view.tone === "failed" && "bg-red-50 text-red-700",

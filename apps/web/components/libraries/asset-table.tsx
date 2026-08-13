@@ -26,7 +26,6 @@ import {
   dashboardTableBodyRow,
   dashboardTableHeadCell,
   dashboardTableHeadRow,
-  dashboardTablePagination,
   dashboardTablePanel,
   dashboardTablePanelHeader,
   dashboardTableActionDanger,
@@ -176,15 +175,31 @@ function AssetTableRow({ asset }: { asset: AssetSummary }) {
 export function AssetTable({
   assets,
   title = "Files",
+  /** When provided with page/totalPages, parent owns pagination (list view page size 10). */
+  totalCount,
+  page: controlledPage,
+  totalPages: controlledTotalPages,
+  onPageChange,
 }: {
   assets: AssetSummary[]
   title?: string
+  totalCount?: number
+  page?: number
+  totalPages?: number
+  onPageChange?: (page: number) => void
 }) {
-  const [page, setPage] = useState(1)
+  const [internalPage, setInternalPage] = useState(1)
   const selection = useAssetSelection()
-  const totalPages = Math.max(1, Math.ceil(assets.length / PAGE_SIZE))
-  const safePage = Math.min(page, totalPages)
-  const pageAssets = assets.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE)
+  const controlled = typeof controlledPage === "number" && typeof onPageChange === "function"
+  const totalPages = controlled
+    ? Math.max(1, controlledTotalPages ?? 1)
+    : Math.max(1, Math.ceil(assets.length / PAGE_SIZE))
+  const page = controlled ? controlledPage : Math.min(internalPage, totalPages)
+  const setPage = controlled ? onPageChange! : setInternalPage
+  const pageAssets = controlled
+    ? assets
+    : assets.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+  const fileCount = totalCount ?? assets.length
 
   const allOnPageSelected =
     pageAssets.length > 0 && pageAssets.every((a) => selection?.isSelected(a.id))
@@ -194,9 +209,9 @@ export function AssetTable({
       <div className={dashboardTablePanelHeader}>
         <Files className="size-4 text-primary" />
         <span className="text-sm font-semibold text-foreground">{title}</span>
-        <span className="ml-auto rounded-md bg-muted px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">
-          {assets.length} file{assets.length === 1 ? "" : "s"}
-          {totalPages > 1 ? ` · page ${safePage} of ${totalPages}` : ""}
+        <span className="ml-auto rounded-md bg-zinc-100 px-2 py-0.5 text-[11px] font-semibold text-zinc-500">
+          {fileCount} file{fileCount === 1 ? "" : "s"}
+          {totalPages > 1 ? ` · page ${page} of ${totalPages}` : ""}
         </span>
       </div>
 
@@ -248,8 +263,8 @@ export function AssetTable({
       </Table>
 
       {totalPages > 1 && (
-        <div className={dashboardTablePagination}>
-          <AppPagination page={safePage} totalPages={totalPages} onPageChange={setPage} />
+        <div className="border-t border-zinc-200 px-5 py-3">
+          <AppPagination page={page} totalPages={totalPages} onPageChange={setPage} />
         </div>
       )}
     </div>

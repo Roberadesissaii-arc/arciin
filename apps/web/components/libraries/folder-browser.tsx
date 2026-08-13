@@ -20,21 +20,23 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty"
+import { GridPaginationBar } from "@/components/ui/app-pagination"
 import {
   AssetGridSkeleton,
   AssetTableSkeleton,
   LibraryBrowserSkeleton,
 } from "@/components/libraries/library-browser-skeleton"
-import { LoadMoreAssets } from "@/components/libraries/load-more-assets"
 import { useAssetsPage } from "@/hooks/use-assets"
 import { useLibraryBrowserFilters } from "@/hooks/use-library-browser-filters"
 import { useFolders, useLibraries } from "@/hooks/use-libraries"
 import { useUploadStore } from "@/lib/stores/upload-store"
+import { collectBadgeFilterOptions } from "@/lib/utils/asset-badge-filter"
 import {
-  collectBadgeFilterOptions,
-  filterAssetsByBadge,
-  hasActiveLibraryFilters,
-} from "@/lib/utils/asset-badge-filter"
+  collectSourceFilterOptions,
+  GRID_PAGE_SIZE,
+  LIST_PAGE_SIZE,
+  pipelineLibraryAssets,
+} from "@/lib/utils/library-asset-pipeline"
 import { cn } from "@/lib/utils"
 
 export function FolderBrowser({
@@ -44,8 +46,20 @@ export function FolderBrowser({
   librarySlug: string
   folderSlug: string
 }) {
-  const { search, setSearch, view, setView, badgeFilter, setBadgeFilter } =
-    useLibraryBrowserFilters()
+  const {
+    search,
+    setSearch,
+    view,
+    setView,
+    badgeFilter,
+    setBadgeFilter,
+    sourceFilter,
+    setSourceFilter,
+    sort,
+    setSort,
+    page,
+    setPage,
+  } = useLibraryBrowserFilters()
   const setUploadContext = useUploadStore((state) => state.setUploadContext)
 
   const librariesQuery = useLibraries()
@@ -79,26 +93,49 @@ export function FolderBrowser({
     [allFolders, folder?.id]
   )
 
-  // No mediaType filter: the folder is already the scope, and filtering on top
-  // of it hid files whose type did not match the parent library — which is what
-  // made a folder card's count disagree with the files the folder actually
-  // showed.
   const assetsQuery = useAssetsPage({
     libraryId: library?.id,
     folderId: folder?.id,
     search: search || undefined,
   })
+
+  useEffect(() => {
+    if (assetsQuery.hasNextPage && !assetsQuery.isFetchingNextPage) {
+      void assetsQuery.fetchNextPage()
+    }
+  }, [
+    assetsQuery.hasNextPage,
+    assetsQuery.isFetchingNextPage,
+    assetsQuery.fetchNextPage,
+    assetsQuery.data?.pages.length,
+  ])
+
   const rawAssets = useMemo(
     () => assetsQuery.data?.pages.flatMap((page) => page.items) ?? [],
     [assetsQuery.data],
   )
-  const matchingTotal = assetsQuery.data?.pages[0]?.total
   const badgeOptions = useMemo(() => collectBadgeFilterOptions(rawAssets), [rawAssets])
+  const sourceOptions = useMemo(() => collectSourceFilterOptions(rawAssets), [rawAssets])
   const assets = useMemo(
-    () => filterAssetsByBadge(rawAssets, badgeFilter),
-    [rawAssets, badgeFilter],
+    () =>
+      pipelineLibraryAssets(rawAssets, {
+        badgeFilter,
+        kindFilter: "all",
+        sourceFilter,
+        sort,
+        applyKind: false,
+      }),
+    [rawAssets, badgeFilter, sourceFilter, sort],
   )
-  const filtersActive = hasActiveLibraryFilters(search, badgeFilter)
+  const pageSize = view === "grid" ? GRID_PAGE_SIZE : LIST_PAGE_SIZE
+  const totalPages = Math.max(1, Math.ceil(assets.length / pageSize))
+  const safePage = Math.min(page, totalPages)
+  const pageAssets = useMemo(
+    () => assets.slice((safePage - 1) * pageSize, safePage * pageSize),
+    [assets, safePage, pageSize],
+  )
+  const filtersActive =
+    Boolean(search.trim()) || badgeFilter !== "all" || sourceFilter !== "all"
 
   const librariesLoading = librariesQuery.isLoading
   const foldersBootLoading = foldersQuery.isLoading && foldersQuery.data === undefined
@@ -136,9 +173,15 @@ export function FolderBrowser({
           onSearchChange={setSearch}
           view={view}
           onViewChange={setView}
+          resultCount={assets.length}
           badgeFilter={badgeFilter}
           onBadgeFilterChange={setBadgeFilter}
           badgeOptions={badgeOptions}
+          sourceFilter={sourceFilter}
+          onSourceFilterChange={setSourceFilter}
+          sourceOptions={sourceOptions}
+          sort={sort}
+          onSortChange={setSort}
           placeholder="Search files in this folder"
         />
 
@@ -149,21 +192,33 @@ export function FolderBrowser({
             <AssetGridSkeleton />
           )
         ) : assets.length > 0 ? (
-          <div className={cn(assetsRefetching && "opacity-70 transition-opacity")}>
-            <SelectableAssetsContainer assets={assets} defaultLibraryId={library?.id}>
+          <div
+            className={cn(
+              "space-y-3",
+              assetsRefetching && "opacity-70 transition-opacity",
+            )}
+          >
+            <SelectableAssetsContainer assets={pageAssets} defaultLibraryId={library?.id}>
               {view === "grid" ? (
-                <AssetGrid assets={assets} />
+                <AssetGrid assets={pageAssets} />
               ) : (
-                <AssetTable assets={assets} title="Files" />
+                <AssetTable
+                  assets={pageAssets}
+                  title="Files"
+                  totalCount={assets.length}
+                  page={safePage}
+                  totalPages={totalPages}
+                  onPageChange={setPage}
+                />
               )}
             </SelectableAssetsContainer>
-            <LoadMoreAssets
-              hasMore={assetsQuery.hasNextPage}
-              isLoading={assetsQuery.isFetchingNextPage}
-              onLoadMore={() => void assetsQuery.fetchNextPage()}
-              loadedCount={assets.length}
-              total={matchingTotal}
-            />
+            {view === "grid" ? (
+              <GridPaginationBar
+                page={safePage}
+                totalPages={totalPages}
+                onPageChange={setPage}
+              />
+            ) : null}
           </div>
         ) : (
           <Empty className="border border-border bg-card py-16">

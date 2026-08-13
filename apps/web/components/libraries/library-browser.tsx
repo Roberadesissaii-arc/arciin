@@ -23,7 +23,7 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty"
-import { LoadMoreAssets } from "@/components/libraries/load-more-assets"
+import { GridPaginationBar } from "@/components/ui/app-pagination"
 import {
   AssetGridSkeleton,
   AssetTableSkeleton,
@@ -33,11 +33,13 @@ import { useAssetsPage } from "@/hooks/use-assets"
 import { useLibraryBrowserFilters } from "@/hooks/use-library-browser-filters"
 import { useFolders, useLibraries } from "@/hooks/use-libraries"
 import { useUploadStore } from "@/lib/stores/upload-store"
+import { collectBadgeFilterOptions } from "@/lib/utils/asset-badge-filter"
 import {
-  collectBadgeFilterOptions,
-  filterAssetsByBadge,
-  hasActiveLibraryFilters,
-} from "@/lib/utils/asset-badge-filter"
+  collectSourceFilterOptions,
+  GRID_PAGE_SIZE,
+  LIST_PAGE_SIZE,
+  pipelineLibraryAssets,
+} from "@/lib/utils/library-asset-pipeline"
 import { cn } from "@/lib/utils"
 
 export function LibraryBrowser({
@@ -52,8 +54,22 @@ export function LibraryBrowser({
   /** Optional hero intro (e.g. All Files). Replaces PageHeader when set. */
   intro?: ReactNode
 }) {
-  const { search, setSearch, view, setView, badgeFilter, setBadgeFilter } =
-    useLibraryBrowserFilters()
+  const {
+    search,
+    setSearch,
+    view,
+    setView,
+    badgeFilter,
+    setBadgeFilter,
+    kindFilter,
+    setKindFilter,
+    sourceFilter,
+    setSourceFilter,
+    sort,
+    setSort,
+    page,
+    setPage,
+  } = useLibraryBrowserFilters()
   const [scope, setScope] = useState<LibraryAssetScope>("all")
   const setUploadContext = useUploadStore((state) => state.setUploadContext)
   const librariesQuery = useLibraries()
@@ -61,6 +77,7 @@ export function LibraryBrowser({
     () => librariesQuery.data?.find((item) => item.slug === librarySlug),
     [librariesQuery.data, librarySlug]
   )
+  const isAllFiles = !librarySlug
 
   useEffect(() => {
     if (library?.id) {
@@ -75,28 +92,57 @@ export function LibraryBrowser({
    * count is every visible asset in the library, folders included. Root-only
    * stays available as an explicit filter.
    *
-   * No mediaType filter: the library is already the scope, and filtering on
-   * top of it permanently hid anything filed under a mismatched type — an
-   * image sitting in Videos was counted in the sidebar but unreachable.
+   * No mediaType filter on the API: kind chips filter client-side so a file
+   * filed under a mismatched library stays reachable from its library page.
    */
   const assetsQuery = useAssetsPage({
     libraryId: library?.id,
     search: search || undefined,
     ...(librarySlug && scope === "root" ? { rootOnly: true } : {}),
   })
+
+  // Pull remaining pages so grid/list page numbers can walk the full set.
+  useEffect(() => {
+    if (assetsQuery.hasNextPage && !assetsQuery.isFetchingNextPage) {
+      void assetsQuery.fetchNextPage()
+    }
+  }, [
+    assetsQuery.hasNextPage,
+    assetsQuery.isFetchingNextPage,
+    assetsQuery.fetchNextPage,
+    assetsQuery.data?.pages.length,
+  ])
+
   const folders = foldersQuery.data ?? []
   const rawAssets = useMemo(
     () => assetsQuery.data?.pages.flatMap((page) => page.items) ?? [],
     [assetsQuery.data],
   )
-  /** Total for this filter set, returned with the first page. */
-  const matchingTotal = assetsQuery.data?.pages[0]?.total
   const badgeOptions = useMemo(() => collectBadgeFilterOptions(rawAssets), [rawAssets])
+  const sourceOptions = useMemo(() => collectSourceFilterOptions(rawAssets), [rawAssets])
   const assets = useMemo(
-    () => filterAssetsByBadge(rawAssets, badgeFilter),
-    [rawAssets, badgeFilter],
+    () =>
+      pipelineLibraryAssets(rawAssets, {
+        badgeFilter,
+        kindFilter,
+        sourceFilter,
+        sort,
+        applyKind: isAllFiles,
+      }),
+    [rawAssets, badgeFilter, kindFilter, sourceFilter, sort, isAllFiles],
   )
-  const filtersActive = hasActiveLibraryFilters(search, badgeFilter)
+  const pageSize = view === "grid" ? GRID_PAGE_SIZE : LIST_PAGE_SIZE
+  const totalPages = Math.max(1, Math.ceil(assets.length / pageSize))
+  const safePage = Math.min(page, totalPages)
+  const pageAssets = useMemo(
+    () => assets.slice((safePage - 1) * pageSize, safePage * pageSize),
+    [assets, safePage, pageSize],
+  )
+  const filtersActive =
+    Boolean(search.trim()) ||
+    badgeFilter !== "all" ||
+    sourceFilter !== "all" ||
+    (isAllFiles && kindFilter !== "all")
 
   const librariesLoading = librariesQuery.isLoading
   const foldersBootLoading = Boolean(librarySlug && foldersQuery.isLoading && foldersQuery.data === undefined)
@@ -139,7 +185,7 @@ export function LibraryBrowser({
             scope={scope}
             onScopeChange={setScope}
             loadedCount={assets.length}
-            matchingTotal={matchingTotal}
+            matchingTotal={assetsQuery.data?.pages[0]?.total}
           />
         ) : null}
 
@@ -148,9 +194,18 @@ export function LibraryBrowser({
           onSearchChange={setSearch}
           view={view}
           onViewChange={setView}
+          resultCount={assets.length}
+          showKindChips={isAllFiles}
+          kindFilter={kindFilter}
+          onKindFilterChange={setKindFilter}
           badgeFilter={badgeFilter}
           onBadgeFilterChange={setBadgeFilter}
           badgeOptions={badgeOptions}
+          sourceFilter={sourceFilter}
+          onSourceFilterChange={setSourceFilter}
+          sourceOptions={sourceOptions}
+          sort={sort}
+          onSortChange={setSort}
           placeholder="Search files and metadata"
         />
 
@@ -161,21 +216,33 @@ export function LibraryBrowser({
             <AssetGridSkeleton />
           )
         ) : assets.length ? (
-          <div className={cn(assetsRefetching && "opacity-70 transition-opacity")}>
-            <SelectableAssetsContainer assets={assets} defaultLibraryId={library?.id}>
+          <div
+            className={cn(
+              "space-y-3",
+              assetsRefetching && "opacity-70 transition-opacity",
+            )}
+          >
+            <SelectableAssetsContainer assets={pageAssets} defaultLibraryId={library?.id}>
               {view === "grid" ? (
-                <AssetGrid assets={assets} />
+                <AssetGrid assets={pageAssets} />
               ) : (
-                <AssetTable assets={assets} title={librarySlug ? "Assets" : "Files"} />
+                <AssetTable
+                  assets={pageAssets}
+                  title={librarySlug ? "Assets" : "Files"}
+                  totalCount={assets.length}
+                  page={safePage}
+                  totalPages={totalPages}
+                  onPageChange={setPage}
+                />
               )}
             </SelectableAssetsContainer>
-            <LoadMoreAssets
-              hasMore={assetsQuery.hasNextPage}
-              isLoading={assetsQuery.isFetchingNextPage}
-              onLoadMore={() => void assetsQuery.fetchNextPage()}
-              loadedCount={assets.length}
-              total={matchingTotal}
-            />
+            {view === "grid" ? (
+              <GridPaginationBar
+                page={safePage}
+                totalPages={totalPages}
+                onPageChange={setPage}
+              />
+            ) : null}
           </div>
         ) : (
           <Empty className="relative overflow-hidden border border-border bg-gradient-to-b from-muted/40 via-card to-card py-20">

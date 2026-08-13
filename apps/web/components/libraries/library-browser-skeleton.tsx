@@ -7,21 +7,26 @@ import {
 } from "@/lib/dashboard-table-styles"
 import { cn } from "@/lib/utils"
 
-/** Mirrors LibraryBrowserToolbar chrome. */
+/** Mirrors LibraryBrowserToolbar chrome (search row + filter row). */
 export function LibraryBrowserToolbarSkeleton() {
   return (
     <div
-      className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm"
+      className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm"
       aria-hidden
     >
-      <div className="flex min-h-[3.25rem] items-center gap-2 border-b border-border/80 bg-muted/15 px-3 py-2.5 sm:px-4">
+      <div className="flex min-h-[3.25rem] items-center gap-2 border-b border-zinc-100 bg-zinc-50/40 px-3 py-2.5 sm:px-4">
         <Skeleton className="size-4 shrink-0 rounded" />
-        <Skeleton className="h-9 min-w-0 flex-1 rounded-lg" />
-        <Skeleton className="hidden h-9 w-[9.5rem] shrink-0 rounded-lg sm:block" />
-        <div className="flex shrink-0 gap-1">
-          <Skeleton className="h-9 w-16 rounded-lg sm:w-20" />
-          <Skeleton className="h-9 w-16 rounded-lg sm:w-20" />
+        <Skeleton className="h-10 min-w-0 flex-1 rounded-lg" />
+        <Skeleton className="h-5 w-10 shrink-0 rounded-md" />
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-3 px-3 py-2.5 sm:px-4">
+        <div className="flex flex-wrap gap-2">
+          <Skeleton className="h-8 w-12 rounded-lg" />
+          <Skeleton className="h-8 w-14 rounded-lg" />
+          <Skeleton className="h-[46px] w-[9.5rem] rounded-xl" />
+          <Skeleton className="h-[46px] w-[9rem] rounded-xl" />
         </div>
+        <Skeleton className="h-11 w-28 rounded-lg" />
       </div>
     </div>
   )
