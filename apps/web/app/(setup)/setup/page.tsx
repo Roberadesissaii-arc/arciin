@@ -1,11 +1,13 @@
 import { Suspense } from "react"
-import Link from "next/link"
 
-import { AUTH_HERO_GRADIENT } from "@/components/auth/auth-light"
+import {
+  AuthHeroPanel,
+  AuthLightLegalFooter,
+  AuthLightPageHeader,
+} from "@/components/auth/auth-light"
 import { AuthRouteGuard } from "@/components/auth/auth-route-guard"
 import { SetupForm } from "@/components/auth/setup-form"
 import { SetupHeroShowcase } from "@/components/auth/setup-hero-showcase"
-import { ArciinMarkLetter } from "@/components/ui/arciin-icon"
 
 export const dynamic = "force-dynamic"
 
@@ -23,25 +25,37 @@ export default function SetupPage() {
 }
 
 /**
- * Mirrors the login shell:
- * - Left: form column (viewport-locked, no page scroll)
- * - Right: orange rounded panel with the same dashboard preview image as login
+ * Original setup proportions:
+ * - LEFT: thick orange AuthHeroPanel (rounded-[28px], inset padding) + image + dots
+ * - RIGHT: claim form column
+ * Viewport locked — no page scroll.
  */
 function SetupPageShell() {
   return (
-    <main className="flex h-svh max-h-svh overflow-hidden bg-white text-[#222222]">
-      <div className="flex h-full w-full">
-        {/* Left — multi-step claim form */}
-        <section className="relative flex h-full min-h-0 w-full flex-col px-6 py-5 sm:px-10 sm:py-6 lg:w-1/2 lg:px-12 lg:py-6">
-          <div className="flex shrink-0 items-center gap-2">
-            <ArciinMarkLetter size="sm" />
-            <span className="font-heading text-[17px] font-bold leading-none tracking-tight text-[#111111]">
-              Arciin<span className="text-[#ff4f12]">.</span>
-            </span>
-          </div>
+    <main className="relative flex h-svh max-h-svh overflow-hidden bg-[#f7f7f7] text-[#222222]">
+      {/* Left — original hero container size/thickness */}
+      <section className="relative z-0 hidden h-full lg:flex lg:w-[48%] xl:w-[45%] lg:p-5">
+        <AuthHeroPanel fill>
+          <SetupHeroShowcase />
+        </AuthHeroPanel>
+      </section>
 
-          <div className="flex min-h-0 flex-1 flex-col justify-center py-3">
-            <div className="mx-auto flex h-full max-h-[40rem] min-h-0 w-full max-w-md flex-col">
+      {/* Right — 3-step form, fills height without page scroll */}
+      <section className="relative z-0 flex h-full min-h-0 w-full flex-col overflow-hidden lg:w-[52%] xl:w-[55%]">
+        <header className="relative z-10 shrink-0 px-6 sm:px-10 lg:px-14">
+          <div className="flex h-14 items-center justify-between">
+            <div className="lg:hidden">
+              <AuthLightPageHeader contextLabel="First-run setup" />
+            </div>
+            <div className="hidden text-xs text-[#a0a0a0] lg:block">
+              Private instance configuration
+            </div>
+          </div>
+        </header>
+
+        <div className="relative z-10 flex min-h-0 flex-1 flex-col overflow-hidden px-6 pb-2 sm:px-10 lg:px-14">
+          <div className="mx-auto flex h-full min-h-0 w-full max-w-xl flex-col">
+            <div className="flex min-h-0 flex-1 flex-col rounded-3xl border border-[#efefef] bg-white px-5 py-5 shadow-[0_1px_2px_rgba(0,0,0,0.03)] sm:px-7 sm:py-6">
               <Suspense
                 fallback={
                   <div className="flex flex-1 items-center justify-center text-sm text-[#a0a0a0]">
@@ -53,36 +67,10 @@ function SetupPageShell() {
               </Suspense>
             </div>
           </div>
+        </div>
 
-          <div className="flex shrink-0 items-center justify-between gap-4">
-            <p className="text-[11px] text-[#b3b3b3]">Copyright © 2026 Arciin.</p>
-            <div className="flex items-center gap-4">
-              <Link
-                href="/legal/privacy"
-                className="text-[11px] text-[#a0a0a0] underline-offset-4 transition-colors hover:text-[#555555] hover:underline"
-              >
-                Privacy Policy
-              </Link>
-              <Link
-                href="/legal/terms"
-                className="text-[11px] text-[#a0a0a0] underline-offset-4 transition-colors hover:text-[#555555] hover:underline"
-              >
-                Terms
-              </Link>
-            </div>
-          </div>
-        </section>
-
-        {/* Right — same orange container + dashboard image as /login */}
-        <section className="hidden h-full lg:block lg:w-1/2 lg:p-4 lg:pl-0">
-          <div
-            className="h-full w-full overflow-hidden rounded-[22px]"
-            style={{ background: AUTH_HERO_GRADIENT }}
-          >
-            <SetupHeroShowcase />
-          </div>
-        </section>
-      </div>
+        <AuthLightLegalFooter className="border-t-0 px-6 py-3 sm:px-10 lg:px-14" />
+      </section>
     </main>
   )
 }

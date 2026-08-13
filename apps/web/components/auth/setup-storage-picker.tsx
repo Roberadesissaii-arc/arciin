@@ -142,12 +142,12 @@ export function SetupStoragePicker({
     return (
       <div
         className={cn(
-          "flex items-center gap-2 rounded-2xl border border-[#ececec] bg-[#fafafa] px-3.5 text-sm text-[#a0a0a0]",
-          compact ? "h-16" : "h-20",
+          "flex items-center gap-2 rounded-2xl border border-[#ececec] bg-[#fafafa] px-3 text-sm text-[#a0a0a0]",
+          compact ? "h-12" : "h-16",
         )}
       >
         <Loader2 className="size-3.5 animate-spin text-[#ff4f12]" />
-        Scanning disks on this server…
+        Scanning disks…
       </div>
     )
   }
@@ -170,23 +170,23 @@ export function SetupStoragePicker({
             choiceId === recommended.id && !customMode
               ? "border-[#ffb59a] bg-gradient-to-br from-[#fff8f4] to-white shadow-[0_1px_0_rgba(255,79,18,0.08)]"
               : "border-[#ececec] bg-white hover:border-[#e0e0e0]",
-            compact ? "p-3" : "p-3.5",
+            compact ? "p-2.5" : "p-3.5",
           )}
         >
-          <div className="flex items-start gap-3">
+          <div className="flex items-center gap-2.5">
             <div
               className={cn(
-                "flex size-9 shrink-0 items-center justify-center rounded-xl border",
+                "flex size-8 shrink-0 items-center justify-center rounded-lg border",
                 choiceId === recommended.id && !customMode
                   ? "border-[#ffcab5] bg-white text-[#ff4f12]"
                   : "border-[#f0f0f0] bg-[#f7f7f7] text-[#8a8a8a]",
               )}
             >
-              <HardDrive className="size-4" />
+              <HardDrive className="size-3.5" />
             </div>
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-1.5">
-                <span className="truncate text-[13px] font-semibold text-[#111111]">
+                <span className="truncate text-[12.5px] font-semibold text-[#111111]">
                   {recommended.label}
                 </span>
                 <span className="inline-flex items-center gap-0.5 rounded-full bg-[#ff4f12]/10 px-1.5 py-px text-[10px] font-semibold text-[#e04a12]">
@@ -194,18 +194,18 @@ export function SetupStoragePicker({
                   Recommended
                 </span>
                 {choiceId === recommended.id && !customMode ? (
-                  <span className="ml-auto flex size-5 items-center justify-center rounded-full bg-[#ff4f12] text-white">
-                    <Check className="size-3" strokeWidth={3} />
+                  <span className="ml-auto flex size-4 items-center justify-center rounded-full bg-[#ff4f12] text-white">
+                    <Check className="size-2.5" strokeWidth={3} />
                   </span>
                 ) : null}
               </div>
-              <p className="mt-0.5 truncate font-mono text-[11px] text-[#8a8a8a]">
+              <p className="mt-0.5 truncate font-mono text-[10.5px] text-[#8a8a8a]">
                 {recommended.arciinPath}
               </p>
               {(() => {
                 const ratio = freeRatio(recommended)
                 return (
-                  <div className="mt-2 space-y-1">
+                  <div className="mt-1.5 space-y-1">
                     <div className="flex items-center justify-between gap-2 text-[10px] text-[#a0a0a0]">
                       <span>{formatFreeShort(recommended)}</span>
                       {recommended.totalBytes != null ? (
@@ -214,7 +214,7 @@ export function SetupStoragePicker({
                         </span>
                       ) : null}
                     </div>
-                    <div className="h-1.5 overflow-hidden rounded-full bg-[#f0f0f0]">
+                    <div className="h-1 overflow-hidden rounded-full bg-[#f0f0f0]">
                       <div
                         className="h-full rounded-full bg-gradient-to-r from-[#ff4f12] to-[#ff8a55]"
                         style={{ width: `${ratio != null ? Math.round(ratio * 100) : 62}%` }}

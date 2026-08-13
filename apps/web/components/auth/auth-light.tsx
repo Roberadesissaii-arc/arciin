@@ -130,6 +130,7 @@ export function AuthLightField({
   error,
   description,
   mono,
+  compact,
   inputProps,
 }: {
   id: string
@@ -144,13 +145,15 @@ export function AuthLightField({
   error?: string | null
   description?: ReactNode
   mono?: boolean
+  /** Tighter paddings for multi-step wizards that must fit one viewport. */
+  compact?: boolean
   /** Escape hatch for react-hook-form `register()` spreads (uncontrolled usage). */
   inputProps?: React.InputHTMLAttributes<HTMLInputElement>
 }) {
   const invalid = Boolean(error)
 
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className={cn("flex flex-col", compact ? "gap-1" : "gap-1.5")}>
       <label
         htmlFor={id}
         className="text-[11px] font-semibold uppercase tracking-widest text-[#a0a0a0]"
@@ -159,7 +162,8 @@ export function AuthLightField({
       </label>
       <div
         className={cn(
-          "flex items-center gap-3 rounded-2xl border px-4 py-3 transition-colors focus-within:border-[#ff4f12]/60",
+          "flex items-center gap-3 rounded-2xl border transition-colors focus-within:border-[#ff4f12]/60",
+          compact ? "px-3.5 py-2.5" : "px-4 py-3",
           invalid ? "border-[#fca5a5] bg-[#fffafa]" : "border-[#e8e8e8] bg-[#f7f7f7]",
         )}
       >
@@ -182,7 +186,7 @@ export function AuthLightField({
           aria-describedby={invalid ? `${id}-error` : undefined}
           className={cn(
             "min-w-0 flex-1 bg-transparent text-[#222222] outline-none placeholder:text-[#c0c0c0]",
-            mono ? "font-mono text-[13px]" : "text-[14px]",
+            mono ? "font-mono text-[13px]" : compact ? "text-[13.5px]" : "text-[14px]",
           )}
           {...inputProps}
         />

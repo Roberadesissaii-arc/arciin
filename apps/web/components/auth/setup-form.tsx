@@ -83,34 +83,31 @@ function SetupFieldError({ message }: { message?: string }) {
   )
 }
 
-/** Clear 1 → 2 → 3 indicator (not the old 2-step bar). */
+/** Compact 1 → 2 → 3 indicator — single row, no wasted vertical space. */
 function StepProgress({ step }: { step: SetupStep }) {
   return (
-    <nav aria-label="Setup steps" className="space-y-2">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#a0a0a0]">
-        Step {step} of 3
-      </p>
-      <ol className="flex items-center gap-0">
+    <nav aria-label="Setup steps" className="flex items-center gap-2">
+      <ol className="flex min-w-0 flex-1 items-center gap-0">
         {([1, 2, 3] as const).map((n, index) => {
           const done = n < step
           const active = n === step
           return (
             <li key={n} className="flex min-w-0 flex-1 items-center">
-              <div className="flex min-w-0 flex-col items-center gap-1">
+              <div className="flex min-w-0 items-center gap-1.5">
                 <span
                   className={cn(
-                    "flex size-7 items-center justify-center rounded-full text-[11px] font-bold transition-colors",
+                    "flex size-6 shrink-0 items-center justify-center rounded-full text-[10px] font-bold transition-colors",
                     done && "bg-[#ff4f12] text-white",
-                    active && "bg-[#ff4f12] text-white ring-4 ring-[#ff4f12]/15",
+                    active && "bg-[#ff4f12] text-white ring-[3px] ring-[#ff4f12]/15",
                     !done && !active && "border border-[#e5e5e5] bg-white text-[#b0b0b0]",
                   )}
                 >
-                  {done ? <Check className="size-3.5" strokeWidth={3} /> : n}
+                  {done ? <Check className="size-3" strokeWidth={3} /> : n}
                 </span>
                 <span
                   className={cn(
-                    "truncate text-[10px] font-semibold",
-                    active ? "text-[#ff4f12]" : done ? "text-[#717171]" : "text-[#c0c0c0]",
+                    "truncate text-[11px] font-semibold",
+                    active ? "text-[#111111]" : done ? "text-[#717171]" : "text-[#c0c0c0]",
                   )}
                 >
                   {STEPS[n].label}
@@ -120,7 +117,7 @@ function StepProgress({ step }: { step: SetupStep }) {
                 <span
                   aria-hidden
                   className={cn(
-                    "mx-1 mb-4 h-0.5 min-w-[12px] flex-1 rounded-full",
+                    "mx-2 h-0.5 min-w-[10px] flex-1 rounded-full",
                     n < step ? "bg-[#ff4f12]" : "bg-[#ececec]",
                   )}
                 />
@@ -129,6 +126,9 @@ function StepProgress({ step }: { step: SetupStep }) {
           )
         })}
       </ol>
+      <span className="shrink-0 text-[10px] font-semibold uppercase tracking-[0.12em] text-[#a0a0a0]">
+        {step}/3
+      </span>
     </nav>
   )
 }
@@ -286,30 +286,28 @@ export function SetupForm() {
         void submitClaim(event)
       }}
     >
-      <div className="shrink-0 space-y-3">
+      <div className="shrink-0 space-y-2">
         <StepProgress step={step} />
         <div>
-          <h1 className="font-heading text-[22px] font-bold tracking-tight text-[#111111] sm:text-[24px]">
+          <h1 className="font-heading text-[20px] font-bold tracking-tight text-[#111111] sm:text-[22px]">
             {STEPS[step].title}
           </h1>
-          <p className="mt-0.5 text-[12.5px] leading-snug text-[#a0a0a0]">{STEPS[step].subtitle}</p>
+          <p className="mt-0.5 text-[12px] leading-snug text-[#a0a0a0]">{STEPS[step].subtitle}</p>
         </div>
       </div>
 
-      {/* One step at a time — keeps the column short so no page scroll */}
-      <div className="mt-4 min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain">
+      {/* Fixed viewport body — no page scroll, no empty top/bottom waste */}
+      <div className="mt-3 flex min-h-0 flex-1 flex-col justify-start space-y-2.5 overflow-hidden">
         {step === 1 ? (
           <>
             {tokenFromUrl && setupTokenValue ? (
-              <div className="flex items-center gap-2.5 rounded-2xl border border-[#ffd9c9] bg-[#fff8f4] px-3.5 py-2.5">
-                <span className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-white text-[#ff4f12] shadow-sm">
+              <div className="flex items-center gap-2 rounded-2xl border border-[#ffd9c9] bg-[#fff8f4] px-3 py-2">
+                <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-white text-[#ff4f12]">
                   <KeyRound className="size-3.5" />
                 </span>
                 <div className="min-w-0 flex-1">
                   <p className="text-[12px] font-semibold text-[#111111]">Setup token ready</p>
-                  <p className="truncate text-[11px] text-[#8a8a8a]">
-                    Prefixed from your install link
-                  </p>
+                  <p className="truncate text-[10px] text-[#8a8a8a]">From install link</p>
                 </div>
                 <button
                   type="button"
@@ -322,6 +320,7 @@ export function SetupForm() {
               </div>
             ) : (
               <AuthLightField
+                compact
                 id="setupToken"
                 label="Setup token"
                 icon={KeyRound}
@@ -333,6 +332,7 @@ export function SetupForm() {
               />
             )}
             <AuthLightField
+              compact
               id="instanceName"
               label="Instance name"
               icon={Server}
@@ -340,7 +340,7 @@ export function SetupForm() {
               error={form.formState.errors.instanceName?.message}
               inputProps={form.register("instanceName")}
             />
-            <div className="flex flex-col gap-1.5">
+            <div className="flex min-h-0 flex-col gap-1">
               <span className="text-[11px] font-semibold uppercase tracking-widest text-[#a0a0a0]">
                 Storage location
               </span>
@@ -358,6 +358,7 @@ export function SetupForm() {
         {step === 2 ? (
           <>
             <AuthLightField
+              compact
               id="adminName"
               label="Admin name"
               icon={User}
@@ -367,6 +368,7 @@ export function SetupForm() {
               inputProps={form.register("adminName")}
             />
             <AuthLightField
+              compact
               id="adminEmail"
               label="Admin email"
               icon={Mail}
@@ -376,8 +378,9 @@ export function SetupForm() {
               error={form.formState.errors.adminEmail?.message}
               inputProps={form.register("adminEmail")}
             />
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid gap-2.5 sm:grid-cols-2">
               <AuthLightField
+                compact
                 id="adminPassword"
                 label="Password"
                 icon={Lock}
@@ -388,6 +391,7 @@ export function SetupForm() {
                 inputProps={form.register("adminPassword")}
               />
               <AuthLightField
+                compact
                 id="confirmPassword"
                 label="Confirm"
                 icon={Lock}
@@ -398,16 +402,15 @@ export function SetupForm() {
                 inputProps={form.register("confirmPassword")}
               />
             </div>
-            <p className="text-[11px] leading-relaxed text-[#a0a0a0]">
-              First user becomes OWNER. Passwords are hashed on this server — there is no cloud
-              recovery.
+            <p className="text-[11px] leading-snug text-[#a0a0a0]">
+              First user becomes OWNER. Passwords stay hashed on this server.
             </p>
           </>
         ) : null}
 
         {step === 3 ? (
           <>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+            <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
               {setupLibraryOptions.map((library) => {
                 const checked = selectedLibraries.includes(library)
                 const Icon = libraryMeta[library].icon
@@ -415,7 +418,7 @@ export function SetupForm() {
                   <label
                     key={library}
                     className={cn(
-                      "flex cursor-pointer flex-col gap-1 rounded-2xl border p-2.5 transition-colors",
+                      "flex cursor-pointer flex-col gap-0.5 rounded-xl border p-2 transition-colors",
                       checked
                         ? "border-[#ffb59a] bg-[#fff5f0]"
                         : "border-[#ececec] bg-white hover:border-[#e0e0e0]",
@@ -424,13 +427,13 @@ export function SetupForm() {
                     <div className="flex items-center justify-between gap-1">
                       <span
                         className={cn(
-                          "flex size-7 items-center justify-center rounded-lg border",
+                          "flex size-6 items-center justify-center rounded-md border",
                           checked
                             ? "border-[#ffcab5] bg-white text-[#ff4f12]"
                             : "border-[#f0f0f0] bg-[#f7f7f7] text-[#a0a0a0]",
                         )}
                       >
-                        <Icon className="size-3.5" />
+                        <Icon className="size-3" />
                       </span>
                       <Checkbox
                         checked={checked}
@@ -448,7 +451,7 @@ export function SetupForm() {
                         }}
                       />
                     </div>
-                    <span className="truncate text-[13px] font-semibold text-[#222222]">
+                    <span className="truncate text-[12px] font-semibold text-[#222222]">
                       {library}
                     </span>
                     <span className="truncate text-[10px] text-[#8a8a8a]">
@@ -460,8 +463,8 @@ export function SetupForm() {
             </div>
             <SetupFieldError message={form.formState.errors.libraries?.message} />
 
-            <div className="rounded-2xl border border-[#ececec] bg-[#fafafa] p-3">
-              <div className="flex gap-2.5">
+            <div className="rounded-xl border border-[#ececec] bg-[#fafafa] p-2.5">
+              <div className="flex gap-2">
                 <Checkbox
                   id="accept-legal"
                   className={cn("mt-0.5", lightCheckboxClass)}
@@ -475,7 +478,7 @@ export function SetupForm() {
                 />
                 <label
                   htmlFor="accept-legal"
-                  className="cursor-pointer text-[12px] leading-relaxed text-[#717171]"
+                  className="cursor-pointer text-[11.5px] leading-snug text-[#717171]"
                 >
                   I agree to Arciin&apos;s{" "}
                   <Link
@@ -498,7 +501,7 @@ export function SetupForm() {
                   .
                 </label>
               </div>
-              <div className="mt-1.5 pl-7">
+              <div className="mt-1 pl-7">
                 <SetupFieldError
                   message={form.formState.errors.acceptedTermsAndPrivacy?.message}
                 />
@@ -508,12 +511,12 @@ export function SetupForm() {
         ) : null}
       </div>
 
-      <div className="mt-3 flex shrink-0 items-center justify-between gap-3 border-t border-[#f0f0f0] pt-3">
+      <div className="mt-auto flex shrink-0 items-center justify-between gap-3 border-t border-[#f0f0f0] pt-3">
         {step > 1 ? (
           <AuthSecondaryButton
             type="button"
             onClick={() => setStep((step - 1) as SetupStep)}
-            className="h-11 sm:w-auto"
+            className="h-10 sm:w-auto"
           >
             <ArrowLeft className="size-4" />
             Back
@@ -523,7 +526,7 @@ export function SetupForm() {
         )}
 
         {step < 3 ? (
-          <AuthPrimaryButton type="submit" className="h-11 sm:w-auto sm:min-w-[9rem] sm:px-6">
+          <AuthPrimaryButton type="submit" className="h-10 sm:w-auto sm:min-w-[8.5rem] sm:px-5">
             Continue
             <ArrowRight className="size-4" />
           </AuthPrimaryButton>
@@ -531,7 +534,7 @@ export function SetupForm() {
           <AuthPrimaryButton
             type="submit"
             disabled={claimMutation.isPending || !acceptedTermsAndPrivacy}
-            className="h-11 sm:w-auto sm:min-w-[9rem] sm:px-6"
+            className="h-10 sm:w-auto sm:min-w-[8.5rem] sm:px-5"
           >
             <Sparkles className="size-4" />
             {claimMutation.isPending ? "Claiming…" : "Claim instance"}
