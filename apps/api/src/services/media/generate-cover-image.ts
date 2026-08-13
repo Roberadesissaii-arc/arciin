@@ -28,40 +28,8 @@ import {
 
 import { readPdfAssetContent } from "@/services/chat/read-pdf-asset"
 import { decryptModelApiKey } from "@/services/security/model-profile-key-crypto"
+import { fetchPublicImage } from "@/services/media/fetch-public-image"
 import { resolvedThumbnailPath } from "@/services/media/thumbnail-cache"
-
-/**
- * Only follow an image URL that is plainly public.
- *
- * The service returns a URL we then fetch server-side, which is remote input
- * driving a server-side request. A compromised or misconfigured endpoint could
- * point it at the metadata service or something else on the private network and
- * have the reply stored as an image. Base64 is requested precisely so this path
- * is rarely used; when it is, it must be https and must not resolve to a
- * literal private or loopback address.
- */
-function isSafeImageUrl(raw: string): boolean {
-  let url: URL
-  try {
-    url = new URL(raw)
-  } catch {
-    return false
-  }
-  if (url.protocol !== "https:") return false
-  const host = url.hostname.toLowerCase()
-  if (host === "localhost" || host.endsWith(".localhost") || host.endsWith(".internal")) return false
-  // Literal addresses only — a DNS name that resolves inward is not something a
-  // string check can catch, which is why https and the allow-list above matter.
-  if (/^\[?(::1|fe80:|fc00:|fd)/i.test(host)) return false
-  const v4 = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/)
-  if (v4) {
-    const [a, b] = [Number(v4[1]), Number(v4[2])]
-    if (a === 127 || a === 10 || a === 0 || a === 169) return false
-    if (a === 192 && b === 168) return false
-    if (a === 172 && b >= 16 && b <= 31) return false
-  }
-  return true
-}
 
 /** xAI's image endpoint is OpenAI-shaped and lives on the same base. */
 const XAI_IMAGE_PATH = "/images/generations"
@@ -212,11 +180,11 @@ export async function generateImageFromPrompt(
     const data = (await response.json()) as { data?: Array<{ b64_json?: string; url?: string }> }
     const first = data.data?.[0]
     if (first?.b64_json) return { ok: true, base64: first.b64_json }
-    if (first?.url && isSafeImageUrl(first.url)) {
-      const image = await fetch(first.url, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) })
-      if (image.ok) {
-        return { ok: true, base64: Buffer.from(await image.arrayBuffer()).toString("base64") }
-      }
+    if (first?.url) {
+      // Validated inside the resolver, so a name that rebinds between check and
+      // connect is refused at the point it would otherwise have been used.
+      const image = await fetchPublicImage(first.url)
+      if (image) return { ok: true, base64: image.toString("base64") }
     }
     return { ok: false, code: "IMAGE_FAILED", message: "The image service returned no image." }
   } catch (error) {
@@ -326,15 +294,10 @@ export async function generateAssetCoverImage(
   let bytes: Buffer | null = null
   if (first?.b64_json) {
     bytes = Buffer.from(first.b64_json, "base64")
-  } else if (first?.url && isSafeImageUrl(first.url)) {
+  } else if (first?.url) {
     // The docs return URLs by default and call them temporary, so it is fetched
     // immediately rather than stored as a reference.
-    try {
-      const image = await fetch(first.url, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) })
-      if (image.ok) bytes = Buffer.from(await image.arrayBuffer())
-    } catch {
-      /* handled below */
-    }
+    bytes = await fetchPublicImage(first.url)
   }
 
   if (!bytes?.length) {
