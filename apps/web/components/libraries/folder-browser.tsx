@@ -13,13 +13,6 @@ import { FolderAccessGate } from "@/components/libraries/folder-access-gate"
 import { FolderGrid } from "@/components/libraries/folder-grid"
 import { FoldersEmptyPlaceholder } from "@/components/libraries/folders-empty-placeholder"
 import { LibraryBrowserToolbar } from "@/components/libraries/library-browser-toolbar"
-import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from "@/components/ui/empty"
 import { GridPaginationBar } from "@/components/ui/app-pagination"
 import {
   AssetGridSkeleton,
@@ -180,27 +173,25 @@ export function FolderBrowser({
         ) : assets.length > 0 ? (
           <div
             className={cn(
-              "flex min-h-[min(28rem,calc(100dvh-18rem))] flex-col gap-3",
+              "flex flex-col gap-3",
               assetsRefetching && "opacity-70 transition-opacity",
             )}
           >
-            <div className="min-h-0 flex-1">
-              <SelectableAssetsContainer assets={assets} defaultLibraryId={library?.id}>
-                {view === "grid" ? (
-                  <AssetGrid assets={pageAssets} />
-                ) : (
-                  <AssetTable
-                    assets={pageAssets}
-                    title="Files"
-                    totalCount={assets.length}
-                    page={safePage}
-                    totalPages={totalPages}
-                    onPageChange={setPage}
-                    alwaysShowPagination
-                  />
-                )}
-              </SelectableAssetsContainer>
-            </div>
+            <SelectableAssetsContainer assets={assets} defaultLibraryId={library?.id}>
+              {view === "grid" ? (
+                <AssetGrid assets={pageAssets} />
+              ) : (
+                <AssetTable
+                  assets={pageAssets}
+                  title="Files"
+                  totalCount={assets.length}
+                  page={safePage}
+                  totalPages={totalPages}
+                  onPageChange={setPage}
+                  alwaysShowPagination
+                />
+              )}
+            </SelectableAssetsContainer>
             {view === "grid" ? (
               <GridPaginationBar
                 page={safePage}
@@ -210,21 +201,22 @@ export function FolderBrowser({
             ) : null}
           </div>
         ) : (
-          <Empty className="border border-border bg-card py-16">
-            <EmptyHeader>
-              <EmptyMedia variant="icon">
-                <Search className="size-4" />
-              </EmptyMedia>
-              <EmptyTitle>
-                {filtersActive ? "No files match your filters." : "This folder is empty."}
-              </EmptyTitle>
-              <EmptyDescription>
-                {filtersActive
-                  ? "Try a different search term, pick another badge, or clear filters."
-                  : "Upload files or create sub-folders to organize this folder."}
-              </EmptyDescription>
-            </EmptyHeader>
-          </Empty>
+          <div
+            className={cn(
+              "flex min-h-[calc(100dvh-22rem)] flex-col items-center justify-center rounded-2xl",
+              "border border-dashed border-zinc-300/90 px-4 py-10 text-center md:px-6",
+            )}
+          >
+            <Search className="size-12 text-zinc-300" strokeWidth={1.5} aria-hidden />
+            <p className="mt-4 text-sm font-semibold text-zinc-900">
+              {filtersActive ? "No files match your filters" : "This folder is empty"}
+            </p>
+            <p className="mt-1 max-w-md text-sm leading-relaxed text-zinc-500">
+              {filtersActive
+                ? "Try a different search term, pick another source, or clear filters."
+                : "Upload files or create sub-folders to organize this folder."}
+            </p>
+          </div>
         )}
       </section>
     </div>

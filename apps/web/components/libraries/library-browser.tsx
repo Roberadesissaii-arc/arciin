@@ -11,18 +11,8 @@ import { CreateFolderDialog } from "@/components/libraries/create-folder-dialog"
 import { FolderGrid } from "@/components/libraries/folder-grid"
 import { FoldersEmptyPlaceholder } from "@/components/libraries/folders-empty-placeholder"
 import { LibraryBrowserToolbar } from "@/components/libraries/library-browser-toolbar"
-import {
-  LibraryScopeSwitch,
-  type LibraryAssetScope,
-} from "@/components/libraries/library-scope-switch"
+import type { LibraryAssetScope } from "@/components/libraries/library-scope-switch"
 import { SelectableAssetsContainer } from "@/components/libraries/selectable-assets-container"
-import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from "@/components/ui/empty"
 import { GridPaginationBar } from "@/components/ui/app-pagination"
 import {
   AssetGridSkeleton,
@@ -171,15 +161,6 @@ export function LibraryBrowser({
       <section className={cn("space-y-3 pb-4", librarySlug && "pt-4")}>
         <BrowserSectionHeading>Assets</BrowserSectionHeading>
 
-        {librarySlug ? (
-          <LibraryScopeSwitch
-            scope={scope}
-            onScopeChange={setScope}
-            loadedCount={assets.length}
-            matchingTotal={assetsQuery.data?.pages[0]?.total}
-          />
-        ) : null}
-
         <LibraryBrowserToolbar
           search={search}
           onSearchChange={setSearch}
@@ -189,6 +170,9 @@ export function LibraryBrowser({
           showKindChips={isAllFiles}
           kindFilter={kindFilter}
           onKindFilterChange={setKindFilter}
+          showScopeChips={Boolean(librarySlug)}
+          scope={scope}
+          onScopeChange={setScope}
           sourceFilter={sourceFilter}
           onSourceFilterChange={setSourceFilter}
           sourceOptions={sourceOptions}
@@ -204,28 +188,26 @@ export function LibraryBrowser({
         ) : assets.length ? (
           <div
             className={cn(
-              "flex min-h-[min(28rem,calc(100dvh-18rem))] flex-col gap-3",
+              "flex flex-col gap-3",
               assetsRefetching && "opacity-70 transition-opacity",
             )}
           >
             {/* Full filtered set for selection/viewer; page slice for display only. */}
-            <div className="min-h-0 flex-1">
-              <SelectableAssetsContainer assets={assets} defaultLibraryId={library?.id}>
-                {view === "grid" ? (
-                  <AssetGrid assets={pageAssets} />
-                ) : (
-                  <AssetTable
-                    assets={pageAssets}
-                    title={librarySlug ? "Assets" : "Files"}
-                    totalCount={assets.length}
-                    page={safePage}
-                    totalPages={totalPages}
-                    onPageChange={setPage}
-                    alwaysShowPagination
-                  />
-                )}
-              </SelectableAssetsContainer>
-            </div>
+            <SelectableAssetsContainer assets={assets} defaultLibraryId={library?.id}>
+              {view === "grid" ? (
+                <AssetGrid assets={pageAssets} />
+              ) : (
+                <AssetTable
+                  assets={pageAssets}
+                  title={librarySlug ? "Assets" : "Files"}
+                  totalCount={assets.length}
+                  page={safePage}
+                  totalPages={totalPages}
+                  onPageChange={setPage}
+                  alwaysShowPagination
+                />
+              )}
+            </SelectableAssetsContainer>
             {view === "grid" ? (
               <GridPaginationBar
                 page={safePage}
@@ -235,34 +217,22 @@ export function LibraryBrowser({
             ) : null}
           </div>
         ) : (
-          <Empty className="relative overflow-hidden border border-border bg-gradient-to-b from-muted/40 via-card to-card py-20">
-            <div
-              aria-hidden
-              className="pointer-events-none absolute inset-0 opacity-[0.07]"
-              style={{
-                backgroundImage:
-                  "radial-gradient(circle at 30% 15%, var(--arciin-accent, #ff4f12) 0%, transparent 45%)",
-              }}
-            />
-            <EmptyHeader className="relative">
-              <EmptyMedia
-                variant="icon"
-                className="mb-3 size-14 rounded-2xl bg-[var(--arciin-accent-icon-bg)] text-[var(--arciin-accent)] ring-1 ring-inset ring-[var(--arciin-accent-icon-ring)]"
-              >
-                <Search className="size-6" />
-              </EmptyMedia>
-              <EmptyTitle className="text-base">
-                {filtersActive
-                  ? "No files match your filters."
-                  : "Drop anything. Arciin will sort it out."}
-              </EmptyTitle>
-              <EmptyDescription>
-                {filtersActive
-                  ? "Try a different search term, pick another source, or clear filters to see everything in this library."
-                  : "Upload files from anywhere in the app. Arciin detects the content type, organizes it into the right library, and keeps the activity visible in real time."}
-              </EmptyDescription>
-            </EmptyHeader>
-          </Empty>
+          <div
+            className={cn(
+              "flex min-h-[calc(100dvh-22rem)] flex-col items-center justify-center rounded-2xl",
+              "border border-dashed border-zinc-300/90 px-4 py-10 text-center md:px-6",
+            )}
+          >
+            <Search className="size-12 text-zinc-300" strokeWidth={1.5} aria-hidden />
+            <p className="mt-4 text-sm font-semibold text-zinc-900">
+              {filtersActive ? "No files match your filters" : "No files yet"}
+            </p>
+            <p className="mt-1 max-w-md text-sm leading-relaxed text-zinc-500">
+              {filtersActive
+                ? "Try a different search term, pick another source, or clear filters."
+                : "Upload or drop files here. Arciin will place them in the right library."}
+            </p>
+          </div>
         )}
       </section>
     </div>

@@ -266,7 +266,7 @@ export function AssetTable({
       </Table>
 
       {(alwaysShowPagination || totalPages > 1) && (
-        <div className="sticky bottom-0 z-10 border-t border-zinc-200 bg-white/95 px-5 py-3 backdrop-blur-sm">
+        <div className="border-t border-zinc-200 bg-white px-5 py-3">
           <AppPagination
             page={page}
             totalPages={totalPages}

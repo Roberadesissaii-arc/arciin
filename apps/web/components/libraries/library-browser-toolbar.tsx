@@ -12,6 +12,7 @@ import {
   type LibraryViewMode,
   type SourceFilterValue,
 } from "@/hooks/use-library-browser-filters"
+import type { LibraryAssetScope } from "@/components/libraries/library-scope-switch"
 import { cn } from "@/lib/utils"
 
 function ViewModeButton({
@@ -45,6 +46,40 @@ function ViewModeButton({
   )
 }
 
+function SoftChip({
+  active,
+  label,
+  title,
+  onClick,
+}: {
+  active: boolean
+  label: string
+  title?: string
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      title={title}
+      aria-pressed={active}
+      onClick={onClick}
+      className={cn(
+        "h-8 shrink-0 rounded-lg px-2.5 text-[12px] font-semibold transition-colors",
+        active
+          ? "text-[#FF4F12]"
+          : "text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900",
+      )}
+      style={
+        active
+          ? { backgroundColor: "color-mix(in srgb, #FF4F12 10%, transparent)" }
+          : undefined
+      }
+    >
+      {label}
+    </button>
+  )
+}
+
 export function LibraryBrowserToolbar({
   search,
   onSearchChange,
@@ -54,6 +89,10 @@ export function LibraryBrowserToolbar({
   showKindChips = false,
   kindFilter = "all",
   onKindFilterChange,
+  /** Library pages: All files / Root only on the left. */
+  showScopeChips = false,
+  scope = "all",
+  onScopeChange,
   sourceFilter = "all",
   onSourceFilterChange,
   sourceOptions = [],
@@ -63,12 +102,13 @@ export function LibraryBrowserToolbar({
   onSearchChange: (value: string) => void
   view: LibraryViewMode
   onViewChange: (view: LibraryViewMode) => void
-  /** Total matches for the count chip (hide when 0). */
   resultCount?: number
-  /** All Files only — kind chips on the left. */
   showKindChips?: boolean
   kindFilter?: LibraryKindFilter
   onKindFilterChange?: (value: LibraryKindFilter) => void
+  showScopeChips?: boolean
+  scope?: LibraryAssetScope
+  onScopeChange?: (scope: LibraryAssetScope) => void
   sourceFilter?: SourceFilterValue
   onSourceFilterChange?: (value: SourceFilterValue) => void
   sourceOptions?: FilterDropdownOption[]
@@ -83,16 +123,6 @@ export function LibraryBrowserToolbar({
           { value: "Downloads", label: "Downloads" },
           { value: "NAS", label: "NAS" },
         ]
-
-  const sourceControl = onSourceFilterChange ? (
-    <FilterDropdown
-      ariaLabel="Source filter"
-      value={sourceFilter}
-      onValueChange={(v) => onSourceFilterChange(v as SourceFilterValue)}
-      options={sourceDropdownOptions}
-      minWidthClass="min-w-[9.5rem]"
-    />
-  ) : null
 
   return (
     <div
@@ -121,47 +151,52 @@ export function LibraryBrowserToolbar({
         ) : null}
       </div>
 
-      {/* Row B — left: kind chips (All Files); right: Source + Grid/List */}
+      {/* Row B — left chips · right Source + Grid/List */}
       <div className="flex flex-wrap items-center justify-between gap-3 px-3 py-2.5 sm:px-4">
-        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2 sm:gap-3">
-          {showKindChips && onKindFilterChange ? (
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1 sm:gap-1.5">
+          {showKindChips && onKindFilterChange
+            ? KIND_CHIP_OPTIONS.map((chip) => (
+                <SoftChip
+                  key={chip.value}
+                  active={kindFilter === chip.value}
+                  label={chip.label}
+                  onClick={() => onKindFilterChange(chip.value)}
+                />
+              ))
+            : null}
+
+          {showScopeChips && onScopeChange ? (
             <div
               className="flex flex-wrap items-center gap-1"
               role="group"
-              aria-label="File kind"
+              aria-label="Library file scope"
             >
-              {KIND_CHIP_OPTIONS.map((chip) => {
-                const active = kindFilter === chip.value
-                return (
-                  <button
-                    key={chip.value}
-                    type="button"
-                    onClick={() => onKindFilterChange(chip.value)}
-                    className={cn(
-                      "h-8 rounded-lg px-2.5 text-[12px] font-semibold transition-colors",
-                      active
-                        ? "text-[#FF4F12]"
-                        : "text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900",
-                    )}
-                    style={
-                      active
-                        ? {
-                            backgroundColor:
-                              "color-mix(in srgb, #FF4F12 10%, transparent)",
-                          }
-                        : undefined
-                    }
-                  >
-                    {chip.label}
-                  </button>
-                )
-              })}
+              <SoftChip
+                active={scope === "all"}
+                label="All files"
+                title="Every file in this library, including files inside folders"
+                onClick={() => onScopeChange("all")}
+              />
+              <SoftChip
+                active={scope === "root"}
+                label="Root only"
+                title="Only files sitting directly in the library, not inside a folder"
+                onClick={() => onScopeChange("root")}
+              />
             </div>
           ) : null}
         </div>
 
         <div className="flex shrink-0 flex-wrap items-center gap-2 sm:gap-2.5">
-          {sourceControl}
+          {onSourceFilterChange ? (
+            <FilterDropdown
+              ariaLabel="Source filter"
+              value={sourceFilter}
+              onValueChange={(v) => onSourceFilterChange(v as SourceFilterValue)}
+              options={sourceDropdownOptions}
+              minWidthClass="min-w-[9.5rem]"
+            />
+          ) : null}
           <div
             className="flex shrink-0 items-center gap-1 rounded-lg border border-zinc-200/80 bg-zinc-50/60 p-1"
             role="group"

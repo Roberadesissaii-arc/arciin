@@ -119,8 +119,8 @@ export function AppPagination({
 }
 
 /**
- * White rounded bar under a card grid — always rendered so the footer
- * stays in a constant place even when there is only one page.
+ * White rounded bar under a card grid — always rendered (even for one page)
+ * so Previous/Next stay available. Not sticky; scrolls with the page.
  */
 export function GridPaginationBar({
   page,
@@ -131,7 +131,7 @@ export function GridPaginationBar({
   return (
     <div
       className={cn(
-        "sticky bottom-0 z-20 flex w-full items-center justify-center rounded-2xl border border-zinc-200 bg-white/95 px-4 py-2.5 shadow-sm backdrop-blur-sm",
+        "flex w-full items-center justify-center rounded-2xl border border-zinc-200 bg-white px-4 py-2.5 shadow-sm",
         className,
       )}
     >
