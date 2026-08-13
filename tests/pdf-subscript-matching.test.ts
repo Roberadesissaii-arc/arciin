@@ -149,3 +149,44 @@ describe("a note stays inside its box", () => {
     expect(chars(0.56)).toBeLessThan(chars(0.46))
   })
 })
+
+describe("a mark finds its page even when the tag names the wrong one", () => {
+  // Asked to highlight the Summary Table while reading page 2, the mark was
+  // resolved against page 1 and reported missing with the heading plainly on
+  // screen. Which page is "in view" depends on scroll position when the reply
+  // lands, so being off by one is normal; the phrase is the reliable part.
+  const PAGES: Record<number, string[]> = {
+    1: ["Photosynthesis: The Two-Stage Process", "Overview", "Stage 1: Light-Dependent Reactions"],
+    2: ["Regeneration of RuBP", "Summary Table", "| Feature | Light-Dependent Reactions |"],
+    3: ["Why Two Stages?", "Key Terms", "- Thylakoid: Flattened membrane sac"],
+  }
+
+  /** Mirrors the viewer: try the named page, then its neighbours. */
+  function resolve(quote: string, named: number): number | null {
+    const hit = (p: number) =>
+      (PAGES[p] ?? []).some((line) => line.toLowerCase().includes(quote.toLowerCase()))
+    if (hit(named)) return named
+    for (const delta of [1, -1, 2, -2]) {
+      const candidate = named + delta
+      if (candidate < 1 || candidate > 3) continue
+      if (hit(candidate)) return candidate
+    }
+    return null
+  }
+
+  it("finds the Summary Table when the tag said page 1", () => {
+    expect(resolve("Summary Table", 1)).toBe(2)
+  })
+
+  it("prefers the named page when the phrase is on it", () => {
+    expect(resolve("Key Terms", 3)).toBe(3)
+  })
+
+  it("searches backwards as well as forwards", () => {
+    expect(resolve("Overview", 3)).toBe(1)
+  })
+
+  it("still reports a phrase that is on no page", () => {
+    expect(resolve("mitochondrial matrix", 2)).toBeNull()
+  })
+})

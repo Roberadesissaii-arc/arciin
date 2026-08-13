@@ -366,23 +366,45 @@ export function DesktopPdfViewer({
       const next = new Map<number, StyledRect[]>()
       const markReport: { quote: string; page: number; rendered: boolean }[] = []
       for (const target of highlightTargets) {
-        const rects = await findHighlightRectsOnPage(
-          pdf,
-          target.page,
-          target.quote,
-          width,
-          target.kind === "heading" ? "heading" : "default",
-        )
+        const mode = target.kind === "heading" ? "heading" : "default"
+        let onPage = target.page
+        let rects = await findHighlightRectsOnPage(pdf, target.page, target.quote, width, mode)
         if (cancelled) return
-        markReport.push({ quote: target.quote, page: target.page, rendered: rects.length > 0 })
+
+        /**
+         * Look either side before giving up.
+         *
+         * A tag says "the page in view", and which page that is depends on scroll
+         * position at the moment the reply arrives — a page boundary near the top
+         * of the viewport is enough to be off by one. Asked to highlight the
+         * Summary Table while reading page 2, the mark was resolved against page 1
+         * and reported missing, with the heading plainly visible on screen.
+         * The phrase itself is the reliable part, so the neighbouring pages are
+         * searched before the mark is called not found.
+         */
+        if (rects.length === 0) {
+          for (const delta of [1, -1, 2, -2]) {
+            const candidate = target.page + delta
+            if (candidate < 1 || candidate > pdf.numPages) continue
+            const found = await findHighlightRectsOnPage(pdf, candidate, target.quote, width, mode)
+            if (cancelled) return
+            if (found.length > 0) {
+              rects = found
+              onPage = candidate
+              break
+            }
+          }
+        }
+
+        markReport.push({ quote: target.quote, page: onPage, rendered: rects.length > 0 })
         if (rects.length > 0) {
-          const prev = next.get(target.page) ?? []
+          const prev = next.get(onPage) ?? []
           const styled = rects.map((r) => ({
             ...r,
             style: target.style ?? "highlight",
             heading: target.kind === "heading",
           }))
-          next.set(target.page, [...prev, ...styled])
+          next.set(onPage, [...prev, ...styled])
         }
       }
       if (!cancelled) {
