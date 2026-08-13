@@ -45,7 +45,6 @@ import { inferPdfGotoPage } from "@/lib/files/infer-pdf-page-request"
 import { PdfMarkBadges } from "@/components/libraries/pdf-mark-badges"
 import type { PdfPageAnnotation } from "@/lib/files/pdf-annotation-layout"
 import {
-  buildRegenerateNoteInstruction,
   buildStudyPassInstruction,
   isStudyAnnotationRequest,
 } from "@/lib/files/pdf-study-request"
@@ -269,8 +268,6 @@ export function AssetAiSidePanel({
    * re-create the streaming callback mid-turn.
    */
   const studyScopeRef = useRef<string | null>(null)
-  /** Id of the note being rewritten this turn, if the student asked about one. */
-  const rewriteNoteRef = useRef<string | null>(null)
   const lastGotoRef = useRef<number | null>(null)
   const lastHighlightSigRef = useRef("")
   const lastImageRegionSigRef = useRef("")
@@ -787,8 +784,9 @@ export function AssetAiSidePanel({
     [
       activeModel,
       effectivePickedModel,
-      asset.id,
-      asset.updatedAt,
+      asset,
+      isPdfAsset,
+      pdfFileUrl,
       focus,
       need,
       profile,
@@ -799,7 +797,6 @@ export function AssetAiSidePanel({
       pdfPageIndex,
       onNavigateToPage,
       onHighlightPdf,
-      onHighlightImage,
       pushImageRegions,
     ],
   )

@@ -126,7 +126,12 @@ export function ImportLinkDialog() {
   const formatOptionsEnabled = linkSupportsFormatOptions(preview)
 
   const videoFormats = preview?.formats.filter((f) => VIDEO_FORMAT_IDS.includes(f.id)) ?? []
-  const audioFormats = preview?.formats.filter((f) => AUDIO_FORMAT_IDS.includes(f.id)) ?? []
+  // Memoised: the effect below depends on this list, and a new array each
+  // render would re-run it forever.
+  const audioFormats = useMemo(
+    () => preview?.formats.filter((f) => AUDIO_FORMAT_IDS.includes(f.id)) ?? [],
+    [preview],
+  )
 
   const selectedFormat = useMemo(() => {
     if (!preview) return null

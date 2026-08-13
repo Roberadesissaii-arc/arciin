@@ -1,4 +1,4 @@
-import { access, lstat, mkdir, readdir, readlink, rm, stat, unlink } from "node:fs/promises"
+import { access, lstat, mkdir, readdir, readlink, rm, unlink } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 

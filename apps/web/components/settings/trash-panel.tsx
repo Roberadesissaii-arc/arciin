@@ -37,7 +37,6 @@ import {
 } from "@/lib/api/assets"
 import { queryKeys } from "@/lib/api/query-keys"
 import { formatBytes } from "@/lib/utils/format-bytes"
-import { formatRelativeDate } from "@/lib/utils/format-date"
 import { formatMediaTypeLabel } from "@/lib/utils/media-type"
 import { cn } from "@/lib/utils"
 import { dashboardTablePagination } from "@/lib/dashboard-table-styles"
@@ -179,7 +178,9 @@ export function TrashPanel() {
     queryFn: ({ signal }) => getTrashAssets(signal),
   })
 
-  const items = trashQuery.data ?? []
+  // Memoised so the `?? []` fallback is not a fresh array on every render,
+  // which would re-slice the page below each time regardless of the data.
+  const items = useMemo(() => trashQuery.data ?? [], [trashQuery.data])
   const totalPages = Math.max(1, Math.ceil(items.length / PAGE_SIZE))
   const safePage = Math.min(page, totalPages)
   const pageItems = useMemo(

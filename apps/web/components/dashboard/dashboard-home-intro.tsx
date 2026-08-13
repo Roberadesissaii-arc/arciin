@@ -18,27 +18,27 @@ import type { HealthStatus } from "@/lib/types/models"
 
 const INTRO_SLIDES = [
   {
-    image: "/assets/dashboard-intro/images.jpg",
+    image: "/assets/dashboard-intro/images.jpg?v=2",
     caption: "Photos and artwork land in Images with thumbnails ready.",
     accent: "Images · Vision · Ask AI",
   },
   {
-    image: "/assets/dashboard-intro/videos.jpg",
+    image: "/assets/dashboard-intro/videos.jpg?v=2",
     caption: "Videos route into your library — metadata and jobs stay local.",
     accent: "Videos · Processing · Plex-ready",
   },
   {
-    image: "/assets/dashboard-intro/music.jpg",
+    image: "/assets/dashboard-intro/music.jpg?v=2",
     caption: "Audio collects in Music so playlists and players find it fast.",
     accent: "Music · Metadata · Playback",
   },
   {
-    image: "/assets/dashboard-intro/libraries.jpg",
+    image: "/assets/dashboard-intro/libraries.jpg?v=2",
     caption: "Folders and libraries keep every file organized on your disk.",
     accent: "Libraries · Folders · Control",
   },
   {
-    image: "/assets/dashboard-intro/command-center.jpg",
+    image: "/assets/dashboard-intro/command-center.jpg?v=2",
     caption: "Your private command center — storage, uploads, and live activity.",
     accent: "Overview · Storage · Activity",
   },

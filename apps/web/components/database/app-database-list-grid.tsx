@@ -4,7 +4,6 @@ import Link from "next/link"
 import { ArrowRight, Layers2, Trash2 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
-import { formatRelativeDate } from "@/lib/utils/format-date"
 import type { AppDatabaseSummary } from "@/lib/types/models"
 import { RelativeTime } from "@/components/shared/relative-time"
 

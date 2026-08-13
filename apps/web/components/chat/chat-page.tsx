@@ -1593,7 +1593,7 @@ export function ChatPage() {
         setCanvasSaving(false)
       }
     },
-    [canvasContent, canvasStreaming, canvasSaving, canvasTitle, queryClient],
+    [canvasContent, canvasHandwriting, canvasStreaming, canvasSaving, canvasTitle, queryClient],
   )
 
   const clearActiveCanvas = useCallback(() => {

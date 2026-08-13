@@ -86,8 +86,6 @@ function PreviewBody({
   pdfHighlightTargets,
   pdfHighlightAt,
   focusPdfMark,
-  pdfNotes,
-  onSelectNote,
   onRenderReport,
   imageHighlightRegions,
   onPdfPageChange,
@@ -99,8 +97,6 @@ function PreviewBody({
   pdfHighlightTargets?: PdfHighlightTarget[]
   pdfHighlightAt?: number
   focusPdfMark?: { page: number; ordinal: number; at: number }
-  pdfNotes?: PdfPageAnnotation[]
-  onSelectNote?: (id: string) => void
   onRenderReport?: (report: {
     marks: { quote: string; page: number; rendered: boolean }[]
     notes: { id: string; text: string; rendered: boolean }[]
@@ -136,8 +132,6 @@ function PreviewBody({
           highlightTargets={pdfHighlightTargets}
           highlightAt={pdfHighlightAt}
           focusHighlight={focusPdfMark}
-          annotations={pdfNotes}
-          onSelectNote={onSelectNote}
           onRenderReport={onRenderReport}
           onPageChange={onPdfPageChange}
         />
@@ -183,16 +177,10 @@ function PreviewWorkspaceBody({
   >()
   const [pdfHighlightTargets, setPdfHighlightTargets] = useState<PdfHighlightTarget[]>([])
   const [pdfHighlightAt, setPdfHighlightAt] = useState<number | undefined>()
-  const [pdfNotes, setPdfNotes] = useState<PdfPageAnnotation[]>([])
-  const [notesHidden, setNotesHidden] = useState(false)
+  const [pdfNotes] = useState<PdfPageAnnotation[]>([])
   const [exporting, setExporting] = useState(false)
   const [renderReport, setRenderReport] = useState<
     { missedMarks: string[]; missedNotes: number } | null
-  >(null)
-  /** Text the student selected in the viewer — scopes the next study pass. */
-  const [studyScope, setStudyScope] = useState<string | null>(null)
-  const rewriteHandleRef = useRef<
-    ((note: PdfPageAnnotation, ask: string) => void) | null
   >(null)
   /** Blocks the first save, so restoring a layer is not mistaken for a change. */
   const studyLayerReadyRef = useRef(false)
@@ -222,11 +210,9 @@ function PreviewWorkspaceBody({
     queueMicrotask(() => {
       if (cancelled) return
       const saved = loadStudyLayer(asset.id)
-      setPdfNotes(saved?.notes ?? [])
       setPdfHighlightTargets(saved?.marks ?? [])
-      setNotesHidden(false)
-      // Marks and notes are stored as text plus page, so the viewer resolves
-      // their positions against the live document — nothing to re-anchor here.
+      // Marks are stored as text plus page, so the viewer resolves their
+      // positions against the live document — nothing to re-anchor here.
       if (saved) setPdfHighlightAt(Date.now())
       studyLayerReadyRef.current = true
     })
@@ -375,17 +361,6 @@ function PreviewWorkspaceBody({
     [],
   )
 
-  /** Swap one note for its rewrite, leaving every other note where it was. */
-  const handleReplaceNote = useCallback((id: string, next: PdfPageAnnotation) => {
-    setPdfNotes((prev) => {
-      const at = prev.findIndex((n) => n.id === id)
-      if (at < 0) return [...prev, next]
-      const out = [...prev]
-      out[at] = { ...next, id }
-      return out
-    })
-  }, [])
-
   const handlePdfHighlight = useCallback(
     (targets: PdfHighlightTarget[]) => {
       setPdfHighlightTargets((prev) => {
@@ -493,14 +468,7 @@ function PreviewWorkspaceBody({
             pdfHighlightTargets={pdfHighlightTargets}
             pdfHighlightAt={pdfHighlightAt}
             focusPdfMark={focusPdfMark}
-            pdfNotes={notesHidden ? undefined : pdfNotes}
             onRenderReport={handleRenderReport}
-            onSelectNote={(id) => {
-              const note = pdfNotes.find((n) => n.id === id)
-              // Clicking the handwriting is how a student says "I do not follow
-              // this one" — it asks about that note rather than the page.
-              if (note) rewriteHandleRef.current?.(note, "Explain that more.")
-            }}
             imageHighlightRegions={imageHighlightRegions}
             onPdfPageChange={(page, total) => {
               setPdfPage(page)

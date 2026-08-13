@@ -6,7 +6,6 @@ import { isLicensePlanId, LICENSE_PLANS, publicLicenseView } from "@arciin/share
 import {
   activateLicense,
   deactivateLicense,
-  loadLicenseSnapshot,
   refreshLicense,
   syncLicenseStatusIfNeeded,
 } from "@/services/license/license-service"

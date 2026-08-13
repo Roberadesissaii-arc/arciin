@@ -12,7 +12,6 @@ import { SettingsSelect } from "@/components/settings/settings-select"
 import { getLogFiles, getLogTail } from "@/lib/api/logs"
 import { queryKeys } from "@/lib/api/query-keys"
 import { cn } from "@/lib/utils"
-import { formatRelativeDate } from "@/lib/utils/format-date"
 import { RelativeTime } from "@/components/shared/relative-time"
 
 const TAIL_LINES = 200

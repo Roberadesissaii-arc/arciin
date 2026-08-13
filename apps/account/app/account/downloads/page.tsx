@@ -1,6 +1,6 @@
 import { DemoBanner } from "@/components/demo-banner"
 import { CopyButton } from "@/components/copy-button"
-import { Card, FieldLabel, PageHeader, StatTile } from "@/components/ui"
+import { Card, PageHeader, StatTile } from "@/components/ui"
 import {
   APP_VERSION,
   DOCKER_INSTALL_HINT,

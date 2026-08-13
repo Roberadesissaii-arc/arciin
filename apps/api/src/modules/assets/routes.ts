@@ -8,7 +8,6 @@ import { z } from "zod"
 import {
   assetSupportsDocumentThumbnail,
   DEFAULT_USER_PREFERENCES,
-  isCodeFilename,
   resolveInlineContentType,
 } from "@arciin/shared"
 import { resolveArciinStorageRoot } from "@arciin/storage"

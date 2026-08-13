@@ -11,13 +11,7 @@ import {
   releasePdfDocument,
 } from "@/lib/files/fetch-pdf-document"
 import { useDebouncedValue } from "@/lib/hooks/use-debounced-value"
-import { findHighlightRectsOnPage, measurePageGeometry } from "@/lib/files/pdf-page-text-search"
-import {
-  NOTE_FONT_SIZE,
-  layoutPageAnnotations,
-  type PdfPageAnnotation,
-  type PlacedNote,
-} from "@/lib/files/pdf-annotation-layout"
+import { findHighlightRectsOnPage } from "@/lib/files/pdf-page-text-search"
 import type { PdfHighlightRect, PdfHighlightTarget } from "@/lib/files/pdf-highlight-types"
 import type { PdfAnnotationStyle } from "@/lib/files/pdf-annotation-style"
 import { PdfAnnotationMark } from "@/components/libraries/pdf-annotation-mark"
@@ -30,7 +24,6 @@ const RENDER_WIDTH_EPS = 0.12
 type StyledRect = PdfHighlightRect & { style?: PdfAnnotationStyle; heading?: boolean }
 
 const EMPTY_PAGE_HIGHLIGHTS = new Map<number, StyledRect[]>()
-const EMPTY_PLACED_NOTES = new Map<number, PlacedNote[]>()
 
 function defaultPageHeight(layoutWidth: number) {
   return Math.round(layoutWidth * 1.294) + PAGE_PAD
@@ -212,8 +205,6 @@ export function DesktopPdfViewer({
   focusHighlight,
   highlightTargets,
   highlightAt,
-  annotations,
-  onSelectNote,
   onRenderReport,
   onPageChange,
 }: {
@@ -225,9 +216,6 @@ export function DesktopPdfViewer({
   focusHighlight?: { page: number; ordinal: number; at: number }
   highlightTargets?: PdfHighlightTarget[]
   highlightAt?: number
-  /** Handwritten teaching notes the assistant wrote for a page. */
-  annotations?: PdfPageAnnotation[]
-  onSelectNote?: (id: string) => void
   /** What actually rendered, so the answer can be corrected to match the page. */
   onRenderReport?: (report: {
     marks: { quote: string; page: number; rendered: boolean }[]
@@ -253,11 +241,6 @@ export function DesktopPdfViewer({
   const [viewWidth, setViewWidth] = useState(640)
   const [pageWindow, setPageWindow] = useState({ start: 1, end: 8 })
   const [pageHeights, setPageHeights] = useState<Map<number, number>>(() => new Map())
-  const [placedNotes, setPlacedNotes] = useState<Map<number, PlacedNote[]>>(EMPTY_PLACED_NOTES)
-  /** Font size the current placement was computed at — the renderer must match. */
-  const [noteFontSize, setNoteFontSize] = useState(NOTE_FONT_SIZE)
-  /** Space borrowed either side of the sheet for margin notes. */
-  const [noteGutter, setNoteGutter] = useState(0)
   /**
    * What the last resolution pass managed to draw.
    *
@@ -267,7 +250,6 @@ export function DesktopPdfViewer({
    * untrustworthy.
    */
   const markReportRef = useRef<{ quote: string; page: number; rendered: boolean }[]>([])
-  const noteReportRef = useRef<{ id: string; text: string; rendered: boolean }[]>([])
   const reportRenderRef = useRef<(() => void) | null>(null)
   const [pageHighlights, setPageHighlights] = useState<Map<number, StyledRect[]>>(
     () => new Map(),
@@ -593,114 +575,9 @@ export function DesktopPdfViewer({
     setPageWindow({ start, end })
   }, [layoutWidth, numPages, pageHeights, scrollToPage, scrollToPageAt])
 
-  /**
-   * Turn the assistant's notes into placed handwriting.
-   *
-   * Each note names the text it is about; that phrase is located with the same
-   * search the marks use, so a note and a highlight of the same phrase agree on
-   * where it is. Placement then needs the page's own margins, which is why the
-   * geometry is measured rather than assumed.
-   */
-  useEffect(() => {
-    const pdf = pdfDoc
-    // Must be the container width, not the debounced render width: the overlay
-    // is absolutely positioned inside a box of exactly `layoutWidth`, so rects
-    // measured at any other scale land beside the words they belong to. During a
-    // zoom the two differ, which is when marks drifted off their text.
-    const width = layoutWidth
-
-    let cancelled = false
-    void (async () => {
-      // Clearing happens in here rather than in the effect body: a synchronous
-      // setState during an effect cascades a second render before paint.
-      if (!pdf || width < 1 || !annotations?.length) {
-        setPlacedNotes((prev) => (prev.size === 0 ? prev : EMPTY_PLACED_NOTES))
-        return
-      }
-
-      const noteReport: { id: string; text: string; rendered: boolean }[] = []
-      const byPage = new Map<number, PdfPageAnnotation[]>()
-      for (const note of annotations) {
-        byPage.set(note.page, [...(byPage.get(note.page) ?? []), note])
-      }
-
-      const next = new Map<number, PlacedNote[]>()
-      for (const [page, pageNotes] of byPage) {
-        if (page < 1 || page > pdf.numPages) continue
-        const geometry = await measurePageGeometry(pdf, page, width)
-        if (cancelled) return
-        // No text layer means no trustworthy margins; better to write nothing
-        // than to write over a scan.
-        if (!geometry) continue
-
-        const withRects = []
-        for (const note of pageNotes) {
-          const rects = note.target
-            ? await findHighlightRectsOnPage(pdf, page, note.target, width, "default")
-            : []
-          if (cancelled) return
-          // A note whose target is not on the page has nothing to point at, and
-          // a summary legitimately has no target at all.
-          const anchored = !note.target || rects.length > 0
-          withRects.push({ ...note, rect: rects[0] ?? null, anchored })
-        }
-        // Handwriting is written *on* the page, so it scales with it: at 150%
-        // the notes grow like the printed words rather than shrinking beside
-        // them.
-        /**
-         * Borrow the empty space beside the sheet.
-         *
-         * This document's text runs almost edge to edge, so it has no in-page
-         * margin — and refusing to cover the words meant refusing to write at
-         * all: every note on the page was skipped. The viewer sits the sheet in
-         * a much wider area, and that space is exactly where a tutor writes on a
-         * printout whose own margins are thin. Placement gets the wider box;
-         * the text column is unchanged, so notes still never land on words.
-         */
-        const gutter = Math.max(0, Math.min(230, Math.floor((viewWidth - layoutWidth) / 2) - 10))
-        const roomy = {
-          ...geometry,
-          width: geometry.width + gutter * 2,
-          contentLeft: geometry.contentLeft + gutter,
-          contentRight: geometry.contentRight + gutter,
-        }
-        if (!cancelled) setNoteGutter(gutter)
-
-        const sized = NOTE_FONT_SIZE * geometry.scale
-        if (!cancelled) setNoteFontSize(sized)
-        // Only anchored notes are laid out; an unanchored one would point at
-        // nothing, and is reported as failed rather than drawn adrift.
-        const placed = layoutPageAnnotations(
-          // Rects are page-relative; shift them into the wider box so a note
-          // lines up with the line it explains.
-          withRects
-            .filter((n) => n.anchored)
-            .map((n) => (n.rect ? { ...n, rect: { ...n.rect, left: n.rect.left + gutter } } : n)),
-          roomy,
-          sized,
-        )
-        const drawn = new Set(placed.map((n) => n.id))
-        for (const note of withRects) {
-          noteReport.push({ id: note.id, text: note.text, rendered: drawn.has(note.id) })
-        }
-        next.set(page, placed)
-      }
-
-      if (!cancelled) {
-        setPlacedNotes(next)
-        noteReportRef.current = noteReport
-        reportRenderRef.current?.()
-      }
-    })()
-
-    return () => {
-      cancelled = true
-    }
-  }, [annotations, layoutWidth, pdfDoc, renderWidth, viewWidth])
-
   useEffect(() => {
     reportRenderRef.current = onRenderReport
-      ? () => onRenderReport({ marks: markReportRef.current, notes: noteReportRef.current })
+      ? () => onRenderReport({ marks: markReportRef.current, notes: [] })
       : null
   }, [onRenderReport])
 

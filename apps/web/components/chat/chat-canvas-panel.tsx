@@ -92,6 +92,22 @@ export function ChatCanvasPanel({
             <span className="hidden sm:inline">{saving ? "Saving…" : "Save"}</span>
           </Button>
         ) : null}
+        {onToggleHandwriting ? (
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            onClick={onToggleHandwriting}
+            title={handwriting ? "Back to the reading face" : "Write it out by hand"}
+            className={cn(
+              "h-8 shrink-0 gap-1.5 rounded-lg px-2 text-[11px] font-semibold",
+              handwriting ? "text-primary" : "text-muted-foreground",
+            )}
+          >
+            <PenLine className="size-3.5" />
+            <span className="hidden sm:inline">Hand</span>
+          </Button>
+        ) : null}
         {onClear ? (
           <Button
             type="button"

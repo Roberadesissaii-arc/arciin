@@ -26,7 +26,6 @@ import {
   type UpdateCheckResult,
 } from "@/lib/api/instance"
 import { queryKeys } from "@/lib/api/query-keys"
-import { formatRelativeDate } from "@/lib/utils/format-date"
 import { cn } from "@/lib/utils"
 import { RelativeTime } from "@/components/shared/relative-time"
 

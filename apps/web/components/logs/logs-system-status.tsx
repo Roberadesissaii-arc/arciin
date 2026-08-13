@@ -19,7 +19,6 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { getLogsOverview } from "@/lib/api/logs"
 import { queryKeys } from "@/lib/api/query-keys"
 import { cn } from "@/lib/utils"
-import { formatRelativeDate } from "@/lib/utils/format-date"
 import type { HealthStatus } from "@/lib/types/models"
 import { RelativeTime } from "@/components/shared/relative-time"
 

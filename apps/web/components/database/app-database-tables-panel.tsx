@@ -21,7 +21,6 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { approxTableSizeBytes, typeBadgeClass } from "@/lib/database/table-format"
 import { libraryGlassSheetPanel } from "@/lib/library-glass-sheet"
 import { formatBytes } from "@/lib/utils/format-bytes"
-import { formatRelativeDate } from "@/lib/utils/format-date"
 import { cn } from "@/lib/utils"
 import type { AppDatabaseFolderSummary } from "@/lib/types/models"
 import { RelativeTime } from "@/components/shared/relative-time"
