@@ -270,7 +270,7 @@ export function SetupForm() {
 
   return (
     <form
-      className="flex min-h-0 flex-1 flex-col"
+      className="flex h-full min-h-0 flex-1 flex-col"
       method="post"
       onSubmit={(event) => {
         if (step === 1) {
@@ -296,8 +296,8 @@ export function SetupForm() {
         </div>
       </div>
 
-      {/* Floating fields on the canvas — no nested card wrapper */}
-      <div className="mt-4 flex min-h-0 flex-1 flex-col justify-start space-y-3 overflow-hidden">
+      {/* Fields grow; actions stay pinned under empty space */}
+      <div className="mt-4 min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain">
         {step === 1 ? (
           <>
             {tokenFromUrl && setupTokenValue ? (
@@ -512,8 +512,8 @@ export function SetupForm() {
       </div>
 
       {/*
-        Sit low like the left orange panel: grow into remaining height so
-        Locks after claim / Continue are pinned to the bottom of the column.
+        Last child of a full-height form. Parent page uses the same p-5 bottom
+        inset as the left hero, so this row sits level with the orange panel.
       */}
       <div className="mt-auto flex shrink-0 items-center justify-between gap-3 border-t border-[#ececec] pt-5">
         {step > 1 ? (
