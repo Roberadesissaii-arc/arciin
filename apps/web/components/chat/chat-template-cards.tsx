@@ -20,14 +20,17 @@ export type ChatTemplate = {
   prompt: string
 }
 
-/** Starter prompts for empty chat — related to Arciin libraries & API. */
+/**
+ * Starter prompts for empty chat.
+ * Cover art uses the cinematic stock set (portraits / art) so the deck feels premium.
+ */
 export const CHAT_TEMPLATES: ChatTemplate[] = [
   {
     id: "api",
     title: "Use the REST API",
     description: "List libraries, upload files, or call endpoints with real instance context.",
     linkText: "Start",
-    imageSrc: "/assets/chat-templates/api.jpg?v=8",
+    imageSrc: "/assets/chat-templates/cover-tidewater.jpg?v=1",
     prompt:
       "Help me use the Arciin REST API on this instance. Show practical examples (curl or Python) for listing libraries and uploading a file. Use real library ids from my server when you can.",
   },
@@ -36,7 +39,7 @@ export const CHAT_TEMPLATES: ChatTemplate[] = [
     title: "Find files in my libraries",
     description: "Search Videos, Images, Music, and Documents with library tools.",
     linkText: "Search",
-    imageSrc: "/assets/chat-templates/find-files.jpg?v=8",
+    imageSrc: "/assets/chat-templates/cover-nightshift.jpg?v=1",
     prompt:
       "Help me find files in my Arciin libraries. Ask what I'm looking for, then use library tools if available to search and point me to the right folders.",
   },
@@ -45,7 +48,7 @@ export const CHAT_TEMPLATES: ChatTemplate[] = [
     title: "Organize my media",
     description: "Suggest folders and routing for videos, photos, and music.",
     linkText: "Organize",
-    imageSrc: "/assets/chat-templates/organize.jpg?v=8",
+    imageSrc: "/assets/chat-templates/cover-overexposed.jpg?v=2",
     prompt:
       "Help me organize media on this Arciin server. Suggest a simple folder structure for Videos, Images, and Music, and how uploads should be classified.",
   },
@@ -54,9 +57,18 @@ export const CHAT_TEMPLATES: ChatTemplate[] = [
     title: "Work with documents",
     description: "Summarize PDFs, notes, and text already stored in Documents.",
     linkText: "Open",
-    imageSrc: "/assets/chat-templates/documents.jpg?v=8",
+    imageSrc: "/assets/chat-templates/cover-slow-bloom.jpg?v=1",
     prompt:
       "I want to work with documents in my Arciin library. Explain how to open or point you at a PDF or text file, and summarize what you can do once a file is in context.",
+  },
+  {
+    id: "vision",
+    title: "Understand an image",
+    description: "Describe, tag, or analyze photos from your Images library.",
+    linkText: "Analyze",
+    imageSrc: "/assets/chat-templates/cover-open-palm.jpg?v=2",
+    prompt:
+      "I want to understand an image on this Arciin server. Explain how to attach or open a photo from my Images library, then describe what you can tell me about it (subject, text, tags, and suggested organization).",
   },
 ]
 
