@@ -47,6 +47,7 @@ function PdfPageCanvas({
   highlightRects,
   notes,
   noteFontSize,
+  noteGutter = 0,
   onSelectNote,
 }: {
   pdf: PDFDocumentProxy
@@ -58,6 +59,7 @@ function PdfPageCanvas({
   highlightRects?: StyledRect[]
   notes?: PlacedNote[]
   noteFontSize?: number
+  noteGutter?: number
   onSelectNote?: (id: string) => void
 }) {
   const hostRef = useRef<HTMLDivElement>(null)
@@ -210,8 +212,9 @@ function PdfPageCanvas({
       {ready && notes && notes.length > 0 ? (
         <PdfAnnotationLayer
           notes={notes}
-          width={layoutWidth}
+          width={layoutWidth + noteGutter * 2}
           height={cssHeight - PAGE_PAD}
+          offsetX={-noteGutter}
           fontSize={noteFontSize}
           onSelect={onSelectNote}
         />
@@ -272,6 +275,8 @@ export function DesktopPdfViewer({
   const [placedNotes, setPlacedNotes] = useState<Map<number, PlacedNote[]>>(EMPTY_PLACED_NOTES)
   /** Font size the current placement was computed at — the renderer must match. */
   const [noteFontSize, setNoteFontSize] = useState(NOTE_FONT_SIZE)
+  /** Space borrowed either side of the sheet for margin notes. */
+  const [noteGutter, setNoteGutter] = useState(0)
   /**
    * What the last resolution pass managed to draw.
    *
@@ -639,13 +644,36 @@ export function DesktopPdfViewer({
         // Handwriting is written *on* the page, so it scales with it: at 150%
         // the notes grow like the printed words rather than shrinking beside
         // them.
+        /**
+         * Borrow the empty space beside the sheet.
+         *
+         * This document's text runs almost edge to edge, so it has no in-page
+         * margin — and refusing to cover the words meant refusing to write at
+         * all: every note on the page was skipped. The viewer sits the sheet in
+         * a much wider area, and that space is exactly where a tutor writes on a
+         * printout whose own margins are thin. Placement gets the wider box;
+         * the text column is unchanged, so notes still never land on words.
+         */
+        const gutter = Math.max(0, Math.min(230, Math.floor((viewWidth - layoutWidth) / 2) - 10))
+        const roomy = {
+          ...geometry,
+          width: geometry.width + gutter * 2,
+          contentLeft: geometry.contentLeft + gutter,
+          contentRight: geometry.contentRight + gutter,
+        }
+        if (!cancelled) setNoteGutter(gutter)
+
         const sized = NOTE_FONT_SIZE * geometry.scale
         if (!cancelled) setNoteFontSize(sized)
         // Only anchored notes are laid out; an unanchored one would point at
         // nothing, and is reported as failed rather than drawn adrift.
         const placed = layoutPageAnnotations(
-          withRects.filter((n) => n.anchored),
-          geometry,
+          // Rects are page-relative; shift them into the wider box so a note
+          // lines up with the line it explains.
+          withRects
+            .filter((n) => n.anchored)
+            .map((n) => (n.rect ? { ...n, rect: { ...n.rect, left: n.rect.left + gutter } } : n)),
+          roomy,
           sized,
         )
         const drawn = new Set(placed.map((n) => n.id))
@@ -665,7 +693,7 @@ export function DesktopPdfViewer({
     return () => {
       cancelled = true
     }
-  }, [annotations, layoutWidth, pdfDoc, renderWidth])
+  }, [annotations, layoutWidth, pdfDoc, renderWidth, viewWidth])
 
   useEffect(() => {
     reportRenderRef.current = onRenderReport
@@ -757,6 +785,7 @@ export function DesktopPdfViewer({
               highlightRects={highlightsForRender.get(pageNumber)}
               notes={placedNotes.get(pageNumber)}
               noteFontSize={noteFontSize}
+              noteGutter={noteGutter}
               onSelectNote={onSelectNote}
             />
           ),

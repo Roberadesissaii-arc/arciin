@@ -406,3 +406,61 @@ describe("a circle stays a circle", () => {
     expect(loopWidth).toBeLessThan(width * 1.6)
   })
 })
+
+describe("a page with thin margins still gets notes", () => {
+  // The reported failure: "5 notes could not be placed on this page." This
+  // document's text runs nearly edge to edge, so refusing to cover the words
+  // meant writing nothing at all. The viewer sits the sheet in a much wider
+  // area, and that borrowed space is where the notes go.
+  const TIGHT: PageGeometry = {
+    width: 430,
+    height: 600,
+    contentLeft: 20,
+    contentRight: 410,
+    contentTop: 30,
+    contentBottom: 570,
+  }
+
+  /** What the viewer now hands to placement. */
+  function withGutter(page: PageGeometry, gutter: number): PageGeometry {
+    return {
+      ...page,
+      width: page.width + gutter * 2,
+      contentLeft: page.contentLeft + gutter,
+      contentRight: page.contentRight + gutter,
+    }
+  }
+
+  it("places nothing when there is no room anywhere", () => {
+    expect(
+      layoutPageAnnotations([{ ...note("a", "CO2 is fixed here!"), rect: rect(200) }], TIGHT),
+    ).toEqual([])
+  })
+
+  it("places every note once the viewer gutter is included", () => {
+    const roomy = withGutter(TIGHT, 200)
+    const placed = layoutPageAnnotations(
+      Array.from({ length: 5 }, (_, i) => ({
+        ...note(`n${i}`, "A short definition for this term"),
+        rect: { ...rect(80 + i * 70), left: 20 + 200 },
+      })),
+      roomy,
+    )
+    expect(placed).toHaveLength(5)
+  })
+
+  it("still keeps every note clear of the text column", () => {
+    const roomy = withGutter(TIGHT, 200)
+    const placed = layoutPageAnnotations(
+      Array.from({ length: 4 }, (_, i) => ({
+        ...note(`n${i}`, "A short definition for this term"),
+        rect: { ...rect(80 + i * 80), left: 220 },
+      })),
+      roomy,
+    )
+    for (const p of placed) {
+      if (p.side === "right") expect(p.box.left).toBeGreaterThanOrEqual(roomy.contentRight)
+      else expect(p.box.left + p.box.width).toBeLessThanOrEqual(roomy.contentLeft)
+    }
+  })
+})
