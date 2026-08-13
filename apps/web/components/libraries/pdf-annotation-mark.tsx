@@ -129,6 +129,21 @@ function StrokeMark({
   )
 }
 
+function BoxMark({ rect }: { rect: PdfHighlightRect }) {
+  return (
+    <div
+      className="absolute rounded-[3px] border-[1.5px] border-[#ff4f12]/80 animate-in fade-in duration-300"
+      style={{
+        left: rect.left - 3,
+        top: rect.top - 2,
+        width: rect.width + 6,
+        height: rect.height + 4,
+      }}
+      aria-hidden
+    />
+  )
+}
+
 export function PdfAnnotationMark({
   rect,
   style,
@@ -139,25 +154,21 @@ export function PdfAnnotationMark({
   /** Section titles take the warmer tint; body text takes the yellow marker. */
   heading?: boolean
 }) {
-  if (style === "circle") return <CircleMark rect={rect} />
+  if (style === "circle") {
+    // A loop drawn round a run this long stops reading as a circle and starts
+    // reading as a stray line across the page — which is how it looked on
+    // screen. Wide runs get the box instead: still a hand-placed mark round the
+    // same words, but one that keeps its shape at any width.
+    if (rect.width > 420) {
+      return <BoxMark rect={rect} />
+    }
+    return <CircleMark rect={rect} />
+  }
   // Just below the baseline, so descenders are not cut through.
   if (style === "underline") return <StrokeMark rect={rect} at={0.94} />
   if (style === "strike") return <StrokeMark rect={rect} at={0.55} />
 
-  if (style === "box") {
-    return (
-      <div
-        className="absolute rounded-[3px] border-[1.5px] border-[#ff4f12]/80 animate-in fade-in duration-300"
-        style={{
-          left: rect.left - 3,
-          top: rect.top - 2,
-          width: rect.width + 6,
-          height: rect.height + 4,
-        }}
-        aria-hidden
-      />
-    )
-  }
+  if (style === "box") return <BoxMark rect={rect} />
 
   return (
     <div

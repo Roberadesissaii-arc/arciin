@@ -188,7 +188,14 @@ function PdfPageCanvas({
       ) : null}
       {ready && highlightRects && highlightRects.length > 0 ? (
         <div className="pointer-events-none absolute inset-0 flex justify-center py-1.5" aria-hidden>
-          <div className="relative" style={{ width: layoutWidth, height: cssHeight - PAGE_PAD }}>
+          {/* Clipped to the sheet, like the note layer. Without this a circle
+              drawn round a wide match ran off the page and across the grey
+              surround — seen on screen as a stroke leaving the document
+              entirely. A mark outside the page is pointing at nothing. */}
+          <div
+            className="relative overflow-hidden"
+            style={{ width: layoutWidth, height: cssHeight - PAGE_PAD }}
+          >
             {highlightRects.map((rect, i) => (
               <PdfAnnotationMark
                 key={i}

@@ -183,3 +183,29 @@ describe("backwards compatibility", () => {
     expect(parseAssistantHighlights('[highlight:2:"X"]', 3)[0]).toMatchObject({ page: 2 })
   })
 })
+
+describe("a circle never becomes a stray line", () => {
+  // Seen on screen: a circle round a wide match rendered as a near-straight
+  // stroke that left the page and crossed the grey surround.
+  const CIRCLE_MAX_WIDTH = 420
+
+  it("keeps the loop for a word or a heading", () => {
+    for (const width of [40, 120, 300, 419]) {
+      expect(width <= CIRCLE_MAX_WIDTH).toBe(true)
+    }
+  })
+
+  it("switches to a box once a run is too long to loop", () => {
+    for (const width of [421, 700, 1200]) {
+      expect(width > CIRCLE_MAX_WIDTH).toBe(true)
+    }
+  })
+
+  it("a box hugs its text at any width", () => {
+    // The box is a fixed 3px/2px inset, so it cannot grow with the match the
+    // way circle padding did.
+    const box = (w: number) => ({ left: 100 - 3, width: w + 6 })
+    expect(box(40).width - 40).toBe(6)
+    expect(box(1200).width - 1200).toBe(6)
+  })
+})
