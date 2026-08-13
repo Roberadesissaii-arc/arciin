@@ -5,6 +5,7 @@ import { z } from "zod"
 
 import {
   DEFAULT_LIBRARY_DEFINITIONS,
+  DEFAULT_LIBRARY_FOLDERS,
   DEFAULT_USER_PREFERENCES,
   JOB_TYPES,
   parseAutoUpdateConfig,
@@ -422,6 +423,33 @@ export async function registerInstanceRoutes(fastify: FastifyInstance) {
           storageLocationId: storageLocation.id,
         })),
       })
+
+      /**
+       * Open each library with a folder or two.
+       *
+       * Five empty libraries is a worse first impression than it sounds:
+       * nothing shows that folders exist, so the first upload lands loose at the
+       * root and the feature is found late or not at all. createMany does not
+       * return ids, so the rows are read back — a handful of folders at setup is
+       * not worth a second write path.
+       */
+      const created = await tx.library.findMany({
+        where: { storageLocationId: storageLocation.id },
+        select: { id: true, slug: true },
+      })
+      const starterFolders = created.flatMap((library) =>
+        (DEFAULT_LIBRARY_FOLDERS[library.slug] ?? []).map((name) => ({
+          libraryId: library.id,
+          parentFolderId: null,
+          name,
+          slug: name.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
+          // Root-level, so the cached path is just the folder itself.
+          pathCache: name,
+        })),
+      )
+      if (starterFolders.length > 0) {
+        await tx.folder.createMany({ data: starterFolders })
+      }
 
       const user = await tx.user.create({
         data: {

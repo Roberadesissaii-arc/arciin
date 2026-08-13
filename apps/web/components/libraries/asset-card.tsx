@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { createElement, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import {
   AlertTriangle,
@@ -50,7 +50,7 @@ function accentForMediaType(mediaType: MediaType): string {
   }
 }
 
-function IconForMediaType(mediaType: MediaType): LucideIcon {
+function iconForMediaType(mediaType: MediaType): LucideIcon {
   switch (mediaType) {
     case "IMAGE":
       return ImageIcon
@@ -67,6 +67,34 @@ function IconForMediaType(mediaType: MediaType): LucideIcon {
     default:
       return File
   }
+}
+
+/**
+ * The glyph for a media type, as its own component.
+ *
+ * Looking the icon up into a local and rendering `<TypeIcon />` reads to the
+ * React compiler as building a component inside render, which it is right to
+ * refuse — a component identity that changes per render remounts its subtree.
+ * Declared here, the identity is fixed and the lookup is just a lookup.
+ */
+function MediaTypeGlyph({
+  mediaType,
+  className,
+  color,
+}: {
+  mediaType: MediaType
+  className?: string
+  color?: string
+}) {
+  // createElement rather than JSX: rendering a capitalised local reads to the
+  // React compiler as constructing a component during render, and it is right to
+  // refuse that in general. Here the value is one of a fixed set of icons, so the
+  // call says exactly that and nothing is created.
+  return createElement(iconForMediaType(mediaType), {
+    className,
+    style: color ? { color } : undefined,
+    "aria-hidden": true,
+  })
 }
 
 type AiStatusTone = "ready" | "working" | "queued" | "failed" | "skipped"
@@ -124,7 +152,6 @@ function MediaPreview({ asset }: { asset: AssetSummary }) {
     prefs?.media.documentThumbnails ?? DEFAULT_USER_PREFERENCES.media.documentThumbnails
 
   const accent = accentForMediaType(asset.mediaType)
-  const TypeIcon = IconForMediaType(asset.mediaType)
   const ext = (
     asset.extension ||
     asset.originalFilename.split(".").pop() ||
@@ -167,7 +194,7 @@ function MediaPreview({ asset }: { asset: AssetSummary }) {
           className="flex size-11 items-center justify-center rounded-xl bg-white/85 shadow-sm"
           style={{ boxShadow: `inset 0 0 0 1px ${accent}26` }}
         >
-          <TypeIcon className="size-5" style={{ color: accent }} aria-hidden />
+          <MediaTypeGlyph mediaType={asset.mediaType} className="size-5" color={accent} />
         </span>
       </div>
 

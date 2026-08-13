@@ -8,6 +8,29 @@ export const DEFAULT_LIBRARY_DEFINITIONS = [
   { name: "Inbox", slug: "inbox", kind: "INBOX", icon: "inbox" },
 ] as const
 
+/**
+ * A folder or two to open each library with.
+ *
+ * A brand-new instance shows five empty libraries, and an empty folder list is
+ * a worse first impression than it sounds: nothing demonstrates that folders
+ * exist, so the first upload lands loose at the root and the feature is
+ * discovered late or not at all. One or two obvious folders show the shape of
+ * the thing without deciding how anyone files their library.
+ *
+ * Deliberately few, and deliberately generic. A starter folder someone has to
+ * delete is worse than one that was never created — these are the ones almost
+ * any library wants.
+ */
+export const DEFAULT_LIBRARY_FOLDERS: Record<string, readonly string[]> = {
+  videos: ["Movies", "Shows"],
+  images: ["Photos", "Screenshots"],
+  music: ["Albums"],
+  documents: ["Books", "Papers"],
+  // Inbox is where unsorted files land by design; giving it folders would
+  // contradict what it is for.
+  inbox: [],
+}
+
 export const API_KEY_SCOPES = [
   "assets:read",
   "assets:write",
