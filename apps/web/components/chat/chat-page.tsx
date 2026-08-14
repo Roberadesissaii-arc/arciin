@@ -105,15 +105,12 @@ import {
   buildCanvasFollowUpInstruction,
   parseCanvasFollowUps,
 } from "@/components/chat/chat-canvas-helpers"
-import {
-  buildBookContinuePrompt,
-  isBookContinueRequest,
-  loadBookProject,
-  rekeyBookProject,
-  saveBookProject,
-  syncBookProject,
-  type BookProject,
-} from "@/lib/chat/book-project"
+import { BookProgressCard } from "@/components/chat/book-progress-card"
+import { createChapterGenerator } from "@/lib/chat/book/book-chapter-generator"
+import { useBookRun } from "@/lib/chat/book/book-orchestrator"
+import { isBookContinueRequest } from "@/lib/chat/book/book-parser"
+import { buildPlanPrompt } from "@/lib/chat/book/book-prompts"
+import { bookRepository } from "@/lib/chat/book/book-storage"
 import { getLibraries } from "@/lib/api/libraries"
 import { uploadFile } from "@/lib/api/uploads"
 
@@ -158,8 +155,57 @@ export function ChatPage() {
    * under it with nothing below to scroll, so the reader cannot reach their own
    * text. Measured instead, so the gap always matches what is actually there.
    */
+  /**
+   * The book run for this conversation.
+   *
+   * The store is the long-running thing; this component only observes it and
+   * lends it a transport. Chapters keep being written while the reader scrolls,
+   * switches tabs, or reads what has landed so far.
+   */
+  const canvasContentRef = useRef("")
+  const bookRun = useBookRun()
+  const bookConfigRef = useRef<{ profileId: string; model?: string | null; systemPrompt?: string } | null>(
+    null,
+  )
+
   const composerRef = useRef<HTMLDivElement | null>(null)
   const [composerHeight, setComposerHeight] = useState(160)
+
+  useEffect(() => {
+    // Registered once. The config is read through a ref at call time so
+    // changing model mid-book does not need the generator rebuilt — and, more
+    // importantly, does not re-register one while a chapter is in flight.
+    const { setGenerator, setOnManuscriptChange } = useBookRun.getState()
+    setGenerator(createChapterGenerator(() => bookConfigRef.current))
+    setOnManuscriptChange((manuscript, title) => {
+      setCanvasContent(manuscript)
+      setCanvasTitle(title)
+      setCanvasOpen(true)
+    })
+    return () => {
+      setGenerator(null)
+      setOnManuscriptChange(null)
+    }
+  }, [])
+
+  /**
+   * The chapter in flight, painted under what is already written.
+   *
+   * The store never merges a streaming chapter into the manuscript — an
+   * unvalidated chapter must not be able to become part of the book — so the
+   * two are joined here, for display only.
+   */
+  useEffect(() => {
+    // Recovery. A run that was writing when the tab went away comes back
+    // paused with its progress read out of the manuscript — never resumed
+    // automatically, which is how a chapter would get written twice.
+    useBookRun.getState().attach(conversationId, canvasContentRef.current)
+  }, [conversationId])
+
+  useEffect(() => {
+    if (bookRun.streamingChapter === null || !bookRun.streamingText) return
+    setCanvasContent(`${bookRun.manuscript.trimEnd()}\n\n${bookRun.streamingText}`)
+  }, [bookRun.streamingChapter, bookRun.streamingText, bookRun.manuscript])
 
   useEffect(() => {
     const node = composerRef.current
@@ -177,6 +223,10 @@ export function ChatPage() {
   const [attachments, setAttachments] = useState<ChatComposerAttachment[]>([])
   const [canvasOpen, setCanvasOpen] = useState(false)
   const [canvasContent, setCanvasContent] = useState("")
+  useEffect(() => {
+    canvasContentRef.current = canvasContent
+  }, [canvasContent])
+
   const [canvasTitle, setCanvasTitle] = useState("Canvas")
   const [canvasStreaming, setCanvasStreaming] = useState(false)
   const [canvasSaving, setCanvasSaving] = useState(false)
@@ -209,6 +259,16 @@ export function ChatPage() {
   const systemInstruction = typeof window !== "undefined"
     ? (localStorage.getItem(SYSTEM_INSTRUCTION_KEY) ?? ARCIIN_DEFAULT_SYSTEM_INSTRUCTION)
     : ARCIIN_DEFAULT_SYSTEM_INSTRUCTION
+
+  useEffect(() => {
+    bookConfigRef.current = selectedProfile
+      ? {
+          profileId: selectedProfile.id,
+          model: selectedModel,
+          systemPrompt: systemInstruction.trim() || undefined,
+        }
+      : null
+  }, [selectedProfile, selectedModel, systemInstruction])
 
   const messagesScrollRef = useRef<HTMLDivElement>(null)
   const messagesInnerRef = useRef<HTMLDivElement>(null)
@@ -712,7 +772,7 @@ export function ChatPage() {
       rekeyCanvasDraftsForConversation(null, convoId, map)
       rekeyCanvasDraftsForConversation(conversationId, convoId, map)
       // A book begun on a fresh chat was parked under a placeholder key.
-      rekeyBookProject(convoId)
+      bookRepository().rekey(convoId)
     }
     return prev.map((m) => {
       if (pendingUserId && m.id === pendingUserId && userRow) {
@@ -1012,10 +1072,10 @@ export function ChatPage() {
     // A book turn is tracked separately: it decides Canvas routing, whether the
     // reply is appended or replaces the draft, and what the next "continue"
     // knows about the book so far.
-    let bookTurn:
-      | { mode: "start"; brief: string }
-      | { mode: "continue"; project: BookProject }
-      | null = null
+    // Only the planning turn goes through the composer now. Chapters after the
+    // first are generated by the orchestrator, which owns its own transport —
+    // so there is no "continue" mode here any more.
+    let bookTurn: { mode: "start"; brief: string } | null = null
     let activeTools: ChatPromptToolId[] = overrideText ? [] : [...promptTools]
     if (!overrideText && text) {
       /**
@@ -1052,12 +1112,25 @@ export function ChatPage() {
        * left alone and goes to the model as ordinary text, which is what it
        * means everywhere else.
        */
-      const existingBook = loadBookProject(conversationId)
-      if (existingBook && isBookContinueRequest(text) && canvasContent.trim()) {
-        bookTurn = { mode: "continue", project: existingBook }
-        text = buildBookContinuePrompt(existingBook, canvasContent)
-      } else if (/^\s*\/book\b/i.test(text)) {
+      /**
+       * "continue" still works, but it resumes the run rather than sending a
+       * turn: with automatic writing the word means "start the loop again",
+       * and putting a chapter request through the composer would race the
+       * orchestrator for the same chapter.
+       */
+      const existingBook = bookRun.project
+      if (
+        existingBook &&
+        isBookContinueRequest(text) &&
+        (existingBook.status === "paused" || existingBook.status === "failed")
+      ) {
+        bookRun.resume()
+        setInput("")
+        return
+      }
+      if (/^\s*\/book\b/i.test(text)) {
         bookTurn = { mode: "start", brief: text.replace(/^\s*\/book\b\s*/i, "").trim() }
+        text = buildPlanPrompt(bookTurn.brief)
       }
 
       const slash = expandSlashMessage(text)
@@ -1218,17 +1291,11 @@ export function ChatPage() {
      * here rather than read back at the end, because the streaming setter runs
      * many times in between and needs the same prefix each time.
      */
-    const bookPrefix =
-      bookTurn?.mode === "continue" ? `${canvasContent.trimEnd()}\n\n` : ""
+    const bookPrefix = ""
     if (forceCanvas) {
       setCanvasOpen(true)
       setCanvasStreaming(true)
-      if (bookTurn?.mode === "continue") {
-        // The book already has a title and the draft already has its chapters.
-        turnCanvasTitle = bookTurn.project.title || canvasTitle
-        setCanvasTitle(turnCanvasTitle)
-        setCanvasContent(bookPrefix)
-      } else {
+      {
         const bookTitle =
           docAttachments[0]?.filename.replace(/\.pdf$/i, "").trim() ||
           deriveCanvasTitle(displayUserText)
@@ -1490,10 +1557,7 @@ export function ChatPage() {
         // A continuation is the new chapter only; the document is what was
         // already written plus that.
         const docOnly = bookPrefix + sanitizeCanvasDocument(finalContent)
-        const nextTitle =
-          bookTurn?.mode === "continue"
-            ? turnCanvasTitle
-            : refineCanvasTitleFromContent(docOnly, turnCanvasTitle)
+        const nextTitle = refineCanvasTitleFromContent(docOnly, turnCanvasTitle)
         setCanvasContent(docOnly)
         setCanvasStreaming(false)
         setCanvasOpen(true)
@@ -1533,18 +1597,15 @@ export function ChatPage() {
           }
         }
         if (bookTurn && docOnly.trim()) {
-          const project = syncBookProject({
-            previous: bookTurn.mode === "continue" ? bookTurn.project : null,
-            conversationId,
-            brief: bookTurn.mode === "start" ? bookTurn.brief : bookTurn.project.brief,
-            document: docOnly,
+          // The plan turn is the only book turn the composer handles. From here
+          // the orchestrator owns the manuscript, and the progress card replaces
+          // the per-chapter chat messages the old flow produced.
+          bookRun.startFromPlan({
+            conversationId: conversationId ?? "__new__",
+            brief: bookTurn.brief,
+            manuscript: docOnly,
           })
-          saveBookProject(project)
-          const left = project.chapters.length - project.written
-          canvasChatSummary +=
-            left > 0
-              ? `\n\n📖 **${project.title}** — chapter ${project.written} of ${project.chapters.length} written. Say **continue** for the next one.`
-              : `\n\n📖 **${project.title}** — all ${project.written} chapters written.`
+          canvasChatSummary = ""
         }
 
         if (docOnly.trim()) {
@@ -1821,6 +1882,22 @@ export function ChatPage() {
               // plus a little air so the last line is not flush against it.
               style={{ paddingBottom: composerHeight + 32 }}
             >
+              {bookRun.project ? (
+                <BookProgressCard
+                  project={bookRun.project}
+                  manuscript={bookRun.manuscript}
+                  streamingChapter={bookRun.streamingChapter}
+                  onPause={() => bookRun.stopAfterCurrent()}
+                  onResume={() => bookRun.resume()}
+                  onRetry={() => bookRun.retryCurrent()}
+                  onOpenManuscript={() => {
+                    setCanvasContent(bookRun.manuscript)
+                    setCanvasTitle(bookRun.project!.title)
+                    setCanvasOpen(true)
+                  }}
+                  className="order-last"
+                />
+              ) : null}
               {(() => {
                 const lastAssistantId = [...messages].reverse().find((m) => m.role === "assistant")?.id
                 return messages.map((msg) => (

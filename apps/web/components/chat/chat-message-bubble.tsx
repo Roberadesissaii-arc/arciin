@@ -14,9 +14,10 @@ import {
   Volume2,
 } from "lucide-react"
 
-import { canvasSectionTitles, followUpSuggestions, type ChatSuggestion } from "@arciin/shared"
+import type { ChatSuggestion } from "@arciin/shared"
 
 import { ChatSuggestionChips } from "@/components/chat/chat-suggestion-chips"
+import { buildNextActions, detectArtifactKind } from "@/lib/chat/next-actions"
 import { useChatTextToSpeech } from "@/hooks/use-chat-text-to-speech"
 import { plainTextFromMessage } from "@/lib/chat/plain-text-from-message"
 import { toast } from "@/lib/notifications/arciin-toast"
@@ -353,45 +354,25 @@ export function MessageBubble({
         {!isUser && !msg.pending && !isStreaming && onPickSuggestion ? (
           <ChatSuggestionChips
             className="mt-2"
-            suggestions={
-              msg.followUps?.length
-                ? [
-                    // The model judged its own draft, so these are about this
-                    // piece rather than any piece. Sent as /modify so picking
-                    // one edits the draft that exists instead of generating a
-                    // second document beside it.
-                    ...msg.followUps.map((text, index) => ({
-                      id: `model-next-${index}`,
-                      label: text,
-                      prompt: msg.canvasDraft ? `/modify ${text}` : text,
-                      kind: "prompt" as const,
-                    })),
-                    // Saving is an action the assistant cannot perform itself,
-                    // so it is appended rather than left to the model to offer.
-                    ...(msg.canvasDraft
-                      ? [
-                          {
-                            id: "save",
-                            label: "Save to Documents",
-                            prompt: "",
-                            kind: "action" as const,
-                            action: "save-canvas" as const,
-                          },
-                        ]
-                      : []),
-                  ]
-                : followUpSuggestions({
+            suggestions={buildNextActions({
+              // A book carries its actions on the progress card, which is one
+              // live thing rather than a menu repeated under every chapter.
+              bookProject: null,
+              artifact: detectArtifactKind({
+                title: msg.canvasDraft?.title,
+                content: msg.canvasDraft?.content,
+              }),
+              advisory: msg.followUps,
               hasCanvasDraft: Boolean(msg.canvasDraft),
-              // The draft model carries no saved flag, so "Save to Documents"
-              // is always offered when a draft exists rather than guessed at.
-              canvasUnsaved: Boolean(msg.canvasDraft),
-              sectionTitles: msg.canvasDraft
-                ? canvasSectionTitles(msg.canvasDraft.content)
-                : undefined,
-              listedAssets: /\[\[ASSETS?[:_]/i.test(msg.content),
-              replyWordCount: msg.content.trim().split(/\s+/).filter(Boolean).length,
-                  })
-            }
+            }).map((action) => ({
+              id: action.id,
+              label: action.label,
+              prompt: action.prompt ?? "",
+              kind: action.action === "canvas_save" ? ("action" as const) : ("prompt" as const),
+              ...(action.action === "canvas_save"
+                ? { action: "save-canvas" as const }
+                : {}),
+            }))}
             onPick={onPickSuggestion}
           />
         ) : null}
