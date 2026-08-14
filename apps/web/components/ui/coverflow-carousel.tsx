@@ -193,6 +193,28 @@ export function CoverflowCarousel({
     }
   }
 
+  /**
+   * Activation happens here, not on the card's own click.
+   *
+   * The track calls setPointerCapture on pointerdown so a drag keeps tracking
+   * outside the element. A captured pointer delivers its click to the capturing
+   * element, so the click listener on the card never fired — the image looked
+   * dead and only the caption below it worked. Reading the card out of the
+   * pointerup target restores it without giving up capture, which the drag
+   * needs.
+   */
+  const activateFromPointer = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!onSlideActivate || draggedRef.current) return
+    const target = event.target as HTMLElement | null
+    const card = target?.closest?.("[data-cf-index]") as HTMLElement | null
+    if (!card) return
+    const index = Number(card.dataset.cfIndex)
+    if (!Number.isInteger(index)) return
+    // One press: bring the card forward and run the action.
+    if (indexAt(posRef.current) !== index) goTo(index)
+    onSlideActivate(index)
+  }
+
   const onPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
     const drag = dragRef.current
     if (!drag || drag.id !== event.pointerId) return
@@ -265,7 +287,10 @@ export function CoverflowCarousel({
           tabIndex={0}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
-          onPointerUp={endDrag}
+          onPointerUp={(event) => {
+            endDrag(event)
+            activateFromPointer(event)
+          }}
           onPointerCancel={endDrag}
           onKeyDown={(event) => {
             if (event.key === "ArrowLeft") {
@@ -312,15 +337,8 @@ export function CoverflowCarousel({
                   onSlideActivate && "cursor-pointer",
                   cardClassName,
                 )}
+                data-cf-index={index}
                 style={{ width: "var(--cf-card)" }}
-                onClick={() => {
-                  if (draggedRef.current) return
-                  // One click: bring the card forward and run the action (e.g. fill chat).
-                  if (indexAt(posRef.current) !== index) {
-                    goTo(index)
-                  }
-                  onSlideActivate?.(index)
-                }}
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img

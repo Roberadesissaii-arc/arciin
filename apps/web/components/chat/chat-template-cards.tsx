@@ -23,7 +23,7 @@ export type ChatTemplate = {
 /**
  * Starter prompts for empty chat.
  * Covers are generated cinematic stills that thematically match each template.
- * Click the centre card (or press Enter) to autofill the prompt — no extra button.
+ * Click any card (or press Enter) to autofill the prompt — no extra button.
  */
 export const CHAT_TEMPLATES: ChatTemplate[] = [
   {
@@ -124,7 +124,9 @@ export function ChatTemplateCards({
         onSlideActivate={activate}
       />
 
-      {/* Caption is tappable too — same autofill path as the centre card */}
+      {/* The instruction is gone: the card itself is now clickable, and telling
+          someone to click the image only made sense while it did nothing. The
+          caption stays as a second target and as the label for what happens. */}
       {!disabled ? (
         <button
           type="button"
@@ -134,7 +136,7 @@ export function ChatTemplateCards({
             "hover:text-[#FF4F12]",
           )}
         >
-          Click the image to start · {active.linkText}
+          {active.linkText}
         </button>
       ) : (
         <div className="mt-4">

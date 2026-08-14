@@ -1847,6 +1847,12 @@ export function ChatPage() {
             "max-lg:absolute max-lg:inset-y-0 max-lg:right-0 max-lg:z-30 max-lg:w-[min(92vw,22rem)] max-lg:shadow-2xl",
             // Desktop: inline column next to chat
             "lg:relative lg:shrink-0 lg:w-[min(100%,26rem)] xl:w-[30rem]",
+            // Arrives from the right rather than appearing. The panel opening is
+            // a change of layout, and without the motion the whole column
+            // snapped into place — read as a flicker rather than as something
+            // sliding in beside the conversation.
+            "motion-safe:animate-in motion-safe:slide-in-from-right-8 motion-safe:fade-in",
+            "motion-safe:duration-300 motion-safe:ease-out",
           )}
         >
           <ChatCanvasPanel
@@ -1872,7 +1878,15 @@ export function ChatPage() {
       {/* Phone canvas: full-height overlay */}
       {canvasVisible ? (
         <div className="pointer-events-none absolute inset-0 z-30 flex py-2 pl-2 pr-0 md:hidden">
-          <div className="pointer-events-auto ml-auto flex h-full w-[min(100%,20rem)] flex-col">
+          {/* Same entrance on the phone overlay, where a panel appearing over
+              the conversation without motion is even harder to follow. */}
+          <div
+            className={cn(
+              "pointer-events-auto ml-auto flex h-full w-[min(100%,20rem)] flex-col",
+              "motion-safe:animate-in motion-safe:slide-in-from-right-8 motion-safe:fade-in",
+              "motion-safe:duration-300 motion-safe:ease-out",
+            )}
+          >
             <ChatCanvasPanel
               title={canvasTitle}
               content={canvasContent}

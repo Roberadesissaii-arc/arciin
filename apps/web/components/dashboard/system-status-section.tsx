@@ -1,6 +1,7 @@
 "use client"
 
 import Link from "next/link"
+
 import { useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { ArrowUpRight, ChevronRight, Database } from "lucide-react"
@@ -124,22 +125,14 @@ export function SystemStatusSection({ className }: { className?: string }) {
         className,
       )}
     >
+      {/* No title here. The section heading above the card already says
+          "System", and printing it twice made the page read as two nested
+          things rather than one. What is left is the line that actually tells
+          you something — whether the services are up. */}
       <CardHeader className="space-y-1 border-b border-zinc-100/80 pb-4">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0 space-y-0.5 border-l-2 border-primary pl-3">
-            <CardTitle className="font-heading text-base font-semibold tracking-tight text-zinc-900">
-              System
-            </CardTitle>
-            <CardDescription className="text-sm text-zinc-600">{description}</CardDescription>
-          </div>
-          <Link
-            href="/jobs"
-            className="inline-flex shrink-0 items-center gap-0.5 rounded-lg px-2 py-1 text-sm font-medium text-primary transition-colors hover:bg-[var(--arciin-accent-badge-bg)] hover:text-primary"
-          >
-            Background jobs
-            <ChevronRight className="size-4" />
-          </Link>
-        </div>
+        <CardDescription className="border-l-2 border-primary pl-3 text-sm text-zinc-600">
+          {description}
+        </CardDescription>
       </CardHeader>
 
       <CardContent className="px-4 py-4 sm:px-5">
