@@ -299,7 +299,15 @@ export function SecurityDashboardPanel() {
                       <span className="text-[11px] font-medium leading-none text-zinc-500 lg:text-zinc-400">
                         <RelativeTime value={event.createdAt} />
                       </span>
-                      <span className="font-mono text-[12px] leading-none text-foreground">
+                      {/* min-w-0 is what makes truncate work in a grid track: a
+                          cell defaults to its content's minimum width, so an
+                          IPv6 address grew the column and ran over the event
+                          beside it. Every other cell in this row already had
+                          it. The full value stays available on hover. */}
+                      <span
+                        className="min-w-0 truncate font-mono text-[12px] leading-none text-foreground"
+                        title={ip ?? undefined}
+                      >
                         {ip ?? <span className="text-zinc-400">—</span>}
                       </span>
                       <p

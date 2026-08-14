@@ -1,11 +1,14 @@
 "use client"
 
+import { useMemo, useState } from "react"
+
 import { useQuery } from "@tanstack/react-query"
 import { History, LogIn, LogOut, ShieldAlert, KeyRound, Ban } from "lucide-react"
 
 import { Skeleton } from "@/components/ui/skeleton"
 import { getSecurityActivity } from "@/lib/api/activity"
 import { queryKeys } from "@/lib/api/query-keys"
+import { AppPagination } from "@/components/ui/app-pagination"
 import { cn } from "@/lib/utils"
 import { RelativeTime } from "@/components/shared/relative-time"
 
@@ -38,6 +41,9 @@ function styleFor(type: string) {
   )
 }
 
+/** Rows per page — enough to scan, short enough to keep the card a fixed size. */
+const PAGE_SIZE = 10
+
 export function SignInHistoryPanel() {
   const query = useQuery({
     queryKey: queryKeys.securityActivity,
@@ -45,7 +51,23 @@ export function SignInHistoryPanel() {
     staleTime: 30_000,
   })
 
-  const rows = query.data ?? []
+  const rows = useMemo(() => query.data ?? [], [query.data])
+
+  /**
+   * Paged, because this list only grows.
+   *
+   * Every sign-in appends a row and nothing ever removes one, so on a server in
+   * daily use the panel became the longest thing on the page and pushed
+   * everything below it out of reach. Ten keeps the card a fixed height whatever
+   * the history holds.
+   */
+  const [page, setPage] = useState(1)
+  const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE))
+  const safePage = Math.min(page, totalPages)
+  const pageRows = useMemo(
+    () => rows.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE),
+    [rows, safePage],
+  )
 
   return (
     <section className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
@@ -75,7 +97,7 @@ export function SignInHistoryPanel() {
         </p>
       ) : (
         <ul className="divide-y divide-border">
-          {rows.map((row) => {
+          {pageRows.map((row) => {
             const { Icon, tone, label } = styleFor(row.type)
             return (
               <li key={row.id} className="flex items-start gap-3 px-5 py-3">
@@ -99,6 +121,12 @@ export function SignInHistoryPanel() {
           })}
         </ul>
       )}
+
+      {!query.isLoading && !query.isError && totalPages > 1 ? (
+        <div className="flex justify-center border-t border-border px-5 py-3">
+          <AppPagination page={safePage} totalPages={totalPages} onPageChange={setPage} />
+        </div>
+      ) : null}
     </section>
   )
 }
