@@ -411,7 +411,6 @@ export function ChatPromptBox({
         {attachments.length > 0 && value.trim().length === 0 ? (
           <ChatSuggestionChips
             className="mb-2 px-1"
-            label="Try"
             suggestions={attachmentSuggestions({
               kind: attachmentKindFor({
                 mediaType: attachments[0]!.mediaType,

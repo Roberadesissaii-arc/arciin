@@ -102,6 +102,10 @@ import {
 } from "@/components/chat/chat-prompt-tools"
 import { expandSlashMessage } from "@/components/chat/chat-slash-commands"
 import {
+  buildCanvasFollowUpInstruction,
+  parseCanvasFollowUps,
+} from "@/components/chat/chat-canvas-helpers"
+import {
   buildBookContinuePrompt,
   isBookContinueRequest,
   loadBookProject,
@@ -145,6 +149,27 @@ export function ChatPage() {
   const [selectedProfile, setSelectedProfile] = useState<ChatProfile | null>(null)
   const [selectedModel, setSelectedModel] = useState<string>("")
   const [conversationId, setConversationId] = useState<string | null>(null)
+  /**
+   * How much room the floating composer needs at the bottom of the transcript.
+   *
+   * It was a fixed pb-40, which is right only for an empty one-line composer.
+   * Attach a file and it grows a tray and a row of template chips; start
+   * generating and the status line appears — and the last thing written slides
+   * under it with nothing below to scroll, so the reader cannot reach their own
+   * text. Measured instead, so the gap always matches what is actually there.
+   */
+  const composerRef = useRef<HTMLDivElement | null>(null)
+  const [composerHeight, setComposerHeight] = useState(160)
+
+  useEffect(() => {
+    const node = composerRef.current
+    if (!node || typeof ResizeObserver === "undefined") return
+    const observer = new ResizeObserver(([entry]) => {
+      if (entry) setComposerHeight(entry.contentRect.height)
+    })
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [])
   const historyOpen = useUiStore((s) => s.chatHistoryOpen)
   const setHistoryOpen = useUiStore((s) => s.setChatHistoryOpen)
   const [mobileHistoryOpen, setMobileHistoryOpen] = useState(false)
@@ -1221,10 +1246,14 @@ export function ChatPage() {
       images?: string[]
     }
 
+    // Asked for on the user turn, not the system prompt: a format demand buried
+    // in a long system block loses to the model's habit of simply answering.
+    const followUpAsk = forceCanvas ? buildCanvasFollowUpInstruction() : ""
+
     // Send expanded slash text + attachment context; bubble keeps what the user typed.
     const history: OutboundMsg[] = [
       ...messages.map((m) => ({ role: m.role as "user" | "assistant", content: m.content })),
-      { role: "user" as const, content: text + canvasEditBody },
+      { role: "user" as const, content: text + canvasEditBody + followUpAsk },
     ]
     const sysPrompt = systemInstruction.trim()
 
@@ -1454,6 +1483,9 @@ export function ChatPage() {
       const finalThinking = resolved.thinking
       let canvasChatSummary = ""
       let canvasDraftForMsg: Message["canvasDraft"] | undefined
+      // Read before sanitising — the sanitiser strips these tags out of the
+      // document, which is exactly where they must not appear.
+      const modelFollowUps = forceCanvas ? parseCanvasFollowUps(finalContent) : []
       if (forceCanvas) {
         // A continuation is the new chapter only; the document is what was
         // already written plus that.
@@ -1541,6 +1573,7 @@ export function ChatPage() {
                 streamStatus: undefined,
                 pending: false,
                 usage: finalUsage ?? m.usage,
+                ...(modelFollowUps.length > 0 ? { followUps: modelFollowUps } : {}),
                 ...(canvasDraftForMsg ? { canvasDraft: canvasDraftForMsg } : {}),
               }
             : m,
@@ -1783,7 +1816,10 @@ export function ChatPage() {
             /* pb clears floating composer — messages scroll fully underneath empty air */
             <div
               ref={messagesInnerRef}
-              className="relative flex flex-col gap-4 px-4 py-6 pb-40 sm:px-8 sm:pb-44 lg:px-16 xl:px-24"
+              className="relative flex flex-col gap-4 px-4 py-6 sm:px-8 lg:px-16 xl:px-24"
+              // Clears the floating composer whatever height it currently is,
+              // plus a little air so the last line is not flush against it.
+              style={{ paddingBottom: composerHeight + 32 }}
             >
               {(() => {
                 const lastAssistantId = [...messages].reverse().find((m) => m.role === "assistant")?.id
@@ -1851,7 +1887,7 @@ export function ChatPage() {
           stays visible and scrollable; only the prompt card captures clicks.
         */}
         <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 px-4 pb-4 sm:px-6">
-          <div className="pointer-events-auto mx-auto max-w-3xl">
+          <div ref={composerRef} className="pointer-events-auto mx-auto max-w-3xl">
             <ChatPromptBox
               onEnableCanvas={() =>
                 setPromptTools((prev) => (prev.includes("canvas") ? prev : [...prev, "canvas"]))

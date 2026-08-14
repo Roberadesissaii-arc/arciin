@@ -353,7 +353,34 @@ export function MessageBubble({
         {!isUser && !msg.pending && !isStreaming && onPickSuggestion ? (
           <ChatSuggestionChips
             className="mt-2"
-            suggestions={followUpSuggestions({
+            suggestions={
+              msg.followUps?.length
+                ? [
+                    // The model judged its own draft, so these are about this
+                    // piece rather than any piece. Sent as /modify so picking
+                    // one edits the draft that exists instead of generating a
+                    // second document beside it.
+                    ...msg.followUps.map((text, index) => ({
+                      id: `model-next-${index}`,
+                      label: text,
+                      prompt: msg.canvasDraft ? `/modify ${text}` : text,
+                      kind: "prompt" as const,
+                    })),
+                    // Saving is an action the assistant cannot perform itself,
+                    // so it is appended rather than left to the model to offer.
+                    ...(msg.canvasDraft
+                      ? [
+                          {
+                            id: "save",
+                            label: "Save to Documents",
+                            prompt: "",
+                            kind: "action" as const,
+                            action: "save-canvas" as const,
+                          },
+                        ]
+                      : []),
+                  ]
+                : followUpSuggestions({
               hasCanvasDraft: Boolean(msg.canvasDraft),
               // The draft model carries no saved flag, so "Save to Documents"
               // is always offered when a draft exists rather than guessed at.
@@ -363,7 +390,8 @@ export function MessageBubble({
                 : undefined,
               listedAssets: /\[\[ASSETS?[:_]/i.test(msg.content),
               replyWordCount: msg.content.trim().split(/\s+/).filter(Boolean).length,
-            })}
+                  })
+            }
             onPick={onPickSuggestion}
           />
         ) : null}

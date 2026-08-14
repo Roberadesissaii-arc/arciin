@@ -350,6 +350,9 @@ export function sanitizeCanvasDocument(content: string): string {
     .replace(/(?:^|\n)\s*\{\s*"asset_id"\s*:\s*"[^"]+"\s*\}\s*(?=\n|$)/gi, "\n")
     .replace(/\n*\[\[ASSETS:[^\]]+\]\]\n*/gi, "\n")
     .replace(/\n*\[\[ASSET_LIST:[^\]]+\]\]\n*/gi, "\n")
+    // The model's suggested next moves are chips, not prose — they must never
+    // survive into the document itself.
+    .replace(/\n*\[next:\s*"[^"]*"\]\n*/gi, "\n")
     .replace(/\[(?:Attempting to read|Reading)[^\]]*\]/gi, "")
     .replace(
       /(?:^|\n)\s*(?:I need to read|Let me (?:read|open|fetch)|I(?:'ll| will) (?:read|open)|Attempting to read)[^\n]{0,200}/gi,
@@ -431,13 +434,52 @@ export function countCanvasWords(content: string): number {
 /**
  * Short chat-side status after Canvas finishes — what was written, not the essay body.
  */
+/**
+ * What to offer next, in the model's words rather than a fixed menu.
+ *
+ * Appended to the user turn for the same reason the study pass is: an
+ * output-format demand buried in a long system prompt loses to the model's
+ * habit of simply answering.
+ */
+export function buildCanvasFollowUpInstruction(): string {
+  return [
+    "",
+    "",
+    "[NEXT MOVES — REQUIRED]",
+    "After the document, on their own lines at the very end, emit two or three tags:",
+    '[next:"..."]',
+    "Each is one specific edit YOU think this draft would benefit from, phrased as an",
+    "instruction to yourself and short enough to read on a button (under 8 words).",
+    "Base them on what you actually wrote and where it is weakest — a thin section,",
+    "a claim without evidence, a passage that runs long. Never generic advice, and",
+    "never \"make it shorter\" unless length is genuinely the problem here.",
+    "They are stripped from the document, so write nothing else on those lines.",
+  ].join("\n")
+}
+
+/** Pull the model's suggested next moves out of a reply. */
+export function parseCanvasFollowUps(content: string): string[] {
+  const out: string[] = []
+  const re = /\[next:\s*"([^"]+)"\]/gi
+  let m: RegExpExecArray | null
+  while ((m = re.exec(content)) !== null) {
+    const text = (m[1] ?? "").trim()
+    // A tag echoing the instruction rather than judging the draft is noise.
+    if (text.length < 4 || text.length > 90) continue
+    if (out.some((existing) => existing.toLowerCase() === text.toLowerCase())) continue
+    out.push(text)
+  }
+  return out.slice(0, 3)
+}
+
 export function buildCanvasFinishedChatSummary(opts: {
   title: string
   content: string
   userText?: string
   attachedFilenames?: string[]
 }): string {
-  const title = (opts.title || "Untitled draft").trim()
+  // The title is no longer repeated here — the draft card under this message
+  // shows it and opens the panel, so the parameter stays for callers' sake.
   const words = countCanvasWords(opts.content)
   const hasRefs =
     /^##\s+(references|works cited|bibliography|sources)\b/im.test(opts.content) ||
@@ -458,24 +500,20 @@ export function buildCanvasFinishedChatSummary(opts: {
         : null
 
   const lines: string[] = []
-  // Lead with a sentence about what was actually written. The metadata block
-  // below is accurate but reads like a receipt; this says what the reader got.
-  lines.push(describeCanvasDraft({ content: opts.content, words }))
-  lines.push(`**Finished in Canvas:** ${title}`)
-  if (about) {
-    lines.push(`Based on: **${about}**`)
-  } else if (opts.userText?.trim()) {
-    const short = opts.userText.replace(/\s+/g, " ").trim().slice(0, 100)
-    lines.push(`Request: ${short}${opts.userText.trim().length > 100 ? "…" : ""}`)
-  }
-  if (words > 0) {
-    lines.push(
-      `Length: about **${words.toLocaleString()} words**` +
-        (structure.length ? ` · includes ${structure.join(", ")}` : ""),
-    )
-  }
+  // One sentence, in the shape a person would say it. The old block listed the
+  // title, the source, the length and an instruction to open the panel, in bold
+  // rows, after every single draft — a receipt for a document the reader is
+  // already looking at. The draft card below this carries the title and opens
+  // the panel, so repeating both here was furniture.
+  const detail: string[] = []
+  if (words > 0) detail.push(`${words.toLocaleString()} words`)
+  if (structure.length) detail.push(`with ${structure.join(", ")}`)
+  if (about) detail.push(`from ${about}`)
+
   lines.push(
-    "Open the **Canvas** panel to read, copy, clear, or **Save** the draft to Documents.",
+    detail.length > 0
+      ? `${describeCanvasDraft({ content: opts.content, words })} — ${detail.join(", ")}.`
+      : describeCanvasDraft({ content: opts.content, words }),
   )
   return lines.join("\n\n")
 }

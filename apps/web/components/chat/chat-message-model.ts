@@ -36,6 +36,11 @@ export type Message = {
    * Canvas essay draft produced for this assistant turn.
    * Body is also stored in localStorage for history reload.
    */
+  /**
+   * Next moves the model proposed for its own draft. Empty when it offered
+   * none, in which case the bubble falls back to the derived set.
+   */
+  followUps?: string[]
   canvasDraft?: {
     id: string
     title: string
