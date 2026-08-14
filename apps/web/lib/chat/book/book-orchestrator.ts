@@ -33,7 +33,7 @@ import {
 import { inferFormatProfile } from "./book-document"
 import { applyChapterToMemory, truncateMemory } from "./book-memory"
 import { buildChapterPrompt, buildRepairPrompt } from "./book-prompts"
-import { bookRepository } from "./book-storage"
+import { bookRepository, NEW_CHAT_KEY } from "./book-storage"
 import { validateChapter, type ChapterRejection } from "./book-validator"
 import {
   bookIsComplete,
@@ -117,6 +117,31 @@ export type BookRunStore = BookRunState & BookRunActions
  * null and both start. A plain variable is checked and written in the same
  * synchronous step, which is the only thing that actually excludes.
  */
+/**
+ * Every state change and every refusal to schedule, in development.
+ *
+ * A run that stops has to say why. Three of the guards below return without
+ * doing anything, and a silent return is indistinguishable from a run that
+ * finished — which is exactly the position this feature was in when a real book
+ * stopped after chapter one and left no evidence anywhere.
+ */
+function log(event: string, detail: Record<string, unknown> = {}) {
+  if (process.env.NODE_ENV === "production") return
+  const parts = Object.entries(detail).map(([k, v]) => `${k}=${String(v)}`)
+  console.info(`[book] ${event}${parts.length ? ` ${parts.join(" ")}` : ""}`)
+}
+
+/**
+ * True once this session has adopted a plan and started writing.
+ *
+ * The distinction that matters: a project loaded from storage after a page load
+ * may describe an attempt that never finished, so it is recovered as paused. A
+ * project this session is actively running is a different thing entirely, and
+ * demoting it because a component re-attached is not recovery — it is stopping
+ * the book.
+ */
+let liveRunConversationId: string | null = null
+
 let inFlight: string | null = null
 let abortController: AbortController | null = null
 let generator: ChapterGenerator | null = null
@@ -197,6 +222,14 @@ export const useBookRun = create<BookRunStore>((set, get) => ({
     // it would produce chapters the reader never agreed to the shape of.
     const status: BookProjectStatus = project.chapters.length === 0 ? "paused" : "writing"
 
+    liveRunConversationId = conversationId
+    log("project_created", {
+      chapters: project.chapters.length,
+      written: project.written,
+      status,
+      profile: project.formatProfile,
+    })
+
     set({
       project: persist({ ...project, status }),
       manuscript: clean,
@@ -227,12 +260,39 @@ export const useBookRun = create<BookRunStore>((set, get) => ({
      * exactly how a chapter gets written twice: the interrupted attempt may
      * have completed server-side and simply not been appended here.
      */
+    /**
+     * A run this session started is still running. `attach` fires whenever the
+     * conversation id changes — including the moment a brand-new chat receives
+     * its real id, seconds after `/book` handed the plan over — so treating
+     * every attach as a page reload paused the book on its very first turn,
+     * between chapters, with nothing on screen to say why.
+     */
+    const isLiveRun =
+      liveRunConversationId !== null &&
+      (liveRunConversationId === conversationId ||
+        liveRunConversationId === NEW_CHAT_KEY ||
+        stored.conversationId === liveRunConversationId)
+
+    if (isLiveRun) {
+      liveRunConversationId = conversationId ?? liveRunConversationId
+      log("attach_live_run_preserved", {
+        conversation: conversationId,
+        status: synced.status,
+        written: synced.written,
+      })
+      set({ project: persist(synced), manuscript: clean })
+      // The scheduler may have been waiting on a project keyed to the old id.
+      get().tick()
+      return
+    }
+
     const recovered: BookProjectStatus =
       synced.status === "writing" || synced.status === "stopping"
         ? "paused"
         : bookIsComplete(synced) && synced.chapters.length > 0
           ? "completed"
           : synced.status
+    log("attach_recovered", { from: synced.status, to: recovered, written: synced.written })
 
     set({
       project: persist({
@@ -248,9 +308,12 @@ export const useBookRun = create<BookRunStore>((set, get) => ({
   },
 
   detach: () => {
+    // Only an explicit teardown cancels. A component unmounting must never mean
+    // "cancel my book" — see the limitation noted in the report.
     abortController?.abort()
     abortController = null
     inFlight = null
+    liveRunConversationId = null
     set({
       project: null,
       manuscript: "",
@@ -331,15 +394,27 @@ async function runNextChapter(
 ): Promise<void> {
   // 1. The lock. Synchronous, before any await, so two callers in one tick
   //    cannot both get past it.
-  if (inFlight) return
+  if (inFlight) {
+    log("next_schedule_blocked", { reason: "already_generating", operation: inFlight })
+    return
+  }
 
   const project = get().project
-  if (!project) return
-  if (!generator) return
+  if (!project) {
+    log("next_schedule_blocked", { reason: "no_project" })
+    return
+  }
+  if (!generator) {
+    // The one failure with no visible symptom at all: the run simply stops and
+    // the card keeps whatever it last showed.
+    log("next_schedule_blocked", { reason: "generator_unavailable" })
+    return
+  }
 
   // 2. Only an authorised state generates. "stopping" finishes what is running
   //    (which is nothing, or we would have returned at the lock) and stops.
   if (project.status !== "writing") {
+    log("next_schedule_blocked", { reason: "status", status: project.status })
     if (project.status === "stopping") {
       set({ project: persist({ ...project, status: "paused", autoContinue: false }) })
     }
@@ -381,6 +456,7 @@ async function runNextChapter(
   inFlight = operationId
   abortController = new AbortController()
 
+  log("generation_started", { chapter, operation: operationId, attempt: project.attempts + 1 })
   set({
     operationId,
     streamingChapter: chapter,
@@ -469,6 +545,7 @@ async function runNextChapter(
     const stopping = base.status === "stopping"
     const nextStatus: BookProjectStatus = done ? "completed" : stopping ? "paused" : "writing"
 
+    log("chapter_appended", { chapter, words: validation.words, status: nextStatus })
     set({
       manuscript: appended,
       project: persist({
@@ -501,6 +578,7 @@ async function runNextChapter(
   //    as a task rather than recursing, to keep the stack flat over 40 chapters
   //    and to leave a gap for a pause to land between them.
   if (inFlight === null && get().project?.status === "writing") {
+    log("next_scheduled", { chapter: get().project!.written + 1 })
     scheduleTick(get)
   }
 }
@@ -521,6 +599,7 @@ function finishAttempt(
   const attempts = project.attempts + 1
   const exhausted = attempts >= MAX_CHAPTER_ATTEMPTS
 
+  log("generation_failed", { chapter: project.written + 1, attempt: attempts, reason: input.error })
   set({
     project: persist({
       ...project,
@@ -554,6 +633,7 @@ function scheduleTick(get: () => BookRunStore) {
 
 /** Test seam: clear the module-level lock between cases. */
 export function __resetBookOrchestratorForTests() {
+  liveRunConversationId = null
   inFlight = null
   abortController = null
   generator = null

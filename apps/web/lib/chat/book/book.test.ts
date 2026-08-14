@@ -17,7 +17,7 @@ import {
 import { countChaptersWritten, isBookContinueRequest, parseBookOutline } from "./book-parser"
 import { applyChapterToMemory, renderMemoryForPrompt } from "./book-memory"
 import { buildChapterPrompt } from "./book-prompts"
-import { MemoryBookRepository, setBookRepository } from "./book-storage"
+import { bookRepository, MemoryBookRepository, setBookRepository } from "./book-storage"
 import { validateChapter } from "./book-validator"
 import { bookActions, buildNextActions } from "../next-actions"
 import { emptyBookMemory, type BookProject } from "./types"
@@ -465,8 +465,104 @@ async function main() {
     )
   }
 
+}
+
+void main().then(regressionSuite)
+
+/* ------------------------------------------------------- the real regression */
+/**
+ * The handoff that failed in production.
+ *
+ * A fresh chat has no conversation id when `/book` completes, so the plan is
+ * adopted under a placeholder and the id arrives moments later. That fires the
+ * attach effect, which treated every attach as a page reload and paused the
+ * run — on the very first turn of every new book.
+ */
+async function regressionSuite() {
+  section("Regression — conversation id arriving mid-run")
+  {
+    reset()
+    const { generator, calls } = makeGenerator((n) => ({ ok: true, raw: chapterText(n, "x") }))
+    useBookRun.getState().setGenerator(generator)
+    useBookRun.getState().startFromPlan({
+      conversationId: "__new__",
+      brief: "a 3-chapter mystery",
+      manuscript: PLAN,
+    })
+    check("the run starts writing", useBookRun.getState().project?.status === "writing")
+
+    // Exactly what chat-page does once the turn persists.
+    bookRepository().rekey("conv-real")
+    useBookRun.getState().attach("conv-real", useBookRun.getState().manuscript)
+
+    check(
+      "attach does not pause a live run",
+      useBookRun.getState().project?.status !== "paused",
+      useBookRun.getState().project?.status,
+    )
+
+    await settle()
+    check("chapters 2 and 3 still ran", calls.join(",") === "2,3", calls.join(","))
+    check("the book completed", useBookRun.getState().project?.status === "completed")
+    check("no chapter was written twice", new Set(calls).size === calls.length, calls.join(","))
+  }
+
+  section("Regression — attach in the gap between chapters")
+  {
+    reset()
+    let secondDone = false
+    const calls: number[] = []
+    const gen: ChapterGenerator = async (r) => {
+      calls.push(r.chapter)
+      await new Promise((x) => setTimeout(x, 3))
+      // Re-attach in the window where nothing is in flight — the case that
+      // killed the run permanently rather than being rescued by luck.
+      if (r.chapter === 2 && !secondDone) {
+        secondDone = true
+        setTimeout(() => useBookRun.getState().attach("conv-real", useBookRun.getState().manuscript), 0)
+      }
+      return { ok: true, raw: chapterText(r.chapter, "x") }
+    }
+    useBookRun.getState().setGenerator(gen)
+    useBookRun.getState().startFromPlan({ conversationId: "conv-real", brief: "b", manuscript: PLAN })
+    await settle()
+    check("a mid-gap attach does not stop the run", calls.includes(3), calls.join(","))
+    check("it still completes", useBookRun.getState().project?.status === "completed")
+  }
+
+  section("Regression — a genuine reload is still recovered as paused")
+  {
+    reset()
+    const repo = new MemoryBookRepository()
+    setBookRepository(repo)
+    repo.save({
+      conversationId: "conv-old",
+      title: "t",
+      brief: "b",
+      chapters: parseBookOutline(PLAN),
+      status: "writing",
+      currentChapter: 2,
+      written: 1,
+      autoContinue: true,
+      formatProfile: "fiction",
+      memory: emptyBookMemory(),
+      attempts: 0,
+      createdAt: 0,
+      updatedAt: 0,
+    })
+    const { generator, calls } = makeGenerator((n) => ({ ok: true, raw: chapterText(n, "x") }))
+    useBookRun.getState().setGenerator(generator)
+    useBookRun.getState().attach("conv-old", PLAN)
+    await new Promise((r) => setTimeout(r, 40))
+    check(
+      "a run this session never started comes back paused",
+      useBookRun.getState().project?.status === "paused",
+      useBookRun.getState().project?.status,
+    )
+    check("and generates nothing on its own", calls.length === 0, calls.join(","))
+  }
+
   console.log(`\n${passed} passed, ${failed} failed`)
   if (failed > 0) process.exitCode = 1
 }
 
-void main()
