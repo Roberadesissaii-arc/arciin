@@ -31,6 +31,34 @@ export default function Error({
     console.error(error)
   }, [error])
 
+  /**
+   * A chunk that will not load means the tab is older than the deployment.
+   *
+   * Next names its bundles by content hash, so after a deploy the files an open
+   * tab is still asking for no longer exist. The app then throws on the next
+   * navigation and shows this page — which looks like a crash, but the only
+   * thing wrong is that the tab is stale. Pressing "Try again" cannot help: the
+   * same missing file is requested again.
+   *
+   * So reload once, and once only. The marker is per tab, so a genuine repeated
+   * failure still lands here rather than looping.
+   */
+  useEffect(() => {
+    const message = `${error?.message ?? ""} ${error?.name ?? ""}`
+    const isStaleChunk =
+      /loading chunk|failed to load chunk|chunkloaderror|dynamically imported module/i.test(message)
+    if (!isStaleChunk) return
+
+    const KEY = "arciin:chunk-reload"
+    try {
+      if (sessionStorage.getItem(KEY)) return
+      sessionStorage.setItem(KEY, "1")
+      window.location.reload()
+    } catch {
+      // Private mode: leave the page as it is rather than risking a loop.
+    }
+  }, [error])
+
   const detail = error?.digest ? `${error.message || "Error"} (${error.digest})` : error?.message
 
   return (
@@ -62,7 +90,7 @@ export default function Error({
           </h1>
 
           <p className="mt-4 max-w-md text-[15px] leading-relaxed text-zinc-400">
-            This one is on the server, not on you. Try again — if it keeps happening, the detail
+            This one is on our side, not yours. Try again — if it keeps happening, the detail
             below is what to send.
           </p>
 
