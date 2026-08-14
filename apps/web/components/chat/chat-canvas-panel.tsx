@@ -4,13 +4,21 @@ import { Copy, Eraser, Loader2, PenLine, Save, X } from "lucide-react"
 
 import { copyToClipboard } from "@/lib/utils/clipboard"
 
+import { BookDocumentView } from "@/components/chat/book-document"
 import { CanvasMarkdownContent } from "@/components/chat/chat-canvas-markdown"
+import type { BookFormatProfile } from "@/lib/chat/book/types"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
 type ChatCanvasPanelProps = {
   title: string
   content: string
+  /**
+   * Set only when this artifact is a book, from the book project rather than
+   * guessed at — a report that happens to say "Chapter" must keep its own
+   * formatting.
+   */
+  bookMode?: { profile: BookFormatProfile; subtitle?: string; author?: string } | null
   streaming?: boolean
   saving?: boolean
   onClose: () => void
@@ -30,6 +38,7 @@ type ChatCanvasPanelProps = {
 export function ChatCanvasPanel({
   title,
   content,
+  bookMode,
   streaming = false,
   saving = false,
   onClose,
@@ -180,7 +189,16 @@ export function ChatCanvasPanel({
                 : undefined
             }
           >
-            <CanvasMarkdownContent content={content} />
+            {bookMode ? (
+              <BookDocumentView
+                content={content}
+                profile={bookMode.profile}
+                subtitle={bookMode.subtitle}
+                author={bookMode.author}
+              />
+            ) : (
+              <CanvasMarkdownContent content={content} />
+            )}
             {streaming ? (
               <span
                 className="ml-0.5 inline-block h-[1em] w-0.5 translate-y-px animate-pulse bg-primary/80 align-middle"

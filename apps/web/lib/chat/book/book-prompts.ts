@@ -20,6 +20,29 @@ const SHARED_RULES = [
   "is worse than a shorter chapter.",
 ].join(" ")
 
+/**
+ * What the manuscript may and may not contain.
+ *
+ * The renderer sets the page — centring, indents, chapter breaks — so the model
+ * must not try to. A chapter that arrives pre-formatted with spaces and rules
+ * puts that formatting into the stored document, where it survives export,
+ * pollutes what the reader copies, and confuses the parser that decides which
+ * chapters exist.
+ */
+const MANUSCRIPT_RULES = [
+  "MANUSCRIPT FORMAT — this is a book, and the page is set for you:",
+  "- Plain paragraphs separated by a single blank line. Nothing else.",
+  "- Never indent with spaces or tabs, never centre anything by padding it,",
+  "  never draw rules (---, ===, ***) as decoration, and never add page numbers.",
+  "- Never write progress or workflow lines. No \"Here is Chapter 4\", no",
+  '  "chapter complete", no "next I will write", no notes to the reader.',
+  "- Never restate the book title or the Contents inside a chapter.",
+  "- Dialogue is ordinary prose in its own paragraph. No speaker labels,",
+  "  no bullets, no bold names.",
+  "- For a genuine change of time, place or viewpoint mid-chapter, put a line",
+  "  containing exactly:  * * *   — and only when the prose really turns.",
+].join("\n")
+
 /** Default shape when the brief does not ask for something else. */
 const DEFAULT_CHAPTER_RANGE = "8 to 14 chapters"
 const DEFAULT_WORDS = "1,200 to 2,000 words"
@@ -81,6 +104,11 @@ export function buildPlanPrompt(brief: string): string {
     `   ${shape.words}. This is the chapter itself, not a description of it.`,
     "",
     SHARED_RULES,
+    "",
+    MANUSCRIPT_RULES,
+    "- Do not add a subtitle, author, dedication, copyright or epigraph unless",
+    "  the brief supplied one. An invented author line is a false claim about a",
+    "  real person.",
     "",
     "Stop at the end of chapter 1. Do not begin chapter 2 and do not write a",
     "closing note — the rest of the book is written in the turns after this one.",
@@ -166,6 +194,9 @@ export function buildChapterPrompt(input: {
     "",
     SHARED_RULES,
     "",
+    MANUSCRIPT_RULES,
+    profileRules(input.project.formatProfile),
+    "",
     isLast
       ? "This is the final chapter: land the book properly rather than trailing off."
       : `Stop at the end of chapter ${chapter}.`,
@@ -198,6 +229,27 @@ export function buildRepairPrompt(input: {
     "",
     buildChapterPrompt(input),
   ].join("\n")
+}
+
+/** The habits that differ between kinds of book. */
+function profileRules(profile: BookProject["formatProfile"]): string {
+  switch (profile) {
+    case "fiction":
+      return [
+        "- Continuous prose. Do not use subheadings inside the chapter; a novel",
+        "  does not have them, and the reader is not skimming.",
+      ].join("\n")
+    case "textbook":
+      return [
+        "- Sections are allowed: use ### for a subheading where the material",
+        "  genuinely divides. Examples, definitions and short lists are fine.",
+      ].join("\n")
+    case "nonfiction":
+      return [
+        "- A ### subheading is allowed where the argument genuinely turns, but",
+        "  not every few paragraphs — prose carries the chapter, not headings.",
+      ].join("\n")
+  }
 }
 
 function repairCorrection(rejection: ChapterRejection, chapter: number): string {

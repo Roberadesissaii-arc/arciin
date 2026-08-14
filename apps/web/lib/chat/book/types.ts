@@ -14,6 +14,15 @@
  *    trigger — a double effect, a retried stream, a reopened tab — harmless.
  */
 
+/**
+ * How the book is set.
+ *
+ * Fiction runs its paragraphs on with a first-line indent; the other two keep
+ * block paragraphs, because their paragraphs are units of argument. Chosen once
+ * from the brief and stored, so every chapter is set the same way.
+ */
+export type BookFormatProfile = "fiction" | "nonfiction" | "textbook"
+
 export type BookProjectStatus =
   /** The opening turn is producing the title, outline and chapter one. */
   | "planning"
@@ -123,6 +132,10 @@ export type BookProject = {
   written: number
   /** False after a pause; the reader restarts the run explicitly. */
   autoContinue: boolean
+  formatProfile: BookFormatProfile
+  /** Only ever what the reader supplied. Never invented — see book-prompts. */
+  subtitle?: string
+  author?: string
   memory: BookMemory
   /** Consecutive failed attempts at `currentChapter`. Reset on success. */
   attempts: number

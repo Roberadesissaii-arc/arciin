@@ -2044,6 +2044,17 @@ export function ChatPage() {
           <ChatCanvasPanel
             title={canvasTitle}
             content={canvasContent}
+            // Book Mode comes from the project, so it survives a reload: the
+            // project is reloaded by `attach` before the panel renders.
+            bookMode={
+              bookRun.project
+                ? {
+                    profile: bookRun.project.formatProfile,
+                    subtitle: bookRun.project.subtitle,
+                    author: bookRun.project.author,
+                  }
+                : null
+            }
             handwriting={canvasHandwriting}
             onToggleHandwriting={() => setCanvasHandwriting((on) => !on)}
             streaming={canvasStreaming}
@@ -2076,6 +2087,15 @@ export function ChatPage() {
             <ChatCanvasPanel
               title={canvasTitle}
               content={canvasContent}
+              bookMode={
+                bookRun.project
+                  ? {
+                      profile: bookRun.project.formatProfile,
+                      subtitle: bookRun.project.subtitle,
+                      author: bookRun.project.author,
+                    }
+                  : null
+              }
               streaming={canvasStreaming}
               saving={canvasSaving}
               handwriting={canvasHandwriting}

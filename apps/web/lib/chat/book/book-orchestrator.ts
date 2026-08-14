@@ -30,6 +30,7 @@ import {
   parseBookTitle,
   stripBookControlTags,
 } from "./book-parser"
+import { inferFormatProfile } from "./book-document"
 import { applyChapterToMemory, truncateMemory } from "./book-memory"
 import { buildChapterPrompt, buildRepairPrompt } from "./book-prompts"
 import { bookRepository } from "./book-storage"
@@ -183,6 +184,8 @@ export const useBookRun = create<BookRunStore>((set, get) => ({
       currentChapter: 1,
       written: 0,
       autoContinue: true,
+      // Decided once, from the brief, so chapter twelve is set like chapter one.
+      formatProfile: inferFormatProfile(brief),
       memory: emptyBookMemory(),
       attempts: 0,
       createdAt: Date.now(),
@@ -212,7 +215,10 @@ export const useBookRun = create<BookRunStore>((set, get) => ({
     }
 
     const clean = stripBookControlTags(manuscript || "")
-    const synced = syncFromManuscript(stored, clean)
+    const synced = syncFromManuscript(
+      { ...stored, formatProfile: stored.formatProfile ?? inferFormatProfile(stored.brief) },
+      clean,
+    )
 
     /**
      * A run that was "writing" when the page went away did not finish — the tab
