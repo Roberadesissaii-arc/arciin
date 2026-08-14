@@ -246,6 +246,7 @@ async function main() {
       written: 2,
       autoContinue: true,
       formatProfile: "fiction",
+      manuscript: PLAN,
       memory: emptyBookMemory(),
       attempts: 0,
       createdAt: Date.now(),
@@ -402,6 +403,7 @@ async function main() {
       written: 2,
       autoContinue: true,
       formatProfile: "fiction",
+      manuscript: PLAN,
       memory,
       attempts: 0,
       createdAt: 0,
@@ -434,6 +436,7 @@ async function main() {
       written: 1,
       autoContinue: true,
       formatProfile: "fiction",
+      manuscript: PLAN,
       memory: emptyBookMemory(),
       attempts: 0,
       createdAt: 0,
@@ -473,7 +476,7 @@ async function main() {
 
 }
 
-void main().then(regressionSuite).then(metadataSuite)
+void main().then(regressionSuite).then(metadataSuite).then(backgroundSuite)
 
 /* ------------------------------------------------------- the real regression */
 /**
@@ -551,6 +554,7 @@ async function regressionSuite() {
       written: 1,
       autoContinue: true,
       formatProfile: "fiction",
+      manuscript: PLAN,
       memory: emptyBookMemory(),
       attempts: 0,
       createdAt: 0,
@@ -668,6 +672,101 @@ She said "no" and left. It was Élodie's — the boy's — decision.
       "word counts exclude the tags",
       state.project!.memory.chapterSummaries.every((s) => s.words > 100),
     )
+  }
+
+  console.log(`\n${passed} passed, ${failed} failed`)
+  if (failed > 0) process.exitCode = 1
+}
+
+/* -------------------------------------------- the run outlives the chat page */
+/**
+ * Navigating away must not stop a book.
+ *
+ * The transport, the lock and the scheduler are all module-level, so the only
+ * thing that ever tied a run to `ChatPage` was a cleanup that unregistered the
+ * generator. That registration moved to the app root; this asserts the property
+ * that change was made for — a run survives the Canvas mirror being torn down
+ * and reattached, and the manuscript written meanwhile is still there.
+ */
+async function backgroundSuite() {
+  section("Background — generation survives Chat unmounting")
+  {
+    reset()
+    let unmounted = false
+    const calls: number[] = []
+    const gen: ChapterGenerator = async (r) => {
+      calls.push(r.chapter)
+      // Chapter 2 is in flight when the reader leaves Chat.
+      if (r.chapter === 2 && !unmounted) {
+        unmounted = true
+        useBookRun.getState().setOnManuscriptChange(null)
+      }
+      await new Promise((x) => setTimeout(x, 5))
+      return { ok: true, raw: chapterText(r.chapter, "x") }
+    }
+    useBookRun.getState().setGenerator(gen)
+    useBookRun.getState().setOnManuscriptChange(() => {})
+    useBookRun.getState().startFromPlan({ conversationId: "nav", brief: "b", manuscript: PLAN })
+    await settle()
+
+    const state = useBookRun.getState()
+    check("chapters kept coming after unmount", calls.join(",") === "2,3", calls.join(","))
+    check("the book completed", state.project?.status === "completed", state.project?.status)
+    check("no duplicates", new Set(calls).size === calls.length)
+    check(
+      "the manuscript is on the project, not in a component",
+      countChaptersWritten(state.project!.manuscript) === 3,
+      `${countChaptersWritten(state.project?.manuscript ?? "")}`,
+    )
+  }
+
+  section("Background — returning to Chat sees the new chapters")
+  {
+    // Re-attaching is what a route change back to /chat does. The stored
+    // manuscript must win over whatever stale text the caller has.
+    const before = useBookRun.getState().project!.manuscript
+    useBookRun.getState().attach("nav", "")
+    const after = useBookRun.getState()
+    check("the stored manuscript wins over an empty caller", after.manuscript === before)
+    check("progress is intact", after.project?.written === 3)
+    check("status is still completed", after.project?.status === "completed")
+  }
+
+  section("Background — a persisted project carries its manuscript")
+  {
+    const stored = bookRepository().load("nav")
+    check("the repository holds the document", countChaptersWritten(stored?.manuscript ?? "") === 3)
+    check("and no control tags", !hasBookControlTags(stored?.manuscript ?? ""))
+  }
+
+  section("Background — slow first token")
+  {
+    reset()
+    const calls: number[] = []
+    const gen: ChapterGenerator = async (r) => {
+      calls.push(r.chapter)
+      // Long silence before any output, as a reasoning model does.
+      await new Promise((x) => setTimeout(x, 60))
+      r.onToken("first words")
+      await new Promise((x) => setTimeout(x, 5))
+      return { ok: true, raw: chapterText(r.chapter, "x") }
+    }
+    useBookRun.getState().setGenerator(gen)
+    useBookRun.getState().startFromPlan({ conversationId: "slow", brief: "b", manuscript: PLAN })
+
+    await new Promise((x) => setTimeout(x, 30))
+    const mid = useBookRun.getState()
+    check("still writing during the silence", mid.project?.status === "writing", mid.project?.status)
+    check("the chapter is marked in flight", mid.streamingChapter === 2, `${mid.streamingChapter}`)
+    check("no second operation started", calls.length === 1, calls.join(","))
+
+    // Ticks during the wait — what a route change or a rerender would cause.
+    for (let i = 0; i < 5; i += 1) useBookRun.getState().tick()
+    check("ticks during thinking start nothing", calls.length === 1, calls.join(","))
+
+    await settle(5000)
+    check("it finishes normally", useBookRun.getState().project?.status === "completed")
+    check("no duplicate chapters", new Set(calls).size === calls.length, calls.join(","))
   }
 
   console.log(`\n${passed} passed, ${failed} failed`)

@@ -6,11 +6,13 @@ import { ChunkLoadRecovery } from "@/components/providers/chunk-load-recovery"
 import { InstallAppPrompt } from "@/components/providers/install-app-prompt"
 import { SwRegister } from "@/components/providers/sw-register"
 
+import { BookTaskProvider } from "@/components/providers/book-task-provider"
+
 export function AppProviders({ children }: { children: React.ReactNode }) {
   return (
     <QueryProvider>
       <ChunkLoadRecovery />
-      {children}
+      <BookTaskProvider>{children}</BookTaskProvider>
       <AppearanceToaster />
       <SwRegister />
       <InstallAppPrompt />

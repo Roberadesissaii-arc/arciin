@@ -161,6 +161,9 @@ function newOperationId(): string {
  * leaving a hole.
  */
 function syncFromManuscript(project: BookProject, manuscript: string): BookProject {
+  // The manuscript travels with the project from here on, so every persist
+  // writes the document too — that is what lets a chapter land while the
+  // Canvas is unmounted and still be there when it comes back.
   const outline = parseBookOutline(manuscript)
   // The plan only grows: a manuscript whose contents block has scrolled out of
   // a partial parse must not silently shrink the book to the chapters written.
@@ -169,6 +172,7 @@ function syncFromManuscript(project: BookProject, manuscript: string): BookProje
 
   return {
     ...project,
+    manuscript,
     title: parseBookTitle(manuscript, project.title),
     chapters,
     written,
@@ -212,6 +216,7 @@ export const useBookRun = create<BookRunStore>((set, get) => ({
       autoContinue: true,
       // Decided once, from the brief, so chapter twelve is set like chapter one.
       formatProfile: inferFormatProfile(brief),
+      manuscript: clean,
       memory: emptyBookMemory(),
       attempts: 0,
       createdAt: Date.now(),
@@ -248,7 +253,11 @@ export const useBookRun = create<BookRunStore>((set, get) => ({
       return
     }
 
-    const clean = stripBookControlTags(manuscript || "")
+    // Prefer what was persisted: chapters written while Chat was unmounted are
+    // in the stored manuscript and not in anything the caller can pass.
+    const incoming = stripBookControlTags(manuscript || "")
+    const stored_ms = stripBookControlTags(stored.manuscript || "")
+    const clean = stored_ms.length >= incoming.length ? stored_ms : incoming
     const synced = syncFromManuscript(
       { ...stored, formatProfile: stored.formatProfile ?? inferFormatProfile(stored.brief) },
       clean,

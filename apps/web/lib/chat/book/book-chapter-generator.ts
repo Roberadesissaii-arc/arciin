@@ -15,13 +15,9 @@
 import { getChatStreamPostUrl } from "@/lib/api/chat"
 
 import type { ChapterGenerator } from "./book-orchestrator"
+import type { BookTransportConfig } from "./book-transport"
 
-export type ChapterGeneratorConfig = {
-  profileId: string
-  model?: string | null
-  /** The instance's own system prompt, so a book sounds like the instance. */
-  systemPrompt?: string
-}
+export type ChapterGeneratorConfig = BookTransportConfig
 
 export function createChapterGenerator(
   getConfig: () => ChapterGeneratorConfig | null,

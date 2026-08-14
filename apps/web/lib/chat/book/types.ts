@@ -133,6 +133,14 @@ export type BookProject = {
   /** False after a pause; the reader restarts the run explicitly. */
   autoContinue: boolean
   formatProfile: BookFormatProfile
+  /**
+   * The manuscript itself.
+   *
+   * Held on the project so a chapter can be written, appended and persisted
+   * with no Canvas mounted. It used to live only in the panel's React state,
+   * which made the document a property of a route being open.
+   */
+  manuscript: string
   /** Only ever what the reader supplied. Never invented — see book-prompts. */
   subtitle?: string
   author?: string

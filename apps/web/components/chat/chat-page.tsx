@@ -106,8 +106,8 @@ import {
   parseCanvasFollowUps,
 } from "@/components/chat/chat-canvas-helpers"
 import { BookProgressCard } from "@/components/chat/book-progress-card"
-import { createChapterGenerator } from "@/lib/chat/book/book-chapter-generator"
 import { useBookRun } from "@/lib/chat/book/book-orchestrator"
+import { setBookTransportConfig } from "@/lib/chat/book/book-transport"
 import { isBookContinueRequest } from "@/lib/chat/book/book-parser"
 import { buildPlanPrompt } from "@/lib/chat/book/book-prompts"
 import { bookRepository } from "@/lib/chat/book/book-storage"
@@ -164,27 +164,22 @@ export function ChatPage() {
    */
   const canvasContentRef = useRef("")
   const bookRun = useBookRun()
-  const bookConfigRef = useRef<{ profileId: string; model?: string | null; systemPrompt?: string } | null>(
-    null,
-  )
 
   const composerRef = useRef<HTMLDivElement | null>(null)
   const [composerHeight, setComposerHeight] = useState(160)
 
   useEffect(() => {
-    // Registered once. The config is read through a ref at call time so
-    // changing model mid-book does not need the generator rebuilt — and, more
-    // importantly, does not re-register one while a chapter is in flight.
-    const { setGenerator, setOnManuscriptChange } = useBookRun.getState()
-    setGenerator(createChapterGenerator(() => bookConfigRef.current))
-    setOnManuscriptChange((manuscript, title) => {
+    // The manuscript is mirrored into the Canvas when a background chapter
+    // lands. Registration itself now happens at the app root, so leaving Chat
+    // no longer unregisters the transport mid-book.
+    useBookRun.getState().setOnManuscriptChange((manuscript, title) => {
       setCanvasContent(manuscript)
       setCanvasTitle(title)
       setCanvasOpen(true)
     })
     return () => {
-      setGenerator(null)
-      setOnManuscriptChange(null)
+      // Only the mirror is torn down. The generator is not ours to remove.
+      useBookRun.getState().setOnManuscriptChange(null)
     }
   }, [])
 
@@ -201,6 +196,13 @@ export function ChatPage() {
     // automatically, which is how a chapter would get written twice.
     useBookRun.getState().attach(conversationId, canvasContentRef.current)
   }, [conversationId])
+
+  useEffect(() => {
+    // Returning to Chat: show whatever was written while this was unmounted.
+    if (!bookRun.project || !bookRun.manuscript) return
+    if (bookRun.streamingChapter !== null) return
+    setCanvasContent(bookRun.manuscript)
+  }, [bookRun.project, bookRun.manuscript, bookRun.streamingChapter])
 
   useEffect(() => {
     if (bookRun.streamingChapter === null || !bookRun.streamingText) return
@@ -261,13 +263,17 @@ export function ChatPage() {
     : ARCIIN_DEFAULT_SYSTEM_INSTRUCTION
 
   useEffect(() => {
-    bookConfigRef.current = selectedProfile
-      ? {
-          profileId: selectedProfile.id,
-          model: selectedModel,
-          systemPrompt: systemInstruction.trim() || undefined,
-        }
-      : null
+    setBookTransportConfig(
+      selectedProfile
+        ? {
+            profileId: selectedProfile.id,
+            model: selectedModel,
+            systemPrompt: systemInstruction.trim() || undefined,
+          }
+        : null,
+    )
+    // Deliberately not cleared on unmount: a book still writing after the
+    // reader leaves Chat needs the model they chose.
   }, [selectedProfile, selectedModel, systemInstruction])
 
   const messagesScrollRef = useRef<HTMLDivElement>(null)
