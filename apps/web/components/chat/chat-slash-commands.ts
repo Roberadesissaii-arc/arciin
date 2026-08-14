@@ -1,6 +1,7 @@
 import { HUMANIZE_FULL_BRIEF, auditHumanTells } from "@arciin/shared"
 
 import type { ChatPromptToolId } from "@/components/chat/chat-prompt-box"
+import { buildBookOpeningPrompt } from "@/lib/chat/book-project"
 
 export type ChatSlashCommand = {
   id: string
@@ -60,6 +61,17 @@ export const CHAT_SLASH_COMMANDS: ChatSlashCommand[] = [
     tools: [],
     // Never reaches a model; `CLIENT_SLASH_COMMANDS` intercepts it first.
     expand: () => "",
+  },
+  {
+    id: "book",
+    name: "book",
+    label: "Write a book",
+    description: "Write a full book on the Canvas, a chapter at a time — say “continue” for the next",
+    hint: "/book the history of the north sea fishing fleets",
+    tools: [],
+    // The real prompt is built in the composer, which knows whether this is the
+    // first chapter or a continuation. This is the opening turn's version.
+    expand: (args) => buildBookOpeningPrompt(args),
   },
   {
     id: "modify",

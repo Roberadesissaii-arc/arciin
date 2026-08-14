@@ -118,6 +118,16 @@ export function buildVisibleAssetWhere(
     and.push({ mediaType: "APPLICATION" })
   }
 
+  // Installers are filed in Inbox and stay there. An .exe or a .dmg has no
+  // thumbnail, no preview and nothing to look at, so in a grid of media it is a
+  // grey tile taking a slot from something the user can actually use — and
+  // "Recent uploads" reads from the same list as All Files, so dropping one put
+  // it on the dashboard too. Opening Inbox still shows them, and so does the
+  // Applications category, which is the view that exists to list them.
+  if (input.scope.kind === "all" && input.category !== "applications") {
+    and.push({ mediaType: { not: "APPLICATION" } })
+  }
+
   if (input.cursor) {
     and.push(input.cursor)
   }

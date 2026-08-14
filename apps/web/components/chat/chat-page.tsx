@@ -101,6 +101,15 @@ import {
   promptToolsForceVision,
 } from "@/components/chat/chat-prompt-tools"
 import { expandSlashMessage } from "@/components/chat/chat-slash-commands"
+import {
+  buildBookContinuePrompt,
+  isBookContinueRequest,
+  loadBookProject,
+  rekeyBookProject,
+  saveBookProject,
+  syncBookProject,
+  type BookProject,
+} from "@/lib/chat/book-project"
 import { getLibraries } from "@/lib/api/libraries"
 import { uploadFile } from "@/lib/api/uploads"
 
@@ -677,6 +686,8 @@ export function ChatPage() {
     if (map.length && convoId) {
       rekeyCanvasDraftsForConversation(null, convoId, map)
       rekeyCanvasDraftsForConversation(conversationId, convoId, map)
+      // A book begun on a fresh chat was parked under a placeholder key.
+      rekeyBookProject(convoId)
     }
     return prev.map((m) => {
       if (pendingUserId && m.id === pendingUserId && userRow) {
@@ -973,6 +984,13 @@ export function ChatPage() {
     }
 
     // Slash commands (/summarize …) expand to full prompts + tool chips.
+    // A book turn is tracked separately: it decides Canvas routing, whether the
+    // reply is appended or replaces the draft, and what the next "continue"
+    // knows about the book so far.
+    let bookTurn:
+      | { mode: "start"; brief: string }
+      | { mode: "continue"; project: BookProject }
+      | null = null
     let activeTools: ChatPromptToolId[] = overrideText ? [] : [...promptTools]
     if (!overrideText && text) {
       /**
@@ -999,6 +1017,22 @@ export function ChatPage() {
             : "Type /font to switch back.",
         })
         return
+      }
+
+      /**
+       * "continue" is a whole turn on its own when a book is in progress.
+       *
+       * Handled before the slash expansion so the reader can type the word they
+       * would naturally type. Without a book in this conversation the word is
+       * left alone and goes to the model as ordinary text, which is what it
+       * means everywhere else.
+       */
+      const existingBook = loadBookProject(conversationId)
+      if (existingBook && isBookContinueRequest(text) && canvasContent.trim()) {
+        bookTurn = { mode: "continue", project: existingBook }
+        text = buildBookContinuePrompt(existingBook, canvasContent)
+      } else if (/^\s*\/book\b/i.test(text)) {
+        bookTurn = { mode: "start", brief: text.replace(/^\s*\/book\b\s*/i, "").trim() }
       }
 
       const slash = expandSlashMessage(text)
@@ -1083,6 +1117,8 @@ export function ChatPage() {
     const autoCanvas = shouldAutoOpenCanvas(typedText)
 
     const forceCanvas =
+      // A book is Canvas work by definition, chip or no chip.
+      bookTurn !== null ||
       isCanvasEdit ||
       autoCanvas ||
       (canvasChipOn &&
@@ -1149,17 +1185,34 @@ export function ChatPage() {
     // had no heading kept the *previous* turn's title, which is how a request for
     // upload documentation came back titled "Photosynthesis Quiz — 10 Questions".
     let turnCanvasTitle = canvasTitle
+    /**
+     * Chapters already written, which the new one is appended to.
+     *
+     * Every other Canvas turn replaces the draft, and a book turn must not:
+     * chapter seven arriving on its own would wipe the six before it. Captured
+     * here rather than read back at the end, because the streaming setter runs
+     * many times in between and needs the same prefix each time.
+     */
+    const bookPrefix =
+      bookTurn?.mode === "continue" ? `${canvasContent.trimEnd()}\n\n` : ""
     if (forceCanvas) {
       setCanvasOpen(true)
       setCanvasStreaming(true)
-      const bookTitle =
-        docAttachments[0]?.filename.replace(/\.pdf$/i, "").trim() ||
-        deriveCanvasTitle(displayUserText)
-      turnCanvasTitle = /\bessay\b/i.test(displayUserText)
-        ? `Essay: ${bookTitle}`.slice(0, 80)
-        : bookTitle.slice(0, 80)
-      setCanvasTitle(turnCanvasTitle)
-      setCanvasContent("")
+      if (bookTurn?.mode === "continue") {
+        // The book already has a title and the draft already has its chapters.
+        turnCanvasTitle = bookTurn.project.title || canvasTitle
+        setCanvasTitle(turnCanvasTitle)
+        setCanvasContent(bookPrefix)
+      } else {
+        const bookTitle =
+          docAttachments[0]?.filename.replace(/\.pdf$/i, "").trim() ||
+          deriveCanvasTitle(displayUserText)
+        turnCanvasTitle = /\bessay\b/i.test(displayUserText)
+          ? `Essay: ${bookTitle}`.slice(0, 80)
+          : bookTitle.slice(0, 80)
+        setCanvasTitle(turnCanvasTitle)
+        setCanvasContent("")
+      }
     }
 
     type OutboundMsg = {
@@ -1366,7 +1419,7 @@ export function ChatPage() {
 
         if (forceCanvas) {
           // Canvas gets document body only — never "Okay let me write…" preambles.
-          setCanvasContent(sanitizeCanvasDocument(displayContent))
+          setCanvasContent(bookPrefix + sanitizeCanvasDocument(displayContent))
           setCanvasStreaming(true)
         }
 
@@ -1402,8 +1455,13 @@ export function ChatPage() {
       let canvasChatSummary = ""
       let canvasDraftForMsg: Message["canvasDraft"] | undefined
       if (forceCanvas) {
-        const docOnly = sanitizeCanvasDocument(finalContent)
-        const nextTitle = refineCanvasTitleFromContent(docOnly, turnCanvasTitle)
+        // A continuation is the new chapter only; the document is what was
+        // already written plus that.
+        const docOnly = bookPrefix + sanitizeCanvasDocument(finalContent)
+        const nextTitle =
+          bookTurn?.mode === "continue"
+            ? turnCanvasTitle
+            : refineCanvasTitleFromContent(docOnly, turnCanvasTitle)
         setCanvasContent(docOnly)
         setCanvasStreaming(false)
         setCanvasOpen(true)
@@ -1442,6 +1500,21 @@ export function ChatPage() {
                 : `\n\n⚠️ This draft is only ~${wordCount} words, which is short for a document. Re-send the request, or ask for more detail on a specific section.`
           }
         }
+        if (bookTurn && docOnly.trim()) {
+          const project = syncBookProject({
+            previous: bookTurn.mode === "continue" ? bookTurn.project : null,
+            conversationId,
+            brief: bookTurn.mode === "start" ? bookTurn.brief : bookTurn.project.brief,
+            document: docOnly,
+          })
+          saveBookProject(project)
+          const left = project.chapters.length - project.written
+          canvasChatSummary +=
+            left > 0
+              ? `\n\n📖 **${project.title}** — chapter ${project.written} of ${project.chapters.length} written. Say **continue** for the next one.`
+              : `\n\n📖 **${project.title}** — all ${project.written} chapters written.`
+        }
+
         if (docOnly.trim()) {
           canvasDraftForMsg = {
             id: pendingMsg.id,
