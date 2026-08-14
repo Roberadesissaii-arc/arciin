@@ -159,11 +159,51 @@ export function isBookContinueRequest(text: string): boolean {
   )
 }
 
-/** Strip the control tags the app adds so they never reach the manuscript. */
+/**
+ * Every tag the app asks the model to emit alongside a chapter.
+ *
+ * One list, used both to strip them and to read them, so a tag added to the
+ * memory instruction cannot be forgotten here. That is precisely what went
+ * wrong: the stripper knew about `next` and `chapter-summary` while the
+ * instruction had grown `carry`, `thread-open` and `thread-resolved` — and
+ * those three appeared in the middle of a real reader's manuscript.
+ */
+export const BOOK_CONTROL_TAGS = [
+  "next",
+  "chapter-summary",
+  "carry",
+  "thread-open",
+  "thread-resolved",
+] as const
+
+const TAG_NAMES = BOOK_CONTROL_TAGS.join("|")
+
+/**
+ * Remove the control tags so only prose reaches the manuscript.
+ *
+ * Two passes, because a model does not quote reliably. The first takes the
+ * well-formed `[carry:"..."]`; the second takes any *whole line* that opens
+ * with a known tag and closes with a bracket, which catches a value containing
+ * its own quotation marks — a real risk in a book, where dialogue is quoted.
+ *
+ * Deliberately conservative: it only ever deletes a line that is nothing but a
+ * control tag, so a sentence that happens to contain a bracket is untouched.
+ */
 export function stripBookControlTags(markdown: string): string {
+  const inline = new RegExp(`\\[(?:${TAG_NAMES})\\s*:\\s*"[^"]*"\\s*\\]`, "gi")
+  const wholeLine = new RegExp(`^[ \\t]*\\[(?:${TAG_NAMES})\\s*:[\\s\\S]*\\][ \\t]*$`, "i")
+
   return markdown
-    .replace(/\n*\[next:\s*"[^"]*"\]\n*/gi, "\n")
-    .replace(/\n*\[chapter-summary:[\s\S]*?\]\n*/gi, "\n")
+    .replace(inline, "")
+    .split("\n")
+    .filter((line) => !wholeLine.test(line))
+    .join("\n")
+    .replace(/[ \t]+$/gm, "")
     .replace(/\n{3,}/g, "\n\n")
     .trim()
+}
+
+/** True when any control tag survives — asserted after stripping. */
+export function hasBookControlTags(markdown: string): boolean {
+  return new RegExp(`\\[(?:${TAG_NAMES})\\s*:`, "i").test(markdown)
 }

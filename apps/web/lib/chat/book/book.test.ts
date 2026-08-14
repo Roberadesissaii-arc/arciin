@@ -14,8 +14,14 @@ import {
   useBookRun,
   type ChapterGenerator,
 } from "./book-orchestrator"
-import { countChaptersWritten, isBookContinueRequest, parseBookOutline } from "./book-parser"
-import { applyChapterToMemory, renderMemoryForPrompt } from "./book-memory"
+import {
+  countChaptersWritten,
+  hasBookControlTags,
+  isBookContinueRequest,
+  parseBookOutline,
+  stripBookControlTags,
+} from "./book-parser"
+import { applyChapterToMemory, parseMemoryReport, renderMemoryForPrompt } from "./book-memory"
 import { buildChapterPrompt } from "./book-prompts"
 import { bookRepository, MemoryBookRepository, setBookRepository } from "./book-storage"
 import { validateChapter } from "./book-validator"
@@ -467,7 +473,7 @@ async function main() {
 
 }
 
-void main().then(regressionSuite)
+void main().then(regressionSuite).then(metadataSuite)
 
 /* ------------------------------------------------------- the real regression */
 /**
@@ -566,3 +572,104 @@ async function regressionSuite() {
   if (failed > 0) process.exitCode = 1
 }
 
+
+/* ------------------------------------------------ metadata must never leak */
+/**
+ * The tags a real reader saw in the middle of their manuscript.
+ *
+ * The stripper knew `next` and `chapter-summary`; the memory instruction had
+ * since grown `carry`, `thread-open` and `thread-resolved`, and those three
+ * went into the document. One list now drives both, and these assert it.
+ */
+async function metadataSuite() {
+  section("Metadata — stripping")
+  {
+    const raw = `## Chapter 2: Example
+
+Actual prose.
+
+[chapter-summary:"Summary"]
+[carry:"Fact"]
+[thread-open:"Question"]
+[thread-resolved:"other"]
+[next:"tighten the middle"]
+`
+    const clean = stripBookControlTags(raw)
+    check("no tag survives", !hasBookControlTags(clean), clean.slice(-80))
+    check("prose survives", clean.includes("Actual prose."))
+    check("the heading survives", clean.startsWith("## Chapter 2: Example"))
+    check("no trailing blank run", !/\n{3,}/.test(clean))
+
+    const report = parseMemoryReport(raw)
+    check("summary captured", report.summary === "Summary", report.summary)
+    check("carry captured", report.carries[0]?.name === "Fact", report.carries[0]?.name)
+    check("open thread captured", report.opened.length === 1)
+    check("resolved thread captured", report.resolved[0] === "other", report.resolved[0])
+  }
+
+  section("Metadata — awkward values")
+  {
+    const raw = `## Chapter 3: X
+
+She said "no" and left. It was Élodie's — the boy's — decision.
+
+[carry:"Élodie — she's the prefect's sister"]
+[carry:"the bell: rings at 3:15"]
+[carry:"Mara — doesn't trust him"]
+[carry:"the ledger — hidden"]
+[thread-open:"who rang it — nobody saw"]
+
+[chapter-summary:"A quote: she said "no" and left."]
+`
+    const clean = stripBookControlTags(raw)
+    check("unicode and apostrophes stripped", !hasBookControlTags(clean), clean)
+    check("a value with inner quotes is still removed", !clean.includes("A quote"))
+    check("prose containing quotes is untouched", clean.includes('She said "no" and left.'))
+    check(
+      "prose containing an apostrophe is untouched",
+      clean.includes("Élodie's — the boy's — decision"),
+    )
+
+    const report = parseMemoryReport(raw)
+    check("four carries captured", report.carries.length === 4, `${report.carries.length}`)
+    check("colon inside a value survives", report.carries[1]?.name === "the bell", report.carries[1]?.name)
+    check("unicode name captured", report.carries[0]?.name === "Élodie", report.carries[0]?.name)
+    check("blank-line-separated tag captured", report.opened.length === 1)
+  }
+
+  section("Metadata — a malformed tag costs a note, not the chapter")
+  {
+    const raw = `## Chapter 4: Y\n\n${"Prose here now. ".repeat(200)}\n\n[carry:"unterminated\n[chapter-summary:"Good"]\n`
+    const clean = stripBookControlTags(raw)
+    const v = validateChapter({ raw: clean, expected: 4 })
+    check("the chapter still validates", v.ok, v.ok ? "" : v.rejection.code)
+    check("the well-formed tag is still read", parseMemoryReport(raw).summary === "Good")
+  }
+
+  section("Metadata — end to end through a run")
+  {
+    reset()
+    const { generator } = makeGenerator((n) => ({
+      ok: true,
+      raw: `${chapterText(n, "x")}\n\n[chapter-summary:"Ch ${n} happened."]\n[carry:"Mara — suspicious"]\n[thread-open:"bell — what rings"]\n[next:"expand the middle"]`,
+    }))
+    useBookRun.getState().setGenerator(generator)
+    useBookRun.getState().startFromPlan({ conversationId: "cm", brief: "b", manuscript: PLAN })
+    await settle()
+
+    const state = useBookRun.getState()
+    check("the stored manuscript is clean", !hasBookControlTags(state.manuscript))
+    check("no tag text at all", !/\[(?:carry|thread-open|chapter-summary|next|thread-resolved):/i.test(state.manuscript))
+    check("all 3 chapters present", countChaptersWritten(state.manuscript) === 3)
+    check("memory still captured the summaries", state.project!.memory.chapterSummaries.length === 2)
+    check("memory still captured the carries", state.project!.memory.facts.some((f) => f.name === "Mara"))
+    check("threads still tracked", state.project!.memory.threads.length === 1)
+    check(
+      "word counts exclude the tags",
+      state.project!.memory.chapterSummaries.every((s) => s.words > 100),
+    )
+  }
+
+  console.log(`\n${passed} passed, ${failed} failed`)
+  if (failed > 0) process.exitCode = 1
+}

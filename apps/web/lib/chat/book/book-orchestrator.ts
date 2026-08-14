@@ -26,12 +26,13 @@ import { create } from "zustand"
 
 import {
   countChaptersWritten,
+  hasBookControlTags,
   parseBookOutline,
   parseBookTitle,
   stripBookControlTags,
 } from "./book-parser"
 import { inferFormatProfile } from "./book-document"
-import { applyChapterToMemory, truncateMemory } from "./book-memory"
+import { applyChapterToMemory, parseMemoryReport, truncateMemory } from "./book-memory"
 import { buildChapterPrompt, buildRepairPrompt } from "./book-prompts"
 import { bookRepository, NEW_CHAT_KEY } from "./book-storage"
 import { validateChapter, type ChapterRejection } from "./book-validator"
@@ -490,8 +491,21 @@ async function runNextChapter(
       return
     }
 
+    // Memory is read from the raw response; validation and everything
+    // downstream see only prose. The order matters — validating the raw text
+    // let control tags into the word count and, worse, into the manuscript.
+    const cleaned = stripBookControlTags(result.raw)
+    const report = parseMemoryReport(result.raw)
+    log("metadata_extracted", {
+      chapter,
+      summary: Boolean(report.summary),
+      carry: report.carries.length,
+      threads: report.opened.length + report.resolved.length,
+      leaked: hasBookControlTags(cleaned),
+    })
+
     const validation = validateChapter({
-      raw: stripBookControlTags(result.raw),
+      raw: cleaned,
       expected: chapter,
       targetWords: project.chapters.find((c) => c.number === chapter)?.targetWords,
     })
@@ -508,7 +522,10 @@ async function runNextChapter(
     // 5. Append, then re-parse. The chapter is only "written" once the document
     //    says so — that read-back is what makes the next tick's decision safe.
     const current = get()
-    const appended = `${current.manuscript.trimEnd()}\n\n${validation.text.trim()}`
+    // Stripped once more at the boundary. Cheap, and the only place that can
+    // guarantee the stored manuscript is clean whatever a future tag does.
+    const chapterProse = stripBookControlTags(validation.text).trim()
+    const appended = `${current.manuscript.trimEnd()}\n\n${chapterProse}`
     const reparsed = countChaptersWritten(appended)
 
     if (reparsed !== chapter) {
@@ -531,7 +548,7 @@ async function runNextChapter(
       memory: current.project?.memory ?? emptyBookMemory(),
       chapter,
       title: current.project?.chapters.find((c) => c.number === chapter)?.title ?? `Chapter ${chapter}`,
-      text: validation.text,
+      text: chapterProse,
       raw: result.raw,
     })
 

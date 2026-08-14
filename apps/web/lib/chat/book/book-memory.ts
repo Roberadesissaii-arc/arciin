@@ -54,11 +54,26 @@ type MemoryReport = {
   resolved: string[]
 }
 
+/**
+ * Pull every value for one tag out of a response.
+ *
+ * Two shapes accepted, for the same reason the stripper has two passes: the
+ * well-formed quoted value, and a whole line whose value contains quotation
+ * marks of its own. A malformed tag costs one note, never the chapter — the
+ * caller falls back to the chapter's own opening sentences.
+ */
 function tagValues(text: string, tag: string): string[] {
   const out: string[] = []
-  const re = new RegExp(`\\[${tag}:\\s*"([^"]*)"\\]`, "gi")
-  for (const m of text.matchAll(re)) {
+  const quoted = new RegExp(`\\[${tag}\\s*:\\s*"([^"]*)"\\s*\\]`, "gi")
+  for (const m of text.matchAll(quoted)) {
     const value = (m[1] ?? "").trim()
+    if (value) out.push(value)
+  }
+  if (out.length > 0) return out
+
+  const loose = new RegExp(`^[ \\t]*\\[${tag}\\s*:\\s*(.*?)\\s*\\][ \\t]*$`, "gim")
+  for (const m of text.matchAll(loose)) {
+    const value = (m[1] ?? "").trim().replace(/^"|"$/g, "").trim()
     if (value) out.push(value)
   }
   return out
