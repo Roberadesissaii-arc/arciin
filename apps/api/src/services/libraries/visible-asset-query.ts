@@ -34,6 +34,13 @@ export type VisibleAssetQueryInput = {
   search?: string
   /** Cross-library groupings that are not their own media type. */
   category?: "code" | "applications"
+  /**
+   * Libraries whose contents are deliberately absent from a cross-library
+   * listing — in practice Inbox, which is a holding area rather than a place
+   * files live. Never applied to a count, and never when the caller asked for
+   * one of these libraries by name.
+   */
+  excludeLibraryIds?: string[]
   /** Keyset condition from `buildCursorWhere`, when paginating. */
   cursor?: Prisma.AssetWhereInput | null
 }
@@ -118,14 +125,18 @@ export function buildVisibleAssetWhere(
     and.push({ mediaType: "APPLICATION" })
   }
 
-  // Installers are filed in Inbox and stay there. An .exe or a .dmg has no
-  // thumbnail, no preview and nothing to look at, so in a grid of media it is a
-  // grey tile taking a slot from something the user can actually use — and
-  // "Recent uploads" reads from the same list as All Files, so dropping one put
-  // it on the dashboard too. Opening Inbox still shows them, and so does the
-  // Applications category, which is the view that exists to list them.
-  if (input.scope.kind === "all" && input.category !== "applications") {
-    and.push({ mediaType: { not: "APPLICATION" } })
+  // Inbox is where a file waits to be filed, not a library of its own. Its
+  // contents are unclassified by definition — an .msi, a .zip, a .json — so
+  // they have no thumbnail and nothing to preview, and in a grid of media they
+  // are grey tiles taking slots. "Recent uploads" reads the same list as All
+  // Files, so one upload put them on the dashboard and the phone too.
+  //
+  // Scoped by library rather than by media type: the first attempt excluded
+  // APPLICATION assets, which missed the .zip and the .json sitting beside them
+  // and — because it was keyed off the "all" scope that the sidebar count also
+  // uses — quietly subtracted them from Inbox's own badge.
+  if (input.excludeLibraryIds?.length) {
+    and.push({ libraryId: { notIn: input.excludeLibraryIds } })
   }
 
   if (input.cursor) {

@@ -229,6 +229,24 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
         ? await resolveHiddenFromAllFilesFolderIds(fastify.prisma)
         : []
 
+      // Only an undirected cross-library browse hides Inbox. Every deliberate
+      // request still finds it: opening Inbox, searching by name, or asking for
+      // a category — Applications lives almost entirely in Inbox, so applying
+      // this there emptied the one page whose job is to list installers.
+      const excludeLibraryIds =
+        !query.libraryId &&
+        !query.folderId &&
+        !query.search &&
+        !query.category &&
+        !idList?.length
+          ? (
+              await fastify.prisma.library.findMany({
+                where: { kind: "INBOX" },
+                select: { id: true },
+              })
+            ).map((l) => l.id)
+          : []
+
       const assets = await fastify.prisma.asset.findMany({
         where: idList?.length
           ? {
@@ -238,6 +256,7 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
           : buildVisibleAssetWhere({
               scope: resolveAssetScope(query),
               hiddenFolderIds,
+              excludeLibraryIds,
               mediaType: query.mediaType,
               category: query.category,
               search: query.search,
@@ -307,11 +326,23 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
           ? await resolveHiddenFromAllFilesFolderIds(fastify.prisma)
           : []
 
+      // Same rule as the unpaginated listing above.
+      const excludeLibraryIds =
+        !query.libraryId && !query.folderId && !query.search && !query.category
+          ? (
+              await fastify.prisma.library.findMany({
+                where: { kind: "INBOX" },
+                select: { id: true },
+              })
+            ).map((l) => l.id)
+          : []
+
       // The count and the page share one where-builder, minus the cursor —
       // that is what keeps "showing X of Y" honest.
       const filters = {
         scope,
         hiddenFolderIds,
+        excludeLibraryIds,
         mediaType: query.mediaType,
         category: query.category,
         search: query.search,
