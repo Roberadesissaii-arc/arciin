@@ -6,8 +6,10 @@
   "dependencies": {
     "@arciin/config": "workspace:*",
     "@arciin/database": "workspace:*",
+    "@arciin/media-ai": "workspace:*",
     "@arciin/shared": "workspace:*",
     "@arciin/storage": "workspace:*",
-    "@arciin/types": "workspace:*"
+    "@arciin/types": "workspace:*",
+    "undici": "^8.10.0"
   }
 }

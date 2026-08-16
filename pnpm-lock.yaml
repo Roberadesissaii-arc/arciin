@@ -253,6 +253,9 @@ importers:
       '@arciin/database':
         specifier: workspace:*
         version: link:../../packages/database
+      '@arciin/media-ai':
+        specifier: workspace:*
+        version: link:../../packages/media-ai
       '@arciin/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -262,6 +265,9 @@ importers:
       '@arciin/types':
         specifier: workspace:*
         version: link:../../packages/types
+      undici:
+        specifier: ^8.10.0
+        version: 8.10.0
 
   apps/license-server:
     dependencies:
@@ -320,6 +326,9 @@ importers:
       '@arciin/database':
         specifier: workspace:*
         version: link:../../packages/database
+      '@arciin/media-ai':
+        specifier: workspace:*
+        version: link:../../packages/media-ai
       '@arciin/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -344,6 +353,21 @@ importers:
       '@prisma/client':
         specifier: ^6.19.3
         version: 6.19.3(prisma@6.19.3(typescript@5.9.3))(typescript@5.9.3)
+
+  packages/media-ai:
+    dependencies:
+      '@arciin/types':
+        specifier: workspace:*
+        version: link:../types
+      '@google/genai':
+        specifier: ^2.10.0
+        version: 2.10.0(@modelcontextprotocol/sdk@1.29.0(zod@4.4.3))
+      '@prisma/client':
+        specifier: ^6.19.3
+        version: 6.19.3(prisma@6.19.3(typescript@5.9.3))(typescript@5.9.3)
+      execa:
+        specifier: ^9.6.0
+        version: 9.6.1
 
   packages/shared:
     dependencies:
@@ -7159,6 +7183,10 @@ packages:
 
   undici-types@6.21.0:
     resolution: {integrity: sha512-iwDZqg0QAGrg9Rav5H4n0M64c3mkR59cJ6wQp+7C4nI0gsmExaedaYLNO44eT4AtBBwjbTiGPMlt2Md0T9H9JQ==}
+
+  undici@8.10.0:
+    resolution: {integrity: sha512-HvltHd7avK13QIw/oLe4qoOLyoVSoafqJ2jYOrtMRBkbYT31eiBQ8O0ehRKZiEZCMEyLFQNIADpgCWC5fALvYQ==}
+    engines: {node: '>=22.19.0'}
 
   unicorn-magic@0.3.0:
     resolution: {integrity: sha512-+QBBXBCvifc56fsbuxZQ6Sic3wqqc3WWaqxs58gvJrcOuN83HGTCwz3oS5phzU9LthRNE9VrJCFCLUgHeeFnfA==}
@@ -15437,6 +15465,8 @@ snapshots:
       which-boxed-primitive: 1.1.1
 
   undici-types@6.21.0: {}
+
+  undici@8.10.0: {}
 
   unicorn-magic@0.3.0: {}
 
