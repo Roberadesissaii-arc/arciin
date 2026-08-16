@@ -16,6 +16,11 @@ import { apiConfig } from "@/config"
 import { buildRealtimeEvent } from "@/services/events/publish-event"
 import { recordAndBroadcastActivity } from "@/services/activity/record-and-broadcast-activity"
 import { assertAssetFolderAccess, assertFolderAccess } from "@/services/folders/folder-lock"
+import { folderAccessGranted } from "@/services/folders/folder-lock"
+import {
+  MAX_MOVES_PER_BATCH,
+  moveLibraryAssets,
+} from "@/services/assets/move-library-assets"
 import { checkEndpointRateLimit } from "@/services/security/endpoint-rate-limit"
 import { resolveHiddenFromAllFilesFolderIds } from "@/services/folders/hidden-from-all-files"
 import {
@@ -100,6 +105,25 @@ const assetUpdateSchema = z.object({
 const assetMoveSchema = z.object({
   folderId: z.string().optional(),
   libraryId: z.string().optional(),
+})
+
+/**
+ * Bulk reparent.
+ *
+ * Organising a library is inherently a batch: doing it one HTTP round trip at a
+ * time turns 246 books into 246 requests, each with its own chance to fail
+ * halfway. One call, one audit entry, one result per file.
+ */
+const assetBatchMoveSchema = z.object({
+  moves: z
+    .array(
+      z.object({
+        assetId: z.string().min(1),
+        destinationFolderId: z.string().min(1).nullable(),
+      }),
+    )
+    .min(1)
+    .max(MAX_MOVES_PER_BATCH),
 })
 
 const assetIdParamsSchema = z.object({ assetId: z.string() })
@@ -563,6 +587,21 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
         }
       }
 
+      /**
+       * Locked folders were not checked here.
+       *
+       * Every other asset route asserts folder access before touching a file —
+       * this one only checked the caller's role, so a locked folder could be
+       * emptied, or filled, by anyone who could reach the endpoint. The lock is
+       * meant to hold until someone answers it with a password or a vault PIN.
+       */
+      if (!(await assertAssetFolderAccess(fastify, request, reply, current.folderId))) {
+        return
+      }
+      if (nextFolderId && !(await assertAssetFolderAccess(fastify, request, reply, nextFolderId))) {
+        return
+      }
+
       const asset = await fastify.prisma.asset.update({
         where: {
           id: params.assetId,
@@ -619,6 +658,51 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
         data: serializeAsset(asset),
       })
     }
+  )
+
+  fastify.post(
+    "/assets/move",
+    {
+      preHandler: requireSessionRolesOrApiKeyScopes(
+        ["OWNER", "ADMIN", "MEMBER"],
+        ["assets:write"],
+      ),
+    },
+    async (request, reply) => {
+      const parsed = assetBatchMoveSchema.safeParse(request.body)
+      if (!parsed.success) {
+        reply.status(400).send({
+          error: {
+            code: "VALIDATION_ERROR",
+            message: `Provide 1-${MAX_MOVES_PER_BATCH} moves.`,
+            details: parsed.error.flatten(),
+          },
+        })
+        return
+      }
+
+      const userId = request.auth?.user.id
+      if (!userId) {
+        reply.status(401).send({
+          error: { code: "UNAUTHORIZED", message: "Authentication required." },
+        })
+        return
+      }
+
+      const result = await moveLibraryAssets({
+        prisma: fastify.prisma,
+        userId,
+        moves: parsed.data.moves,
+        // Session-aware, so a folder the user has already unlocked this session
+        // stays usable — unlike the assistant, a person can answer the prompt.
+        folderAccessGranted: (folder) =>
+          folderAccessGranted(request, userId, folder, request.auth?.session ?? null),
+        publishRealtimeEvent: (event) => fastify.publishRealtimeEvent(event),
+        source: "api",
+      })
+
+      reply.send({ data: result })
+    },
   )
 
   fastify.get(

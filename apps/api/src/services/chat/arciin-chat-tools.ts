@@ -18,6 +18,11 @@ import {
 } from "@/services/chat/vision-library"
 import { readPdfAssetContent } from "@/services/chat/read-pdf-asset"
 import { readTextAssetContent } from "@/services/chat/read-text-asset"
+import {
+  findAssetsByExactName,
+  MAX_MOVES_PER_BATCH,
+  moveLibraryAssets,
+} from "@/services/assets/move-library-assets"
 import { slugify } from "@/services/slug"
 
 export type ArciinChatToolContext = {
@@ -206,6 +211,106 @@ export const ARCIIN_CHAT_TOOLS = [
           },
         },
         required: ["table_name", "rows"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "find_library_file",
+      description:
+        "Look up a file by its EXACT filename to get its canonical id. Use this when a move failed with asset_not_found — never retype or repair an id by hand. Returns matching_count so you can tell a unique file from an ambiguous one; only act when matching_count is 1.",
+      parameters: {
+        type: "object",
+        properties: {
+          name: {
+            type: "string",
+            description: "Exact filename, e.g. \"Chess For Dummies (James Eade).pdf\"",
+          },
+          library_slug: {
+            type: "string",
+            description: "videos | images | music | documents | inbox. Narrows the search.",
+          },
+          folder_id: {
+            type: "string",
+            description: "Only look inside this folder.",
+          },
+        },
+        required: ["name"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "list_library_files",
+      description:
+        "List files in a library or folder, one page at a time. Use this whenever the user says \"all\", \"every\", or \"the whole folder\" — the instance snapshot in your context is only a short preview and is NOT the full library. Returns has_more and next_cursor: keep calling with the returned cursor until has_more is false, then you have every file. Also use it after moving files to verify they actually arrived.",
+      parameters: {
+        type: "object",
+        properties: {
+          library_slug: {
+            type: "string",
+            description: "videos | images | music | documents | inbox",
+          },
+          folder_id: {
+            type: "string",
+            description:
+              "Only files directly inside this folder. Omit to list the whole library.",
+          },
+          root_only: {
+            type: "boolean",
+            description: "Only files not in any folder yet (library root). Useful before organising.",
+          },
+          cursor: {
+            type: "string",
+            description: "next_cursor from the previous page. Omit for the first page.",
+          },
+          limit: {
+            type: "number",
+            description: "Files per page, 1-200 (default 100).",
+          },
+        },
+        required: ["library_slug"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "move_library_files",
+      description:
+        "Actually move one or many files into folders. This performs the move — it is not a suggestion, and you should never tell the user to drag files themselves when you can call this. Use it to organise a library: create or find the folders first, then move files into them by id. Files already in their destination are reported as already_there and left alone, so it is safe to run twice. Moves files only, never folders. Include each file's filename as well as its id: a wrong id is then recovered automatically rather than losing the file. Returns a per-file result so you can report exactly what succeeded and what needs attention.",
+      parameters: {
+        type: "object",
+        properties: {
+          moves: {
+            type: "array",
+            description: "Up to 250 moves per call. Split larger jobs across several calls.",
+            items: {
+              type: "object",
+              properties: {
+                asset_id: {
+                  type: "string",
+                  description:
+                    "File id, copied EXACTLY as list_library_files returned it. Ids are opaque — never retype, shorten or correct one.",
+                },
+                destination_folder_id: {
+                  type: "string",
+                  description:
+                    "Folder id to move it into. Use null to move it back to the library root.",
+                },
+                filename: {
+                  type: "string",
+                  description:
+                    "The file's exact name. Optional but recommended: if the id turns out to be wrong, Arciin re-finds the file by this name and completes the move, instead of leaving it behind.",
+                },
+              },
+              required: ["asset_id", "destination_folder_id"],
+            },
+          },
+        },
+        required: ["moves"],
       },
     },
   },
@@ -445,6 +550,218 @@ export async function executeArciinChatTool(
       skipped: result.results.filter((r) => r.status === "skipped").length,
       failed: result.results.filter((r) => r.status === "failed").length,
       results: result.results,
+    }
+  }
+
+  if (name === "find_library_file") {
+    const a = args as Record<string, unknown>
+    const wanted = (pickArgString(a, ["name", "filename", "file_name"]) ?? "").trim()
+    if (!wanted) {
+      return { error: "validation", message: "name is required." }
+    }
+    const librarySlug = (pickArgString(a, ["library_slug", "librarySlug"]) ?? "")
+      .toLowerCase()
+      .trim()
+    const folderId = coalesceOptionalId(pickArgString(a, ["folder_id", "folderId"]))
+
+    const library = librarySlug
+      ? await ctx.prisma.library.findFirst({ where: { slug: librarySlug }, select: { id: true } })
+      : null
+    if (librarySlug && !library) return { error: "library_not_found", library_slug: librarySlug }
+
+    const matches = await findAssetsByExactName(ctx.prisma, {
+      name: wanted,
+      libraryId: library?.id,
+      folderId,
+    })
+
+    return {
+      query: wanted,
+      matching_count: matches.length,
+      // Unique is the only case a caller may act on without asking. Anything
+      // else is reported and left alone — see the move recovery path.
+      unique: matches.length === 1,
+      items: matches.map((m) => ({
+        asset_id: m.id,
+        filename: m.originalFilename,
+        size_bytes: Number(m.sizeBytes),
+        folder_id: m.folderId,
+        folder: m.folderName,
+      })),
+    }
+  }
+
+  if (name === "list_library_files") {
+    const a = args as Record<string, unknown>
+    const librarySlug = String(pickArgString(a, ["library_slug", "librarySlug"]) ?? "")
+      .toLowerCase()
+      .trim()
+    if (!librarySlug) {
+      return { error: "validation", message: "library_slug is required." }
+    }
+    const library = await ctx.prisma.library.findFirst({
+      where: { slug: librarySlug },
+      select: { id: true, slug: true, name: true },
+    })
+    if (!library) return { error: "library_not_found", library_slug: librarySlug }
+
+    const folderId = coalesceOptionalId(pickArgString(a, ["folder_id", "folderId"]))
+    const rootOnly = a.root_only === true || a.rootOnly === true
+    const cursor = coalesceOptionalId(pickArgString(a, ["cursor", "next_cursor", "nextCursor"]))
+    const limit = Math.min(200, Math.max(1, Number(a.limit) || 100))
+
+    if (folderId) {
+      const folder = await ctx.prisma.folder.findFirst({
+        where: { id: folderId, libraryId: library.id, deletedAt: null },
+        select: { id: true, lockedAt: true },
+      })
+      if (!folder) return { error: "folder_not_found", folder_id: folderId }
+      // A locked folder is not listable by the assistant for the same reason it
+      // is not writable: the lock is answered by a person, not by a tool.
+      if (folder.lockedAt !== null) {
+        return { error: "folder_locked", folder_id: folderId }
+      }
+    }
+
+    const where = {
+      libraryId: library.id,
+      deletedAt: null,
+      ...(folderId ? { folderId } : {}),
+      ...(rootOnly && !folderId ? { folderId: null } : {}),
+    }
+
+    const [total, rows] = await Promise.all([
+      ctx.prisma.asset.count({ where }),
+      ctx.prisma.asset.findMany({
+        where,
+        // Stable order so a cursor walk cannot skip or repeat a file while the
+        // library is being reorganised underneath it.
+        orderBy: { id: "asc" },
+        ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+        take: limit,
+        select: {
+          id: true,
+          originalFilename: true,
+          title: true,
+          mediaType: true,
+          extension: true,
+          sizeBytes: true,
+          folderId: true,
+          createdAt: true,
+        },
+      }),
+    ])
+
+    const lockedFolderIds = new Set(
+      (
+        await ctx.prisma.folder.findMany({
+          where: { libraryId: library.id, lockedAt: { not: null } },
+          select: { id: true },
+        })
+      ).map((f) => f.id),
+    )
+    const visible = rows.filter((r) => !r.folderId || !lockedFolderIds.has(r.folderId))
+
+    const last = rows[rows.length - 1]
+    const hasMore = rows.length === limit
+    return {
+      library: { id: library.id, slug: library.slug, name: library.name },
+      total,
+      returned: visible.length,
+      has_more: hasMore,
+      next_cursor: hasMore && last ? last.id : null,
+      items: visible.map((r) => ({
+        asset_id: r.id,
+        filename: r.originalFilename,
+        title: r.title,
+        media_type: r.mediaType,
+        extension: r.extension,
+        size_bytes: Number(r.sizeBytes),
+        // Surfaced rather than hidden: a zero-byte file is very often a failed
+        // upload, and quietly filing it as a book buries the problem.
+        is_empty: Number(r.sizeBytes) === 0,
+        folder_id: r.folderId,
+      })),
+    }
+  }
+
+  if (name === "move_library_files") {
+    if (!libraryAllowsOrganize(access)) {
+      return {
+        error: "forbidden",
+        message:
+          "Moving library files is disabled for the assistant on this instance (Settings → AI Security → Library tools).",
+      }
+    }
+
+    const a = args as Record<string, unknown>
+    const rawMoves = Array.isArray(a.moves) ? a.moves : []
+    if (rawMoves.length === 0) {
+      return { error: "validation", message: "moves must contain at least one file." }
+    }
+    if (rawMoves.length > MAX_MOVES_PER_BATCH) {
+      return {
+        error: "too_many",
+        message: `Move at most ${MAX_MOVES_PER_BATCH} files per call; split the rest into further calls.`,
+        max_per_call: MAX_MOVES_PER_BATCH,
+      }
+    }
+
+    const moves: { assetId: string; destinationFolderId: string | null }[] = []
+    for (const raw of rawMoves) {
+      const item = (raw ?? {}) as Record<string, unknown>
+      const assetId = coalesceOptionalId(pickArgString(item, ["asset_id", "assetId", "file_id"]))
+      // Models paraphrase argument names. A real turn sent `target_folder_id`,
+      // which would otherwise have read as "no destination" and moved the file
+      // to the library root — the opposite of what was asked.
+      const destination = coalesceOptionalId(
+        pickArgString(item, [
+          "destination_folder_id",
+          "destinationFolderId",
+          "target_folder_id",
+          "targetFolderId",
+          "folder_id",
+          "folderId",
+          "to_folder_id",
+        ]),
+      )
+      if (!assetId) {
+        return { error: "validation", message: "Every move needs an asset_id." }
+      }
+      // Optional, and worth having: it is what lets a mistyped id be recovered
+      // instead of quietly leaving the file behind.
+      const filename = pickArgString(item, ["filename", "file_name", "name"])
+      moves.push({
+        assetId,
+        destinationFolderId: destination ?? null,
+        ...(filename ? { filename } : {}),
+      })
+    }
+
+    const result = await moveLibraryAssets({
+      prisma: ctx.prisma,
+      userId: ctx.userId,
+      moves,
+      publishRealtimeEvent: ctx.publishRealtimeEvent,
+      source: "chat_ai",
+    })
+
+    return {
+      success: result.failed === 0,
+      operation_id: result.operationId,
+      moved: result.moved,
+      already_there: result.alreadyThere,
+      failed: result.failed,
+      recovered_by_name: result.recovered,
+      // Only the interesting rows come back. A model that receives 246 "moved"
+      // lines tends to read them out one by one, which is exactly the flood the
+      // single progress summary exists to avoid.
+      failures: result.results
+        .filter((r) => r.status === "failed")
+        .map((r) => ({ asset_id: r.assetId, filename: r.filename, code: r.code, message: r.message })),
+      name_collisions: result.results
+        .filter((r) => r.nameCollision)
+        .map((r) => ({ asset_id: r.assetId, filename: r.filename })),
     }
   }
 

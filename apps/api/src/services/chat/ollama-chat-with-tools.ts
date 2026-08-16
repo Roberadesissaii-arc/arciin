@@ -1,4 +1,6 @@
 import {
+  parseDsmlToolCalls,
+  splitStreamableText,
   libraryAllowsFolderMutations,
   type AiChatToolBehavior,
   type AiLibraryToolAccess,
@@ -24,7 +26,12 @@ import {
 } from "@/services/chat/read-pdf-asset-synthetic"
 import { buildSyntheticReadTextAssetArgsFromUser } from "@/services/chat/read-text-asset-synthetic"
 import { normalizeOllamaCloudModelId } from "@/services/chat/ollama-cloud-models"
-import { formatOllamaProviderError, ollamaAuthHeaders } from "@/services/chat/ollama-http"
+import {
+  OLLAMA_REQUEST_TIMEOUT_MS,
+  formatOllamaProviderError,
+  ollamaAuthHeaders,
+  ollamaFetch,
+} from "@/services/chat/ollama-http"
 import { ollamaModelSupportsThinking } from "@/services/models/ollama-model-capabilities"
 import { stripAssistantStreamMarkup } from "@arciin/shared"
 import { writeSseEvent } from "@/services/chat/sse-stream"
@@ -83,6 +90,26 @@ type OllamaMessage = {
 }
 
 const MAX_TOOL_ROUNDS = 4
+
+/**
+ * Tools whose work is inherently iterative, and the budget they get.
+ *
+ * Four rounds is right for a question that needs a lookup or two. It is not
+ * enough to organise a library: enumerating 245 documents is three paginated
+ * calls before a single file has moved, and the moves themselves are batched.
+ * A run that hits the ceiling stops mid-job and reads to the user exactly like
+ * the old failure — folders created, files left where they were.
+ *
+ * So the budget is raised only once one of these tools has actually been
+ * called. An ordinary turn keeps the tight bound and cannot spin; a paging,
+ * batching job gets the room it genuinely needs, still bounded.
+ */
+const ITERATIVE_FILE_TOOLS = new Set([
+  "list_library_files",
+  "move_library_files",
+  "create_library_folder",
+])
+const MAX_FILE_ORGANIZE_ROUNDS = 24
 
 /** Strip "you must call read_pdf_asset" instructions once the server already loaded the file. */
 function stripPendingToolInstructions(text: string): string {
@@ -269,7 +296,14 @@ function resolveOllamaTools(mode: ToolMode, withheld?: ReadonlySet<string>) {
     return allowed.filter((t) => t.function.name === "vision_search_library")
   }
   if (mode === "sandbox") {
-    return allowed.filter((t) => t.function.name !== "organize_images_library")
+    // Sandbox means "you may shape folders, but you may not shuffle the user's
+    // files into them". Both bulk-move tools are withheld, not just the image
+    // one — moving books is the same power wearing a different name.
+    return allowed.filter(
+      (t) =>
+        t.function.name !== "organize_images_library" &&
+        t.function.name !== "move_library_files",
+    )
   }
   return allowed
 }
@@ -303,11 +337,13 @@ async function ollamaChatOnce(
   }
 
   const post = (thinkValue: boolean | string) =>
-    fetch(`${baseUrl}/api/chat`, {
+    // Not the global fetch: the AbortSignal alone does not raise undici's own
+    // 300s headers/body timeouts, so without this the ceiling below is fiction.
+    ollamaFetch(`${baseUrl}/api/chat`, {
       method: "POST",
       headers: ollamaAuthHeaders(opts.apiKey),
       body: JSON.stringify(buildBody(thinkValue)),
-      signal: AbortSignal.timeout(600_000),
+      signal: AbortSignal.timeout(OLLAMA_REQUEST_TIMEOUT_MS),
     })
 
   let res = await post(think)
@@ -378,7 +414,10 @@ async function collectStreamedOllama(
           prevThinking = writeSseDelta(raw, "thinking", accumulatedThinking, prevThinking)
         }
         if (forward.text) {
-          prevContent = writeSseDelta(raw, "text", accumulatedContent, prevContent)
+          // Withhold a trailing fragment that might still become a control
+          // token. Once emitted, a half-written `<｜｜DSM` cannot be recalled.
+          const { safe } = splitStreamableText(accumulatedContent)
+          prevContent = writeSseDelta(raw, "text", safe, prevContent)
         }
 
         if (json.done) {
@@ -392,6 +431,12 @@ async function collectStreamedOllama(
       }
     }
     if (done) break
+  }
+
+  // The stream is over, so nothing is partial any more: emit whatever the
+  // fragment guard was holding, sanitised.
+  if (forward.text) {
+    writeSseDelta(raw, "text", accumulatedContent, prevContent)
   }
 
   return { ...finalMessage, content: accumulatedContent || finalMessage.content, usage }
@@ -627,7 +672,20 @@ export async function streamOllamaWithArciinTools(opts: {
     return
   }
 
-  for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+  /** Raised the first time an inherently iterative file tool is used. */
+  let toolRoundBudget = MAX_TOOL_ROUNDS
+
+  /**
+   * What a recovered call is allowed to be.
+   *
+   * Only tools this turn was actually offered. A model that invents a name in
+   * prose must not be able to reach anything the tool gate withheld.
+   */
+  const allowedToolNames = new Set(
+    (resolveOllamaTools(toolMode, opts.withheldTools) ?? []).map((t) => t.function.name),
+  )
+
+  for (let round = 0; round < toolRoundBudget; round++) {
     const res = await ollamaChatOnce(baseUrl, model, messages, {
       stream: true,
       tools: toolMode,
@@ -648,7 +706,29 @@ export async function streamOllamaWithArciinTools(opts: {
     totalIn += collected.usage?.inputTokens ?? 0
     totalOut += collected.usage?.outputTokens ?? 0
 
-    const toolCalls = collected.tool_calls
+    /**
+     * A tool call the model wrote into its reply instead of the tool field.
+     *
+     * DeepSeek sometimes emits its DSML invocation as content. Without this the
+     * call is simply lost: the reader saw the raw markup and the tool never
+     * ran. Recovering it means the request the model actually made is honoured,
+     * and the markup is stripped from what they see either way.
+     */
+    // Content *and* reasoning: DeepSeek puts a whole final turn — narration and
+    // invocation together — in the thinking channel, which is where the
+    // observed leak actually came from.
+    const recoverySource = `${collected.content ?? ""}\n${
+      (typeof collected.thinking === "string" ? collected.thinking : "") ||
+      (typeof collected.thought === "string" ? collected.thought : "")
+    }`
+    const recoveredCalls =
+      !collected.tool_calls?.length && agentEnabled
+        ? parseDsmlToolCalls(recoverySource)
+            .filter((c) => allowedToolNames.has(c.name))
+            .map((c) => ({ function: { name: c.name, arguments: c.arguments } }))
+        : []
+
+    const toolCalls = collected.tool_calls?.length ? collected.tool_calls : recoveredCalls
     if (!toolCalls?.length) {
       const answer = (collected.content ?? "").trim()
       const thinking =
@@ -696,13 +776,23 @@ export async function streamOllamaWithArciinTools(opts: {
         }
       }
 
-      if (toolsActive && answer) {
-        writeSseEvent(raw, { text: answer })
+      /**
+       * Sanitised on the way out.
+       *
+       * These two writes bypass `writeSseDelta`, which is where the stripper
+       * lives — so a reply that reached this branch went to the reader exactly
+       * as the model wrote it, protocol markup and all. That is how
+       * `<｜｜DSML｜｜tool_calls>` ended up in a real transcript.
+       */
+      const visibleAnswer = stripAssistantStreamMarkup(answer)
+      if (toolsActive && visibleAnswer) {
+        writeSseEvent(raw, { text: visibleAnswer })
       }
 
       // Some thinking models leave `content` empty and put the user-visible reply in `thinking`.
-      if (!answer && thinking) {
-        writeSseEvent(raw, { text: thinking })
+      if (!visibleAnswer && thinking) {
+        const visibleThinking = stripAssistantStreamMarkup(thinking)
+        if (visibleThinking) writeSseEvent(raw, { text: visibleThinking })
       }
       raw.write(
         `data: ${JSON.stringify({
@@ -730,6 +820,9 @@ export async function streamOllamaWithArciinTools(opts: {
           libraryAction: toolName,
           status: toolName ? `Running ${toolName.replace(/_/g, " ")}…` : "Running tool…",
         })
+      }
+      if (toolName && ITERATIVE_FILE_TOOLS.has(toolName)) {
+        toolRoundBudget = MAX_FILE_ORGANIZE_ROUNDS
       }
       const result = await executeArciinChatTool(call, toolCtx)
       messages.push({
