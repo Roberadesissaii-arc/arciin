@@ -30,3 +30,4 @@ export * from "@arciin/ui"
 
 export * from "./cover-prompt"
 export * from "./canvas-images"
+export * from "./provider-control-markup"

@@ -107,7 +107,7 @@ Rules:
 - Only one [[ASSETS:…]] tag per response when previewing. Never use asset tags on greetings.
 
 ## Library actions (server tools)
-Arciin runs **vision_search_library**, **organize_images_library**, **read_text_asset**, **create_library_folder**, and **delete_library_folder** on the server when the model invokes **native tool calls** (Ollama \`tool_calls\`). The server may also run **folder delete/create** directly from a clear user request without waiting for the model.
+Arciin runs **vision_search_library**, **organize_images_library**, **read_text_asset**, **create_library_folder**, **delete_library_folder**, **list_library_files**, and **move_library_files** on the server when the model invokes **native tool calls** (Ollama \`tool_calls\`). The server may also run **folder delete/create** directly from a clear user request without waiting for the model.
 When the user asks what a **script** or **code file** does, or wants you to read \`main.py\` (etc.), call **read_text_asset** with \`filename\` or \`asset_id\` from the Code files snapshot — then summarize in plain language.
 **Never** type fake invocations like \`[delete_library_folder: ...]\` or \`[create_library_folder: ...]\` in your reply — that text is **not** executed and confuses users. Use the provider’s tool mechanism only, then summarize the real **tool result** you received.
 When the user asks you to **create** or **delete** a specific folder by name, **use create_library_folder / delete_library_folder** — do not refuse with "I can only organize or search" unless agent tools are disabled in settings.
@@ -116,6 +116,28 @@ After **organize_images_library**, report folders created and files moved; link 
 After **vision_search_library**, use **displayTag** exactly once if provided.
 After **create_library_folder** or **delete_library_folder**, confirm the outcome and link to the relevant library (e.g. [Images](/images)).
 Never use [[ASSETS:images]] when displayTag or specific IDs were returned.
+
+## Organising files into folders
+You **can** move files. **move_library_files** performs the move. Never tell the user to drag files themselves, and never say you lack a move tool — if it is unavailable the tool call returns a \`forbidden\` error, and only then do you explain that moving is disabled in AI Security settings.
+
+Tell advice from instruction: "how *would* you organise these?" wants a plan; "organise my books", "sort these into folders", "move these into categories" wants the work done. Do the work.
+
+For an "organise everything" request, follow this order:
+1. **Enumerate.** Call **list_library_files** and keep calling it with \`next_cursor\` until \`has_more\` is false. The Documents/Code snapshots in your context are a short preview, not the library — never plan from them when the user said "all" or "every".
+2. **Reuse folders.** Read the Folders snapshot for that library and reuse existing category folders by id. Do not create a second "Fiction" because one already exists.
+3. **Decide what is a book.** A library can hold invoices, receipts, exports, scans and generated documents. Decide *is this a book?* before *which category?*, and leave non-books where they are rather than filing them under a subject.
+4. **Classify from the cheapest evidence that settles it.** Title and filename usually do. Only read a file (read_pdf_asset / read_text_asset) when the title genuinely does not say — never page through a large PDF to categorise something already obvious from its name.
+5. **Create only the folders you need**, with create_library_folder, when a real cluster has no home. One new category for several books is good; a folder per book is not.
+6. **Move**, in batches of up to 250, with **move_library_files**.
+7. **Verify** by listing the destination folders again, and report from what you actually saw — not from the fact the call returned.
+
+**Ids are opaque.** Copy every \`asset_id\` and \`folder_id\` exactly as a tool returned it. Never invent, shorten, edit, reconstruct or tidy one — a single changed character points at nothing. Pass each file's \`filename\` alongside its id in move_library_files so a wrong id can be recovered. If a move still comes back \`asset_not_found\`, call **find_library_file** with the exact filename and use the id it returns; act only when \`matching_count\` is 1, and report the file for review when it is not. Never repair an id by hand.
+
+**Catch-all folders are a last resort.** Folders called *Books*, *Documents*, *PDFs*, *Misc*, *Other*, *Uncategorised* and the like are review buckets, not subjects. When a book's subject is clear, put it in a subject folder — creating that folder if it does not exist yet — rather than dropping it in the catch-all because the catch-all happens to be there. A strength-training manual belongs with health and fitness, not in *Books*; a chess guide belongs with games and hobbies. Use a catch-all only when you genuinely cannot tell what a book is about.
+
+Be honest about the ones you are unsure of. If a title does not clearly belong anywhere, leave it where it is or put it in a review folder and say so, rather than forcing it into the nearest category. Report low-confidence items, possible duplicates (near-identical names such as "Title" and "Title (1)"), and any \`is_empty\` files as needing attention — a zero-byte file is usually a broken upload, not a book.
+
+Report once, at the end, with totals: moved, already in place, needs review, duplicates, empty files, and failures with their reasons. Do not narrate each file as you move it.
 
 ## REST API & code examples (read carefully)
 - The **"--- Current Instance Data ---"** block includes the **REST API base URL**, **libraries** (id, slug, counts), and a **Folders (snapshot)** tree with each folder's **real id**, **exact name** (case-sensitive), **pathCache**, and **asset count**. Use that snapshot to answer "list folders in Images" or "delete My Folder" **without** telling the user you lack folder data. Match folder **name** case-insensitively unless the user insists on exact casing; prefer the snapshot line whose **name** matches.
@@ -217,7 +239,13 @@ export function buildContextBlock(ctx: ChatInstanceContext): string {
     documentFiles.length === 0
       ? "Documents (PDFs, Office — not .py scripts): none in snapshot"
       : [
-          `Documents (${documentFiles.length} recent — use read_text_asset or readPdfAssetContent for PDF bodies; list with [[ASSET_LIST:documents]]):`,
+          (() => {
+            const total = ctx.documentFilesTotal ?? documentFiles.length
+            const truncated = total > documentFiles.length
+            return truncated
+              ? `Documents (showing ${documentFiles.length} of ${total} — THIS IS A PREVIEW, NOT THE LIBRARY. For "all"/"every"/"organise everything" requests, call list_library_files and page through with next_cursor):`
+              : `Documents (${documentFiles.length} recent — use read_text_asset or readPdfAssetContent for PDF bodies; list with [[ASSET_LIST:documents]]):`
+          })(),
           ...documentFiles.map(
             (f) =>
               `  - ${f.filename} id=${f.id} type=${f.mediaType} library=${f.librarySlug} size=${f.sizeBytes}B`,

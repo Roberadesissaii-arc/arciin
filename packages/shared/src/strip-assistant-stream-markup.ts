@@ -1,7 +1,12 @@
 /** Remove leaked tool-call / function markup from streamed assistant text. */
+import { stripProviderControlMarkup } from "./provider-control-markup"
+
 export function stripAssistantStreamMarkup(text: string): string {
   return (
-    text
+    // Provider protocol first: DeepSeek's fullwidth-pipe DSML tags start with
+    // U+FF5C rather than whitespace, so every `<\s*tool_calls?` pattern below
+    // walked straight past them and the markup reached the transcript.
+    stripProviderControlMarkup(text)
       // XML-style tool calls (Ollama / custom wrappers)
       .replace(/<\s*tool_call\b[^>]*>[\s\S]*?<\/\s*tool_call\s*>/gi, "")
       .replace(/<\s*tool_call\b[^>]*\/>/gi, "")

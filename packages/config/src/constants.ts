@@ -87,4 +87,5 @@ export const JOB_TYPES = {
   stageUpdate: "stage_update",
   applyUpdate: "apply_update",
   purgeExpiredTrash: "purge_expired_trash",
+  transcribeMedia: "transcribe_media",
 } as const
