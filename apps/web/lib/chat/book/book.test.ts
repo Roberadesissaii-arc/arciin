@@ -12,9 +12,11 @@
 import {
   __resetBookOrchestratorForTests,
   useBookRun,
+  type BookRunSync,
   type ChapterGenerator,
 } from "./book-orchestrator"
 import {
+  BOOK_CONTROL_TAGS,
   countChaptersWritten,
   hasBookControlTags,
   isBookContinueRequest,
@@ -586,6 +588,53 @@ async function regressionSuite() {
  * went into the document. One list now drives both, and these assert it.
  */
 async function metadataSuite() {
+  section("Metadata — every surface the reply reaches, not just the manuscript")
+  {
+    /**
+     * The leak a real run caught. The orchestrator strips control tags on its
+     * own path, so the manuscript was always clean — but the plan turn's reply
+     * is *also* the chat message and the Canvas draft, and those went to the
+     * database raw. A reader reopening their book conversation found the
+     * model's internal `[carry:…]` and `[thread-open:…]` reports in it.
+     *
+     * The rule this pins: whatever the composer keeps from a book turn, it
+     * keeps stripped. `stripBookControlTags` is the single gate, so asserting
+     * it here covers the chat message, the draft and the Canvas together.
+     */
+    const planReply = `# The Room Under the Stacks
+
+A short mystery about what a university keeps in its walls.
+
+## Contents
+
+1. The Door That Is Not on the Plan — Maya finds it
+2. The Second Key — someone else has been down there
+3. What the Register Says — the debt is older than the building
+
+## Chapter 1: The Door That Is Not on the Plan
+
+${"She counted the steps down and got a different answer each time. ".repeat(40)}
+
+[chapter-summary:"Maya finds a paneled-over door in the sub-basement."]
+[carry:"Maya Okafor — second-year history student, works nights"]
+[thread-open:"the-card — who left a card with Maya's name in the drawer"]
+[next:"Seed Tomas's thesis topic more visibly in chapter 1"]`
+
+    const kept = stripBookControlTags(planReply)
+    check("the prose survives", kept.includes("She counted the steps down"))
+    check("the title survives", kept.includes("# The Room Under the Stacks"))
+    check("the contents survive", kept.includes("## Contents"))
+    check("no tag of any kind is left", !hasBookControlTags(kept), kept.slice(-160))
+    for (const tag of BOOK_CONTROL_TAGS) {
+      check(`[${tag}: is gone`, !kept.includes(`[${tag}:`))
+    }
+    check(
+      "and nothing is left dangling at the end",
+      !/\[[a-z-]+:\s*"?$/.test(kept.trim()),
+      kept.trim().slice(-60),
+    )
+  }
+
   section("Metadata — stripping")
   {
     const raw = `## Chapter 2: Example
@@ -737,6 +786,332 @@ async function backgroundSuite() {
     const stored = bookRepository().load("nav")
     check("the repository holds the document", countChaptersWritten(stored?.manuscript ?? "") === 3)
     check("and no control tags", !hasBookControlTags(stored?.manuscript ?? ""))
+  }
+
+  section("Background — a fresh Chat mount cannot cancel a running book")
+  {
+    /**
+     * The regression: `ChatPage` attaches with `conversationId` still null on
+     * its first render and only learns the real id a beat later. That call
+     * finds nothing stored under the placeholder key, and clearing the store
+     * on that basis took the *running* book with it — the store is global, so
+     * "this route has no book" was being written as "there is no book". The
+     * run then stopped at the next tick with `no_project`, and a chapter
+     * landing in the gap would have been appended to an empty manuscript.
+     */
+    reset()
+    let leaving: () => void = () => {}
+    const held = new Promise<void>((r) => {
+      leaving = r
+    })
+    const calls: number[] = []
+    const gen: ChapterGenerator = async (r) => {
+      calls.push(r.chapter)
+      if (r.chapter === 2) await held
+      await new Promise((x) => setTimeout(x, 5))
+      return { ok: true, raw: chapterText(r.chapter, "x") }
+    }
+    useBookRun.getState().setGenerator(gen)
+    useBookRun.getState().startFromPlan({ conversationId: "live", brief: "b", manuscript: PLAN })
+    await new Promise((x) => setTimeout(x, 20))
+
+    const midManuscript = useBookRun.getState().manuscript
+    check("chapter 2 is in flight", useBookRun.getState().streamingChapter === 2)
+
+    // A route change back to /chat, before the deep link resolves.
+    useBookRun.getState().attach(null, "")
+    const afterProvisional = useBookRun.getState()
+    check("the project survives", afterProvisional.project !== null)
+    check(
+      "and so does the manuscript",
+      afterProvisional.manuscript === midManuscript,
+      `${afterProvisional.manuscript.length} vs ${midManuscript.length}`,
+    )
+    check("the run is still writing", afterProvisional.project?.status === "writing")
+
+    leaving()
+    await settle()
+    const done = useBookRun.getState()
+    check("the book still finished", done.project?.status === "completed", done.project?.status)
+    check(
+      "with every chapter, not just the last",
+      countChaptersWritten(done.project?.manuscript ?? "") === 3,
+      `${countChaptersWritten(done.project?.manuscript ?? "")}`,
+    )
+    check("no chapter written twice", new Set(calls).size === calls.length, calls.join(","))
+  }
+
+  section("Background — a live run adopts the conversation id when it arrives")
+  {
+    /**
+     * The regression the real run caught. `/book` on a fresh chat creates the
+     * project under `__new__`, because the conversation row does not exist
+     * yet. Chat rekeys the store once the first exchange is saved — but that
+     * lands *after* `setConversationId`, so the attach fires first and finds
+     * nothing under the real id. The run then stayed on the placeholder for
+     * good: AI Tasks had no conversation to open, and every persist wrote to
+     * `__new__` while the row the URL pointed at went stale.
+     */
+    reset()
+    let held: () => void = () => {}
+    const gate = new Promise<void>((r) => {
+      held = r
+    })
+    const gen: ChapterGenerator = async (r) => {
+      if (r.chapter === 2) await gate
+      await new Promise((x) => setTimeout(x, 5))
+      return { ok: true, raw: chapterText(r.chapter, "x") }
+    }
+    useBookRun.getState().setGenerator(gen)
+    // Exactly what the composer does before the conversation exists.
+    useBookRun.getState().startFromPlan({ conversationId: "__new__", brief: "b", manuscript: PLAN })
+    await new Promise((x) => setTimeout(x, 20))
+    check("the run starts on the placeholder key", useBookRun.getState().project?.conversationId === "__new__")
+
+    // The chat receives its id; storage has not been rekeyed yet.
+    useBookRun.getState().attach("real-convo", "")
+    const adopted = useBookRun.getState().project
+    check("the project takes the real id", adopted?.conversationId === "real-convo", adopted?.conversationId)
+    check("the run is untouched", adopted?.status === "writing", adopted?.status)
+    check("nothing is left under the placeholder", bookRepository().load("__new__") === null)
+    check("and it is stored under the real id", bookRepository().load("real-convo") !== null)
+
+    held()
+    await settle()
+    const finished = useBookRun.getState().project
+    check("the book finishes under the real id", finished?.conversationId === "real-convo")
+    check("it completed", finished?.status === "completed", finished?.status)
+    const persisted = bookRepository().load("real-convo")
+    check(
+      "the persisted row has every chapter, not a stale one",
+      countChaptersWritten(persisted?.manuscript ?? "") === 3,
+      `${countChaptersWritten(persisted?.manuscript ?? "")}`,
+    )
+  }
+
+  section("Background — a live run is not dragged onto someone else's conversation")
+  {
+    // Adoption is only for the placeholder. A running book keyed to a real
+    // conversation must not follow the reader into a different one.
+    reset()
+    const gen: ChapterGenerator = async () =>
+      await new Promise(() => {}) as never
+    useBookRun.getState().setGenerator(gen)
+    useBookRun.getState().startFromPlan({ conversationId: "book-a", brief: "b", manuscript: PLAN })
+    await new Promise((x) => setTimeout(x, 20))
+    useBookRun.getState().attach("other-conversation", "")
+    const after = useBookRun.getState().project
+    check("it keeps its own conversation", after?.conversationId === "book-a", after?.conversationId)
+    check("and is still running", after?.status === "writing", after?.status)
+  }
+
+  section("Background — a finished book is still cleared on a new chat")
+  {
+    // The guard above is for *running* work only. A completed project has
+    // nothing in flight to protect, and leaving it on screen in a brand-new
+    // conversation would be a different kind of wrong.
+    reset()
+    const { generator } = makeGenerator((n) => ({ ok: true, raw: chapterText(n, titles[n - 1] ?? `C${n}`) }))
+    useBookRun.getState().setGenerator(generator)
+    useBookRun.getState().startFromPlan({ conversationId: "done", brief: "b", manuscript: PLAN })
+    await settle()
+    const completed = useBookRun.getState().project
+    check("the run really is finished", completed?.status === "completed", completed?.status)
+    useBookRun.getState().attach(null, "")
+    check("a new chat starts empty", useBookRun.getState().project === null)
+  }
+
+
+  section("Cross-device — an observer never generates")
+  {
+    /**
+     * The failure this prevents costs real money. A second computer signed into
+     * the same account reaches the scheduler with its own empty view, concludes
+     * the same chapter is missing, and pays for it again — and the reader ends
+     * up with two chapter fours.
+     *
+     * The server answers who owns the run; the session that does not own it
+     * must not call the generator at all.
+     */
+    reset()
+    const calls: number[] = []
+    const gen: ChapterGenerator = async (r) => {
+      calls.push(r.chapter)
+      return { ok: true, raw: chapterText(r.chapter, "x") }
+    }
+    const sync: BookRunSync = {
+      // Someone else is writing.
+      publish: async () => ({ executedElsewhere: true }),
+      heartbeat: async () => {},
+    }
+    useBookRun.getState().setGenerator(gen)
+    useBookRun.getState().setRunSync(sync)
+    useBookRun.getState().startFromPlan({ conversationId: "obs", brief: "b", manuscript: PLAN })
+    await new Promise((x) => setTimeout(x, 120))
+
+    check("the observer generated nothing", calls.length === 0, calls.join(","))
+    check(
+      "and the manuscript was not touched",
+      countChaptersWritten(useBookRun.getState().manuscript) === 1,
+    )
+  }
+
+  section("Cross-device — the executor still writes normally")
+  {
+    reset()
+    const calls: number[] = []
+    const published: string[] = []
+    const gen: ChapterGenerator = async (r) => {
+      calls.push(r.chapter)
+      return { ok: true, raw: chapterText(r.chapter, "x") }
+    }
+    const sync: BookRunSync = {
+      publish: async (input) => {
+        published.push(input.status)
+        return { executedElsewhere: false }
+      },
+      heartbeat: async () => {},
+    }
+    useBookRun.getState().setGenerator(gen)
+    useBookRun.getState().setRunSync(sync)
+    useBookRun.getState().startFromPlan({ conversationId: "exec", brief: "b", manuscript: PLAN })
+    await settle()
+
+    check("the owner wrote the rest", calls.join(",") === "2,3", calls.join(","))
+    check("it completed", useBookRun.getState().project?.status === "completed")
+    check("progress reached the server", published.length > 0, `${published.length}`)
+    check("including a completion", published.includes("COMPLETED"), published.join(","))
+  }
+
+  section("Cross-device — a sync outage does not stall the book")
+  {
+    // Status is nice to have; the book is the point. A server that cannot be
+    // reached must not become a reason to stop writing.
+    reset()
+    const calls: number[] = []
+    const gen: ChapterGenerator = async (r) => {
+      calls.push(r.chapter)
+      return { ok: true, raw: chapterText(r.chapter, "x") }
+    }
+    useBookRun.getState().setGenerator(gen)
+    useBookRun.getState().setRunSync({
+      publish: async () => {
+        throw new Error("network down")
+      },
+      heartbeat: async () => {},
+    })
+    useBookRun.getState().startFromPlan({ conversationId: "offline", brief: "b", manuscript: PLAN })
+    await settle()
+    check("the book still finished", useBookRun.getState().project?.status === "completed")
+    check("every chapter was written", calls.join(",") === "2,3", calls.join(","))
+  }
+
+  section("Cross-device — hydrating from the server")
+  {
+    reset()
+    const gen: ChapterGenerator = async (r) => ({ ok: true, raw: chapterText(r.chapter, "x") })
+    useBookRun.getState().setGenerator(gen)
+
+    const remoteManuscript = `${PLAN}\n\n${chapterText(2, "The Bell in the Lake")}`
+    useBookRun.getState().hydrateFromServer("remote", {
+      title: "The Bell Under Wintermere",
+      status: "WRITING",
+      totalChapters: 3,
+      writtenChapters: 2,
+      currentChapter: 3,
+      manuscript: remoteManuscript,
+      error: null,
+      isExecutor: false,
+      executedElsewhere: true,
+    })
+
+    const state = useBookRun.getState()
+    check("the project appears", state.project !== null)
+    check("with the remote title", state.project?.title === "The Bell Under Wintermere")
+    check(
+      "and the chapters already written",
+      state.project?.written === 2,
+      `${state.project?.written}`,
+    )
+    check(
+      "the manuscript came with it",
+      countChaptersWritten(state.manuscript) === 2,
+      `${countChaptersWritten(state.manuscript)}`,
+    )
+    check(
+      "the observer is not in a generating status",
+      state.project?.status !== "writing",
+      state.project?.status,
+    )
+
+    // And a tick must still do nothing.
+    let generated = 0
+    useBookRun.getState().setGenerator(async (r) => {
+      generated += 1
+      return { ok: true, raw: chapterText(r.chapter, "y") }
+    })
+    for (let i = 0; i < 4; i += 1) useBookRun.getState().tick()
+    await new Promise((x) => setTimeout(x, 60))
+    check("an observer tick generates nothing", generated === 0, `${generated}`)
+  }
+
+  section("Cross-device — the document still decides")
+  {
+    // The server says three are written; the manuscript contains one. The
+    // manuscript wins, exactly as it always has.
+    reset()
+    useBookRun.getState().hydrateFromServer("disagree", {
+      title: "Mismatch",
+      status: "PAUSED",
+      totalChapters: 3,
+      writtenChapters: 3,
+      currentChapter: 4,
+      manuscript: PLAN,
+      error: null,
+      isExecutor: false,
+      executedElsewhere: false,
+    })
+    const p = useBookRun.getState().project
+    check("written comes from the headings", p?.written === 1, `${p?.written}`)
+    check("so the next chapter is 2", p?.currentChapter === 2, `${p?.currentChapter}`)
+  }
+
+  section("Cross-device — the executor is not overwritten by its own echo")
+  {
+    reset()
+    let release: () => void = () => {}
+    const gate = new Promise<void>((r) => {
+      release = r
+    })
+    useBookRun.getState().setGenerator(async (r) => {
+      if (r.chapter === 2) await gate
+      return { ok: true, raw: chapterText(r.chapter, "x") }
+    })
+    useBookRun.getState().setRunSync({
+      publish: async () => ({ executedElsewhere: false }),
+      heartbeat: async () => {},
+    })
+    useBookRun.getState().startFromPlan({ conversationId: "echo", brief: "b", manuscript: PLAN })
+    await new Promise((x) => setTimeout(x, 30))
+
+    const before = useBookRun.getState().project?.status
+    // The poll returns our own state back to us mid-chapter.
+    useBookRun.getState().hydrateFromServer("echo", {
+      title: "The Bell Under Wintermere",
+      status: "WRITING",
+      totalChapters: 3,
+      writtenChapters: 1,
+      currentChapter: 2,
+      manuscript: PLAN,
+      error: null,
+      isExecutor: true,
+      executedElsewhere: false,
+    })
+    check("the running status is untouched", useBookRun.getState().project?.status === before, before)
+
+    release()
+    await settle()
+    check("and the book still finishes", useBookRun.getState().project?.status === "completed")
   }
 
   section("Background — slow first token")

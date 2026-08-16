@@ -12,6 +12,8 @@ import { registerActivityRoutes } from "@/modules/activity/routes"
 import { registerApiKeyRoutes } from "@/modules/api-keys/routes"
 import { registerAppDatabaseRoutes } from "@/modules/app-databases/routes"
 import { registerAssetRoutes } from "@/modules/assets/routes"
+import { transcriptRoutes } from "@/modules/transcripts/routes"
+import { bookRunRoutes } from "@/modules/book-runs/routes"
 import { registerAuthRoutes } from "@/modules/auth/routes"
 import { registerFolderRoutes } from "@/modules/folders/routes"
 import { registerInstanceRoutes } from "@/modules/instance/routes"
@@ -215,6 +217,8 @@ export async function createServer() {
       await registerLibraryRoutes(api)
       await registerFolderRoutes(api)
       await registerAssetRoutes(api)
+      await transcriptRoutes(api)
+      await bookRunRoutes(api)
       await registerTrashRoutes(api)
       await registerShareRoutes(api)
       await registerFileRequestRoutes(api)

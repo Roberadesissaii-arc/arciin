@@ -1,10 +1,74 @@
 "use client"
 
-import { Clock, Loader2, MessageSquare, Plus, Trash2 } from "lucide-react"
+import { AlertTriangle, Clock, Loader2, MessageSquare, Pause, Plus, Trash2 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 import type { ChatConversationSummary } from "@/lib/api/chat"
 import { relTime } from "@/components/chat/chat-format"
+import { useBookRuns } from "@/hooks/use-book-runs"
+import { describeBookRun, isBookRunActive, type BookRunView } from "@/lib/api/book-runs"
+
+const ACCENT = "var(--arciin-accent, #ff4f12)"
+
+/**
+ * The live state of a book, on the row it belongs to.
+ *
+ * Deliberately the same two lines the row already had — a status where the
+ * preview goes, and nothing else. The container, the widths, the type scale and
+ * the delete gutter are untouched; a running book earns a spinner and a hairline
+ * of progress, not a card.
+ *
+ * Server-backed, so a book running on another computer shows here too.
+ */
+function BookRunLine({ run }: { run: BookRunView }) {
+  if (isBookRunActive(run.status)) {
+    const percent =
+      run.totalChapters > 0
+        ? Math.min(100, Math.round((run.writtenChapters / run.totalChapters) * 100))
+        : 0
+    return (
+      <>
+        <p className="mt-1 flex items-center gap-1.5 truncate text-[11px]" style={{ color: ACCENT }}>
+          <Loader2 className="size-3 shrink-0 animate-spin" aria-hidden />
+          <span className="truncate">{describeBookRun(run)}</span>
+        </p>
+        {run.totalChapters > 0 ? (
+          <div className="mt-1 h-[2px] w-full overflow-hidden rounded-full bg-muted">
+            <div
+              className="h-full rounded-full transition-[width] duration-500"
+              style={{ background: ACCENT, width: `${percent}%` }}
+            />
+          </div>
+        ) : null}
+      </>
+    )
+  }
+
+  if (run.status === "PAUSED" || run.status === "INTERRUPTED") {
+    return (
+      <p className="mt-1 flex items-center gap-1.5 truncate text-[11px] text-muted-foreground">
+        <Pause className="size-3 shrink-0" aria-hidden />
+        <span className="truncate">
+          {run.status === "PAUSED" ? "Paused" : "Interrupted"} ·{" "}
+          {run.writtenChapters} / {run.totalChapters || "?"}
+        </span>
+      </p>
+    )
+  }
+
+  if (run.status === "FAILED") {
+    return (
+      <p className="mt-1 flex items-center gap-1.5 truncate text-[11px] text-destructive">
+        <AlertTriangle className="size-3 shrink-0" aria-hidden />
+        <span className="truncate">Failed at Chapter {run.currentChapter}</span>
+      </p>
+    )
+  }
+
+  // Completed rows go back to ordinary conversation styling — no spinner, no
+  // bar. The caller falls through to the normal preview line.
+  return null
+}
 
 /**
  * The preview line is the latest message, which is usually the assistant's
@@ -45,6 +109,11 @@ export function HistorySidebar({
   onNew: () => void
   onDelete: (id: string) => void
 }) {
+  // One shared query with the sidebar indicator, so History and the nav can
+  // never disagree about what is running.
+  const { runs } = useBookRuns()
+  const runByConversation = new Map(runs.map((r) => [r.conversationId, r]))
+
   return (
     <div className="flex h-full flex-col">
       {/* Header */}
@@ -75,9 +144,15 @@ export function HistorySidebar({
           conversations.map((convo) => {
             const active = convo.id === activeId
             const preview = previewText(convo.messages[0]?.content ?? "").slice(0, 80)
+            const run = runByConversation.get(convo.id)
+            // A finished book is just a conversation again.
+            const runLine = run && run.status !== "COMPLETED" ? <BookRunLine run={run} /> : null
             return (
               <div
                 key={convo.id}
+                // A stable hook for the cross-device suite, which has to find
+                // one specific conversation's row and read its live status.
+                data-conversation-id={convo.id}
                 className={cn(
                   "group relative mb-1.5 cursor-pointer rounded-lg px-3 py-2.5 transition-colors",
                   active
@@ -87,8 +162,16 @@ export function HistorySidebar({
                 onClick={() => onSelect(convo.id)}
               >
                 <div className="flex items-start gap-2.5">
-                  {loadingId === convo.id ? (
-                    <Loader2 className="mt-0.5 size-3.5 shrink-0 animate-spin text-primary" />
+                  {loadingId === convo.id || (run && isBookRunActive(run.status)) ? (
+                    <Loader2
+                      className={cn(
+                        "mt-0.5 size-3.5 shrink-0 animate-spin",
+                        // A book run is orange; an ordinary loading row keeps
+                        // the primary colour it always had.
+                        !(run && isBookRunActive(run.status)) && "text-primary",
+                      )}
+                      style={run && isBookRunActive(run.status) ? { color: ACCENT } : undefined}
+                    />
                   ) : (
                     <MessageSquare
                       className={cn(
@@ -108,9 +191,10 @@ export function HistorySidebar({
                     >
                       {convo.title}
                     </p>
-                    {preview && (
-                      <p className="mt-1 truncate text-[11px] text-muted-foreground">{preview}</p>
-                    )}
+                    {runLine ??
+                      (preview ? (
+                        <p className="mt-1 truncate text-[11px] text-muted-foreground">{preview}</p>
+                      ) : null)}
                     <p className="mt-1.5 text-[10px] text-muted-foreground/60">
                       {relTime(convo.updatedAt)}
                     </p>

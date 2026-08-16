@@ -122,25 +122,25 @@ enum IdempotencyStatus {
 
 /// Opaque public link to a single asset or folder (token hash at rest).
 model ShareLink {
-  id            String             @id @default(cuid())
+  id            String            @id @default(cuid())
   createdById   String
   resourceType  ShareResourceType
   assetId       String?
   folderId      String?
-  tokenHash     String             @unique
+  tokenHash     String            @unique
   tokenPrefix   String
   label         String?
   expiresAt     DateTime?
   maxViews      Int?
-  viewCount     Int                @default(0)
-  allowDownload Boolean            @default(true)
+  viewCount     Int               @default(0)
+  allowDownload Boolean           @default(true)
   revokedAt     DateTime?
   lastViewedAt  DateTime?
-  createdAt     DateTime           @default(now())
-  updatedAt     DateTime           @updatedAt
-  createdBy     User               @relation(fields: [createdById], references: [id], onDelete: Cascade)
-  asset         Asset?             @relation(fields: [assetId], references: [id], onDelete: Cascade)
-  folder        Folder?            @relation(fields: [folderId], references: [id], onDelete: Cascade)
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  createdBy     User              @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  asset         Asset?            @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  folder        Folder?           @relation(fields: [folderId], references: [id], onDelete: Cascade)
   shareAssets   ShareLinkAsset[]
   feedback      ShareFeedback[]
 
@@ -180,11 +180,11 @@ model ShareFeedback {
 }
 
 model InstanceConfig {
-  id                 String   @id @default(cuid())
+  id                 String    @id @default(cuid())
   instanceName       String
   storageRoot        String
   publicUrl          String?
-  remoteAccessMode   String?  @default("local")
+  remoteAccessMode   String?   @default("local")
   remoteAccessConfig Json?
   /// SMTP delivery settings: { host, port, secure, username, passwordEncrypted,
   /// fromAddress, fromName, notifyAddress, notifyOnUrlChange }. The password is
@@ -201,59 +201,60 @@ model InstanceConfig {
   /// user clicking "Apply now"; this only controls the unattended stage step.
   autoUpdateConfig   Json?
   /// free | pro | team | business — effective plan may be free after expiry.
-  licensePlan        String   @default("free")
+  licensePlan        String    @default("free")
   /// none | active | grace | expired
-  licenseStatus      String   @default("none")
+  licenseStatus      String    @default("none")
   licenseKeyPrefix   String?
   licenseActivatedAt DateTime?
   licenseExpiresAt   DateTime?
   /// Premium features stay on until this time after licenseExpiresAt.
   licenseGraceUntil  DateTime?
   /// Locally signed license token (cloud verification later).
-  licenseSignedToken String?  @db.Text
+  licenseSignedToken String?   @db.Text
   /// mock_dev | token | default
   licenseSource      String?
   initializedAt      DateTime
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 }
 
 /// Encrypted credential rows (AES-256-GCM). Plaintext never sent to AI providers.
 model PasswordVaultEntry {
-  id         String   @id @default(cuid())
-  ciphertext String   @db.Text
-  iv         String
-  authTag    String
+  id           String   @id @default(cuid())
+  ciphertext   String   @db.Text
+  iv           String
+  authTag      String
   importSource String?
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   @@index([createdAt])
 }
 
 model User {
-  id             String          @id @default(cuid())
-  name           String
-  email          String          @unique
-  passwordHash        String
-  recoveryQuestion    String?
-  recoveryAnswerHash  String?
-  role                UserRole
-  status         UserStatus      @default(ACTIVE)
-  avatarPath     String?
-  preferences    Json?
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
-  sessions            Session[]
-  mobilePairingCodes  MobilePairingCode[]
-  apiKeys             ApiKey[]
-  uploads           UploadSession[]
-  assets            Asset[]
-  activityEvents    ActivityEvent[]
-  appDatabases      AppDatabase[]
-  chatConversations ChatConversation[]
-  shareLinks        ShareLink[]
-  fileRequests      FileRequest[]
+  id                 String              @id @default(cuid())
+  name               String
+  email              String              @unique
+  passwordHash       String
+  recoveryQuestion   String?
+  recoveryAnswerHash String?
+  role               UserRole
+  status             UserStatus          @default(ACTIVE)
+  avatarPath         String?
+  preferences        Json?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  sessions           Session[]
+  mobilePairingCodes MobilePairingCode[]
+  apiKeys            ApiKey[]
+  uploads            UploadSession[]
+  assets             Asset[]
+  activityEvents     ActivityEvent[]
+  appDatabases       AppDatabase[]
+  chatConversations  ChatConversation[]
+  shareLinks         ShareLink[]
+  fileRequests       FileRequest[]
+  bookRuns           BookRun[]
 }
 
 /// Logical app database for API/automation: metadata + JSON in PostgreSQL (not library file storage).
@@ -272,18 +273,18 @@ model AppDatabase {
 }
 
 model AppDatabaseFolder {
-  id             String               @id @default(cuid())
+  id             String              @id @default(cuid())
   databaseId     String
   parentFolderId String?
   name           String
   slug           String
   pathCache      String
-  createdAt      DateTime             @default(now())
-  updatedAt      DateTime             @updatedAt
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
   deletedAt      DateTime?
-  database       AppDatabase          @relation(fields: [databaseId], references: [id], onDelete: Cascade)
-  parentFolder   AppDatabaseFolder?   @relation("AppDbFolderTree", fields: [parentFolderId], references: [id], onDelete: SetNull)
-  childFolders   AppDatabaseFolder[]  @relation("AppDbFolderTree")
+  database       AppDatabase         @relation(fields: [databaseId], references: [id], onDelete: Cascade)
+  parentFolder   AppDatabaseFolder?  @relation("AppDbFolderTree", fields: [parentFolderId], references: [id], onDelete: SetNull)
+  childFolders   AppDatabaseFolder[] @relation("AppDbFolderTree")
   records        AppDatabaseRecord[]
 
   @@unique([databaseId, pathCache])
@@ -386,28 +387,28 @@ model Library {
 }
 
 model Folder {
-  id             String          @id @default(cuid())
-  libraryId      String
-  parentFolderId String?
-  name           String
-  slug           String
-  pathCache      String
+  id               String          @id @default(cuid())
+  libraryId        String
+  parentFolderId   String?
+  name             String
+  slug             String
+  pathCache        String
   /// True when this folder was created via API key or received API-key uploads.
-  isRemote       Boolean         @default(false)
+  isRemote         Boolean         @default(false)
   /// When true, assets in this folder are excluded from the All Files view.
-  hideFromAllFiles Boolean       @default(false)
-  lockedAt       DateTime?
-  lockedByUserId String?
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
-  deletedAt      DateTime?
-  library        Library         @relation(fields: [libraryId], references: [id], onDelete: Cascade)
-  parentFolder   Folder?         @relation("FolderTree", fields: [parentFolderId], references: [id], onDelete: SetNull)
-  childFolders   Folder[]        @relation("FolderTree")
-  assets         Asset[]
-  uploadSessions UploadSession[]
-  shareLinks     ShareLink[]
-  fileRequests   FileRequest[]
+  hideFromAllFiles Boolean         @default(false)
+  lockedAt         DateTime?
+  lockedByUserId   String?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  deletedAt        DateTime?
+  library          Library         @relation(fields: [libraryId], references: [id], onDelete: Cascade)
+  parentFolder     Folder?         @relation("FolderTree", fields: [parentFolderId], references: [id], onDelete: SetNull)
+  childFolders     Folder[]        @relation("FolderTree")
+  assets           Asset[]
+  uploadSessions   UploadSession[]
+  shareLinks       ShareLink[]
+  fileRequests     FileRequest[]
 
   @@unique([libraryId, pathCache])
   @@index([libraryId])
@@ -432,62 +433,63 @@ model StorageObject {
 }
 
 model Asset {
-  id               String          @id @default(cuid())
-  libraryId        String
-  folderId         String?
-  storageObjectId  String
-  ownerId          String
-  filename         String
-  originalFilename String
-  title            String?
-  description      String?
-  mimeType         String
-  mediaType        MediaType
-  extension        String
-  sizeBytes        BigInt
-  checksumSha256   String
-  durationSeconds  Float?
-  width            Int?
-  height           Int?
-  codec            String?
-  status           AssetStatus
-  processingError  String?
+  id                      String                 @id @default(cuid())
+  libraryId               String
+  folderId                String?
+  storageObjectId         String
+  ownerId                 String
+  filename                String
+  originalFilename        String
+  title                   String?
+  description             String?
+  mimeType                String
+  mediaType               MediaType
+  extension               String
+  sizeBytes               BigInt
+  checksumSha256          String
+  durationSeconds         Float?
+  width                   Int?
+  height                  Int?
+  codec                   String?
+  status                  AssetStatus
+  processingError         String?
   /// Original public link this asset was imported from (used to show a source badge).
-  importSourceUrl  String?
+  importSourceUrl         String?
   /// Device channel the upload request came from ("web" | "mobile" | "api") — fallback badge when there's no import source.
-  uploadClient     String?
+  uploadClient            String?
   /// Custom badge label override (null = auto-detect from importSourceUrl).
-  badgeLabel       String?
+  badgeLabel              String?
   /// Custom badge color override as hex (null = auto-detect or default).
-  badgeColor       String?
+  badgeColor              String?
   /// When false, the source badge is hidden on cards and lists.
-  showBadge        Boolean         @default(true)
+  showBadge               Boolean                @default(true)
   /// Set when an AI cover has been drawn for this file. The card needs to know:
   /// PDFs render their own first page in the browser, so without this signal a
   /// generated cover sits on disk and is never asked for.
-  coverImageAt     DateTime?
+  coverImageAt            DateTime?
   /// Relative path under storage root for Plex-visible library mirror (e.g. libraries/videos/plex/file.mp4).
-  libraryMirrorPath String?
+  libraryMirrorPath       String?
   /// Set when this asset arrived through a File Request rather than an owner
   /// upload. Drives the "File Request" badge and the owner's submission view.
-  fileRequestId     String?
+  fileRequestId           String?
   fileRequestSubmissionId String?
-  createdAt        DateTime        @default(now())
-  updatedAt        DateTime        @updatedAt
-  deletedAt        DateTime?
-  library          Library         @relation(fields: [libraryId], references: [id], onDelete: Restrict)
-  folder           Folder?         @relation(fields: [folderId], references: [id], onDelete: SetNull)
-  storageObject    StorageObject   @relation(fields: [storageObjectId], references: [id], onDelete: Restrict)
-  owner            User            @relation(fields: [ownerId], references: [id], onDelete: Restrict)
-  uploadSessions   UploadSession[]
-  tags             AssetTag[]
-  shareLinks       ShareLink[]
-  shareLinkAssets  ShareLinkAsset[]
-  shareFeedback    ShareFeedback[]
+  transcript              MediaTranscript?
+  createdAt               DateTime               @default(now())
+  updatedAt               DateTime               @updatedAt
+  deletedAt               DateTime?
+  library                 Library                @relation(fields: [libraryId], references: [id], onDelete: Restrict)
+  folder                  Folder?                @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  storageObject           StorageObject          @relation(fields: [storageObjectId], references: [id], onDelete: Restrict)
+  owner                   User                   @relation(fields: [ownerId], references: [id], onDelete: Restrict)
+  uploadSessions          UploadSession[]
+  tags                    AssetTag[]
+  shareLinks              ShareLink[]
+  shareLinkAssets         ShareLinkAsset[]
+  shareFeedback           ShareFeedback[]
   // SetNull, not Cascade: deleting a File Request must never delete the files
   // it collected. The owner keeps the uploads; only the provenance link goes.
-  fileRequest      FileRequest?    @relation(fields: [fileRequestId], references: [id], onDelete: SetNull)
-  fileRequestSubmission FileRequestSubmission? @relation(fields: [fileRequestSubmissionId], references: [id], onDelete: SetNull)
+  fileRequest             FileRequest?           @relation(fields: [fileRequestId], references: [id], onDelete: SetNull)
+  fileRequestSubmission   FileRequestSubmission? @relation(fields: [fileRequestSubmissionId], references: [id], onDelete: SetNull)
 
   @@index([fileRequestId])
   @@index([fileRequestSubmissionId])
@@ -546,6 +548,129 @@ model Job {
 
   @@index([status])
   @@index([createdAt])
+}
+
+/**
+ * A timestamped transcript of the speech in a media asset.
+ * Its own table rather than a column on Asset: a transcript is a generated
+ * artifact with its own lifecycle — it is queued, it can fail, it can be edited
+ * by hand, and it can be regenerated — none of which belongs in the row that
+ * describes the file itself.
+ * One current transcript per asset (`@unique`). Regeneration replaces it in
+ * place, which is what keeps the drawer's "latest transcript" simple; the
+ * previous text is preserved on the row until the new one succeeds, so a failed
+ * regeneration never costs the reader what they already had.
+ */
+model MediaTranscript {
+  id              String                @id @default(cuid())
+  assetId         String                @unique
+  status          MediaTranscriptStatus @default(PENDING)
+  /// Which provider produced it, for the "Generated with…" line and for reruns.
+  provider        String?
+  model           String?
+  /// BCP-47-ish tag as the model reported it. Never forced to English.
+  language        String?
+  /// Flattened text, for copy, search and full-text use.
+  fullText        String?
+  /// [{ startMs, endMs?, speaker?, text }] — see media-transcript types.
+  segments        Json?
+  /// Seconds of media actually analysed, for the "1:24:36 analyzed" line.
+  durationSeconds Float?
+  /// True once a person has corrected it, so a regenerate can warn first.
+  edited          Boolean               @default(false)
+  error           String?
+  /// The queued job, so the drawer can follow progress after a reload.
+  jobId           String?
+  generatedAt     DateTime?
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+
+  asset Asset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+}
+
+enum MediaTranscriptStatus {
+  PENDING
+  PROCESSING
+  READY
+  FAILED
+  /// The media carries no audio track, so there is nothing to transcribe.
+  NO_AUDIO
+  /// There is audio, but no intelligible speech in it.
+  NO_SPEECH
+}
+
+/**
+ * A book run, as the server sees it.
+ * The orchestrator has always lived in the browser, and so did everything it
+ * knew: progress, status and the manuscript were in one tab's memory and
+ * localStorage. That was enough to walk around Arciin in the same browser and
+ * come back to a running book — and not enough for anything else. A second
+ * computer signing into the same account saw an idle conversation, History
+ * showed nothing, and an `attach()` there would have read the empty local state
+ * as "chapter 4 is missing" and paid for it a second time.
+ * This row is the shared truth. Execution still happens in one browser; every
+ * other session reads this and observes.
+ * `executorSessionId` + `leaseExpiresAt` are what keep exactly one writer. A
+ * session claims the run, refreshes the lease on a timer, and any session that
+ * finds a live lease belonging to someone else is an observer and generates
+ * nothing.
+ */
+model BookRun {
+  id             String        @id @default(cuid())
+  userId         String
+  /// One run per conversation — the drawer's "current book" is unambiguous.
+  conversationId String        @unique
+  title          String
+  status         BookRunStatus @default(PLANNING)
+
+  /// Planned chapters, from the outline.
+  totalChapters       Int     @default(0)
+  /// Chapters actually present in the manuscript. Parsed, never incremented.
+  writtenChapters     Int     @default(0)
+  /// The chapter in flight, or the one that would be written next.
+  currentChapter      Int     @default(1)
+  currentChapterTitle String?
+
+  /**
+   * The canonical manuscript.
+   * Here rather than only in the browser so another computer opening the
+   * conversation sees the chapters already written instead of a blank Canvas —
+   * and so it never mistakes "I have no text" for "nothing has been written".
+   */
+  manuscript String? @db.Text
+
+  error String?
+
+  /// The browser session currently allowed to generate. Null once released.
+  executorSessionId String?
+  /// While in the future, `executorSessionId` owns generation.
+  leaseExpiresAt    DateTime?
+
+  startedAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  finishedAt DateTime?
+
+  user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  conversation ChatConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+  @@index([leaseExpiresAt])
+}
+
+enum BookRunStatus {
+  PLANNING
+  THINKING
+  WRITING
+  VALIDATING
+  SAVING
+  PAUSED
+  /// The executor stopped answering and the lease lapsed. Resumable, never
+  /// auto-resumed: the interrupted attempt may have completed server-side.
+  INTERRUPTED
+  FAILED
+  COMPLETED
 }
 
 model ActivityEvent {
@@ -633,7 +758,7 @@ model AssetTag {
 
 model ModelProfile {
   id           String   @id @default(cuid())
-  provider     String   // "openai" | "anthropic" | "ollama" | "gemini" | "deepseek" | "grok" | "meta" | "qwen" | "elevenlabs" | "custom"
+  provider     String // "openai" | "anthropic" | "ollama" | "gemini" | "deepseek" | "grok" | "meta" | "qwen" | "elevenlabs" | "custom"
   displayName  String
   apiKey       String?
   baseUrl      String?
@@ -650,16 +775,17 @@ model ModelProfile {
 }
 
 model ChatConversation {
-  id        String        @id @default(cuid())
+  id        String   @id @default(cuid())
   userId    String
   profileId String?
   title     String
-  createdAt DateTime      @default(now())
-  updatedAt DateTime      @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   user     User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   profile  ModelProfile? @relation(fields: [profileId], references: [id], onDelete: SetNull)
   messages ChatMessage[]
+  bookRun  BookRun?
 
   @@index([userId, createdAt])
   @@index([profileId])
@@ -696,54 +822,54 @@ model ChatMessage {
 /// the public client never supplies a folder, library or instance id, because
 /// a public client that can name its own destination can write anywhere.
 model FileRequest {
-  id                   String            @id @default(cuid())
+  id                   String @id @default(cuid())
   instanceId           String
   createdByUserId      String
   destinationLibraryId String
   destinationFolderId  String
 
   /// SHA-256 of the public token. The token itself is shown once, at creation.
-  tokenHash            String            @unique
+  tokenHash   String            @unique
   /// Leading characters of the token, for the owner to recognise a link by.
-  tokenPrefix          String
-  title                String
-  message              String?
-  status               FileRequestStatus @default(ACTIVE)
+  tokenPrefix String
+  title       String
+  message     String?
+  status      FileRequestStatus @default(ACTIVE)
 
-  expiresAt            DateTime?
-  revokedAt            DateTime?
+  expiresAt DateTime?
+  revokedAt DateTime?
 
-  allowAnonymous       Boolean           @default(true)
-  requireName          Boolean           @default(false)
-  requireEmail         Boolean           @default(false)
-  allowSubmitterViewOwn Boolean          @default(false)
-  notifyOwner          Boolean           @default(true)
+  allowAnonymous        Boolean @default(true)
+  requireName           Boolean @default(false)
+  requireEmail          Boolean @default(false)
+  allowSubmitterViewOwn Boolean @default(false)
+  notifyOwner           Boolean @default(true)
 
   /// Argon2 hash. Never the code itself.
-  accessCodeHash       String?
+  accessCodeHash String?
 
-  allowedMediaTypes    String[]
-  allowedExtensions    String[]
+  allowedMediaTypes String[]
+  allowedExtensions String[]
 
-  maxFileSizeBytes     BigInt?
-  maxTotalBytes        BigInt?
-  maxFileCount         Int?
+  maxFileSizeBytes BigInt?
+  maxTotalBytes    BigInt?
+  maxFileCount     Int?
 
-  currentBytes         BigInt            @default(0)
-  currentFileCount     Int               @default(0)
+  currentBytes     BigInt @default(0)
+  currentFileCount Int    @default(0)
 
-  createdAt            DateTime          @default(now())
-  updatedAt            DateTime          @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  createdBy            User              @relation(fields: [createdByUserId], references: [id], onDelete: Cascade)
-  destinationLibrary   Library           @relation(fields: [destinationLibraryId], references: [id], onDelete: Cascade)
+  createdBy          User    @relation(fields: [createdByUserId], references: [id], onDelete: Cascade)
+  destinationLibrary Library @relation(fields: [destinationLibraryId], references: [id], onDelete: Cascade)
   // Deleting the destination folder must not orphan the row silently: the
   // request is resolved with its folder loaded, and a cascade removes the link
   // outright, which is the behaviour the owner intends by deleting the folder.
-  destinationFolder    Folder            @relation(fields: [destinationFolderId], references: [id], onDelete: Cascade)
+  destinationFolder  Folder  @relation(fields: [destinationFolderId], references: [id], onDelete: Cascade)
 
-  submissions          FileRequestSubmission[]
-  assets               Asset[]
+  submissions FileRequestSubmission[]
+  assets      Asset[]
 
   @@index([tokenHash])
   @@index([createdByUserId])
@@ -755,9 +881,9 @@ model FileRequest {
 /// One recipient's upload session against a File Request. Addressed only by its
 /// own id, which is handed back to the submitter — never listed publicly.
 model FileRequestSubmission {
-  id                  String                      @id @default(cuid())
-  fileRequestId       String
-  status              FileRequestSubmissionStatus @default(UPLOADING)
+  id            String                      @id @default(cuid())
+  fileRequestId String
+  status        FileRequestSubmissionStatus @default(UPLOADING)
 
   submitterName       String?
   submitterEmail      String?
@@ -765,18 +891,18 @@ model FileRequestSubmission {
   /// repeat abuser; not enough to recover the address.
   abuseIdentifierHash String?
 
-  fileCount           Int                         @default(0)
-  totalBytes          BigInt                      @default(0)
+  fileCount  Int    @default(0)
+  totalBytes BigInt @default(0)
 
-  createdAt           DateTime                    @default(now())
-  updatedAt           DateTime                    @updatedAt
-  completedAt         DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  completedAt DateTime?
   /// Set once the owner has been told about this submission. Guarantees one
   /// notification per submission rather than one per uploaded file.
-  notifiedAt          DateTime?
+  notifiedAt  DateTime?
 
-  fileRequest         FileRequest                 @relation(fields: [fileRequestId], references: [id], onDelete: Cascade)
-  assets              Asset[]
+  fileRequest FileRequest @relation(fields: [fileRequestId], references: [id], onDelete: Cascade)
+  assets      Asset[]
 
   @@index([fileRequestId, createdAt])
   @@index([status])

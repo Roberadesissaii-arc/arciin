@@ -108,9 +108,10 @@ import {
 import { BookProgressCard } from "@/components/chat/book-progress-card"
 import { useBookRun } from "@/lib/chat/book/book-orchestrator"
 import { setBookTransportConfig } from "@/lib/chat/book/book-transport"
-import { isBookContinueRequest } from "@/lib/chat/book/book-parser"
+import { isBookContinueRequest, stripBookControlTags } from "@/lib/chat/book/book-parser"
 import { buildPlanPrompt } from "@/lib/chat/book/book-prompts"
 import { bookRepository } from "@/lib/chat/book/book-storage"
+import { describeBookRun, getBookRun, isBookRunActive } from "@/lib/api/book-runs"
 import { getLibraries } from "@/lib/api/libraries"
 import { uploadFile } from "@/lib/api/uploads"
 
@@ -196,6 +197,31 @@ export function ChatPage() {
     // automatically, which is how a chapter would get written twice.
     useBookRun.getState().attach(conversationId, canvasContentRef.current)
   }, [conversationId])
+
+  /**
+   * Adopt the server's copy of a book this browser has never seen.
+   *
+   * The orchestrator's state is local, so a second computer opening an active
+   * conversation would otherwise find nothing and show an ordinary chat. The
+   * server holds the run and the manuscript; this seeds them so the progress
+   * card and the Canvas are right immediately — and, crucially, so the local
+   * project's `written` count matches reality rather than zero.
+   */
+  const serverRunQuery = useQuery({
+    queryKey: ["book-run", conversationId ?? "none"],
+    queryFn: ({ signal }) => getBookRun(conversationId!, signal),
+    enabled: Boolean(conversationId),
+    refetchInterval: (query) => {
+      const status = query.state.data?.run?.status
+      return status && isBookRunActive(status) ? 4000 : false
+    },
+  })
+  const serverRun = serverRunQuery.data?.run ?? null
+
+  useEffect(() => {
+    if (!conversationId || !serverRun) return
+    useBookRun.getState().hydrateFromServer(conversationId, serverRun)
+  }, [conversationId, serverRun])
 
   useEffect(() => {
     // Returning to Chat: show whatever was written while this was unmounted.
@@ -654,6 +680,13 @@ export function ChatPage() {
       })
       stickToBottomRef.current = true
       setConversationId(id)
+      if (typeof window !== "undefined") {
+        window.history.replaceState(
+          null,
+          "",
+          `${window.location.pathname}?c=${encodeURIComponent(id)}`,
+        )
+      }
       const drafts = listCanvasDraftsForConversation(id)
       const draftByMsg = new Map(drafts.map((d) => [d.messageId, d]))
       setMessages(
@@ -708,7 +741,31 @@ export function ChatPage() {
     }
   }
 
+  /**
+   * `/chat?c=<id>` opens that conversation.
+   *
+   * The conversation used to live only in this component's state, so anything
+   * outside Chat that wanted to point at one — the AI Tasks list, a
+   * notification — could only open a blank composer. Read from
+   * `window.location` rather than `useSearchParams` so the page keeps its
+   * current rendering mode and needs no Suspense boundary.
+   */
+  const deepLinkConsumed = useRef(false)
+  useEffect(() => {
+    if (deepLinkConsumed.current) return
+    deepLinkConsumed.current = true
+    if (typeof window === "undefined") return
+    const wanted = new URLSearchParams(window.location.search).get("c")
+    if (!wanted) return
+    void loadConversation(wanted)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   function startNewChat() {
+    if (typeof window !== "undefined" && window.location.search) {
+      // Otherwise a refresh would reopen the conversation just left behind.
+      window.history.replaceState(null, "", window.location.pathname)
+    }
     setConversationId(null)
     setMessages([])
     setInput("")
@@ -1137,6 +1194,10 @@ export function ChatPage() {
       if (/^\s*\/book\b/i.test(text)) {
         bookTurn = { mode: "start", brief: text.replace(/^\s*\/book\b\s*/i, "").trim() }
         text = buildPlanPrompt(bookTurn.brief)
+        // The plan turn is the longest call of the whole book and produces no
+        // project until it lands. Told to the store now so the shell can say
+        // the work is running for the minute before there is anything to count.
+        bookRun.beginPlanning({ conversationId, brief: bookTurn.brief })
       }
 
       const slash = expandSlashMessage(text)
@@ -1562,7 +1623,19 @@ export function ChatPage() {
       if (forceCanvas) {
         // A continuation is the new chapter only; the document is what was
         // already written plus that.
-        const docOnly = bookPrefix + sanitizeCanvasDocument(finalContent)
+        /**
+         * Book control tags come off here, before anything else sees the text.
+         *
+         * The orchestrator strips them on its own path, so the manuscript was
+         * always clean — but the plan turn's reply is also the chat message and
+         * the Canvas draft, and neither of those went through it. The result
+         * was `[carry:…]` and `[thread-open:…]` sitting in the transcript, and
+         * saved to the database with it, on every book a reader started.
+         *
+         * `stripBookControlTags` is a no-op on any turn that has none, so this
+         * costs an ordinary Canvas turn nothing.
+         */
+        const docOnly = stripBookControlTags(bookPrefix + sanitizeCanvasDocument(finalContent))
         const nextTitle = refineCanvasTitleFromContent(docOnly, turnCanvasTitle)
         setCanvasContent(docOnly)
         setCanvasStreaming(false)
@@ -1611,7 +1684,19 @@ export function ChatPage() {
             brief: bookTurn.brief,
             manuscript: docOnly,
           })
-          canvasChatSummary = ""
+          /**
+           * One line, not the plan.
+           *
+           * The progress card carries the state, so the bubble does not repeat
+           * it — but it cannot be empty either. The persisted content falls
+           * back to the raw reply when this is blank, which put the model's
+           * internal `[carry:…]` and `[thread-open:…]` reports into chat
+           * history and back on screen the next time the conversation was
+           * opened. A short line is what the transcript should say happened.
+           */
+          canvasChatSummary = `📖 Planning finished for **${
+            bookRun.project?.title || nextTitle
+          }**. Writing it chapter by chapter — progress is on the card below.`
         }
 
         if (docOnly.trim()) {
@@ -1661,6 +1746,16 @@ export function ChatPage() {
             convoId = newConvo.id
             needsAutoTitle = true
             setConversationId(convoId)
+            // The chat now has an address. Put it in the bar so a refresh — or
+            // a click on this book in AI Tasks — comes back here rather than to
+            // an empty composer.
+            if (typeof window !== "undefined") {
+              window.history.replaceState(
+                null,
+                "",
+                `${window.location.pathname}?c=${encodeURIComponent(convoId)}`,
+              )
+            }
             queryClient.invalidateQueries({ queryKey: queryKeys.chatConversations })
           }
 
@@ -1718,6 +1813,10 @@ export function ChatPage() {
       setStreamingMsgId(null)
       setCanvasStreaming(false)
       abortRef.current = null
+      // A plan turn that produced a project has already cleared this. One that
+      // errored, was cancelled, or came back empty has not — and a "Planning"
+      // task that never resolves is exactly the stale badge to avoid.
+      if (bookTurn) useBookRun.getState().endPlanning()
     }
   }
 
@@ -1901,6 +2000,14 @@ export function ChatPage() {
                     setCanvasTitle(bookRun.project!.title)
                     setCanvasOpen(true)
                   }}
+                  remote={
+                    serverRun?.executedElsewhere
+                      ? {
+                          executedElsewhere: true,
+                          description: describeBookRun(serverRun),
+                        }
+                      : null
+                  }
                   className="order-last"
                 />
               ) : null}

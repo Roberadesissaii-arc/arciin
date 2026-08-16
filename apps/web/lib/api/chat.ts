@@ -61,6 +61,8 @@ export interface ChatInstanceContext {
     librarySlug: string
     libraryName: string
   }[]
+  /** True count of documents when `documentFiles` above is a truncated preview. */
+  documentFilesTotal?: number
   storageGb: number
   lastUploadAt: string | null
   /** Count-only vault hint for AI — never contains secrets. */

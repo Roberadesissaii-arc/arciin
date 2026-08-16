@@ -1,6 +1,6 @@
 "use client"
 
-import { Check, Loader2, Pause, Play, RotateCcw, TriangleAlert } from "lucide-react"
+import { Check, Loader2, MonitorSmartphone, Pause, Play, RotateCcw, TriangleAlert } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { countWords } from "@/lib/chat/book/book-parser"
@@ -24,6 +24,15 @@ export function BookProgressCard({
   onRetry,
   onOpenManuscript,
   className,
+  /**
+   * Another computer is writing this book, and what it is doing right now.
+   *
+   * Without it this card would offer Pause — and, because an observed run is
+   * held in a non-generating status, label that button "Stopping…". Neither is
+   * true: this session is not running the book and cannot stop it. Watching is
+   * the honest state, so it gets said out loud.
+   */
+  remote,
 }: {
   project: BookProject
   manuscript: string
@@ -33,11 +42,13 @@ export function BookProgressCard({
   onRetry: () => void
   onOpenManuscript: () => void
   className?: string
+  remote?: { executedElsewhere: boolean; description: string } | null
 }) {
   const { done, total, percent } = bookProgress(project)
   const words = countWords(manuscript)
   const next = nextChapterNumber(project)
-  const running = project.status === "writing" || project.status === "stopping"
+  const observing = Boolean(remote?.executedElsewhere)
+  const running = !observing && (project.status === "writing" || project.status === "stopping")
   const complete = project.status === "completed"
 
   const headline =
@@ -45,12 +56,18 @@ export function BookProgressCard({
       ? "is complete"
       : project.status === "failed"
         ? "hit a problem"
-        : project.status === "paused"
-          ? "is paused"
-          : "Writing your book"
+        : observing
+          ? remote!.description
+          : project.status === "paused"
+            ? "is paused"
+            : "Writing your book"
 
   return (
     <div
+      // A stable hook for the acceptance suite. Matching this card by its copy
+      // meant a locator that also matched the model's own reasoning trace.
+      data-testid="book-progress-card"
+      data-book-status={project.status}
       className={cn(
         "rounded-2xl border border-border bg-card/60 p-4",
         className,
@@ -62,12 +79,22 @@ export function BookProgressCard({
             📖 {project.title}
           </p>
           <p className="mt-0.5 text-[12px] text-muted-foreground">
-            {complete || project.status === "failed" || project.status === "paused"
+            {complete || project.status === "failed" || project.status === "paused" || observing
               ? headline
               : "Writing your book"}
           </p>
         </div>
-        {running ? (
+        {observing ? (
+          // No control, because this session holds no claim on the run. The
+          // computer doing the writing is the one that can pause it.
+          <span
+            className="flex shrink-0 items-center gap-1.5 rounded-md border border-border px-2 py-1 text-[11px] text-muted-foreground"
+            data-testid="book-observer-badge"
+          >
+            <MonitorSmartphone className="size-3.5" />
+            On another computer
+          </span>
+        ) : running ? (
           <Button size="sm" variant="outline" onClick={onPause} className="shrink-0 gap-1.5">
             <Pause className="size-3.5" />
             {project.status === "stopping" ? "Stopping…" : "Pause"}

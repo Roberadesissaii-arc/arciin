@@ -17,6 +17,11 @@ import {
 } from "lucide-react"
 import { toast } from "@/lib/notifications/arciin-toast"
 
+import {
+  AiTaskSpinner,
+  aiTaskHref,
+  useRunningAiTasks,
+} from "@/components/app-shell/ai-task-activity"
 import { UserIdentityAvatar } from "@/components/app-shell/user-identity-avatar"
 import { clearPendingWelcomeToast } from "@/lib/auth/login-remember"
 import { ArciinIcon, ArciinSidebarWordmarkText } from "@/components/ui/arciin-icon"
@@ -41,6 +46,7 @@ import { useLibraries } from "@/hooks/use-libraries"
 import { useLogout } from "@/hooks/use-auth"
 import { useLicense } from "@/lib/license/use-license"
 import { NAV_ITEM_FEATURES } from "@/lib/license/nav-features"
+import { describeBookRun } from "@/lib/api/book-runs"
 import type { AuthSession } from "@/lib/types/models"
 
 // ── colour tokens ──────────────────────────────────────────────────────────
@@ -98,15 +104,26 @@ function isActive(pathname: string, href: string) {
 // ── flat link ──────────────────────────────────────────────────────────────
 function FlatLink({
   label, icon: Icon, href, collapsed, pathname, showUnreadBadge,
-  locked, planBadge,
+  locked, planBadge, trailing, tooltipSuffix, matchHref,
 }: NavItem & {
   collapsed: boolean
   pathname: string
   showUnreadBadge?: boolean
   locked?: boolean
   planBadge?: string | null
+  /** Rendered at the end of the row — the running-work spinner lives here. */
+  trailing?: React.ReactNode
+  tooltipSuffix?: string
+  /**
+   * What decides the active highlight, when `href` carries a query string.
+   *
+   * A running task points AI Chat at `/chat?c=…`, and `isActive` compares
+   * against a pathname that never has a query — so without this the row would
+   * go dim exactly while it is the one doing something.
+   */
+  matchHref?: string
 }) {
-  const active = isActive(pathname, href)
+  const active = isActive(pathname, matchHref ?? href)
   // Keep the real route so FeatureGate can show an in-page upgrade state (not bounce to Settings).
   const link = (
     <Link
@@ -136,6 +153,7 @@ function FlatLink({
           {planBadge}
         </span>
       ) : null}
+      {trailing}
       {showUnreadBadge ? <NotificationUnreadBadge collapsed={collapsed} /> : null}
     </Link>
   )
@@ -153,7 +171,7 @@ function FlatLink({
         showArrow={false}
         className="border border-white/10 bg-[#111118] px-2.5 py-1.5 text-xs font-medium text-white shadow-md"
       >
-        {locked && planBadge ? `${label} · ${planBadge}` : label}
+        {locked && planBadge ? `${label} · ${planBadge}` : tooltipSuffix ? `${label} · ${tooltipSuffix}` : label}
       </TooltipContent>
     </Tooltip>
   )
@@ -183,6 +201,14 @@ function AppSidebarInner({ auth }: { auth: AuthSession }) {
   const logoutMutation = useLogout()
   const { data: libraries } = useLibraries()
   const license = useLicense()
+  /**
+   * Long-running AI work, shown on the row that owns it.
+   *
+   * While a book is being written the AI Chat row spins and points at that
+   * conversation, so the one click a reader is likely to make lands them where
+   * the work is rather than on a fresh, empty chat.
+   */
+  const runningTasks = useRunningAiTasks()
 
   const updateQuery = useQuery({
     queryKey: queryKeys.updateCheck,
@@ -248,14 +274,27 @@ function AppSidebarInner({ auth }: { auth: AuthSession }) {
         <div className="space-y-[1px]">
           {PRIMARY.map((item) => {
             const lock = navLock(item.id)
+            const busy = item.id === "chat" && runningTasks.length > 0
             return (
               <FlatLink
                 key={item.id}
                 {...item}
+                href={busy ? aiTaskHref(runningTasks, item.href) : item.href}
+                matchHref={item.href}
                 collapsed={collapsed}
                 pathname={pathname}
                 locked={lock.locked}
                 planBadge={lock.planBadge}
+                trailing={
+                  busy ? <AiTaskSpinner runs={runningTasks} collapsed={collapsed} /> : undefined
+                }
+                tooltipSuffix={
+                  busy
+                    ? runningTasks.length > 1
+                      ? `${runningTasks.length} AI tasks running`
+                      : describeBookRun(runningTasks[0]!)
+                    : undefined
+                }
               />
             )
           })}
