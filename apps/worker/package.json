@@ -7,6 +7,7 @@
     "@arciin/config": "workspace:*",
     "@arciin/database": "workspace:*",
     "@arciin/shared": "workspace:*",
-    "@arciin/storage": "workspace:*"
+    "@arciin/storage": "workspace:*",
+    "@arciin/media-ai": "workspace:*"
   }
 }

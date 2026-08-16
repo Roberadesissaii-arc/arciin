@@ -60,3 +60,21 @@ export type StageUpdatePayload = {
 export type ApplyUpdatePayload = {
   requestedByUserId?: string
 }
+
+/**
+ * Turn the speech in a media asset into a timestamped transcript.
+ *
+ * Queued rather than run inline because the work is unbounded: a two-hour
+ * recording takes minutes of upload and model time, and an HTTP request tied to
+ * a React drawer would die the moment someone closed it. `transcriptId` is
+ * created before the job is enqueued so the UI has something to watch straight
+ * away.
+ */
+export type TranscribeMediaPayload = {
+  assetId: string
+  transcriptId: string
+  userId: string
+  /** Gemini model profile to bill against. Omit to use the default. */
+  profileId?: string
+  jobRecordId?: string
+}

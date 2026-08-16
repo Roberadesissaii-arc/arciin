@@ -12,6 +12,7 @@ import {
   Loader2,
   MinusCircle,
   Music,
+  Pencil,
   Play,
   Video,
   type LucideIcon,
@@ -20,6 +21,7 @@ import { assetSupportsDocumentThumbnail, DEFAULT_USER_PREFERENCES } from "@arcii
 
 import { useAssetSelection } from "@/components/libraries/asset-selection"
 import { useAssetViewerOptional } from "@/components/libraries/asset-viewer-context"
+import { useVideoEditor } from "@/components/libraries/video-edit-context"
 import { getUserPreferences } from "@/lib/api/user-preferences"
 import { queryKeys } from "@/lib/api/query-keys"
 import { resolveAssetBadge } from "@/lib/utils/asset-badge"
@@ -320,6 +322,7 @@ function AiStatusPill({ asset }: { asset: AssetSummary }) {
 export function AssetCard({ asset }: { asset: AssetSummary }) {
   const selection = useAssetSelection()
   const viewer = useAssetViewerOptional()
+  const videoEditor = useVideoEditor()
   const selected = selection?.isSelected(asset.id) ?? false
   const canOpen = isViewableAsset(asset) && Boolean(viewer?.canOpen(asset))
   const source = sourceChipLabel(asset)
@@ -375,7 +378,37 @@ export function AssetCard({ asset }: { asset: AssetSummary }) {
         selected && "border-[rgba(255,79,18,0.45)] ring-2 ring-[rgba(255,79,18,0.18)]",
       )}
     >
-      <MediaPreview asset={asset} hover={hover} />
+      <div className="relative">
+        <MediaPreview asset={asset} hover={hover} />
+        {/*
+          Edit, on the card, for media that has an editor.
+          Revealed on hover so a grid of a hundred videos stays calm, but always
+          in the accessibility tree so it is reachable by keyboard and by tests.
+        */}
+        {videoEditor?.canEdit(asset) ? (
+          <button
+            type="button"
+            data-no-marquee
+            data-testid="video-card-edit"
+            aria-label={`Edit ${asset.originalFilename}`}
+            onClick={(event) => {
+              event.preventDefault()
+              event.stopPropagation()
+              videoEditor.openEditor(asset)
+            }}
+            className={cn(
+              "absolute right-1.5 top-1.5 z-10 flex items-center gap-1 rounded-md px-2 py-1",
+              "bg-black/65 text-[11px] font-medium text-white backdrop-blur-sm",
+              "transition-opacity duration-150 hover:bg-black/80",
+              "focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70",
+              hover ? "opacity-100" : "opacity-0",
+            )}
+          >
+            <Pencil className="size-3" />
+            Edit
+          </button>
+        ) : null}
+      </div>
 
       <div className="mt-2.5 min-w-0">
         <p

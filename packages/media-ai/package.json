@@ -1,0 +1,15 @@
+{
+  "name": "@arciin/media-ai",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@arciin/types": "workspace:*",
+    "@google/genai": "^2.10.0",
+    "@prisma/client": "^6.19.3",
+    "execa": "^9.6.0"
+  }
+}

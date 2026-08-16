@@ -22,8 +22,18 @@ function formatTime(seconds: number) {
 export function VideoAssetViewer({
   src,
   className,
+  mediaRef,
+  onTimeChange,
 }: {
   src: string
+  /**
+   * Lets a caller drive playback — the transcript seeks through this.
+   *
+   * Mirrored from the player's own ref rather than replacing it, so every
+   * existing memoized callback keeps the exact dependency it had before.
+   */
+  mediaRef?: React.RefObject<HTMLVideoElement | null>
+  onTimeChange?: (seconds: number) => void
   className?: string
 }) {
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -188,7 +198,12 @@ export function VideoAssetViewer({
           }}
         >
           <video
-            ref={videoRef}
+            ref={(el) => {
+              // The player keeps its own ref; the caller is handed the same
+              // element so the transcript can seek without a second player.
+              videoRef.current = el
+              if (mediaRef) mediaRef.current = el
+            }}
             key={src}
             src={src}
             playsInline
@@ -215,6 +230,7 @@ export function VideoAssetViewer({
               if (!el || isSeekingRef.current) return
               setCurrentTime(el.currentTime)
               setSeekValue(el.currentTime)
+              onTimeChange?.(el.currentTime)
             }}
             onPlay={() => {
               setPlaying(true)

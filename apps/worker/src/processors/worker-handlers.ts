@@ -26,6 +26,7 @@ import {
   type MigrateStoragePayload,
   type ExtractMetadataPayload,
   type GenerateThumbnailPayload,
+  type TranscribeMediaPayload,
   type PlexSyncPlaceholderPayload,
   type StageUpdatePayload,
 } from "@arciin/shared"
@@ -342,7 +343,8 @@ export async function handleMediaJob(
   data:
     | (AnalyzeFilePayload & { jobRecordId?: string })
     | (ExtractMetadataPayload & { jobRecordId?: string })
-    | (GenerateThumbnailPayload & { jobRecordId?: string }),
+    | (GenerateThumbnailPayload & { jobRecordId?: string })
+    | (TranscribeMediaPayload & { jobRecordId?: string }),
   redis: Redis
 ) {
   await markJob(data.jobRecordId, { status: "ACTIVE", progress: 10 })
@@ -448,6 +450,112 @@ export async function handleMediaJob(
         originalFilename: asset.originalFilename,
         importSourceUrl: asset.importSourceUrl,
       })
+    }
+  }
+
+  if (name === JOB_TYPES.transcribeMedia && "transcriptId" in data) {
+    /**
+     * Speech to timestamped text.
+     *
+     * Runs here rather than in the API process because the work is unbounded —
+     * a long recording means minutes of extraction, upload and model time — and
+     * because a queued job survives the browser tab that asked for it. The
+     * transcript row is updated as the stages pass, so a drawer reopened after
+     * a refresh picks the run up where it is rather than starting again.
+     */
+    const payload = data as TranscribeMediaPayload & { jobRecordId?: string }
+    const { transcribeMedia } = await import("@arciin/media-ai")
+    const { resolveGeminiMediaConfig, GeminiNotConfiguredError } = await import(
+      "@arciin/media-ai"
+    )
+
+    const failTranscript = async (message: string, status: "FAILED" | "NO_AUDIO" | "NO_SPEECH") => {
+      await prisma.mediaTranscript.update({
+        where: { id: payload.transcriptId },
+        data: { status, error: status === "FAILED" ? message : null },
+      })
+      await markJob(payload.jobRecordId, {
+        status: status === "FAILED" ? "FAILED" : "COMPLETED",
+        progress: 100,
+        ...(status === "FAILED" ? { error: message } : { result: { outcome: status } }),
+      })
+    }
+
+    try {
+      const config = await resolveGeminiMediaConfig(prisma, payload.profileId)
+
+      await prisma.mediaTranscript.update({
+        where: { id: payload.transcriptId },
+        data: { status: "PROCESSING", model: config.model, provider: "gemini" },
+      })
+      await markJob(payload.jobRecordId, { status: "ACTIVE", progress: 20 })
+
+      const result = await transcribeMedia({
+        config,
+        filePath: objectFilePath,
+        mimeType: asset.mimeType,
+        onStage: (stage: "preparing" | "uploading" | "analyzing") => {
+          // Named stages, not an invented percentage: the only honest numbers
+          // here are the ones the pipeline actually reaches.
+          const progress = stage === "preparing" ? 30 : stage === "uploading" ? 50 : 70
+          void markJob(payload.jobRecordId, { status: "ACTIVE", progress })
+        },
+      })
+
+      if (!result.ok) {
+        await failTranscript(
+          result.message,
+          result.reason === "no_audio"
+            ? "NO_AUDIO"
+            : result.reason === "no_speech"
+              ? "NO_SPEECH"
+              : "FAILED",
+        )
+        return
+      }
+
+      await prisma.mediaTranscript.update({
+        where: { id: payload.transcriptId },
+        data: {
+          status: "READY",
+          language: result.language,
+          segments: result.segments as unknown as Prisma.InputJsonValue,
+          fullText: result.fullText,
+          durationSeconds: result.durationSeconds,
+          model: result.model,
+          provider: "gemini",
+          error: null,
+          // A fresh generation is machine output again, whatever came before.
+          edited: false,
+          generatedAt: new Date(),
+        },
+      })
+
+      await markJob(payload.jobRecordId, {
+        status: "COMPLETED",
+        progress: 100,
+        result: { segments: result.segments.length, language: result.language },
+      })
+
+      await publishRealtimeEvent(
+        redis,
+        createRealtimeEvent("asset.transcript.ready", {
+          userId: payload.userId,
+          assetId: asset.id,
+          message: `Transcript ready for ${asset.originalFilename}.`,
+          data: { transcriptId: payload.transcriptId },
+        }),
+      ).catch(() => {})
+      return
+    } catch (error) {
+      const message =
+        error instanceof GeminiNotConfiguredError
+          ? "Gemini isn't configured. Add a Gemini key under Models."
+          : error instanceof Error
+            ? error.message
+            : "Transcript generation failed."
+      await failTranscript(message, "FAILED")
+      return
     }
   }
 

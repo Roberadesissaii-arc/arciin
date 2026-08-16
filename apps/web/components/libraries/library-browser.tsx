@@ -6,6 +6,7 @@ import { Search } from "lucide-react"
 import { PageHeader } from "@/components/app-shell/page-header"
 import { BrowserSectionHeading } from "@/components/libraries/browser-section-heading"
 import { AssetGrid } from "@/components/libraries/asset-grid"
+import { VideoEditProvider } from "@/components/libraries/video-edit-context"
 import { AssetTable } from "@/components/libraries/asset-table"
 import { CreateFolderDialog } from "@/components/libraries/create-folder-dialog"
 import { FolderGrid } from "@/components/libraries/folder-grid"
@@ -141,6 +142,9 @@ export function LibraryBrowser({
   }
 
   return (
+    // One drawer for the whole browser — see video-edit-context for why it is
+    // not mounted per card.
+    <VideoEditProvider>
     <div className="space-y-5 pb-10">
       {intro ?? <PageHeader title={title} description={description} />}
 
@@ -233,5 +237,6 @@ export function LibraryBrowser({
         )}
       </section>
     </div>
+    </VideoEditProvider>
   )
 }

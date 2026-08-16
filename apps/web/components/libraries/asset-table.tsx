@@ -36,6 +36,7 @@ import { formatMediaTypeLabel } from "@/lib/utils/media-type"
 import { cn } from "@/lib/utils"
 import type { AssetSummary } from "@/lib/types/models"
 import { RelativeTime } from "@/components/shared/relative-time"
+import { useVideoEditor } from "@/components/libraries/video-edit-context"
 
 const PAGE_SIZE = 10
 
@@ -45,6 +46,10 @@ const typeBadgeClass =
 function AssetRowActions({ asset }: { asset: AssetSummary }) {
   const deleteAssetMutation = useDeleteAsset()
   const [renameOpen, setRenameOpen] = useState(false)
+  const videoEditor = useVideoEditor()
+  // Video gets the editor; everything else keeps the rename dialog this button
+  // has always opened. Additive by design — no other media type changes.
+  const opensEditor = Boolean(videoEditor?.canEdit(asset))
 
   return (
     <div className="flex shrink-0 flex-nowrap items-center justify-end gap-1.5" data-no-marquee>
@@ -59,9 +64,13 @@ function AssetRowActions({ asset }: { asset: AssetSummary }) {
         variant="outline"
         size="icon-sm"
         aria-label="Edit"
-        title="Edit"
+        title={opensEditor ? "Edit video" : "Edit"}
+        data-testid={opensEditor ? "video-row-edit" : undefined}
         className="size-7 rounded-md border-zinc-300 bg-card text-zinc-700 hover:bg-zinc-100"
-        onClick={() => setRenameOpen(true)}
+        onClick={() => {
+          if (opensEditor && videoEditor) videoEditor.openEditor(asset)
+          else setRenameOpen(true)
+        }}
       >
         <Pencil className="size-3.5" />
       </Button>
