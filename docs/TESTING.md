@@ -151,6 +151,59 @@ Authorization has its own coverage in `tests/integration/book-run-access.test.ts
 a run is reachable only through a conversation scoped to the caller, so knowing
 a conversation id grants nothing.
 
+### The video transcript suite
+
+`tests/e2e/video-transcript.spec.ts` needs three things that used to be set up by
+hand — a video, a worker, and a Gemini credential. All three are now the
+harness's job, so a clean checkout against a clean database runs it:
+
+```bash
+npx playwright test video-transcript --project=chromium
+```
+
+**The video** is `tests/fixtures/e2e-video-transcript-fixture.mp4`, committed at
+228 KB (ten seconds of real speech, re-encoded from the 2.4 MB promo). The
+seeder plants it under the dev storage root at the same content-addressed path
+uploads produce, and creates the asset, storage object, libraries and storage
+location around it. Re-running the seed reuses all of it rather than making a
+second copy.
+
+**The worker** is started by `globalSetup` and stopped by the teardown it
+returns, because the worker is a queue consumer with no HTTP surface for
+`webServer` to poll. It runs under `ARCIIN_ENV_NAMESPACE=dev`, so its jobs go to
+`bull-dev` and can never be picked up by production's `bull`.
+
+**The credential** is optional:
+
+```bash
+E2E_TRANSCRIPT=1 E2E_GEMINI_API_KEY=... npx playwright test video-transcript
+```
+
+With the key, `globalSetup` creates a temporary dev-only Gemini profile and the
+teardown removes it — including when a test fails or setup itself throws.
+Without it the deterministic tests still run and the real-provider leg skips
+with `Real Gemini E2E skipped: E2E_GEMINI_API_KEY not configured`. A missing
+paid-provider credential is not a suite failure. The key is read from the
+environment into the encrypted column and is never logged, never written to a
+file, and never placed in an argv.
+
+If the worker is not consuming the queue the transcript test fails in ninety
+seconds with `Dev media worker is not consuming the queue` rather than hanging
+for ten minutes on what looks like a broken feature.
+
+#### Why teardown never matches on command text
+
+The production PM2 worker runs the *same entrypoint* as the dev one —
+`tsx … apps/worker/src/index.ts` — so `pkill -f "apps/worker/src/index.ts"`
+matches production and killing it is an outage caused by a test tidying up.
+Teardown signals only the process group it created (`detached: true`, then
+`process.kill(-pid)`), which by construction contains nothing else.
+
+A run that is killed rather than allowed to tear down still leaks that group,
+so the spawned pid is recorded and the next run reaps it — but only after
+checking the process really is that worker *and* that its parent is `1`.
+Production is supervised by PM2, so its parent never is.
+
 ### The anti-vacuous-pass guard
 
 `expectChatPageRendered()` asserts the URL contains `/chat` **and** the composer

@@ -1,4 +1,6 @@
-import { expect, test } from "@playwright/test"
+import { expect, test, type Page } from "@playwright/test"
+
+import { geminiKeyConfigured } from "./gemini-fixture"
 
 /**
  * Videos → Edit → right-side drawer → Generate transcript.
@@ -14,16 +16,72 @@ import { expect, test } from "@playwright/test"
  * fresh empty state.
  */
 
-/** Opt-in: the generation half spends real Gemini tokens. */
-const REAL = process.env.E2E_TRANSCRIPT === "1"
+/**
+ * Opt-in, and only when a credential was actually provisioned.
+ *
+ * The temporary Gemini profile is created by globalSetup from
+ * `E2E_GEMINI_API_KEY`. Without it the deterministic tests still run and this
+ * leg skips with a reason, because a missing paid-provider credential is not a
+ * suite failure.
+ */
+const REAL = process.env.E2E_TRANSCRIPT === "1" && geminiKeyConfigured()
 
-const VIDEO_NAME = "Creating_Arciin_SaaS_promo_video.mp4"
+/**
+ * How long a queued job may sit before we conclude nobody is consuming it.
+ *
+ * Generous enough for the worker to boot and claim the job, far short of the
+ * ten-minute model wait — the point is to fail with a useful sentence instead
+ * of hanging until the suite times out on what looks like a broken feature.
+ */
+const WORKER_GRACE_MS = 90_000
+
+/**
+ * Seeded by `scripts/e2e-seed.mjs`, not by hand.
+ *
+ * This used to be a row somebody had created manually on one machine, so a
+ * clean checkout could not run the suite and the failure read as a broken
+ * feature rather than a missing fixture.
+ */
+const FIXTURE_ASSET_ID = "e2e-video-transcript-fixture"
+
+const VIDEO_NAME = "e2e-video-transcript-fixture.mp4"
 /** What the fixture actually says — see the earlier real backend run. */
 const EXPECTED_PHRASE = /your (server|control)|self-hosted workspace/i
 
-async function openVideosAndEdit(page: import("@playwright/test").Page) {
+/**
+ * Fail fast when nothing is consuming the queue.
+ *
+ * A job that stays PENDING means the dev worker is not running, which used to
+ * present as a spinner that never resolved and a ten-minute timeout blaming
+ * the transcript feature.
+ */
+async function assertWorkerIsConsuming(page: Page, assetId: string) {
+  const deadline = Date.now() + WORKER_GRACE_MS
+  let last = "unknown"
+  for (;;) {
+    const status = await page.evaluate(async (id) => {
+      const res = await fetch(`/api/assets/${id}/transcript`, { credentials: "include" })
+      if (!res.ok) return `http-${res.status}`
+      const body = await res.json()
+      return (body?.data?.transcript?.status as string) ?? "none"
+    }, assetId)
+    last = status
+    // Anything past PENDING means a consumer picked it up.
+    if (status !== "PENDING" && status !== "none") return
+    if (Date.now() > deadline) {
+      throw new Error(
+        `Dev media worker is not consuming the queue: the job stayed ${last} for ` +
+          `${WORKER_GRACE_MS / 1000}s. globalSetup starts the worker; check its output ` +
+          "and that ARCIIN_ENV_NAMESPACE=dev matches the queue the API publishes to.",
+      )
+    }
+    await page.waitForTimeout(2000)
+  }
+}
+
+async function openVideosAndEdit(page: Page) {
   await page.goto("/videos")
-  const card = page.locator(`[data-asset-id="dev-video-promo"]`)
+  const card = page.locator(`[data-asset-id="${FIXTURE_ASSET_ID}"]`)
   await expect(card).toBeVisible({ timeout: 60_000 })
   await card.hover()
   await card.getByTestId("video-card-edit").click()
@@ -80,7 +138,12 @@ test.describe("video transcript", () => {
   })
 
   test.describe("with a real Gemini transcription", () => {
-    test.skip(!REAL, "set E2E_TRANSCRIPT=1 to spend Gemini tokens")
+    test.skip(
+      !REAL,
+      process.env.E2E_TRANSCRIPT === "1"
+        ? "Real Gemini E2E skipped: E2E_GEMINI_API_KEY not configured"
+        : "set E2E_TRANSCRIPT=1 (with E2E_GEMINI_API_KEY) to spend Gemini tokens",
+    )
     test.describe.configure({ timeout: 15 * 60 * 1000 })
 
     test("generates, persists, and seeks the video from a timestamp", async ({ page }) => {
@@ -95,6 +158,9 @@ test.describe("video transcript", () => {
       } else {
         await generate.click()
       }
+
+      // Before waiting minutes on a model: is anything consuming the queue?
+      await assertWorkerIsConsuming(page, FIXTURE_ASSET_ID)
 
       // Queued/processing is visible and honest about surviving a close.
       await expect(

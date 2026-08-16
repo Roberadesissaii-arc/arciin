@@ -5,6 +5,7 @@ import path from "node:path"
 import { pipeline } from "node:stream/promises"
 
 import type { MultipartFile } from "@fastify/multipart"
+import { buildObjectKey } from "@arciin/storage"
 
 import { apiConfig } from "@/config"
 import { getUploadLimits, UploadTooLargeError } from "@/services/config/upload-limits"
@@ -94,18 +95,10 @@ export function createObjectStoragePath(
   extension: string,
   rootPath = apiConfig.dataDir
 ) {
-  const normalizedExtension = extension.startsWith(".")
-    ? extension.toLowerCase()
-    : extension
-      ? `.${extension.toLowerCase()}`
-      : ""
-
-  const objectKey = path.join(
-    "objects",
-    checksumSha256.slice(0, 2),
-    checksumSha256.slice(2, 4),
-    `${checksumSha256}${normalizedExtension}`
-  )
+  // The layout itself lives in @arciin/storage: the E2E seeder plants fixture
+  // bytes where the API will look for them, and the two must not be able to
+  // drift apart. Same derivation as before, one definition instead of two.
+  const objectKey = buildObjectKey(checksumSha256, extension)
 
   return {
     objectKey,

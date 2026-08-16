@@ -573,13 +573,49 @@ configure_firewall() {
   echo -e "    ${DIM}Skip with ARCIIN_SKIP_FIREWALL=1 · platform ports 3010/4100 with ARCIIN_OPEN_PLATFORM_PORTS=0 to disable${RESET}"
 }
 
+# Dev-server PIDs that belong to *this* checkout, never anyone else's.
+#
+# `pkill -f "next dev"` matched on command text alone, so it reached across the
+# whole machine: another project's dev server, or the isolated E2E stack, both
+# of which merely happen to run the same command. Matching on the process's
+# working directory keeps the intent — clear our own dev servers off the
+# production ports — without the blast radius. The E2E stack is skipped too: it
+# lives on its own ports and blocks nothing.
+arciin_own_dev_server_pids() {
+  local -a found=()
+  local pid cwd
+  local e2e_web="${E2E_WEB_PORT:-3300}"
+  local e2e_api="${E2E_API_PORT:-4300}"
+
+  for pid in $(pgrep -f "next dev" 2>/dev/null) $(pgrep -f "tsx watch" 2>/dev/null); do
+    # Never ourselves: this script's own command line contains those patterns,
+    # so a text match happily returns the shell doing the matching.
+    [[ "$pid" == "$$" || "$pid" == "$PPID" ]] && continue
+    # Only real node processes, not a shell that merely mentions the pattern.
+    [[ "$(readlink -f "/proc/${pid}/exe" 2>/dev/null || true)" == *node* ]] || continue
+    cwd="$(readlink -f "/proc/${pid}/cwd" 2>/dev/null || true)"
+    [[ -z "$cwd" ]] && continue
+    # Only processes started from inside this repository.
+    [[ "$cwd" == "$ROOT_DIR" || "$cwd" == "$ROOT_DIR"/* ]] || continue
+    # Leave the isolated test stack alone.
+    if ss -ltnp 2>/dev/null | grep -q "pid=${pid}," ; then
+      if ss -ltnp 2>/dev/null | grep "pid=${pid}," | grep -qE ":(${e2e_web}|${e2e_api})\b"; then
+        continue
+      fi
+    fi
+    found+=("$pid")
+  done
+  printf '%s\n' "${found[@]:-}"
+}
+
 stop_dev_servers() {
-  if ! pgrep -f "next dev" &>/dev/null && ! pgrep -f "tsx watch" &>/dev/null; then
-    return 0
-  fi
+  local -a pids=()
+  mapfile -t pids < <(arciin_own_dev_server_pids)
+  # mapfile can yield a single empty element when nothing matched.
+  [[ ${#pids[@]} -eq 0 || -z "${pids[0]}" ]] && return 0
+
   warn "Stopping pnpm dev (it blocks production ports)..."
-  pkill -f "next dev" 2>/dev/null || true
-  pkill -f "tsx watch" 2>/dev/null || true
+  kill "${pids[@]}" 2>/dev/null || true
   sleep 2
   ok "Dev servers stopped"
 }

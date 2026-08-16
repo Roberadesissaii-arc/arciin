@@ -19,9 +19,9 @@
  * Refuses to run against anything that looks like production.
  */
 
-import { chmodSync, mkdirSync, writeFileSync } from "node:fs"
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs"
 import path from "node:path"
-import { randomBytes } from "node:crypto"
+import { createHash, randomBytes } from "node:crypto"
 
 import { config as loadEnv } from "dotenv"
 import { hash } from "@node-rs/argon2"
@@ -33,6 +33,154 @@ loadEnv({ path: path.join(repoRoot, ".env.development"), override: true, quiet: 
 
 export const E2E_EMAIL = "e2e@arciin.invalid"
 export const E2E_PASSWORD_FILE = "/tmp/arciin-e2e-pw"
+
+/**
+ * The video the transcript suite works on.
+ *
+ * A stable id, because the spec locates the card by it; a committed source
+ * file, because the suite used to depend on a row somebody had seeded by hand
+ * and bytes that existed only on one machine. A fresh checkout against a clean
+ * database could not run the transcript tests at all, and the failure looked
+ * like a broken feature rather than a missing fixture.
+ *
+ * Ten seconds and 228 KB: short enough to transcribe cheaply, real speech
+ * rather than a tone, so the assertion about what the transcript *says* means
+ * something.
+ */
+export const E2E_VIDEO_ASSET_ID = "e2e-video-transcript-fixture"
+export const E2E_VIDEO_STORAGE_OBJECT_ID = "e2e-video-transcript-object"
+export const E2E_VIDEO_FILENAME = "e2e-video-transcript-fixture.mp4"
+export const E2E_VIDEO_SOURCE = path.join(
+  path.resolve(import.meta.dirname, ".."),
+  "tests/fixtures/e2e-video-transcript-fixture.mp4",
+)
+
+/** Properties of the committed file. Checked against it by the seed test. */
+export const E2E_VIDEO_METADATA = {
+  durationSeconds: 10.005,
+  width: 640,
+  height: 360,
+  codec: "h264",
+  mimeType: "video/mp4",
+}
+
+/**
+ * Where a checksum lands under the storage root.
+ *
+ * Mirrors `createObjectStoragePath` in the API's local-storage service — the
+ * layout uploads actually produce. Duplicated rather than imported because this
+ * script runs under plain `node` and that module is TypeScript wired to the API
+ * config; `tests/e2e-fixture-seed.test.ts` asserts the two agree, so a change to
+ * the real one cannot silently leave the fixture somewhere the app won't look.
+ */
+export function fixtureObjectKey(checksumSha256, extension) {
+  const ext = extension.startsWith(".") ? extension.toLowerCase() : `.${extension.toLowerCase()}`
+  return path.join(
+    "objects",
+    checksumSha256.slice(0, 2),
+    checksumSha256.slice(2, 4),
+    `${checksumSha256}${ext}`,
+  )
+}
+
+/** The five libraries a real instance starts with. */
+const DEFAULT_LIBRARIES = [
+  ["Videos", "videos", "VIDEO"],
+  ["Images", "images", "IMAGE"],
+  ["Music", "music", "AUDIO"],
+  ["Documents", "documents", "DOCUMENT"],
+  ["Inbox", "inbox", "INBOX"],
+]
+
+/**
+ * Put the fixture video in place, exactly once.
+ *
+ * Idempotent at every step: the object row is keyed on the content hash, the
+ * asset on a fixed id, and the bytes are only copied when they are not already
+ * there. Running the seed twice leaves one video, not two.
+ */
+async function seedVideoFixture(prisma, ownerId, storageRoot) {
+  if (!existsSync(E2E_VIDEO_SOURCE)) {
+    throw new Error(
+      `missing fixture ${E2E_VIDEO_SOURCE}. It is committed to the repository; ` +
+        "a clean checkout should have it.",
+    )
+  }
+
+  const bytes = readFileSync(E2E_VIDEO_SOURCE)
+  const checksumSha256 = createHash("sha256").update(bytes).digest("hex")
+  const sizeBytes = statSync(E2E_VIDEO_SOURCE).size
+  const objectKey = fixtureObjectKey(checksumSha256, ".mp4")
+  const physicalPath = path.join(storageRoot, objectKey)
+
+  // The bytes, under the dev storage root the API will read them from.
+  if (!existsSync(physicalPath)) {
+    mkdirSync(path.dirname(physicalPath), { recursive: true })
+    copyFileSync(E2E_VIDEO_SOURCE, physicalPath)
+  }
+
+  const storageLocation =
+    (await prisma.storageLocation.findFirst({ where: { isDefault: true } })) ??
+    (await prisma.storageLocation.create({
+      data: { name: "Dev Storage", type: "LOCAL", rootPath: storageRoot, isDefault: true },
+    }))
+
+  const libraries = {}
+  for (const [name, slug, kind] of DEFAULT_LIBRARIES) {
+    libraries[slug] = await prisma.library.upsert({
+      where: { slug },
+      create: { name, slug, kind, storageLocationId: storageLocation.id },
+      update: {},
+      select: { id: true },
+    })
+  }
+
+  // Keyed on objectKey, which is unique and content-derived: re-seeding the
+  // same file finds the same row instead of inserting a rival one.
+  const existingObject = await prisma.storageObject.findUnique({ where: { objectKey } })
+  const storageObject =
+    existingObject ??
+    (await prisma.storageObject.create({
+      data: {
+        id: E2E_VIDEO_STORAGE_OBJECT_ID,
+        storageLocationId: storageLocation.id,
+        objectKey,
+        physicalPath,
+        sizeBytes: BigInt(sizeBytes),
+        checksumSha256,
+        mimeType: E2E_VIDEO_METADATA.mimeType,
+      },
+    }))
+
+  const assetData = {
+    libraryId: libraries.videos.id,
+    folderId: null,
+    storageObjectId: storageObject.id,
+    ownerId,
+    filename: E2E_VIDEO_FILENAME,
+    originalFilename: E2E_VIDEO_FILENAME,
+    mimeType: E2E_VIDEO_METADATA.mimeType,
+    mediaType: "VIDEO",
+    extension: "mp4",
+    sizeBytes: BigInt(sizeBytes),
+    checksumSha256,
+    durationSeconds: E2E_VIDEO_METADATA.durationSeconds,
+    width: E2E_VIDEO_METADATA.width,
+    height: E2E_VIDEO_METADATA.height,
+    codec: E2E_VIDEO_METADATA.codec,
+    status: "READY",
+    deletedAt: null,
+  }
+
+  await prisma.asset.upsert({
+    where: { id: E2E_VIDEO_ASSET_ID },
+    create: { id: E2E_VIDEO_ASSET_ID, ...assetData },
+    // Re-point rather than duplicate, so replacing the fixture file works.
+    update: assetData,
+  })
+
+  return { assetId: E2E_VIDEO_ASSET_ID, objectKey, physicalPath, sizeBytes }
+}
 
 /**
  * The suite writes to this database. Pointing it at production would seed a
@@ -126,7 +274,11 @@ export async function seedE2EUser() {
     writeFileSync(E2E_PASSWORD_FILE, password, { mode: 0o600 })
     chmodSync(E2E_PASSWORD_FILE, 0o600)
 
-    return { databaseName, email: user.email, instanceId: instance.id }
+    const storageRoot =
+      process.env.ARCIIN_DATA_DIR ?? instance.storageRoot ?? "/srv/arce-projects/arciin-dev-storage"
+    const video = await seedVideoFixture(prisma, user.id, storageRoot)
+
+    return { databaseName, email: user.email, instanceId: instance.id, video }
   } finally {
     await prisma.$disconnect()
   }
@@ -138,6 +290,9 @@ if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(import.met
     .then((result) => {
       console.log(
         `seeded ${result.email} in ${result.databaseName}; password written to ${E2E_PASSWORD_FILE}`,
+      )
+      console.log(
+        `video fixture ${result.video.assetId} ready (${Math.round(result.video.sizeBytes / 1024)} KB)`,
       )
     })
     .catch((error) => {
