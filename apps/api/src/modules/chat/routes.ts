@@ -95,6 +95,10 @@ const CANVAS_WITHHELD_TOOLS = new Set([
   "create_library_folder",
   "delete_library_folder",
   "organize_images_library",
+  // Same reasoning: a turn whose whole job is to write a document has no
+  // business reorganising the library on the side.
+  "move_library_files",
+  "list_library_files",
 ])
 
 type ChatMessageIn = z.infer<typeof messageSchema>
@@ -421,6 +425,8 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
         appDatabases,
         codeFiles,
         documentFiles,
+        documentFilesTotal:
+          assetCounts.find((r) => r.mediaType === "DOCUMENT")?._count._all ?? documentFiles.length,
         recentAssets,
         byMediaType: assetCounts.map((r) => ({ type: r.mediaType, count: r._count._all })),
         storageGb: Math.round(gb * 10) / 10,

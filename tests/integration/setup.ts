@@ -102,6 +102,8 @@ export async function createAsset(
     mimeType?: string
     createdAt?: Date
     deletedAt?: Date | null
+    /** Zero is meaningful: it is what a failed upload leaves behind. */
+    sizeBytes?: number
   },
 ) {
   objectCounter += 1
@@ -112,7 +114,7 @@ export async function createAsset(
       storageLocationId: fixtures.storageLocation.id,
       objectKey: `objects/it/${objectCounter}/${checksum}.bin`,
       physicalPath: `${fixtures.storageLocation.rootPath}/objects/${checksum}.bin`,
-      sizeBytes: BigInt(10),
+      sizeBytes: BigInt(input.sizeBytes ?? 10),
       checksumSha256: checksum,
       mimeType: input.mimeType ?? "application/octet-stream",
     },
@@ -129,7 +131,7 @@ export async function createAsset(
       mimeType: input.mimeType ?? "application/octet-stream",
       mediaType: input.mediaType ?? "OTHER",
       extension: input.extension ?? "bin",
-      sizeBytes: BigInt(10),
+      sizeBytes: BigInt(input.sizeBytes ?? 10),
       checksumSha256: checksum,
       status: input.status ?? "READY",
       ...(input.createdAt ? { createdAt: input.createdAt } : {}),
@@ -140,7 +142,13 @@ export async function createAsset(
 
 export async function createFolder(
   fixtures: Fixtures,
-  input: { librarySlug: string; name: string; deletedAt?: Date | null; hideFromAllFiles?: boolean },
+  input: {
+    librarySlug: string
+    name: string
+    deletedAt?: Date | null
+    hideFromAllFiles?: boolean
+    lockedAt?: Date | null
+  },
 ) {
   return prisma.folder.create({
     data: {
@@ -150,6 +158,7 @@ export async function createFolder(
       pathCache: `/${input.name.toLowerCase().replace(/\s+/g, "-")}`,
       deletedAt: input.deletedAt ?? null,
       hideFromAllFiles: input.hideFromAllFiles ?? false,
+      lockedAt: input.lockedAt ?? null,
     },
   })
 }

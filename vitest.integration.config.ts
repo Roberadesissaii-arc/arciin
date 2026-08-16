@@ -38,6 +38,17 @@ function testRedisUrl(): string {
 export default defineConfig({
   resolve: {
     alias: {
+      /**
+       * API-internal `@/` first.
+       *
+       * Both apps use `@/`, and the web mapping below would swallow API
+       * imports. Integration tests reach API modules by relative path, but the
+       * modules they pull in resolve their *own* imports through this alias —
+       * so a service that imports `@/services/...` needs it mapped here. The
+       * prefix is unambiguous: `apps/web` has no `services/` directory.
+       */
+      "@/services/": `${path.resolve(__dirname, "apps/api/src/services")}/`,
+      "@/config": path.resolve(__dirname, "apps/api/src/config"),
       "@/": `${path.resolve(__dirname, "apps/web")}/`,
       "@arciin/shared": path.resolve(__dirname, "packages/shared/src/index.ts"),
       "@arciin/types": path.resolve(__dirname, "packages/types/src/index.ts"),
@@ -58,6 +69,17 @@ export default defineConfig({
       REDIS_URL: testRedisUrl(),
       ARCIIN_DATA_DIR: TEST_DATA_DIR,
       NODE_ENV: "test",
+      /**
+       * Ports, so the isolation guard is satisfied rather than bypassed.
+       *
+       * Nothing here binds a socket — but importing an API service pulls in
+       * `apps/api/src/config`, which refuses to load while the environment
+       * still looks like production. That check is worth keeping honest, so the
+       * suite declares dev ports instead of being exempted from it.
+       */
+      API_PORT: "4100",
+      PORT: "3100",
+      ARCIIN_QUEUE_PREFIX: "bull_test",
     },
   },
 })

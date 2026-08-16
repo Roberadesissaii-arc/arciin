@@ -1,4 +1,51 @@
-# Security model
+# Security
+
+## Idle logout and long-running AI tasks
+
+Access control ships with `idleLogoutEnabled: true` and `idleLogoutMinutes: 30`.
+The watcher counts real mouse, keyboard, scroll and touch events as activity —
+nothing else.
+
+`/book` writes a book in the browser, chapter by chapter, and keeps going while
+the reader is on All Files or Settings. A three-chapter book takes longer than
+thirty minutes, and generation produces no input events, so the tab used to sign
+itself out mid-book: the session was deleted server-side and the run died while
+Arciin was visibly working. Two real acceptance runs ended on `/login`.
+
+The fix is a **deferral, not an activity reset**
+(`apps/web/lib/auth/idle-policy.ts`):
+
+```txt
+idle threshold reached
+  and an AI task is actively running   -> defer, and keep counting
+  and nothing is running               -> sign out, as before
+```
+
+`lastActivity` is never touched by background work. The idle clock keeps
+climbing underneath the deferral, so when the task stops, the already-expired
+threshold is honoured on the next tick — at most 15 seconds later, with no fresh
+grace period. Resetting the clock instead would hand a reader a new full window
+every 15 seconds and leave an unlocked session open all night behind a long
+book, which is the exact thing the control exists to prevent.
+
+Only genuinely active work defers:
+
+```txt
+defers:        planning, thinking, writing, validating, saving
+does not:      paused, failed, completed
+```
+
+A paused or finished book means the reader is not waiting on anything, so the
+session is not worth holding open for it.
+
+"Is something running" comes from `hasActiveBackgroundAITask()` in
+`lib/tasks/ai-tasks.ts`, the same derivation the sidebar's AI Tasks entry uses,
+so the security decision and the visible indicator cannot disagree — and any
+future long-running task gets the policy for free.
+
+Covered by `apps/web/lib/auth/idle-policy.test.ts`, which drives real project
+states through the orchestrator rather than asserting on hand-written booleans.
+ model
 
 What Arciin defends, how, and what it does not defend. Only implemented
 behaviour is described.
@@ -52,9 +99,34 @@ the reason would disclose that something once existed:
 - A deleted share root is indistinguishable from a share that never existed.
 - An upload session you do not own returns 404, not 403.
 - A file request whose destination folder was deleted returns `NOT_FOUND`.
+- A book run belonging to another user returns 404, exactly as an unknown
+  conversation id does.
 
 Revoked and expired links *do* say so, because that is actionable and does not
 reveal content.
+
+## Book runs are private, and only one session may write
+
+A book run is persisted so a reader can watch progress from any of their
+computers. Two properties keep that from becoming a leak or a cost:
+
+**Ownership.** Every `/book-runs` route resolves the run *through* a
+conversation scoped to the authenticated user. A conversation id is a guessable
+string and a manuscript is private writing, so knowing an id grants nothing —
+another user's run answers 404, the same as one that does not exist. Covered by
+`tests/integration/book-run-access.test.ts`.
+
+**A single writer.** Generation is claimed with a lease
+(`executorSessionId` + `leaseExpiresAt`, 45s, refreshed by heartbeat while a
+chapter streams). A session that does not hold the lease is refused with 409 and
+becomes an observer. Without this, a second computer would reach the scheduler
+with its own view, conclude the same chapter was missing, and issue a duplicate
+paid model call.
+
+A lapsed lease is reported as `INTERRUPTED` rather than silently reassigned:
+the executor is the only thing that can refresh a lease, so a stale one already
+proves that browser is gone — but resuming is the reader's decision, not
+something another computer does on its own.
 
 ## The assistant
 
