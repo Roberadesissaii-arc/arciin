@@ -31,7 +31,14 @@ export default defineConfig({
     ],
     // Integration tests need a real database and their own env; they run via
     // vitest.integration.config.ts (`pnpm test:integration`).
-    exclude: ["**/node_modules/**", "**/dist/**", "tests/integration/**"],
+    exclude: [
+      "**/node_modules/**",
+      "**/dist/**",
+      "tests/integration/**",
+      // Its own project: the worker needs `@/` pointing at apps/worker/src, and
+      // a real database. See vitest.worker.config.ts (`pnpm test:worker`).
+      "tests/worker/**",
+    ],
     // Never let a stray import reach the live instance.
     env: {
       DATABASE_URL: "postgresql://test:test@127.0.0.1:1/arciin_test_never_used",

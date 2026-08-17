@@ -392,3 +392,21 @@ a 175 MB film is another 175 MB per language, which on a self-hosted box is a
 real cost for a file most people fetch once; the video stream is copied rather
 than re-encoded, so building it takes seconds against the hour the dub took. The
 muxed file is written to temp, streamed, and removed when the response ends.
+
+## Memory is the other limit on this box
+
+A 12-minute video is not only slow to separate here, it is close to the memory
+ceiling. Measured: `audio-separator` reached **2.28 GB RSS** on the 11:51 file,
+on a machine with 7.1 GB total and swap already largely consumed. Running the
+browser test suite at the same time was enough to push it over, and the kernel
+killed the separator:
+
+```txt
+Out of memory: Killed process (audio-separator) anon-rss:2279824kB
+```
+
+Two things follow. Separation should not be run alongside anything else heavy on
+this hardware. And a `SIGKILL` from the separator is reported as what it almost
+always is here — the failure message says the system stopped it, most likely for
+memory, and suggests a shorter video, because that is the actionable answer
+rather than a stack trace.
