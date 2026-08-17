@@ -50,16 +50,25 @@ function SheetContent({
   children,
   side = "right",
   showCloseButton = true,
+  showOverlay = true,
   closeButtonClassName,
   ...props
 }: React.ComponentProps<typeof SheetPrimitive.Content> & {
+  /**
+   * Dim and block the page behind the sheet.
+   *
+   * On by default, because most sheets here are modal. A sheet that reflects a
+   * selection needs it off: the overlay swallows clicks on the very grid the
+   * user selects from, so picking the next file becomes impossible.
+   */
+  showOverlay?: boolean
   side?: "top" | "right" | "bottom" | "left"
   showCloseButton?: boolean
   closeButtonClassName?: string
 }) {
   return (
     <SheetPortal>
-      <SheetOverlay />
+      {showOverlay ? <SheetOverlay /> : null}
       <SheetPrimitive.Content
         data-slot="sheet-content"
         data-side={side}

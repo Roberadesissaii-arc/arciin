@@ -107,7 +107,16 @@ test.describe("video transcript", () => {
     // "details", and a loose text match found that instead.
     await expect(drawer.getByRole("heading", { name: "Details" })).toBeVisible()
     await expect(drawer.getByRole("heading", { name: "Transcript" })).toBeVisible()
-    await expect(drawer.getByTestId("generate-transcript")).toBeVisible()
+    // Either state is correct here: the section exists whether or not an
+    // earlier run in this database already produced a transcript. Asserting
+    // only "generate" made this pass or fail on leftover data rather than on
+    // the drawer being right.
+    await expect(
+      drawer
+        .getByTestId("generate-transcript")
+        .or(drawer.getByTestId("regenerate-transcript"))
+        .first(),
+    ).toBeVisible()
   })
 
   test("opening the drawer does not send the video anywhere", async ({ page }) => {
@@ -128,13 +137,22 @@ test.describe("video transcript", () => {
     test.setTimeout(120_000)
     const drawer = await openVideosAndEdit(page)
     const transcript = drawer.getByTestId("video-transcript")
-    // Either untouched, or carrying a result from an earlier run in this suite.
-    const hasButton = await transcript.getByTestId("generate-transcript").isVisible().catch(() => false)
-    const hasSegments = await transcript
-      .getByTestId("video-transcript-segments")
-      .isVisible()
-      .catch(() => false)
-    expect(hasButton || hasSegments).toBe(true)
+    /**
+     * Either untouched, or carrying a result from an earlier run.
+     *
+     * Waited on rather than sampled: the transcript is fetched after the drawer
+     * paints, so an immediate `isVisible()` read the moment before it arrived
+     * and reported "neither", which looks like a broken panel rather than a
+     * test that asked too early.
+     */
+    await expect
+      .poll(
+        async () =>
+          (await transcript.getByTestId("generate-transcript").count()) > 0 ||
+          (await transcript.getByTestId("video-transcript-segments").count()) > 0,
+        { timeout: 30_000 },
+      )
+      .toBe(true)
   })
 
   test.describe("with a real Gemini transcription", () => {

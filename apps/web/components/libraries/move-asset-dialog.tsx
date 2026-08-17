@@ -13,32 +13,30 @@ import { libraryGlassSheetPanel } from "@/lib/library-glass-sheet"
 import type { AssetSummary } from "@/lib/types/models"
 import { cn } from "@/lib/utils"
 
-export function MoveAssetDialog({
+/**
+ * Destination picking and the move itself, with no shell around it.
+ *
+ * Split out so the unified asset panel moves a file through exactly the same
+ * mutation and the same destination rules as the standalone sheet. The
+ * presentation was already shared (`MoveAssetsSheetContent`); this shares the
+ * behaviour too, rather than growing a second copy of it.
+ */
+export function AssetMoveContent({
   asset,
-  iconOnly = false,
-  triggerClassName,
+  onDone,
 }: {
   asset: AssetSummary
-  iconOnly?: boolean
-  triggerClassName?: string
+  /** Called after a successful move, so a host can step back or close. */
+  onDone?: () => void
 }) {
   const [libraryId, setLibraryId] = useState(asset.libraryId)
   const [folderId, setFolderId] = useState<string>("root")
-  const [open, setOpen] = useState(false)
 
   const librariesQuery = useLibraries()
   const foldersQuery = useFolders(libraryId)
   const moveAssetMutation = useMoveAsset()
 
   const libraries = librariesQuery.data ?? []
-
-  const handleOpenChange = (next: boolean) => {
-    setOpen(next)
-    if (next) {
-      setLibraryId(asset.libraryId)
-      setFolderId("root")
-    }
-  }
 
   async function handleMove() {
     try {
@@ -59,7 +57,7 @@ export function MoveAssetDialog({
           ? libraries.find((lib) => lib.id === libraryId)?.name
           : (foldersQuery.data ?? []).find((folder) => folder.id === folderId)?.pathCache
       notifyAssetsMoved(1, destination)
-      handleOpenChange(false)
+      onDone?.()
     } catch (error) {
       notifyError(
         "Could not move asset",
@@ -69,7 +67,42 @@ export function MoveAssetDialog({
   }
 
   return (
-    <Sheet open={open} onOpenChange={handleOpenChange}>
+    <MoveAssetsSheetContent
+          assets={[asset]}
+          count={1}
+          libraryId={libraryId}
+          folderId={folderId}
+          libraries={libraries}
+          folders={foldersQuery.data ?? []}
+          foldersLoading={foldersQuery.isFetching}
+          librariesLoading={librariesQuery.isPending}
+          movePending={moveAssetMutation.isPending}
+          onLibraryChange={(id) => {
+            setLibraryId(id)
+            setFolderId("root")
+          }}
+      onFolderChange={setFolderId}
+      onMove={handleMove}
+    />
+  )
+}
+
+/**
+ * The standalone Move sheet, kept for callers that open Move on its own.
+ */
+export function MoveAssetDialog({
+  asset,
+  iconOnly = false,
+  triggerClassName,
+}: {
+  asset: AssetSummary
+  iconOnly?: boolean
+  triggerClassName?: string
+}) {
+  const [open, setOpen] = useState(false)
+
+  return (
+    <Sheet open={open} onOpenChange={setOpen}>
       <SheetTrigger asChild>
         <Button
           variant="outline"
@@ -91,23 +124,7 @@ export function MoveAssetDialog({
         showCloseButton={false}
         className={cn(libraryGlassSheetPanel, "dashboard-main border-primary/25 text-foreground")}
       >
-        <MoveAssetsSheetContent
-          assets={[asset]}
-          count={1}
-          libraryId={libraryId}
-          folderId={folderId}
-          libraries={libraries}
-          folders={foldersQuery.data ?? []}
-          foldersLoading={foldersQuery.isFetching}
-          librariesLoading={librariesQuery.isPending}
-          movePending={moveAssetMutation.isPending}
-          onLibraryChange={(id) => {
-            setLibraryId(id)
-            setFolderId("root")
-          }}
-          onFolderChange={setFolderId}
-          onMove={handleMove}
-        />
+        {open ? <AssetMoveContent asset={asset} onDone={() => setOpen(false)} /> : null}
       </SheetContent>
     </Sheet>
   )

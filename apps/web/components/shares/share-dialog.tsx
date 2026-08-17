@@ -267,14 +267,21 @@ function ShareCreatedCard({ created }: { created: CreatedShare }) {
   )
 }
 
-export function ShareDialog({
-  open,
-  onOpenChange,
+/**
+ * The share form itself, with no shell around it.
+ *
+ * Split out so the unified asset panel and the standalone sheet create links
+ * through exactly the same mutation, expiry handling and security defaults. A
+ * second copy of this form would be a second place for those defaults to
+ * drift, which is not a risk worth taking with sharing.
+ */
+export function AssetShareContent({
   target,
+  onDone,
 }: {
-  open: boolean
-  onOpenChange: (open: boolean) => void
   target: ShareTarget | null
+  /** Called when the host should step back. Also resets the draft. */
+  onDone?: () => void
 }) {
   const [shareNote, setShareNote] = useState("")
   const [expiresInDays, setExpiresInDays] = useState<string>("7")
@@ -293,13 +300,13 @@ export function ShareDialog({
   })
 
   const handleOpenChange = (next: boolean) => {
-    onOpenChange(next)
     if (!next) {
       setCreatedShares([])
       setShareNote("")
       setExpiresInDays("7")
       setAllowDownload(true)
       createMutation.reset()
+      onDone?.()
     }
   }
 
@@ -386,35 +393,7 @@ export function ShareDialog({
   }
 
   return (
-    <Sheet open={open} onOpenChange={handleOpenChange}>
-      <SheetContent
-        side="right"
-        showCloseButton={false}
-        className={cn(libraryGlassSheetPanel, "dashboard-main text-foreground")}
-      >
-        <SheetHeader className="relative shrink-0 space-y-1 border-b border-border p-2 pr-11">
-          <SheetClose asChild>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              className="absolute top-2 right-2 text-muted-foreground hover:text-foreground"
-              aria-label="Close"
-            >
-              <X className="size-4" />
-            </Button>
-          </SheetClose>
-          <SheetTitle className="flex items-center gap-2 font-heading text-lg font-semibold tracking-tight">
-            <Share2 className="size-4 text-primary" />
-            Share
-          </SheetTitle>
-          <SheetDescription className="text-[13px] leading-snug text-muted-foreground">
-            Create a private link for{" "}
-            <span className="font-medium text-foreground">{label}</span>. Recipients only see this
-            item — not your full library.
-          </SheetDescription>
-        </SheetHeader>
-
+    <>
         <div className="scrollbar-hide flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-2">
           {createdShares.length > 0 ? (
             <div className="space-y-3">
@@ -501,6 +480,56 @@ export function ShareDialog({
             </Button>
           )}
         </SheetFooter>
+    </>
+  )
+}
+
+/**
+ * The standalone Share sheet.
+ *
+ * Still used for multi-asset shares from the bulk bar; now only a shell around
+ * the shared form.
+ */
+export function ShareDialog({
+  open,
+  onOpenChange,
+  target,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  target: ShareTarget | null
+}) {
+  const label = target ? targetLabel(target) : ""
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent
+        side="right"
+        showCloseButton={false}
+        className={cn(libraryGlassSheetPanel, "dashboard-main text-foreground")}
+      >
+        <SheetHeader className="relative shrink-0 space-y-1 border-b border-border p-2 pr-11">
+          <SheetClose asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              className="absolute top-2 right-2 text-muted-foreground hover:text-foreground"
+              aria-label="Close"
+            >
+              <X className="size-4" />
+            </Button>
+          </SheetClose>
+          <SheetTitle className="flex items-center gap-2 font-heading text-lg font-semibold tracking-tight">
+            <Share2 className="size-4 text-primary" />
+            Share
+          </SheetTitle>
+          <SheetDescription className="text-[13px] leading-snug text-muted-foreground">
+            Create a private link for{" "}
+            <span className="font-medium text-foreground">{label}</span>. Recipients only see this
+            item — not your full library.
+          </SheetDescription>
+        </SheetHeader>
+        {open ? <AssetShareContent target={target} onDone={() => onOpenChange(false)} /> : null}
       </SheetContent>
     </Sheet>
   )

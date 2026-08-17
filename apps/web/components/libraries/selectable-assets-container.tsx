@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 
 import { AssetBulkActionsBar } from "@/components/libraries/asset-bulk-actions-bar"
+import { AssetSidePanel } from "@/components/libraries/asset-side-panel"
 import { AssetViewerProvider } from "@/components/libraries/asset-viewer-context"
 import { AssetSelectionProvider, useAssetSelectionRequired } from "@/components/libraries/asset-selection"
 import { cn } from "@/lib/utils"
@@ -187,6 +188,9 @@ function SelectableAssetsContainerInner({
           />
         ) : null}
       </div>
+      {/* One selected file gets a workspace; two or more get the bulk bar. The
+          two are mutually exclusive by construction — see each component. */}
+      <AssetSidePanel />
       <AssetBulkActionsBar defaultLibraryId={defaultLibraryId} />
     </>
   )

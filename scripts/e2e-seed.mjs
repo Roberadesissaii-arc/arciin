@@ -65,6 +65,25 @@ export const E2E_VIDEO_METADATA = {
 }
 
 /**
+ * A still, so the asset panel's image behaviour can be tested for real.
+ *
+ * A frame of the video rather than a separate download: deterministic, tiny,
+ * and it needs no second source of truth. Without it the "an image shows no
+ * transcript controls" acceptance could only ever be argued from the code.
+ */
+export const E2E_IMAGE_ASSET_ID = "e2e-image-fixture"
+export const E2E_IMAGE_FILENAME = "e2e-image-fixture.png"
+export const E2E_IMAGE_SOURCE = path.join(
+  path.resolve(import.meta.dirname, ".."),
+  "tests/fixtures/e2e-image-fixture.png",
+)
+export const E2E_IMAGE_METADATA = {
+  width: 480,
+  height: 270,
+  mimeType: "image/png",
+}
+
+/**
  * Where a checksum lands under the storage root.
  *
  * Mirrors `createObjectStoragePath` in the API's local-storage service — the
@@ -99,24 +118,24 @@ const DEFAULT_LIBRARIES = [
  * asset on a fixed id, and the bytes are only copied when they are not already
  * there. Running the seed twice leaves one video, not two.
  */
-async function seedVideoFixture(prisma, ownerId, storageRoot) {
-  if (!existsSync(E2E_VIDEO_SOURCE)) {
+async function seedFixtureAsset(prisma, ownerId, storageRoot, spec) {
+  if (!existsSync(spec.source)) {
     throw new Error(
-      `missing fixture ${E2E_VIDEO_SOURCE}. It is committed to the repository; ` +
+      `missing fixture ${spec.source}. It is committed to the repository; ` +
         "a clean checkout should have it.",
     )
   }
 
-  const bytes = readFileSync(E2E_VIDEO_SOURCE)
+  const bytes = readFileSync(spec.source)
   const checksumSha256 = createHash("sha256").update(bytes).digest("hex")
-  const sizeBytes = statSync(E2E_VIDEO_SOURCE).size
-  const objectKey = fixtureObjectKey(checksumSha256, ".mp4")
+  const sizeBytes = statSync(spec.source).size
+  const objectKey = fixtureObjectKey(checksumSha256, spec.extension)
   const physicalPath = path.join(storageRoot, objectKey)
 
   // The bytes, under the dev storage root the API will read them from.
   if (!existsSync(physicalPath)) {
     mkdirSync(path.dirname(physicalPath), { recursive: true })
-    copyFileSync(E2E_VIDEO_SOURCE, physicalPath)
+    copyFileSync(spec.source, physicalPath)
   }
 
   const storageLocation =
@@ -142,44 +161,69 @@ async function seedVideoFixture(prisma, ownerId, storageRoot) {
     existingObject ??
     (await prisma.storageObject.create({
       data: {
-        id: E2E_VIDEO_STORAGE_OBJECT_ID,
+        id: spec.storageObjectId,
         storageLocationId: storageLocation.id,
         objectKey,
         physicalPath,
         sizeBytes: BigInt(sizeBytes),
         checksumSha256,
-        mimeType: E2E_VIDEO_METADATA.mimeType,
+        mimeType: spec.metadata.mimeType,
       },
     }))
 
   const assetData = {
-    libraryId: libraries.videos.id,
+    libraryId: libraries[spec.librarySlug].id,
     folderId: null,
     storageObjectId: storageObject.id,
     ownerId,
-    filename: E2E_VIDEO_FILENAME,
-    originalFilename: E2E_VIDEO_FILENAME,
-    mimeType: E2E_VIDEO_METADATA.mimeType,
-    mediaType: "VIDEO",
-    extension: "mp4",
+    filename: spec.filename,
+    originalFilename: spec.filename,
+    mimeType: spec.metadata.mimeType,
+    mediaType: spec.mediaType,
+    extension: spec.extension.replace(/^\./, ""),
     sizeBytes: BigInt(sizeBytes),
     checksumSha256,
-    durationSeconds: E2E_VIDEO_METADATA.durationSeconds,
-    width: E2E_VIDEO_METADATA.width,
-    height: E2E_VIDEO_METADATA.height,
-    codec: E2E_VIDEO_METADATA.codec,
+    durationSeconds: spec.metadata.durationSeconds ?? null,
+    width: spec.metadata.width ?? null,
+    height: spec.metadata.height ?? null,
+    codec: spec.metadata.codec ?? null,
     status: "READY",
     deletedAt: null,
   }
 
   await prisma.asset.upsert({
-    where: { id: E2E_VIDEO_ASSET_ID },
-    create: { id: E2E_VIDEO_ASSET_ID, ...assetData },
+    where: { id: spec.assetId },
+    create: { id: spec.assetId, ...assetData },
     // Re-point rather than duplicate, so replacing the fixture file works.
     update: assetData,
   })
 
-  return { assetId: E2E_VIDEO_ASSET_ID, objectKey, physicalPath, sizeBytes }
+  return { assetId: spec.assetId, objectKey, physicalPath, sizeBytes }
+}
+
+/** Both committed fixtures, seeded the same way. */
+async function seedVideoFixture(prisma, ownerId, storageRoot) {
+  const video = await seedFixtureAsset(prisma, ownerId, storageRoot, {
+    assetId: E2E_VIDEO_ASSET_ID,
+    storageObjectId: E2E_VIDEO_STORAGE_OBJECT_ID,
+    filename: E2E_VIDEO_FILENAME,
+    source: E2E_VIDEO_SOURCE,
+    extension: ".mp4",
+    mediaType: "VIDEO",
+    librarySlug: "videos",
+    metadata: E2E_VIDEO_METADATA,
+  })
+  await seedFixtureAsset(prisma, ownerId, storageRoot, {
+    assetId: E2E_IMAGE_ASSET_ID,
+    storageObjectId: "e2e-image-fixture-object",
+    filename: E2E_IMAGE_FILENAME,
+    source: E2E_IMAGE_SOURCE,
+    extension: ".png",
+    mediaType: "IMAGE",
+    librarySlug: "images",
+    metadata: E2E_IMAGE_METADATA,
+  })
+  return video
 }
 
 /**

@@ -57,6 +57,7 @@ import {
   type MediaTranscript,
   type TranscriptSegment,
 } from "@arciin/types"
+import { libraryGlassSheetPanel } from "@/lib/library-glass-sheet"
 import type { AssetSummary } from "@/lib/types/models"
 
 const transcriptKey = (assetId: string) => ["asset-transcript", assetId] as const
@@ -187,15 +188,15 @@ function highlight(text: string, needle: string): React.ReactNode {
 
 /* ------------------------------------------------------------------ panel */
 
-export function VideoEditDrawer({
-  asset,
-  open,
-  onOpenChange,
-}: {
-  asset: AssetSummary | null
-  open: boolean
-  onOpenChange: (open: boolean) => void
-}) {
+/**
+ * The video's player, details and transcript, with no shell around it.
+ *
+ * Split out so the unified asset panel shows the *same* transcript this drawer
+ * always did — the same polling, the same persistence, the same copy/export and
+ * timestamp seeking. Re-implementing it for the panel would have meant two
+ * transcript UIs to keep in step, and the one users already rely on is this one.
+ */
+export function VideoTranscriptSection({ asset }: { asset: AssetSummary | null }) {
   const queryClient = useQueryClient()
   const videoRef = useRef<HTMLVideoElement>(null)
   const [search, setSearch] = useState("")
@@ -215,7 +216,7 @@ export function VideoEditDrawer({
   const transcriptQuery = useQuery({
     queryKey: transcriptKey(assetId ?? "none"),
     queryFn: ({ signal }) => getAssetTranscript(assetId!, signal),
-    enabled: Boolean(assetId) && open,
+    enabled: Boolean(assetId),
     refetchInterval: (query) => {
       const status = query.state.data?.transcript?.status
       return status && isTranscriptRunning(status) ? 3000 : false
@@ -297,16 +298,6 @@ export function VideoEditDrawer({
    * state inside an effect triggers a second render pass, and the reset is a
    * consequence of the user closing the panel, not of a value changing.
    */
-  const handleOpenChange = useCallback(
-    (next: boolean) => {
-      if (!next) {
-        setSearch("")
-        setEditing(false)
-      }
-      onOpenChange(next)
-    },
-    [onOpenChange],
-  )
 
   const copy = async (withTimestamps: boolean) => {
     const text = withTimestamps
@@ -349,22 +340,11 @@ export function VideoEditDrawer({
   const resolution =
     asset?.width && asset?.height ? `${asset.width}×${asset.height}` : null
 
-  return (
-    <Sheet open={open} onOpenChange={handleOpenChange}>
-      <SheetContent
-        side="right"
-        data-testid="video-edit-drawer"
-        className="flex w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-[560px]"
-      >
-        <SheetHeader className="shrink-0 border-b border-border px-5 py-4">
-          <SheetTitle className="text-[15px]">Edit video</SheetTitle>
-          <SheetDescription className="sr-only">
-            Preview this video, review its details, and generate a transcript.
-          </SheetDescription>
-        </SheetHeader>
 
-        {asset ? (
-          <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-8">
+  if (!asset) return null
+
+  return (
+    <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-8">
             {/* The library's own player, lent a ref so the transcript can seek it. */}
             <div
               className="mt-4 flex max-h-[280px] items-center justify-center overflow-hidden rounded-xl bg-black"
@@ -441,12 +421,50 @@ export function VideoEditDrawer({
                 saving={saveEdit.isPending}
               />
             </div>
-          </div>
-        ) : null}
+    </div>
+  )
+}
+
+/**
+ * The standalone video drawer.
+ *
+ * Now a shell around the shared section, and wearing the same
+ * `libraryGlassSheetPanel` as Edit File, Move and Share — it used to take the
+ * Sheet defaults for `side="right"`, which pin a panel flush to the top, bottom
+ * and right edge with square corners, so it read as a different component
+ * family from everything around it.
+ */
+export function VideoEditDrawer({
+  asset,
+  open,
+  onOpenChange,
+}: {
+  asset: AssetSummary | null
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}) {
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent
+        side="right"
+        data-testid="video-edit-drawer"
+        className={cn(
+          libraryGlassSheetPanel,
+          "dashboard-main text-foreground sm:max-w-[480px]",
+        )}
+      >
+        <SheetHeader className="shrink-0 border-b border-border px-5 py-4">
+          <SheetTitle className="text-[15px]">Edit video</SheetTitle>
+          <SheetDescription className="sr-only">
+            Preview this video, review its details, and generate a transcript.
+          </SheetDescription>
+        </SheetHeader>
+        {open ? <VideoTranscriptSection asset={asset} /> : null}
       </SheetContent>
     </Sheet>
   )
 }
+
 
 /* ------------------------------------------------------------- states */
 

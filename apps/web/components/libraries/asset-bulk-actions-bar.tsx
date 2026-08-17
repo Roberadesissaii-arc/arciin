@@ -49,7 +49,15 @@ export function AssetBulkActionsBar({ defaultLibraryId }: { defaultLibraryId?: s
   const [deleting, setDeleting] = useState(false)
 
   const count = selectedIds.size
-  if (count === 0) return null
+  /**
+   * Two or more.
+   *
+   * A single selected file opens the unified asset panel instead, which offers
+   * the same actions with the file in front of you rather than a toolbar
+   * floating over a grid. Showing both at once would put two different Delete
+   * buttons on screen for the same file.
+   */
+  if (count < 2) return null
 
   const editAsset = count === 1 ? selectedAssets[0] : undefined
 

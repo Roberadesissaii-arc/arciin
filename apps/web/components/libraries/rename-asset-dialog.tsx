@@ -1,7 +1,6 @@
 "use client"
-/* eslint-disable react-hooks/set-state-in-effect -- intentional prop-sync: reset the form state when the dialog opens or the target asset changes. */
 
-import { useEffect, useMemo, useState } from "react"
+import { useMemo, useState } from "react"
 import {
   Globe,
   Image as ImageIcon,
@@ -105,14 +104,23 @@ function badgePayloadFromDraft(
   return payload
 }
 
-export function RenameAssetDialog({
+/**
+ * The Edit form itself, with no shell around it.
+ *
+ * Split out so the unified asset panel and the standalone sheet render the
+ * *same* fields and the same save path. Duplicating this form would mean two
+ * places to fix a badge rule, and they would drift.
+ *
+ * `open` used to reset the draft on each show; the panel keeps this mounted and
+ * swaps assets instead, so the reset keys on the asset.
+ */
+export function AssetEditContent({
   asset,
-  open,
-  onOpenChange,
+  onDone,
 }: {
   asset: AssetSummary
-  open: boolean
-  onOpenChange: (open: boolean) => void
+  /** Called after a successful save, so a host can close or step back. */
+  onDone?: () => void
 }) {
   const [name, setName] = useState(asset.originalFilename)
   const [badgeDraft, setBadgeDraft] = useState<BadgeDraft>(() => buildBadgeDraft(asset))
@@ -167,14 +175,6 @@ export function RenameAssetDialog({
   const updateAssetMutation = useUpdateAsset()
   const queryClient = useQueryClient()
 
-  useEffect(() => {
-    if (open) {
-      setName(asset.originalFilename)
-      setBadgeDraft(buildBadgeDraft(asset))
-      setError(undefined)
-    }
-  }, [open, asset])
-
   const autoSource = useMemo(
     () => detectAssetSource(asset.importSourceUrl),
     [asset.importSourceUrl],
@@ -227,14 +227,14 @@ export function RenameAssetDialog({
     Object.assign(payload, badgePayloadFromDraft(asset, badgeDraft))
 
     if (Object.keys(payload).length === 1) {
-      onOpenChange(false)
+      onDone?.()
       return
     }
 
     try {
       await updateAssetMutation.mutateAsync(payload)
       notifyFileUpdated()
-      onOpenChange(false)
+      onDone?.()
     } catch (submitError) {
       const message =
         submitError instanceof Error ? submitError.message : "Could not update asset."
@@ -254,34 +254,9 @@ export function RenameAssetDialog({
     }))
   }
 
-  return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent
-        side="right"
-        showCloseButton={false}
-        className={cn(libraryGlassSheetPanel, "dashboard-main text-foreground")}
-      >
-        <SheetHeader className="relative shrink-0 space-y-1 border-b border-border p-2 pr-11">
-          <SheetClose asChild>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              className="absolute top-2 right-2 text-muted-foreground hover:text-foreground"
-              aria-label="Close"
-            >
-              <X className="size-4" />
-            </Button>
-          </SheetClose>
-          <SheetTitle className="font-heading text-lg font-semibold tracking-tight text-foreground">
-            Edit file
-          </SheetTitle>
-          <SheetDescription className="text-[13px] leading-snug text-muted-foreground">
-            Rename the file and customize the badge shown on its card — label, color, or hide it
-            entirely.
-          </SheetDescription>
-        </SheetHeader>
 
+  return (
+    <>
         <div className="scrollbar-hide flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-2">
           <Field>
             <FieldLabel
@@ -506,6 +481,55 @@ export function RenameAssetDialog({
             {updateAssetMutation.isPending ? "Saving…" : "Save changes"}
           </Button>
         </SheetFooter>
+    </>
+  )
+}
+
+/**
+ * The standalone Edit sheet.
+ *
+ * Kept because bulk selection and other callers still open Edit on its own; it
+ * is now only a shell around the shared form.
+ */
+export function RenameAssetDialog({
+  asset,
+  open,
+  onOpenChange,
+}: {
+  asset: AssetSummary
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}) {
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent
+        side="right"
+        showCloseButton={false}
+        className={cn(libraryGlassSheetPanel, "dashboard-main text-foreground")}
+      >
+        <SheetHeader className="relative shrink-0 space-y-1 border-b border-border p-2 pr-11">
+          <SheetClose asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              className="absolute top-2 right-2 text-muted-foreground hover:text-foreground"
+              aria-label="Close"
+            >
+              <X className="size-4" />
+            </Button>
+          </SheetClose>
+          <SheetTitle className="font-heading text-lg font-semibold tracking-tight text-foreground">
+            Edit file
+          </SheetTitle>
+          <SheetDescription className="text-[13px] leading-snug text-muted-foreground">
+            Rename the file and customize the badge shown on its card — label, color, or hide it
+            entirely.
+          </SheetDescription>
+        </SheetHeader>
+        {/* Mounted only while open, so the draft starts from the saved asset
+            each time rather than from a stale edit. */}
+        {open ? <AssetEditContent asset={asset} onDone={() => onOpenChange(false)} /> : null}
       </SheetContent>
     </Sheet>
   )
