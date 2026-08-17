@@ -23,6 +23,7 @@ import {
 } from "@/components/libraries/dub-voice-settings"
 import {
   dubAudioUrl,
+  dubVideoUrl,
   getAssetDubs,
   isDubPlayable,
   isDubRunning,
@@ -346,6 +347,18 @@ export function VideoDubbing({
                       >
                         <Download className="size-3.5" />
                         Download audio
+                      </a>
+                    </Button>
+                    {/* Assembled when asked for, so no second copy of the film
+                        sits on disk for every language. */}
+                    <Button asChild type="button" size="sm" variant="outline">
+                      <a
+                        href={dubVideoUrl(asset.id, dub.language)}
+                        download
+                        data-testid="download-dub-video"
+                      >
+                        <Download className="size-3.5" />
+                        Download video
                       </a>
                     </Button>
                   </>

@@ -292,6 +292,35 @@ test.describe("dubbed audio plays in the browser", () => {
     expect(spent, "switching back generates nothing").toHaveLength(0)
   })
 
+  test("the dubbed video is assembled on request, with the picture copied not re-encoded", async ({
+    page,
+  }) => {
+    await openDubbing(page)
+
+    /**
+     * Not stored: a dubbed copy of a large film is the film again, per
+     * language. The video stream is copied rather than re-encoded, so building
+     * it on request takes seconds — which is what makes that trade sound.
+     */
+    const response = await page.request.get(`/api/assets/${FIXTURE}/dubs/${DUB_LANGUAGE}/video`, {
+      timeout: 120_000,
+    })
+    expect(response.status()).toBe(200)
+    expect(response.headers()["content-type"]).toContain("video/mp4")
+    expect(response.headers()["content-disposition"]).toContain(`.${DUB_LANGUAGE}.dub.mp4`)
+
+    const body = await response.body()
+    expect(body.byteLength, "a real container, not an error page").toBeGreaterThan(50_000)
+    // An MP4 begins with a box header whose type is "ftyp".
+    expect(body.subarray(4, 8).toString("ascii")).toBe("ftyp")
+  })
+
+  test("the dubbed video is refused for a language with no dub", async ({ page }) => {
+    await openDubbing(page)
+    const response = await page.request.get(`/api/assets/${FIXTURE}/dubs/ja/video`)
+    expect(response.status()).toBe(404)
+  })
+
   test("the dubbed audio is served with range support, so seeking is not a re-download", async ({
     page,
   }) => {

@@ -266,3 +266,129 @@ paying to re-derive identical bytes, and none of the properties above depend on
 the audio having come from a voice model. **Whether the speech itself is good is
 a separate question**, answered by running the pipeline against the provider —
 and ultimately by listening, which no test can do.
+
+## Progress
+
+### The separator was already saying it
+
+The tool prints tqdm frames — `39/122` — the whole way through a separation.
+Arciin buffered them with `execFile` and threw them away at the end, so a
+ninety-minute job showed one unchanging line of text.
+
+It now streams. The output is read as it arrives, parsed, and reported through
+`onProgress` on the separation boundary — the separator owns this, because the
+worker asked for two stems and should not have to know that this backend happens
+to draw progress bars on stderr.
+
+The parser depends on one thing: a `39/122` pair. Not a line, not the words
+around it, because that text is the part most likely to change between separator
+versions and a parser that breaks on a cosmetic upstream change is worse than one
+that occasionally sees nothing — seeing nothing degrades to "no counter", which
+the UI already handles. It tolerates carriage returns, ANSI colour, several
+redraws in one chunk, interleaved log lines, and a pair split across a read
+boundary. That last one matters: without it, `39/122` cut in half reads as
+`9/122` and the bar jumps backwards.
+
+Progress is not allowed to decrease within a phase, because the separator prints
+a fresh `0/122` when it begins another pass and that reads as a crash.
+
+### The timeout was the bug
+
+A real 11:51 video failed at chunk 39 of 122 after twenty-nine minutes of
+correct work. Not the separator — the **30-minute wall clock** in
+`separator-backend.ts`. On this CPU that file needs about ninety minutes, and a
+duration limit cannot distinguish slow from stuck; on hardware where slow is the
+normal case it reliably kills the wrong one.
+
+The guard is now inactivity. Fifteen minutes with no output at all means hung;
+two hours of steady frames just means the file is long.
+
+Two related things surfaced while fixing it:
+
+- Killing the child alone left a grandchild holding the pipe, so `close` took
+  the full duration of a stand-in `sleep 30` to fire. Demucs forks torch
+  workers, so on the real box that means orphaned processes burning a CPU there
+  is none to spare. The process now gets its own group, and the group is
+  signalled.
+- The result is taken from `exit` with a short grace period rather than waiting
+  on `close`, which an orphan can defer indefinitely.
+
+### What gets written down
+
+`MediaDub` carries `progressPercent`, `progressCurrent`, `progressTotal` and
+`progressUpdatedAt`. The numbers come only from whatever is doing the work —
+the separator counts audio chunks, synthesis counts the chunks it planned before
+it started — and a stage that cannot count leaves them null rather than
+inventing a figure.
+
+Writes are throttled on movement or elapsed time, whichever comes first. For the
+real 122-chunk job that is under two writes a minute while still following every
+chunk; for a fast stage reporting several times a second it collapses to a
+handful. The elapsed-time rule exists for the timestamp rather than the number:
+a bar frozen at 32% needs to prove it is being watched.
+
+`progressUpdatedAt` is what makes a stall visible at all. After five minutes of
+silence the panel says so — and does not call the job failed, because a slow
+separation and a dead worker look identical from outside and only one of them
+deserves an alarm.
+
+### No estimates
+
+A chunk takes between thirty-five and sixty seconds here and that variance is the
+whole problem: an ETA built on it would be wrong by many minutes. Being told
+"about 12 minutes left" for forty minutes is worse than being told nothing. The
+UI shows what is true — the stage, the count, the percentage, when it last moved
+— and nothing it would have to guess. There is no client-side timer anywhere;
+the reload test exists to prove it, since a timer is exactly what would not
+survive one.
+
+## Failures
+
+`MediaDub.error` used to hold whatever the tool threw, which for a separator
+crash was four kilobytes of Python logging and tqdm redraws containing absolute
+server paths — rendered directly into the panel, teaching the reader nothing.
+
+Now `error` is a sentence naming the stage that failed, `errorDetail` is the
+bounded sanitised output behind a disclosure, and the complete log goes to
+`<storage>/logs/dub-<id>.log`. Sanitising collapses redraws to their last frame,
+reduces absolute paths to filenames, keeps the end rather than the beginning
+(the reason is always at the end), and caps at 4 KB.
+
+`SIGKILL` is reported as what it almost always is on a 7 GB box running Demucs:
+the kernel reclaiming memory. The panel says so and suggests a shorter video.
+
+## Card state
+
+A running dub is visible on the video card with the panel closed, and survives a
+reload, a navigation, and a different browser — because the state is the
+server's.
+
+The obvious implementation is a status request per card, which for a library of
+two hundred videos is two hundred requests to draw two hundred badges. Instead
+the asset listing carries a compact summary assembled in three queries for the
+whole page, and a test counts the per-card requests rather than trusting the
+code to be right.
+
+The shape is about activity rather than dubbing — kind, label, stage, progress —
+so transcription and translation can join without redesigning the card.
+Transcription already does.
+
+Two states are kept apart. The thumbnail carries the transient one (running, or
+failed) top-right; hovering names the operation and its progress, clicking opens
+the panel directly on that dub. Under the title sits the permanent one —
+"3 languages · Spanish" — which stays visible while another language generates.
+
+**Language convention:** original plus translations. A Hindi video with English
+and Arabic translations is *3 languages*, which is what a person would say out
+loud about the file. A single dub is named rather than counted.
+
+## Downloads
+
+The dubbed **audio** is stored, and served with range support so seeking is not
+a re-download.
+
+The dubbed **video** is assembled on request instead of stored. A dubbed copy of
+a 175 MB film is another 175 MB per language, which on a self-hosted box is a
+real cost for a file most people fetch once; the video stream is copied rather
+than re-encoded, so building it takes seconds against the hour the dub took. The
+muxed file is written to temp, streamed, and removed when the response ends.

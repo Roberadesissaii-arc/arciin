@@ -15,7 +15,12 @@ import { z } from "zod"
 
 import { JOB_TYPES, normalizeTranscriptSegments } from "@arciin/shared"
 import { isSameLanguage, languageName } from "@arciin/types"
-import { access } from "node:fs/promises"
+import { access, rm } from "node:fs/promises"
+import { execFile } from "node:child_process"
+import { randomUUID } from "node:crypto"
+import { tmpdir } from "node:os"
+import path from "node:path"
+import { promisify } from "node:util"
 
 import { candidateStorageObjectPaths } from "@arciin/storage"
 
@@ -33,10 +38,14 @@ import {
   translateTranscript,
   voiceSettingsFingerprint,
   GEMINI_VOICES,
+  buildRemuxArgs,
   type VoiceProfile,
 } from "@arciin/media-ai"
 import { requireRole } from "@/services/security/auth"
 import { recordAndBroadcastActivity } from "@/services/activity/record-and-broadcast-activity"
+
+/** Remuxing is a stream copy, so this stays a short, bounded call. */
+const execFileAsync = promisify(execFile)
 
 /** Media we will try to transcribe. Audio is included for future reuse. */
 function isTranscribableAsset(mediaType: string): boolean {
@@ -202,6 +211,36 @@ export async function transcriptRoutes(fastify: FastifyInstance) {
    * Deliberately identical for "does not exist" and "not allowed": telling an
    * unauthorised caller which ids are real is itself a leak.
    */
+  /**
+   * Where a stored object's bytes actually are.
+   *
+   * The same candidate walk the download route uses: a physical path recorded
+   * before a storage move is not necessarily where the file lives now.
+   */
+  async function resolveStoredPath(objectId: string): Promise<string | null> {
+    const object = await fastify.prisma.storageObject.findUnique({
+      where: { id: objectId },
+      include: { storageLocation: { select: { rootPath: true } } },
+    })
+    if (!object) return null
+
+    const instance = await fastify.prisma.instanceConfig.findFirst()
+    for (const candidate of candidateStorageObjectPaths(
+      instance?.storageRoot ?? null,
+      object.physicalPath,
+      object.objectKey,
+      [object.storageLocation?.rootPath],
+    )) {
+      try {
+        await access(candidate)
+        return candidate
+      } catch {
+        continue
+      }
+    }
+    return null
+  }
+
   async function loadAccessibleAsset(
     request: FastifyRequest,
     reply: FastifyReply,
@@ -848,6 +887,89 @@ export async function transcriptRoutes(fastify: FastifyInstance) {
         contentType: object.mimeType || "audio/mp4",
         contentDisposition: `inline; filename="${asset.originalFilename}.${language}.dub.m4a"`,
         rangeHeader: request.headers.range ?? null,
+      })
+    },
+  )
+
+  /**
+   * The video, with the dubbed audio in place of the original.
+   *
+   * Built on request rather than stored. A dubbed copy of a 175 MB film is
+   * another 175 MB per language, which on a self-hosted box is a real cost for
+   * a file most people download once — and the video stream is copied, not
+   * re-encoded, so producing it takes seconds rather than the hour the dub
+   * itself took.
+   *
+   * The muxed file is written to temp, streamed, and removed. No range support:
+   * this is a download, and honouring ranges would mean rebuilding the file for
+   * every seek.
+   */
+  fastify.get(
+    "/assets/:assetId/dubs/:language/video",
+    { preHandler: guard },
+    async (request, reply) => {
+      const { assetId, language } = z
+        .object({ assetId: z.string(), language: z.string() })
+        .parse(request.params)
+
+      const asset = await loadAccessibleAsset(request, reply, assetId)
+      if (!asset) return
+
+      const dub = await fastify.prisma.mediaDub.findUnique({
+        where: { assetId_language: { assetId, language } },
+      })
+      if (!dub?.audioStorageObjectId) {
+        reply.status(404).send({ error: { code: "NOT_FOUND", message: "No dub for that language." } })
+        return
+      }
+
+      const assetRow = await fastify.prisma.asset.findUnique({
+        where: { id: assetId },
+        select: { storageObjectId: true },
+      })
+      const audioPath = await resolveStoredPath(dub.audioStorageObjectId)
+      const videoPath = assetRow ? await resolveStoredPath(assetRow.storageObjectId) : null
+      if (!audioPath || !videoPath) {
+        reply.status(404).send({
+          error: { code: "NOT_FOUND", message: "The dub or the original is missing on the server." },
+        })
+        return
+      }
+
+      const outputPath = path.join(
+        tmpdir(),
+        `arciin-dub-${dub.id}-${randomUUID()}.mp4`,
+      )
+
+      try {
+        await execFileAsync("ffmpeg", [
+          "-hide_banner",
+          "-loglevel",
+          "error",
+          ...buildRemuxArgs({ videoPath, audioPath, outputPath }),
+        ], { timeout: 15 * 60 * 1000 })
+      } catch {
+        await rm(outputPath, { force: true }).catch(() => {})
+        reply.status(500).send({
+          error: {
+            code: "REMUX_FAILED",
+            message: "The dubbed video could not be assembled.",
+          },
+        })
+        return
+      }
+
+      reply.header("X-Content-Type-Options", "nosniff")
+      // Removed once the response is done, however it ends.
+      reply.raw.on("close", () => {
+        void rm(outputPath, { force: true }).catch(() => {})
+      })
+
+      return streamFileResponse(reply, {
+        path: outputPath,
+        contentType: "video/mp4",
+        contentDisposition: `attachment; filename="${asset.originalFilename}.${language}.dub.mp4"`,
+        rangeHeader: null,
       })
     },
   )

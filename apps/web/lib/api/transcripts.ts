@@ -175,6 +175,17 @@ export function dubAudioUrl(assetId: string, language: string): string {
   return `/api/assets/${assetId}/dubs/${encodeURIComponent(language)}/audio`
 }
 
+/**
+ * The video with the dubbed audio, assembled on request.
+ *
+ * Not stored: a dubbed copy of a large film is the film again, per language,
+ * and the video stream is copied rather than re-encoded so building it takes
+ * seconds.
+ */
+export function dubVideoUrl(assetId: string, language: string): string {
+  return `/api/assets/${assetId}/dubs/${encodeURIComponent(language)}/video`
+}
+
 /** Statuses that mean the worker is still busy. */
 export function isDubRunning(status: MediaDub["status"]): boolean {
   return ["PENDING", "PREPARING", "SEPARATING", "SYNTHESIZING", "MIXING"].includes(status)
