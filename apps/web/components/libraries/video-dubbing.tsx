@@ -246,7 +246,11 @@ export function VideoDubbing({
                         {languageName(dub.language)} dub ready
                       </p>
                       <p className="text-[11.5px] text-muted-foreground">
-                        Generated with Gemini
+                        {/* From the row, not hardcoded: a dub made by another
+                            provider must not claim it came from this one. */}
+                        {dub.provider === "gemini"
+                          ? "Generated with Gemini"
+                          : `Generated with ${dub.provider ?? "an unknown provider"}`}
                         {dub.backgroundStrategy === "separated"
                           ? " · original music and ambience preserved"
                           : ""}

@@ -15,7 +15,10 @@ import { expect, test, type Page, type Route } from "@playwright/test"
 
 /** Text that must never appear while a Pro user is signed in. */
 const PAYWALL_TEXT = [
-  "Full AI Chat is available on Pro",
+  // The lock title as the chat welcome state renders it. It read "available on
+  // Pro" until 3b82562 changed the hierarchy; the gate kept working, so only
+  // this assertion noticed, and only by failing.
+  "Full AI Chat is locked on Free",
   "Upgrade to Pro",
   "Test Ollama model",
 ]

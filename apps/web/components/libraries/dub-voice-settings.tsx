@@ -3,6 +3,13 @@
 import { Settings2 } from "lucide-react"
 
 import { Input } from "@/components/ui/input"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { GEMINI_VOICES } from "@arciin/types"
 import { cn } from "@/lib/utils"
 
@@ -76,14 +83,44 @@ const LEVELS = [
   ["high", "High"],
 ] as const
 
+/**
+ * Delivery, not duration.
+ *
+ * Every dub is fitted to the original timing regardless of this — the model is
+ * always asked to fill the slot — so the choice here is how the speech is
+ * carried inside that slot, which is why "Natural" rather than the old "Match
+ * video timing" that implied the other two would not be matched.
+ */
 const PACES = [
   ["slow", "Slow"],
-  ["medium", "Match video timing"],
+  ["medium", "Natural"],
   ["fast", "Fast"],
 ] as const
 
+/**
+ * Stands in for "no preference".
+ *
+ * A dropdown item cannot carry an empty value, and "Auto" is a real choice a
+ * reader makes — it is translated back to `undefined` on the way out so the
+ * server still does the matching.
+ */
+const AUTO = "auto"
+
+/**
+ * Short enough to read whole in a panel column.
+ *
+ * The field label carries the noun, so the value does not have to repeat it:
+ * "Accent — Keep source" says what "Preserve source accent" said, and does not
+ * arrive truncated to "Preserve source".
+ */
+const ACCENTS = [
+  ["preserve-source", "Keep source"],
+  ["neutral-target", "Neutral"],
+  ["custom", "Custom…"],
+] as const
+
 const TEXTURES = [
-  ["", "Auto"],
+  [AUTO, "Auto"],
   ["soft", "Soft"],
   ["clear", "Clear"],
   ["warm", "Warm"],
@@ -94,6 +131,15 @@ const TEXTURES = [
   ["smooth", "Smooth"],
 ] as const
 
+/** Test ids and React keys need a speaker label without spaces. */
+const slug = (speakerId: string) => speakerId.replace(/\s+/g, "-")
+
+/** The provider's voices, with "Auto" first because it is the default. */
+const VOICE_OPTIONS = [
+  [AUTO, "Auto — recommended"],
+  ...GEMINI_VOICES.map((voice) => [voice.name, `${voice.name} — ${voice.character}`] as const),
+] as const
+
 function Field({
   label,
   children,
@@ -102,15 +148,62 @@ function Field({
   children: React.ReactNode
 }) {
   return (
-    <label className="block">
-      <span className="text-[11px] font-medium text-muted-foreground">{label}</span>
+    <div className="min-w-0">
+      <p className="text-[11px] font-medium text-muted-foreground">{label}</p>
       {children}
-    </label>
+    </div>
   )
 }
 
-const selectClass =
-  "mt-1 h-8 w-full rounded-md border border-border bg-card px-2 text-[12.5px] text-foreground"
+const triggerClass =
+  "mt-1 h-9 w-full min-w-0 rounded-lg border-border bg-muted/40 text-left text-[12.5px] text-foreground hover:bg-muted/70 focus-visible:ring-primary/25"
+
+const contentClass =
+  "z-[220] max-h-64 rounded-xl border border-border bg-popover text-foreground shadow-lg"
+
+/**
+ * A labelled dropdown, sized for a panel column.
+ *
+ * The app's own Select rather than a bare `<select>`: a browser-chrome dropdown
+ * beside these controls reads as a different application, and its fixed width
+ * clipped longer labels — "Match video timing" arrived as "Match video timin".
+ */
+function Choice({
+  label,
+  value,
+  onValueChange,
+  options,
+  disabled,
+  testId,
+}: {
+  label: string
+  value: string
+  onValueChange: (value: string) => void
+  options: readonly (readonly [string, string])[]
+  disabled?: boolean
+  testId: string
+}) {
+  return (
+    <Field label={label}>
+      <Select value={value} onValueChange={onValueChange} disabled={disabled}>
+        <SelectTrigger size="default" className={triggerClass} data-testid={testId}>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent position="popper" side="bottom" align="start" sideOffset={6} className={contentClass}>
+          {options.map(([optionValue, optionLabel]) => (
+            <SelectItem
+              key={optionValue}
+              value={optionValue}
+              className="cursor-pointer text-[12.5px]"
+            >
+              {optionLabel}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </Field>
+  )
+}
 
 export function DubVoiceSettings({
   speakers,
@@ -132,12 +225,13 @@ export function DubVoiceSettings({
 
   return (
     <div className="space-y-2" data-testid="dub-voice-settings">
-      <div className="flex items-center justify-between gap-2">
-        <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-          <Settings2 className="size-3.5" aria-hidden />
-          Voice settings
-        </p>
-        <div className="flex gap-0.5" role="group" aria-label="Voice settings detail">
+      <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+        <Settings2 className="size-3.5" aria-hidden />
+        Voice settings
+      </p>
+      {/* Its own row: side by side, the label and three buttons both wrapped. */}
+      <div className="rounded-lg bg-muted/50 p-0.5">
+        <div className="grid grid-cols-3 gap-0.5" role="group" aria-label="Voice settings detail">
           {(["auto", "simple", "advanced"] as const).map((option) => (
             <button
               key={option}
@@ -146,13 +240,13 @@ export function DubVoiceSettings({
               aria-pressed={mode === option}
               data-testid={`voice-mode-${option}`}
               className={cn(
-                "rounded-md px-2 py-1 text-[11.5px] font-medium capitalize transition-colors",
+                "rounded-md px-2 py-1.5 text-[11.5px] font-medium capitalize transition-colors",
                 mode === option
-                  ? "bg-primary/10 text-primary"
-                  : "text-muted-foreground hover:bg-muted/60",
+                  ? "bg-card text-primary shadow-sm"
+                  : "text-muted-foreground hover:text-foreground",
               )}
             >
-              {option === "auto" ? "Auto match" : option}
+              {option === "auto" ? "Auto" : option}
             </button>
           ))}
         </div>
@@ -164,118 +258,90 @@ export function DubVoiceSettings({
           <div
             key={speakerId}
             className="rounded-lg border border-border p-2.5"
-            data-testid={`voice-speaker-${speakerId.replace(/\s+/g, "-")}`}
+            data-testid={`voice-speaker-${slug(speakerId)}`}
           >
-            <p className="text-[12.5px] font-medium text-foreground">{speakerId}</p>
+            <div className="flex items-baseline justify-between gap-2">
+              <p className="text-[12.5px] font-medium text-foreground">{speakerId}</p>
+              {mode !== "auto" && value.selectedGeminiVoice ? (
+                <span className="shrink-0 text-[11px] text-primary">
+                  {value.selectedGeminiVoice}
+                </span>
+              ) : null}
+            </div>
 
-            {/* ── auto: the recommendation, and nothing to fiddle with ───── */}
+            {/* ── auto: what will happen, in one line ─────────────────────── */}
             {mode === "auto" ? (
-              <dl className="mt-1.5 grid grid-cols-[92px_1fr] gap-x-2 gap-y-1 text-[11.5px]">
-                <dt className="text-muted-foreground">Matched</dt>
-                <dd className="text-foreground">
-                  Automatically, from the speaker&apos;s vocal character
-                </dd>
-                <dt className="text-muted-foreground">Accent</dt>
-                <dd className="text-foreground">Preserve source</dd>
-                <dt className="text-muted-foreground">Emotion</dt>
-                <dd className="text-foreground">Match original</dd>
-                <dt className="text-muted-foreground">Pacing</dt>
-                <dd className="text-foreground">Match video timing</dd>
-              </dl>
+              <p className="mt-1 text-[11.5px] leading-relaxed text-muted-foreground">
+                Voice matched to this speaker&apos;s vocal character, source accent kept,
+                original delivery followed, timed to the video.
+              </p>
             ) : null}
 
             {/* ── simple and advanced share these four ────────────────────── */}
             {mode !== "auto" ? (
-              <div className="mt-2 grid grid-cols-2 gap-2">
-                <Field label="Voice presentation">
-                  <select
-                    className={selectClass}
-                    disabled={disabled}
-                    value={value.presentation ?? "auto"}
-                    onChange={(e) => set(speakerId, { presentation: e.target.value })}
-                    data-testid={`voice-presentation-${speakerId.replace(/\s+/g, "-")}`}
-                  >
-                    {PRESENTATIONS.map(([v, label]) => (
-                      <option key={v} value={v}>
-                        {label}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
+              <div className="mt-2 grid grid-cols-2 gap-x-2 gap-y-2.5">
+                <Choice
+                  label="Voice presentation"
+                  testId={`voice-presentation-${slug(speakerId)}`}
+                  disabled={disabled}
+                  options={PRESENTATIONS}
+                  value={value.presentation ?? "auto"}
+                  onValueChange={(presentation) => set(speakerId, { presentation })}
+                />
 
-                <Field label="Vocal age style">
-                  <select
-                    className={selectClass}
-                    disabled={disabled}
-                    value={value.ageStyle ?? "auto"}
-                    onChange={(e) => set(speakerId, { ageStyle: e.target.value })}
-                    data-testid={`voice-age-${speakerId.replace(/\s+/g, "-")}`}
-                  >
-                    {AGE_STYLES.map(([v, label]) => (
-                      <option key={v} value={v}>
-                        {label}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
+                <Choice
+                  label="Vocal age style"
+                  testId={`voice-age-${slug(speakerId)}`}
+                  disabled={disabled}
+                  options={AGE_STYLES}
+                  value={value.ageStyle ?? "auto"}
+                  onValueChange={(ageStyle) => set(speakerId, { ageStyle })}
+                />
 
-                <Field label="Accent">
-                  <select
-                    className={selectClass}
-                    disabled={disabled}
-                    value={value.accent?.kind ?? "preserve-source"}
-                    onChange={(e) => set(speakerId, { accent: { kind: e.target.value } })}
-                    data-testid={`voice-accent-${speakerId.replace(/\s+/g, "-")}`}
-                  >
-                    <option value="preserve-source">Preserve source accent</option>
-                    <option value="neutral-target">Neutral target-language accent</option>
-                    <option value="custom">Custom…</option>
-                  </select>
-                </Field>
+                <Choice
+                  label="Accent"
+                  testId={`voice-accent-${slug(speakerId)}`}
+                  disabled={disabled}
+                  options={ACCENTS}
+                  value={value.accent?.kind ?? "preserve-source"}
+                  onValueChange={(kind) => set(speakerId, { accent: { kind } })}
+                />
 
-                <Field label="Emotion">
-                  <select
-                    className={selectClass}
-                    disabled={disabled}
-                    value={
-                      value.emotion?.kind === "preset"
-                        ? (value.emotion.preset ?? "match-original")
-                        : (value.emotion?.kind ?? "match-original")
-                    }
-                    onChange={(e) => {
-                      const picked = e.target.value
-                      set(speakerId, {
-                        emotion:
-                          picked === "match-original" || picked === "neutral" || picked === "custom"
-                            ? { kind: picked }
-                            : { kind: "preset", preset: picked },
-                      })
-                    }}
-                    data-testid={`voice-emotion-${speakerId.replace(/\s+/g, "-")}`}
-                  >
-                    {EMOTIONS.map(([v, label]) => (
-                      <option key={v} value={v}>
-                        {label}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
+                <Choice
+                  label="Emotion"
+                  testId={`voice-emotion-${slug(speakerId)}`}
+                  disabled={disabled}
+                  options={EMOTIONS}
+                  value={
+                    value.emotion?.kind === "preset"
+                      ? (value.emotion.preset ?? "match-original")
+                      : (value.emotion?.kind ?? "match-original")
+                  }
+                  onValueChange={(picked) =>
+                    set(speakerId, {
+                      emotion:
+                        picked === "match-original" || picked === "neutral" || picked === "custom"
+                          ? { kind: picked }
+                          : { kind: "preset", preset: picked },
+                    })
+                  }
+                />
 
                 {/* Free text only when the reader asked for it. */}
                 {value.accent?.kind === "custom" ? (
                   <div className="col-span-2">
                     <Field label="Custom accent">
                       <Input
-                        className="mt-1 h-8 text-[12.5px]"
+                        className="mt-1 h-9 text-[12.5px]"
                         disabled={disabled}
-                        placeholder="e.g. British English, or Indian English — Mumbai"
+                        placeholder="e.g. British English, or Indian English"
                         value={value.accent.description ?? ""}
                         onChange={(e) =>
                           set(speakerId, {
                             accent: { kind: "custom", description: e.target.value },
                           })
                         }
-                        data-testid={`voice-accent-custom-${speakerId.replace(/\s+/g, "-")}`}
+                        data-testid={`voice-accent-custom-${slug(speakerId)}`}
                       />
                     </Field>
                   </div>
@@ -285,7 +351,7 @@ export function DubVoiceSettings({
                   <div className="col-span-2">
                     <Field label="Custom emotion">
                       <Input
-                        className="mt-1 h-8 text-[12.5px]"
+                        className="mt-1 h-9 text-[12.5px]"
                         disabled={disabled}
                         placeholder="e.g. quietly confident but slightly nervous"
                         value={value.emotion.description ?? ""}
@@ -294,7 +360,7 @@ export function DubVoiceSettings({
                             emotion: { kind: "custom", description: e.target.value },
                           })
                         }
-                        data-testid={`voice-emotion-custom-${speakerId.replace(/\s+/g, "-")}`}
+                        data-testid={`voice-emotion-custom-${slug(speakerId)}`}
                       />
                     </Field>
                   </div>
@@ -304,102 +370,70 @@ export function DubVoiceSettings({
 
             {/* ── advanced only ──────────────────────────────────────────── */}
             {mode === "advanced" ? (
-              <div className="mt-2 grid grid-cols-2 gap-2 border-t border-border pt-2">
+              <div className="mt-2.5 grid grid-cols-2 gap-x-2 gap-y-2.5 border-t border-border pt-2.5">
                 <div className="col-span-2">
-                  <Field label="Gemini voice">
-                    <select
-                      className={selectClass}
-                      disabled={disabled}
-                      value={value.selectedGeminiVoice ?? ""}
-                      onChange={(e) =>
-                        set(speakerId, { selectedGeminiVoice: e.target.value || undefined })
-                      }
-                      data-testid={`voice-gemini-${speakerId.replace(/\s+/g, "-")}`}
-                    >
-                      <option value="">Auto — recommended</option>
-                      {/* The provider's actual voices, never invented ones. */}
-                      {GEMINI_VOICES.map((voice) => (
-                        <option key={voice.name} value={voice.name}>
-                          {voice.name} — {voice.character}
-                        </option>
-                      ))}
-                    </select>
-                  </Field>
+                  {/* The provider's actual voices, never invented ones. */}
+                  <Choice
+                    label="Voice"
+                    testId={`voice-gemini-${slug(speakerId)}`}
+                    disabled={disabled}
+                    options={VOICE_OPTIONS}
+                    value={value.selectedGeminiVoice ?? AUTO}
+                    onValueChange={(voice) =>
+                      set(speakerId, {
+                        selectedGeminiVoice: voice === AUTO ? undefined : voice,
+                      })
+                    }
+                  />
                 </div>
 
-                <Field label="Pitch guidance">
-                  <select
-                    className={selectClass}
-                    disabled={disabled}
-                    value={value.pitch ?? "medium"}
-                    onChange={(e) => set(speakerId, { pitch: e.target.value })}
-                    data-testid={`voice-pitch-${speakerId.replace(/\s+/g, "-")}`}
-                  >
-                    {LEVELS.map(([v, label]) => (
-                      <option key={v} value={v}>
-                        {label}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
+                <Choice
+                  label="Pitch guidance"
+                  testId={`voice-pitch-${slug(speakerId)}`}
+                  disabled={disabled}
+                  options={LEVELS}
+                  value={value.pitch ?? "medium"}
+                  onValueChange={(pitch) => set(speakerId, { pitch })}
+                />
 
-                <Field label="Energy">
-                  <select
-                    className={selectClass}
-                    disabled={disabled}
-                    value={value.energy ?? "medium"}
-                    onChange={(e) => set(speakerId, { energy: e.target.value })}
-                    data-testid={`voice-energy-${speakerId.replace(/\s+/g, "-")}`}
-                  >
-                    {LEVELS.map(([v, label]) => (
-                      <option key={v} value={v}>
-                        {label}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
+                <Choice
+                  label="Energy"
+                  testId={`voice-energy-${slug(speakerId)}`}
+                  disabled={disabled}
+                  options={LEVELS}
+                  value={value.energy ?? "medium"}
+                  onValueChange={(energy) => set(speakerId, { energy })}
+                />
 
-                <Field label="Texture">
-                  <select
-                    className={selectClass}
-                    disabled={disabled}
-                    value={value.texture ?? ""}
-                    onChange={(e) => set(speakerId, { texture: e.target.value || undefined })}
-                    data-testid={`voice-texture-${speakerId.replace(/\s+/g, "-")}`}
-                  >
-                    {TEXTURES.map(([v, label]) => (
-                      <option key={v} value={v}>
-                        {label}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
+                <Choice
+                  label="Texture"
+                  testId={`voice-texture-${slug(speakerId)}`}
+                  disabled={disabled}
+                  options={TEXTURES}
+                  value={value.texture ?? AUTO}
+                  onValueChange={(texture) =>
+                    set(speakerId, { texture: texture === AUTO ? undefined : texture })
+                  }
+                />
 
-                <Field label="Pacing">
-                  <select
-                    className={selectClass}
-                    disabled={disabled}
-                    value={value.pace ?? "medium"}
-                    onChange={(e) => set(speakerId, { pace: e.target.value })}
-                    data-testid={`voice-pace-${speakerId.replace(/\s+/g, "-")}`}
-                  >
-                    {PACES.map(([v, label]) => (
-                      <option key={v} value={v}>
-                        {label}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
+                <Choice
+                  label="Pacing"
+                  testId={`voice-pace-${slug(speakerId)}`}
+                  disabled={disabled}
+                  options={PACES}
+                  value={value.pace ?? "medium"}
+                  onValueChange={(pace) => set(speakerId, { pace })}
+                />
 
                 <div className="col-span-2">
                   <Field label="Director notes">
                     <Input
-                      className="mt-1 h-8 text-[12.5px]"
+                      className="mt-1 h-9 text-[12.5px]"
                       disabled={disabled}
                       placeholder="Extra direction for the performance"
                       value={value.directorNotes ?? ""}
                       onChange={(e) => set(speakerId, { directorNotes: e.target.value })}
-                      data-testid={`voice-notes-${speakerId.replace(/\s+/g, "-")}`}
+                      data-testid={`voice-notes-${slug(speakerId)}`}
                     />
                   </Field>
                 </div>

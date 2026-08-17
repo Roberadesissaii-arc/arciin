@@ -21,6 +21,21 @@ const FIXTURE = "e2e-video-transcript-fixture"
 
 const panel = (page: Page) => page.getByTestId("asset-side-panel")
 
+/**
+ * Choose from one of the panel's dropdowns.
+ *
+ * These are the app's own Select rather than a browser `<select>`, so there is
+ * no `selectOption` to call: the trigger opens a listbox in a portal and the
+ * option is clicked, which is also what a person does.
+ */
+async function choose(page: Page, testId: string, label: string | RegExp) {
+  await panel(page).getByTestId(testId).click()
+  const listbox = page.getByRole("listbox")
+  await expect(listbox).toBeVisible()
+  await listbox.getByRole("option", { name: label, exact: typeof label === "string" }).click()
+  await expect(listbox).toBeHidden()
+}
+
 async function openDubbing(page: Page) {
   await page.goto("/videos")
   const card = page.locator(`[data-asset-id="${FIXTURE}"]`)
@@ -90,19 +105,19 @@ test.describe("voice settings", () => {
     await settings.getByTestId("voice-mode-advanced").click()
 
     // Every control, including the ones that only appear once chosen.
-    await settings.getByTestId("voice-presentation-Speaker-1").selectOption("feminine")
-    await settings.getByTestId("voice-age-Speaker-1").selectOption("mature")
-    await settings.getByTestId("voice-accent-Speaker-1").selectOption("custom")
+    await choose(page, "voice-presentation-Speaker-1", "Feminine")
+    await choose(page, "voice-age-Speaker-1", "Mature")
+    await choose(page, "voice-accent-Speaker-1", "Custom…")
     await settings.getByTestId("voice-accent-custom-Speaker-1").fill("Indian English")
-    await settings.getByTestId("voice-emotion-Speaker-1").selectOption("custom")
+    await choose(page, "voice-emotion-Speaker-1", "Custom…")
     await settings.getByTestId("voice-emotion-custom-Speaker-1").fill("quietly furious")
-    await settings.getByTestId("voice-gemini-Speaker-1").selectOption("Kore")
-    await settings.getByTestId("voice-pitch-Speaker-1").selectOption("low")
-    await settings.getByTestId("voice-energy-Speaker-1").selectOption("high")
-    await settings.getByTestId("voice-texture-Speaker-1").selectOption("warm")
-    await settings.getByTestId("voice-pace-Speaker-1").selectOption("slow")
+    await choose(page, "voice-gemini-Speaker-1", /^Kore —/)
+    await choose(page, "voice-pitch-Speaker-1", "Low")
+    await choose(page, "voice-energy-Speaker-1", "High")
+    await choose(page, "voice-texture-Speaker-1", "Warm")
+    await choose(page, "voice-pace-Speaker-1", "Slow")
     await settings.getByTestId("voice-notes-Speaker-1").fill("sound like it is late at night")
-    await settings.getByTestId("voice-emotion-Speaker-2").selectOption("excited")
+    await choose(page, "voice-emotion-Speaker-2", "Excited")
 
     await page.waitForTimeout(1500)
     expect(sent, "a dropdown is not a purchase").toHaveLength(0)
@@ -117,14 +132,14 @@ test.describe("voice settings", () => {
     const settings = panel(page).getByTestId("dub-voice-settings")
 
     await settings.getByTestId("voice-mode-advanced").click()
-    await settings.getByTestId("voice-accent-Speaker-1").selectOption("custom")
+    await choose(page, "voice-accent-Speaker-1", "Custom…")
     await settings.getByTestId("voice-accent-custom-Speaker-1").fill("Indian English")
-    await settings.getByTestId("voice-emotion-Speaker-1").selectOption("custom")
+    await choose(page, "voice-emotion-Speaker-1", "Custom…")
     await settings.getByTestId("voice-emotion-custom-Speaker-1").fill("quietly furious")
-    await settings.getByTestId("voice-gemini-Speaker-1").selectOption("Kore")
+    await choose(page, "voice-gemini-Speaker-1", /^Kore —/)
     await settings.getByTestId("voice-notes-Speaker-1").fill("late at night")
-    await settings.getByTestId("voice-emotion-Speaker-2").selectOption("excited")
-    await settings.getByTestId("voice-pace-Speaker-2").selectOption("fast")
+    await choose(page, "voice-emotion-Speaker-2", "Excited")
+    await choose(page, "voice-pace-Speaker-2", "Fast")
 
     await panel(page).getByTestId("regenerate-dub").click()
     await expect.poll(() => sent.length, { timeout: 15_000 }).toBe(1)
@@ -155,7 +170,7 @@ test.describe("voice settings", () => {
      * out of, and they would have no way to tell.
      */
     await settings.getByTestId("voice-mode-simple").click()
-    await settings.getByTestId("voice-presentation-Speaker-1").selectOption("masculine")
+    await choose(page, "voice-presentation-Speaker-1", "Masculine")
     await settings.getByTestId("voice-mode-auto").click()
 
     await panel(page).getByTestId("regenerate-dub").click()
@@ -169,14 +184,18 @@ test.describe("voice settings", () => {
     await settings.getByTestId("voice-mode-advanced").click()
 
     const picker = settings.getByTestId("voice-gemini-Speaker-1")
+    // Auto is the default, and says so rather than naming a voice.
+    await expect(picker).toContainText(/recommended/i)
+
+    await picker.click()
+    const listbox = page.getByRole("listbox")
+    await expect(listbox).toBeVisible()
     // Named voices the provider documents. A made-up name here would fail at
     // synthesis with an error no reader could act on.
     for (const voice of ["Kore", "Puck", "Charon", "Schedar"]) {
-      await expect(picker.locator(`option[value="${voice}"]`)).toHaveCount(1)
+      await expect(listbox.getByRole("option", { name: new RegExp(`^${voice} —`) })).toHaveCount(1)
     }
-    // Auto stays available, and stays the default.
-    await expect(picker).toHaveValue("")
-    await expect(picker.locator('option[value=""]')).toContainText(/recommended/i)
+    await expect(listbox.getByRole("option", { name: /recommended/i })).toHaveCount(1)
   })
 
   test("the server refuses a voice the provider does not have", async ({ page }) => {
