@@ -149,6 +149,8 @@ export function buildDubPrompt(input: DubPromptInput): string {
     emotionInstruction(profile.emotion, observed),
     paceInstruction(profile, totalMs),
     "Articulate clearly and naturally.",
+    // Last, so the reader's own direction refines everything above it.
+    profile.directorNotes ? `Additional direction: ${profile.directorNotes}` : null,
   ].filter(Boolean)
 
   return [

@@ -1,3 +1,8 @@
+import { GEMINI_VOICES, NEUTRAL_VOICE, type GeminiVoiceName } from "@arciin/types"
+
+export { GEMINI_VOICES, NEUTRAL_VOICE }
+export type { GeminiVoiceName }
+
 /**
  * Choosing a synthetic voice for a speaker in a dub.
  *
@@ -11,44 +16,7 @@
  * approximately. The UI says "match vocal character" for that reason.
  */
 
-/** Gemini's prebuilt voices, with the character each one reads as. */
-export const GEMINI_VOICES = [
-  { name: "Zephyr", character: "Bright", pitch: "high", energy: "high", texture: "bright" },
-  { name: "Puck", character: "Upbeat", pitch: "medium", energy: "high", texture: "clear" },
-  { name: "Charon", character: "Informative", pitch: "low", energy: "medium", texture: "clear" },
-  { name: "Kore", character: "Firm", pitch: "medium", energy: "medium", texture: "firm" },
-  { name: "Fenrir", character: "Excitable", pitch: "medium", energy: "high", texture: "bright" },
-  { name: "Leda", character: "Youthful", pitch: "high", energy: "high", texture: "clear" },
-  { name: "Orus", character: "Firm", pitch: "low", energy: "medium", texture: "firm" },
-  { name: "Aoede", character: "Breezy", pitch: "medium", energy: "medium", texture: "smooth" },
-  { name: "Callirrhoe", character: "Easy-going", pitch: "medium", energy: "low", texture: "smooth" },
-  { name: "Autonoe", character: "Bright", pitch: "high", energy: "high", texture: "bright" },
-  { name: "Enceladus", character: "Breathy", pitch: "low", energy: "low", texture: "breathy" },
-  { name: "Iapetus", character: "Clear", pitch: "medium", energy: "medium", texture: "clear" },
-  { name: "Umbriel", character: "Easy-going", pitch: "low", energy: "low", texture: "smooth" },
-  { name: "Algieba", character: "Smooth", pitch: "low", energy: "medium", texture: "smooth" },
-  { name: "Despina", character: "Smooth", pitch: "medium", energy: "medium", texture: "smooth" },
-  { name: "Erinome", character: "Clear", pitch: "medium", energy: "medium", texture: "clear" },
-  { name: "Algenib", character: "Gravelly", pitch: "low", energy: "medium", texture: "gravelly" },
-  { name: "Rasalgethi", character: "Informative", pitch: "medium", energy: "medium", texture: "clear" },
-  { name: "Laomedeia", character: "Upbeat", pitch: "high", energy: "high", texture: "bright" },
-  { name: "Achernar", character: "Soft", pitch: "high", energy: "low", texture: "soft" },
-  { name: "Alnilam", character: "Firm", pitch: "medium", energy: "medium", texture: "firm" },
-  { name: "Schedar", character: "Even", pitch: "medium", energy: "medium", texture: "clear" },
-  { name: "Gacrux", character: "Mature", pitch: "low", energy: "medium", texture: "warm" },
-  { name: "Pulcherrima", character: "Forward", pitch: "medium", energy: "high", texture: "firm" },
-  { name: "Achird", character: "Friendly", pitch: "medium", energy: "medium", texture: "warm" },
-  { name: "Zubenelgenubi", character: "Casual", pitch: "medium", energy: "medium", texture: "clear" },
-  { name: "Vindemiatrix", character: "Gentle", pitch: "high", energy: "low", texture: "soft" },
-  { name: "Sadachbia", character: "Lively", pitch: "medium", energy: "high", texture: "bright" },
-  { name: "Sadaltager", character: "Knowledgeable", pitch: "medium", energy: "medium", texture: "clear" },
-  { name: "Sulafat", character: "Warm", pitch: "medium", energy: "medium", texture: "warm" },
-] as const
 
-export type GeminiVoiceName = (typeof GEMINI_VOICES)[number]["name"]
-
-/** A safe default when analysis is inconclusive: even, unremarkable, clear. */
-export const NEUTRAL_VOICE: GeminiVoiceName = "Schedar"
 
 export type VocalPresentation = "masculine" | "feminine" | "neutral" | "auto"
 export type VocalAgeStyle = "youthful" | "young-adult" | "adult" | "mature" | "auto"
@@ -98,6 +66,8 @@ export type VoiceProfile = {
   emotion: EmotionMode
   /** How confident the automatic match was — surfaced, never hidden. */
   confidence?: "low" | "medium" | "high"
+  /** The reader's own direction, in their words. Free text, so sanitised. */
+  directorNotes?: string
 }
 
 /** What an analyser can say about a speaker's sound. Every field optional. */
@@ -168,10 +138,69 @@ export function buildVoiceProfile(
       : {}),
     // An explicit choice always wins over the match.
     selectedGeminiVoice: overrides.selectedGeminiVoice ?? matched.voice,
-    accent: overrides.accent ?? { kind: "preserve-source" },
-    emotion: overrides.emotion ?? { kind: "match-original" },
+    accent: cleanAccent(overrides.accent),
+    emotion: cleanEmotion(overrides.emotion),
+    ...(sanitizeDirectorNotes(overrides.directorNotes)
+      ? { directorNotes: sanitizeDirectorNotes(overrides.directorNotes) }
+      : {}),
     confidence: overrides.selectedGeminiVoice ? "high" : matched.confidence,
   }
+}
+
+/**
+ * A described accent with nothing usable left in the description is not a
+ * described accent — it falls back rather than directing the model at "".
+ */
+function cleanAccent(accent: AccentMode | undefined): AccentMode {
+  if (!accent) return { kind: "preserve-source" }
+  if (accent.kind === "custom") {
+    const description = sanitizePromptText(accent.description, 200)
+    return description ? { kind: "custom", description } : { kind: "preserve-source" }
+  }
+  return { kind: accent.kind }
+}
+
+function cleanEmotion(emotion: EmotionMode | undefined): EmotionMode {
+  if (!emotion) return { kind: "match-original" }
+  if (emotion.kind === "custom") {
+    const description = sanitizePromptText(emotion.description, 200)
+    return description ? { kind: "custom", description } : { kind: "match-original" }
+  }
+  if (emotion.kind === "preset") {
+    const preset = sanitizePromptText(emotion.preset, 60)
+    return preset ? { kind: "preset", preset } : { kind: "match-original" }
+  }
+  return { kind: emotion.kind }
+}
+
+/**
+ * Clean a reader's free-text direction before it reaches a prompt.
+ *
+ * This is the one field in a dub that a person types by hand, and it lands in
+ * the same prompt as the words to be spoken. Someone typing the speech markers —
+ * whether probing or by accident — would otherwise close the fence early and
+ * turn the rest of their note into dialogue the dub reads aloud. So the markers
+ * come out, newlines collapse to keep it a single bullet, and the length is
+ * capped: direction that runs longer than the script stops being direction.
+ */
+export function sanitizeDirectorNotes(input: string | undefined | null): string | undefined {
+  return sanitizePromptText(input, 400)
+}
+
+/** The same guard for every other free-text field that reaches a prompt. */
+export function sanitizePromptText(
+  input: string | undefined | null,
+  maxLength: number,
+): string | undefined {
+  if (!input) return undefined
+  const cleaned = input
+    // The fence, however it was typed.
+    .replace(/<<<\s*\/?\s*(SPEAK|END)\s*>>>/gi, " ")
+    .replace(/[<>]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, maxLength)
+  return cleaned || undefined
 }
 
 /**
@@ -215,6 +244,8 @@ export function voiceSettingsFingerprint(profiles: VoiceProfile[]): string {
           : "preset" in p.emotion
             ? `:${p.emotion.preset}`
             : ""),
+      // Part of the fingerprint: changing the direction changes the audio.
+      p.directorNotes ?? "-",
     ].join("|"))
   return normalized.join("~")
 }

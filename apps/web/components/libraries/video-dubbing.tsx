@@ -16,6 +16,11 @@ import {
 
 import { Button } from "@/components/ui/button"
 import {
+  DubVoiceSettings,
+  type VoiceOverride,
+  type VoiceSettingsMode,
+} from "@/components/libraries/dub-voice-settings"
+import {
   dubAudioUrl,
   getAssetDubs,
   isDubPlayable,
@@ -88,6 +93,14 @@ export function VideoDubbing({
 }) {
   const queryClient = useQueryClient()
   const [language, setLanguage] = useState<string | null>(null)
+  const [voiceMode, setVoiceMode] = useState<VoiceSettingsMode>("auto")
+  /**
+   * Local until Generate is pressed.
+   *
+   * A dropdown must never cost anything; the settings ride along with the one
+   * request that does.
+   */
+  const [overrides, setOverrides] = useState<Record<string, VoiceOverride>>({})
 
   const dubsQuery = useQuery({
     queryKey: dubsQueryKey(asset.id),
@@ -102,11 +115,31 @@ export function VideoDubbing({
   const separatorAvailable = dubsQuery.data?.separatorAvailable ?? false
 
   const selected = language ?? translations[0]?.language ?? null
+  const selectedTranslation = selected
+    ? (translations.find((t) => t.language === selected) ?? null)
+    : null
+  /**
+   * Whoever the transcript actually named.
+   *
+   * Falls back to a single speaker when the transcript carried no labels —
+   * inventing a second one would produce a voice for someone who never spoke.
+   */
+  const speakers = (() => {
+    const named = [
+      ...new Set((selectedTranslation?.segments ?? []).map((s) => s.speaker).filter(Boolean)),
+    ] as string[]
+    return named.length > 0 ? named : ["Speaker 1"]
+  })()
   const dub = selected ? (dubs.find((d) => d.language === selected) ?? null) : null
   const canDub = selected ? dubbable.has(selected) : false
 
   const generate = useMutation({
-    mutationFn: (target: string) => requestAssetDub(asset.id, { language: target }),
+    mutationFn: (target: string) =>
+      requestAssetDub(asset.id, {
+        language: target,
+        // Auto sends nothing, so the server matches every speaker itself.
+        ...(voiceMode === "auto" ? {} : { voiceProfiles: Object.values(overrides) }),
+      }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: dubsQueryKey(asset.id) })
       toast.success("Dub started", {
@@ -241,6 +274,23 @@ export function VideoDubbing({
                   ) : null}
                 </div>
               )}
+
+              {/* ── how each speaker should sound ─────────────────────── */}
+              <div className="mt-3 border-t border-border pt-3">
+                <DubVoiceSettings
+                  speakers={speakers}
+                  mode={voiceMode}
+                  onModeChange={setVoiceMode}
+                  overrides={overrides}
+                  onChange={(speakerId, patch) =>
+                    setOverrides((current) => ({
+                      ...current,
+                      [speakerId]: { ...(current[speakerId] ?? { speakerId }), ...patch, speakerId },
+                    }))
+                  }
+                  disabled={generate.isPending || (dub ? isDubRunning(dub.status) : false)}
+                />
+              </div>
 
               {/* ── actions ───────────────────────────────────────────── */}
               <div className="mt-3 flex flex-wrap gap-2">

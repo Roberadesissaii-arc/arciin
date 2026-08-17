@@ -32,6 +32,7 @@ import {
   suggestTitles,
   translateTranscript,
   voiceSettingsFingerprint,
+  GEMINI_VOICES,
   type VoiceProfile,
 } from "@arciin/media-ai"
 import { requireRole } from "@/services/security/auth"
@@ -584,6 +585,47 @@ export async function transcriptRoutes(fastify: FastifyInstance) {
   })
 
   /**
+   * What a caller may say about how a speaker should sound.
+   *
+   * Enumerated rather than passed through, because every one of these fields
+   * ends up inside a model prompt. An open record would let a caller put
+   * arbitrary text into the instructions given to the voice model; naming the
+   * fields and their allowed values means the only free text that gets through
+   * is the three fields that are meant to be free text, and those are length-
+   * capped here and stripped of the speech markers downstream.
+   */
+  const voiceOverrideSchema = z.object({
+    speakerId: z.string().min(1).max(120),
+    presentation: z.enum(["masculine", "feminine", "neutral", "auto"]).optional(),
+    ageStyle: z.enum(["youthful", "young-adult", "adult", "mature", "auto"]).optional(),
+    pitch: z.enum(["low", "medium", "high"]).optional(),
+    energy: z.enum(["low", "medium", "high"]).optional(),
+    pace: z.enum(["slow", "medium", "fast"]).optional(),
+    texture: z
+      .enum(["soft", "clear", "warm", "breathy", "gravelly", "bright", "firm", "smooth"])
+      .optional(),
+    // Must be a voice the provider actually has, or synthesis fails at the
+    // provider with a message no reader could act on.
+    selectedGeminiVoice: z
+      .enum(GEMINI_VOICES.map((v) => v.name) as [string, ...string[]])
+      .optional(),
+    accent: z
+      .union([
+        z.object({ kind: z.enum(["preserve-source", "neutral-target"]) }),
+        z.object({ kind: z.literal("custom"), description: z.string().max(200) }),
+      ])
+      .optional(),
+    emotion: z
+      .union([
+        z.object({ kind: z.enum(["match-original", "neutral"]) }),
+        z.object({ kind: z.literal("preset"), preset: z.string().max(60) }),
+        z.object({ kind: z.literal("custom"), description: z.string().max(200) }),
+      ])
+      .optional(),
+    directorNotes: z.string().max(400).optional(),
+  })
+
+  /**
    * Generate or regenerate a dub for one translated language.
    *
    * Creates the row, then queues the work — that ordering is what lets a panel
@@ -596,7 +638,7 @@ export async function transcriptRoutes(fastify: FastifyInstance) {
         language: z.string().min(2).max(16),
         profileId: z.string().optional(),
         /** Per-speaker overrides. Anything omitted is matched automatically. */
-        voiceProfiles: z.array(z.record(z.string(), z.unknown())).max(24).optional(),
+        voiceProfiles: z.array(voiceOverrideSchema).max(24).optional(),
       })
       .safeParse(request.body)
 
@@ -676,6 +718,7 @@ export async function transcriptRoutes(fastify: FastifyInstance) {
     ]
     const speakerIds = speakers.length > 0 ? speakers : ["Speaker 1"]
     const overrides = (parsed.data.voiceProfiles ?? []) as Partial<VoiceProfile>[]
+
     const profiles = speakerIds.map((speakerId) =>
       buildVoiceProfile(
         { speakerId },
