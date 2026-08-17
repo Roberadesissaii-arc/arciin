@@ -101,6 +101,11 @@ function serializeDub(
     status: string
     stage: string | null
     error: string | null
+    errorDetail: string | null
+    progressPercent: number | null
+    progressCurrent: number | null
+    progressTotal: number | null
+    progressUpdatedAt: Date | null
     provider: string | null
     model: string | null
     voiceProfiles: unknown
@@ -123,6 +128,12 @@ function serializeDub(
     status: row.status,
     stage: row.stage,
     error: row.error,
+    errorDetail: row.errorDetail,
+    /** Real counters, or null where the stage genuinely cannot say. */
+    progressPercent: row.progressPercent,
+    progressCurrent: row.progressCurrent,
+    progressTotal: row.progressTotal,
+    progressUpdatedAt: row.progressUpdatedAt?.toISOString() ?? null,
     provider: row.provider,
     model: row.model,
     voiceProfiles: (row.voiceProfiles ?? []) as unknown,

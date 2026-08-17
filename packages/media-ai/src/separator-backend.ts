@@ -70,8 +70,6 @@ export type SeparatorBackendOptions = {
    * is the normal case, so the guard watches for silence instead.
    */
   stallTimeoutMs?: number
-  /** Receives the complete console output, for on-disk diagnostics. */
-  onDiagnostics?: (output: string) => void | Promise<void>
 }
 
 export class AudioSeparatorBackend implements AudioSeparationBackend {
@@ -80,7 +78,6 @@ export class AudioSeparatorBackend implements AudioSeparationBackend {
   private readonly binaryPath: string
   private readonly modelFilename: string
   private readonly stallTimeoutMs: number
-  private readonly onDiagnostics?: (output: string) => void | Promise<void>
 
   constructor(options: SeparatorBackendOptions = {}) {
     this.binaryPath =
@@ -88,7 +85,6 @@ export class AudioSeparatorBackend implements AudioSeparationBackend {
     this.modelFilename =
       options.modelFilename ?? process.env.ARCIIN_AUDIO_SEPARATOR_MODEL ?? DEFAULT_MODEL
     this.stallTimeoutMs = options.stallTimeoutMs ?? DEFAULT_STALL_TIMEOUT_MS
-    this.onDiagnostics = options.onDiagnostics
   }
 
   /**
@@ -135,7 +131,7 @@ export class AudioSeparatorBackend implements AudioSeparationBackend {
           const reading = progress.push(chunk)
           if (reading) request.onProgress?.(reading)
         },
-        onComplete: this.onDiagnostics,
+        onComplete: request.onDiagnostics,
       },
     )
     const remaining = progress.flush()

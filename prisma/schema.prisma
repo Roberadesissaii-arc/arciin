@@ -599,28 +599,27 @@ model MediaTranscript {
 /// is a text transformation of `MediaTranscript.segments`, so the media is never
 /// read again — see `translate-transcript.ts`.
 model MediaTranslation {
-  id           String                @id @default(cuid())
-  transcriptId String
+  id              String                @id @default(cuid())
+  transcriptId    String
   /// BCP-47 target tag, e.g. "es", "am", "om".
-  language     String
-  status       MediaTranscriptStatus @default(PENDING)
-  provider     String?
-  model        String?
-  fullText     String?
+  language        String
+  status          MediaTranscriptStatus @default(PENDING)
+  provider        String?
+  model           String?
+  fullText        String?
   /// Same shape as the original, with the original's timings carried over.
-  segments     Json?
-  error        String?
+  segments        Json?
+  error           String?
   /**
    * The original's `updatedAt` at the moment this was produced.
-   *
    * Editing or regenerating the transcript moves that timestamp, which is how
    * a translation is known to be describing text that no longer exists — shown
    * as "may be outdated" rather than silently served as current.
    */
   sourceUpdatedAt DateTime?
   generatedAt     DateTime?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
 
   transcript MediaTranscript @relation(fields: [transcriptId], references: [id], onDelete: Cascade)
   dubs       MediaDub[]
@@ -636,42 +635,65 @@ model MediaTranslation {
 /// never spend money on speech, and speech must never be re-generated just
 /// because someone pressed play.
 model MediaDub {
-  id            String   @id @default(cuid())
+  id            String @id @default(cuid())
   assetId       String
   transcriptId  String
   translationId String
   /// BCP-47 tag of the spoken language, matching its translation.
   language      String
 
-  status   MediaDubStatus @default(PENDING)
+  status      MediaDubStatus @default(PENDING)
   /// Which stage a running job is in, for honest progress text.
-  stage    String?
-  error    String?
-  jobId    String?
+  stage       String?
+  /**
+   * What a person should be told when this failed.
+   * A summary only. The raw process output used to land here and be rendered
+   * straight into the panel: four kilobytes of Python logging, tqdm redraws and
+   * absolute server paths, from which nobody could tell what went wrong. The
+   * bounded technical text lives in `errorDetail`, behind a disclosure, and the
+   * complete log stays on disk.
+   */
+  error       String?
+  /// Bounded, sanitised tool output for a collapsed "technical details" view.
+  errorDetail String?
+  jobId       String?
+
+  /**
+   * How far the current stage has actually got.
+   * Real numbers from the tool doing the work — the separator counts audio
+   * chunks, synthesis counts segments — never a client-side timer. Null while a
+   * stage cannot say, which the UI shows as an indeterminate state rather than
+   * inventing a percentage.
+   * `progressUpdatedAt` is what makes a stall visible: forty minutes of
+   * separation looks identical to a dead worker unless you can see when the
+   * number last moved.
+   */
+  progressPercent   Int?
+  progressCurrent   Int?
+  progressTotal     Int?
+  progressUpdatedAt DateTime?
 
   provider String?
   model    String?
 
   /**
    * Per-speaker synthesis settings, as chosen or overridden.
-   *
    * Vocal character for the purpose of picking a voice — never a claim about
    * anyone's real age, gender or nationality. See `dub-voice.ts`.
    */
-  voiceProfiles Json?
+  voiceProfiles      Json?
   /// "separated" | "replaced" — how the original non-dialogue audio was handled.
   backgroundStrategy String?
   /// Segments the timeline could not fit without unnatural speed.
-  reviewSegments Json?
+  reviewSegments     Json?
   /**
    * What was actually spoken, line by line.
-   *
    * A dub sometimes has to say a tighter version of a line to fit the time
    * available. The saved translation is never altered for that — a reader's
    * transcript stays complete and faithful — so the spoken wording lives here
    * beside it, with a flag for the lines that differ.
    */
-  dubScript Json?
+  dubScript          Json?
 
   /// The mixed dub audio, and optionally a remuxed video.
   audioStorageObjectId String?
@@ -680,7 +702,6 @@ model MediaDub {
 
   /**
    * What this dub was made from.
-   *
    * A dub describes specific words spoken in a specific way; if the
    * translation is re-translated, the transcript edited, or the voice settings
    * changed, the audio no longer matches and is reported as outdated rather
@@ -691,8 +712,8 @@ model MediaDub {
   settingsFingerprint  String?
 
   generatedAt DateTime?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   asset       Asset            @relation(fields: [assetId], references: [id], onDelete: Cascade)
   translation MediaTranslation @relation(fields: [translationId], references: [id], onDelete: Cascade)
@@ -704,6 +725,8 @@ model MediaDub {
 
 enum MediaDubStatus {
   PENDING
+  /// Extracting the soundtrack, before any model has been asked for anything.
+  PREPARING
   SEPARATING
   SYNTHESIZING
   MIXING

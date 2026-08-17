@@ -104,10 +104,32 @@ export function requestTitleSuggestions(assetId: string, input?: { count?: numbe
 export type MediaDub = {
   id: string
   language: string
-  status: "PENDING" | "SEPARATING" | "SYNTHESIZING" | "MIXING" | "READY" | "FAILED" | "NEEDS_REVIEW"
+  status:
+    | "PENDING"
+    | "PREPARING"
+    | "SEPARATING"
+    | "SYNTHESIZING"
+    | "MIXING"
+    | "READY"
+    | "FAILED"
+    | "NEEDS_REVIEW"
   /** Honest wording for what the worker is doing right now. */
   stage: string | null
   error: string | null
+  /**
+   * Bounded, sanitised tool output. Shown only behind a disclosure — the raw
+   * command dump used to be the whole error message.
+   */
+  errorDetail: string | null
+  /**
+   * A real counter from the tool doing the work, or null when a stage cannot
+   * say. Never a client-side timer.
+   */
+  progressPercent: number | null
+  progressCurrent: number | null
+  progressTotal: number | null
+  /** When the counter last moved. What makes a stall visible. */
+  progressUpdatedAt: string | null
   provider: string | null
   model: string | null
   voiceProfiles: unknown
@@ -155,7 +177,7 @@ export function dubAudioUrl(assetId: string, language: string): string {
 
 /** Statuses that mean the worker is still busy. */
 export function isDubRunning(status: MediaDub["status"]): boolean {
-  return ["PENDING", "SEPARATING", "SYNTHESIZING", "MIXING"].includes(status)
+  return ["PENDING", "PREPARING", "SEPARATING", "SYNTHESIZING", "MIXING"].includes(status)
 }
 
 /** Statuses where audio exists and can be played. */

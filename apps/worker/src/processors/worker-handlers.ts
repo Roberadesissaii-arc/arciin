@@ -356,6 +356,52 @@ async function runFfmpeg(args: string[]) {
 }
 
 /**
+ * Keep the whole separator log, out of the database.
+ *
+ * The full output is genuinely useful when a separation dies — it names the
+ * model, the bit depth, the chunk it reached — but it is diagnostics, not user
+ * content, and it has no business in a column the browser renders. One file per
+ * dub, overwritten on each attempt, swept by the existing temp cleanup.
+ */
+async function writeDubDiagnostics(dubId: string, storageRoot: string, output: string) {
+  try {
+    const dir = path.join(storageRoot, "logs")
+    await mkdir(dir, { recursive: true })
+    await writeFile(path.join(dir, `dub-${dubId}.log`), output, "utf8")
+  } catch {
+    // Losing a diagnostic log must never be the reason a dub fails.
+  }
+}
+
+/**
+ * One or two sentences a person can act on.
+ *
+ * The old behaviour put `error.message` straight into the row, which for a
+ * separator failure meant "Command failed: /srv/…" followed by pages of Python
+ * logging. What someone needs to know first is which part broke and whether
+ * trying again is worth it.
+ */
+function describeDubFailure(error: unknown): string {
+  if (error instanceof Error && error.name === "MediaToolError") {
+    const tool = (error as { tool?: string }).tool ?? ""
+    if (tool.includes("separator")) {
+      return `Audio separation failed. ${error.message}`
+    }
+    if (tool.includes("ffmpeg")) {
+      return `Mixing the dubbed audio failed. ${error.message}`
+    }
+    return error.message
+  }
+  if (error instanceof Error && error.message) {
+    // Long enough to be a log rather than a sentence: do not present it as one.
+    return error.message.length > 300
+      ? "The dub could not be generated. Open technical details for the full output."
+      : error.message
+  }
+  return "The dub could not be generated."
+}
+
+/**
  * Move a generated file into content-addressed storage.
  *
  * The same layout uploads use, so a dub is an ordinary stored object that the
@@ -633,22 +679,90 @@ export async function handleMediaJob(
     const payload = data as DubMediaPayload & { jobRecordId?: string }
     const media = await import("@arciin/media-ai")
 
-    const stage = async (
-      status: "SEPARATING" | "SYNTHESIZING" | "MIXING",
-      label: string,
-      progress: number,
-    ) => {
-      await prisma.mediaDub.update({
-        where: { id: payload.dubId },
-        data: { status, stage: label },
-      })
-      await markJob(payload.jobRecordId, { status: "ACTIVE", progress })
+    /**
+     * How far the whole dub has got, per stage.
+     *
+     * The stages are wildly uneven — separation is most of the wall clock on
+     * this hardware — so a stage's own percentage is mapped into the slice of
+     * the job it represents. Otherwise the overall bar sprints to 45% in the
+     * first minute and then sits still for an hour.
+     */
+    const STAGE_SPAN: Record<string, [number, number]> = {
+      PREPARING: [5, 10],
+      SEPARATING: [10, 60],
+      SYNTHESIZING: [60, 85],
+      MIXING: [85, 98],
     }
 
-    const failDub = async (message: string) => {
+    const overall = (status: string, stagePercent: number | null) => {
+      const [from, to] = STAGE_SPAN[status] ?? [0, 100]
+      if (stagePercent === null) return from
+      return Math.round(from + ((to - from) * Math.max(0, Math.min(100, stagePercent))) / 100)
+    }
+
+    const throttle = new media.ProgressThrottle()
+
+    const stage = async (
+      status: "PREPARING" | "SEPARATING" | "SYNTHESIZING" | "MIXING",
+      label: string,
+    ) => {
+      throttle.reset()
       await prisma.mediaDub.update({
         where: { id: payload.dubId },
-        data: { status: "FAILED", stage: null, error: message },
+        data: {
+          status,
+          stage: label,
+          // A new stage has no counter yet, and last stage's numbers would be a
+          // lie. Cleared so the panel shows an indeterminate state instead.
+          progressPercent: null,
+          progressCurrent: null,
+          progressTotal: null,
+          progressUpdatedAt: new Date(),
+        },
+      })
+      await markJob(payload.jobRecordId, { status: "ACTIVE", progress: overall(status, null) })
+    }
+
+    /**
+     * A real counter from whatever is doing the work.
+     *
+     * Throttled, because the separator reports 123 times over ninety minutes and
+     * synthesis once per segment, and every write is CPU taken from the job the
+     * reader is waiting for. `progressUpdatedAt` moves on every write it does
+     * make, which is what lets the panel tell slow from stopped.
+     */
+    const reportProgress = async (
+      status: "SEPARATING" | "SYNTHESIZING" | "MIXING",
+      current: number,
+      total: number,
+      label?: string,
+    ) => {
+      const percent = media.percentOf(current, total)
+      if (!throttle.shouldWrite(percent)) return
+      await prisma.mediaDub.update({
+        where: { id: payload.dubId },
+        data: {
+          progressPercent: percent,
+          progressCurrent: current,
+          progressTotal: total,
+          progressUpdatedAt: new Date(),
+          ...(label ? { stage: label } : {}),
+        },
+      })
+      await markJob(payload.jobRecordId, { status: "ACTIVE", progress: overall(status, percent) })
+    }
+
+    const failDub = async (message: string, detail?: string) => {
+      await prisma.mediaDub.update({
+        where: { id: payload.dubId },
+        data: {
+          status: "FAILED",
+          stage: null,
+          error: message,
+          // Bounded and sanitised; the full log stays on disk.
+          errorDetail: detail ?? null,
+          progressUpdatedAt: new Date(),
+        },
       })
       await markJob(payload.jobRecordId, { status: "FAILED", progress: 100, error: message })
     }
@@ -688,8 +802,11 @@ export async function handleMediaJob(
 
       await mkdir(workDir, { recursive: true })
 
+      // ── prepare ─────────────────────────────────────────────────────────
+      await stage("PREPARING", "Preparing audio")
+
       // ── separate ────────────────────────────────────────────────────────
-      await stage("SEPARATING", "Separating dialogue from background", 20)
+      await stage("SEPARATING", "Separating dialogue from background")
       const separation = new media.AudioSeparationService([new media.AudioSeparatorBackend()])
       if (!(await separation.isAvailable())) {
         await failDub(
@@ -700,16 +817,34 @@ export async function handleMediaJob(
 
       const sourceAudio = path.join(workDir, "source.wav")
       await runFfmpeg(["-y", "-i", objectFilePath, "-vn", "-ac", "2", "-ar", "44100", sourceAudio])
+
       const stems = await separation.separate({
         inputPath: sourceAudio,
         workDir,
         onStage: (label) => {
           void prisma.mediaDub.update({ where: { id: payload.dubId }, data: { stage: label } })
         },
+        /**
+         * The separator's own chunk counter.
+         *
+         * This is the number the reader was missing: the tool was printing
+         * `39/122` while the panel said only "Separating dialogue from
+         * background" for half an hour.
+         */
+        onProgress: (progress) => {
+          void reportProgress(
+            "SEPARATING",
+            progress.completed,
+            progress.total,
+            "Separating dialogue from background",
+          ).catch(() => {})
+        },
+        /** The whole log, kept where diagnostics belong rather than in a column. */
+        onDiagnostics: (output) => writeDubDiagnostics(payload.dubId, storageRoot, output),
       })
 
       // ── synthesise ──────────────────────────────────────────────────────
-      await stage("SYNTHESIZING", "Generating translated voices", 45)
+      await stage("SYNTHESIZING", "Generating translated voices")
       const bySpeaker = new Map<string, DubSegment[]>()
       for (const segment of segments) {
         const speaker = segment.speaker ?? profiles[0]!.speakerId
@@ -730,6 +865,19 @@ export async function handleMediaJob(
       }[] = []
 
       const targetLanguageName = languageName(translation.language) || translation.language
+
+      /**
+       * How many requests synthesis will make, known before it starts.
+       *
+       * Counted rather than estimated, so "segment 4 of 12" is a fact. The
+       * chunking is the same call the loop below uses, so the total cannot drift
+       * from what actually happens.
+       */
+      const plannedChunks = [...bySpeaker.values()].reduce(
+        (sum, list) => sum + media.chunkSegments(list).length,
+        0,
+      )
+      let synthesised = 0
 
       for (const [speaker, speakerSegments] of bySpeaker) {
         const profile =
@@ -803,6 +951,16 @@ export async function handleMediaJob(
           const clipPath = path.join(workDir, `clip-${clips.length}.wav`)
           await writeFile(clipPath, media.pcmToWav(result.pcm))
           clips.push({ path: clipPath, startMs: chunkStart, rate: fit.rate })
+
+          synthesised += 1
+          await reportProgress(
+            "SYNTHESIZING",
+            synthesised,
+            plannedChunks,
+            // Named, because with two speakers "4 of 12" alone hides which
+            // voice is being generated.
+            `Generating translated voices · ${speaker}`,
+          )
         }
       }
 
@@ -821,7 +979,7 @@ export async function handleMediaJob(
       const clamped = placed.filter((slot) => slot.clamped).length
 
       // ── mix ─────────────────────────────────────────────────────────────
-      await stage("MIXING", "Mixing the original soundtrack", 75)
+      await stage("MIXING", "Mixing the original soundtrack")
       const audioName = media.dubFilename(asset.originalFilename, translation.language, "audio")
       const dubAudioPath = path.join(workDir, audioName)
       await runFfmpeg(
@@ -832,6 +990,10 @@ export async function handleMediaJob(
         }),
       )
 
+      await prisma.mediaDub.update({
+        where: { id: payload.dubId },
+        data: { stage: "Saving dubbed audio", progressUpdatedAt: new Date() },
+      })
       const stored = await storeDubArtifact(dubAudioPath, storageRoot, "audio/mp4")
       // Anything the rate could not fix, or the picture could not hold.
       const review = fits.filter((f) => f.needsReview)
@@ -869,7 +1031,16 @@ export async function handleMediaJob(
         },
       })
     } catch (error) {
-      await failDub(error instanceof Error ? error.message : "The dub could not be generated.")
+      /**
+       * What the reader is told, and what is kept for whoever debugs it.
+       *
+       * A `MediaToolError` already carries both. Anything else gets its message
+       * as the summary and nothing as the detail, because a message we did not
+       * shape is not safe to present as technical output.
+       */
+      const summary = describeDubFailure(error)
+      const detail = error instanceof media.MediaToolError ? error.detail : undefined
+      await failDub(summary, detail)
     } finally {
       // The stems and clips are large and only needed during the run.
       await rm(workDir, { recursive: true, force: true }).catch(() => {})

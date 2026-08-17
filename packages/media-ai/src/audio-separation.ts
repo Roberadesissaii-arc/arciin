@@ -68,6 +68,13 @@ export type SeparationRequest = {
    * business.
    */
   onProgress?: (progress: SeparationProgress) => void
+  /**
+   * Receives the backend's complete console output when it finishes.
+   *
+   * Per-request rather than per-backend, because it is one job's diagnostics:
+   * the caller decides where a given run's log goes.
+   */
+  onDiagnostics?: (output: string) => void | Promise<void>
   signal?: AbortSignal
 }
 
