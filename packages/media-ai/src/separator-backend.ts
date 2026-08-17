@@ -8,6 +8,8 @@ import type {
   AudioStems,
   SeparationRequest,
 } from "./audio-separation"
+import { DEFAULT_STALL_TIMEOUT_MS, runStreaming } from "./run-streaming"
+import { SeparatorProgressReader } from "./separator-progress"
 
 const run = promisify(execFile)
 
@@ -58,8 +60,18 @@ export type SeparatorBackendOptions = {
   /** Overridable so a GPU build or a different install can be pointed at. */
   binaryPath?: string
   modelFilename?: string
-  /** Separation is slow on CPU; a job should not hang on it forever. */
-  timeoutMs?: number
+  /**
+   * How long the separator may print nothing before it is treated as hung.
+   *
+   * Not a limit on how long separation may take. There used to be one — thirty
+   * minutes — and it killed a real 11:51 video at chunk 39 of 122 after half an
+   * hour of correct work, because on this CPU that file needed about ninety
+   * minutes. A duration limit cannot distinguish slow from stuck, and here slow
+   * is the normal case, so the guard watches for silence instead.
+   */
+  stallTimeoutMs?: number
+  /** Receives the complete console output, for on-disk diagnostics. */
+  onDiagnostics?: (output: string) => void | Promise<void>
 }
 
 export class AudioSeparatorBackend implements AudioSeparationBackend {
@@ -67,14 +79,16 @@ export class AudioSeparatorBackend implements AudioSeparationBackend {
 
   private readonly binaryPath: string
   private readonly modelFilename: string
-  private readonly timeoutMs: number
+  private readonly stallTimeoutMs: number
+  private readonly onDiagnostics?: (output: string) => void | Promise<void>
 
   constructor(options: SeparatorBackendOptions = {}) {
     this.binaryPath =
       options.binaryPath ?? process.env.ARCIIN_AUDIO_SEPARATOR_BIN ?? DEFAULT_BINARY
     this.modelFilename =
       options.modelFilename ?? process.env.ARCIIN_AUDIO_SEPARATOR_MODEL ?? DEFAULT_MODEL
-    this.timeoutMs = options.timeoutMs ?? 30 * 60 * 1000
+    this.stallTimeoutMs = options.stallTimeoutMs ?? DEFAULT_STALL_TIMEOUT_MS
+    this.onDiagnostics = options.onDiagnostics
   }
 
   /**
@@ -95,7 +109,15 @@ export class AudioSeparatorBackend implements AudioSeparationBackend {
   async separate(request: SeparationRequest): Promise<AudioStems> {
     request.onStage?.("Separating dialogue from background")
 
-    await run(
+    /**
+     * The separator's own progress, read as it works.
+     *
+     * Owned here rather than in the worker: the worker asked for two stems and
+     * should not have to know that this particular backend happens to be a
+     * Python program that draws tqdm bars on stderr.
+     */
+    const progress = new SeparatorProgressReader()
+    await runStreaming(
       this.binaryPath,
       [
         request.inputPath,
@@ -106,8 +128,18 @@ export class AudioSeparatorBackend implements AudioSeparationBackend {
         "--output_format",
         "WAV",
       ],
-      { timeout: this.timeoutMs, signal: request.signal, maxBuffer: 32 * 1024 * 1024 },
+      {
+        signal: request.signal,
+        stallTimeoutMs: this.stallTimeoutMs,
+        onOutput: (chunk) => {
+          const reading = progress.push(chunk)
+          if (reading) request.onProgress?.(reading)
+        },
+        onComplete: this.onDiagnostics,
+      },
     )
+    const remaining = progress.flush()
+    if (remaining) request.onProgress?.(remaining)
 
     const produced = (await readdir(request.workDir)).filter((n) =>
       n.toLowerCase().endsWith(".wav"),

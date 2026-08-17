@@ -40,12 +40,34 @@ export type SeparationStrategy =
   /** No separator available: the original audio is replaced wholesale. */
   | "replaced"
 
+/**
+ * How far along a separation is, when the backend can say.
+ *
+ * The separator is the only thing that knows this, so it is the separator's job
+ * to report it — a worker scraping its grandchild's console output would be
+ * reaching through an abstraction that exists precisely so it does not have to.
+ */
+export type SeparationProgress = {
+  completed: number
+  total: number
+  /** 0-100, integer. */
+  percent: number
+}
+
 export type SeparationRequest = {
   /** Local path to the audio to split. */
   inputPath: string
   /** Directory the backend may write stems into. */
   workDir: string
   onStage?: (stage: string) => void
+  /**
+   * Called as often as the backend has something new to say — which for a long
+   * separation is once every tens of seconds. Consumers are expected to
+   * throttle their own persistence; this deliberately does not throttle for
+   * them, because what counts as "worth writing down" is not the separator's
+   * business.
+   */
+  onProgress?: (progress: SeparationProgress) => void
   signal?: AbortSignal
 }
 
