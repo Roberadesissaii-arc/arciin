@@ -161,6 +161,41 @@ approximately. The UI says **match vocal character** for that reason.
 When analysis is inconclusive, the match returns a neutral voice and reports low
 confidence rather than guessing.
 
+### The controls a reader gets
+
+Three depths, because the audience is three audiences.
+
+**Auto** shows what will happen in a sentence and offers nothing to adjust. Most
+people want the recommendation, and twenty controls by default serve only the few
+who do not.
+
+**Simple** exposes the four things people actually reach for: voice presentation,
+vocal age style, accent, emotion.
+
+**Advanced** adds the exact voice, pitch guidance, energy, texture, pacing and
+free-text director notes.
+
+Every control is local state until **Generate** or **Regenerate** is pressed, so
+browsing options costs nothing — asserted by counting the generate POST across a
+run that touches every field. Auto sends no overrides at all, so backing out of a
+choice really does back out of it.
+
+Pacing reads Slow / Natural / Fast. Every dub is fitted to the original timing
+regardless of this setting, so calling one option "match video timing" would
+imply the other two are not fitted.
+
+### Free text is a prompt boundary
+
+Director notes, custom accents and custom emotions are the only fields a person
+types by hand, and they land in the same prompt as the words to be spoken. All
+three are stripped of the speech markers, collapsed to one line and length-capped
+(`sanitizePromptText`); a description that sanitises to nothing falls back to its
+default rather than directing the model at an empty string.
+
+The API enumerates the override fields rather than accepting an open record, so
+an unknown voice name or an arbitrary instruction fails at the boundary for
+nothing, instead of inside a job that has already paid for separation.
+
 ## Timing
 
 The original recording owns the clock, and translations run longer — Spanish
@@ -184,3 +219,50 @@ match its text, and it is reported as outdated rather than played as current.
 
 The fingerprint is order-independent, so regenerating with unchanged settings
 reproduces the same dub rather than quietly picking a different voice.
+
+## Playback
+
+The dub plays as a **second audio element over an untouched video element**. That
+is the whole design, and the reason is one behaviour: someone four seconds into a
+video who switches to Spanish should hear Spanish from four seconds. Re-encoding,
+swapping the video's source, or re-keying the element all throw the playhead back
+to zero.
+
+The video is muted while a dub plays, so the original dialogue is not audible
+underneath the translated dialogue. Play, pause, seek and rate are mirrored on
+the events that cause them, and a 1-second interval corrects drift only past
+0.25s — re-seeking every tick produces an audible stutter loop, which is worse
+than a few milliseconds nobody can hear.
+
+### The acceptance test
+
+`tests/e2e/video-dub-playback.spec.ts` is the gate. Everything cheaper than it
+can pass while the feature is broken: a `200` from the audio route proves a file
+is servable, not that a browser decoded it. So it reads the live `<video>` and
+`<audio>` — `readyState`, `duration`, `currentTime`, `paused`, `muted` — through
+a run that plays, seeks to 4s, switches to Spanish, plays on, pauses, seeks
+again and switches back. Playback must never reach the generate endpoint, and
+that is counted across the whole run.
+
+Both dubbing specs were checked by breaking the implementation on purpose:
+
+| Mutation | Failure |
+| --- | --- |
+| dub starts at `0` instead of the playhead | `dub started at 0.05 for a video at 5.45` |
+| video element keyed on the audio source | `playhead moved on switch: 4 -> 0` |
+| overrides dropped from the request | wiring assertion, `Received: undefined` |
+
+A test that cannot fail is not evidence.
+
+### Why the test dub is seeded
+
+`scripts/e2e-seed.mjs` seeds a transcript, a Spanish translation and a READY dub
+pointing at `tests/fixtures/e2e-dub-audio-fixture.m4a` — a committed ten-second
+tone that steps pitch once a second, so a person opening it can hear where in the
+timeline they are.
+
+Synthesising it per run would mean waiting on separation at ~13x realtime and
+paying to re-derive identical bytes, and none of the properties above depend on
+the audio having come from a voice model. **Whether the speech itself is good is
+a separate question**, answered by running the pipeline against the provider —
+and ultimately by listening, which no test can do.
