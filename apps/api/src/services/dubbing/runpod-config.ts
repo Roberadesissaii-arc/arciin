@@ -17,6 +17,17 @@ import { decryptSecret, encryptSecret } from "@/services/security/encryption"
  * browser can reach goes through `describeConnection`.
  */
 
+/**
+ * Always the same row.
+ *
+ * There should be exactly one InstanceConfig, but nothing enforces that, and an
+ * unordered `findFirst` may return a *different* row after an update — Postgres
+ * is free to move a row on write. That turned a read-modify-write into reading
+ * one row and writing another, which showed up as a connection that saved
+ * successfully and then read back as unconfigured.
+ */
+const INSTANCE_ROW = { orderBy: { createdAt: "asc" } } as const
+
 export type RunPodConnectionInput = {
   apiKey: string
   endpointId: string
@@ -118,7 +129,7 @@ function readStored(raw: unknown): StoredRunPod | null {
  * mistake.
  */
 export async function getRunPodStatus(prisma: PrismaClient): Promise<RunPodConnectionStatus> {
-  const instance = await prisma.instanceConfig.findFirst({ select: { dubbingConfig: true } })
+  const instance = await prisma.instanceConfig.findFirst({ ...INSTANCE_ROW, select: { dubbingConfig: true } })
   const stored = readStored(instance?.dubbingConfig)
 
   if (!stored) {
@@ -152,7 +163,7 @@ export async function getRunPodStatus(prisma: PrismaClient): Promise<RunPodConne
 export async function getRunPodCredentials(
   prisma: PrismaClient,
 ): Promise<RunPodCredentials | null> {
-  const instance = await prisma.instanceConfig.findFirst({ select: { dubbingConfig: true } })
+  const instance = await prisma.instanceConfig.findFirst({ ...INSTANCE_ROW, select: { dubbingConfig: true } })
   const stored = readStored(instance?.dubbingConfig)
   if (!stored) return null
 
@@ -178,6 +189,7 @@ export async function saveRunPodConnection(
   input: RunPodConnectionInput,
 ): Promise<RunPodConnectionStatus> {
   const instance = await prisma.instanceConfig.findFirst({
+    ...INSTANCE_ROW,
     select: { id: true, dubbingConfig: true },
   })
   if (!instance) throw new Error("This instance is not initialised.")
@@ -214,6 +226,7 @@ export async function recordRunPodTest(
   summary: RunPodTestSummary,
 ): Promise<void> {
   const instance = await prisma.instanceConfig.findFirst({
+    ...INSTANCE_ROW,
     select: { id: true, dubbingConfig: true },
   })
   const stored = readStored(instance?.dubbingConfig)
@@ -236,6 +249,7 @@ export async function recordRunPodTest(
  */
 export async function disconnectRunPod(prisma: PrismaClient): Promise<RunPodConnectionStatus> {
   const instance = await prisma.instanceConfig.findFirst({
+    ...INSTANCE_ROW,
     select: { id: true, dubbingConfig: true },
   })
   if (!instance) return getRunPodStatus(prisma)

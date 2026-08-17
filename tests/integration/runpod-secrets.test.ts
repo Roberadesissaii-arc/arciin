@@ -39,13 +39,6 @@ const SECRETS = [CONNECTION.apiKey, CONNECTION.s3SecretAccessKey]
 
 beforeAll(async () => {
   await resetDatabase()
-  await prisma.instanceConfig.create({
-    data: {
-      instanceName: "Secret Test",
-      storageRoot: "/tmp/arciin-secret-test",
-      initializedAt: new Date(),
-    },
-  })
 })
 
 afterAll(async () => {
@@ -53,14 +46,30 @@ afterAll(async () => {
   await prisma.$disconnect()
 })
 
+/**
+ * The instance is created here rather than once in `beforeAll`.
+ *
+ * These files share one database and run serially, so a row created in a
+ * `beforeAll` can be removed by a neighbouring file's reset. Recreating it per
+ * test makes this file independent of whatever ran before it — which is worth
+ * more than the saved insert.
+ */
 beforeEach(async () => {
-  const instance = await prisma.instanceConfig.findFirst({ select: { id: true } })
-  if (instance) {
+  const existing = await prisma.instanceConfig.findFirst({ select: { id: true } })
+  if (existing) {
     await prisma.instanceConfig.update({
-      where: { id: instance.id },
+      where: { id: existing.id },
       data: { dubbingConfig: {} },
     })
+    return
   }
+  await prisma.instanceConfig.create({
+    data: {
+      instanceName: "Secret Test",
+      storageRoot: "/tmp/arciin-secret-test",
+      initializedAt: new Date(),
+    },
+  })
 })
 
 describe("storage", () => {

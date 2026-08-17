@@ -30,6 +30,7 @@ import {
   loadDubbingSettings,
   saveSeparationMode,
 } from "@/services/dubbing/separation-settings"
+import { getRunPodStatus } from "@/services/dubbing/runpod-config"
 import { streamFileResponse } from "@/services/media/stream-file-response"
 import { mediaQueue } from "@/services/jobs/queues"
 import {
@@ -631,7 +632,12 @@ export async function transcriptRoutes(fastify: FastifyInstance) {
 
     const dubbingSettings = await loadDubbingSettings(fastify.prisma)
     const localAvailable = await separation.isAvailable()
-    const backends = describeBackends({ settings: dubbingSettings, localAvailable })
+    const runpodStatus = await getRunPodStatus(fastify.prisma)
+    const backends = describeBackends({
+      settings: dubbingSettings,
+      localAvailable,
+      runpod: { configured: runpodStatus.configured, healthy: runpodStatus.lastTest?.ok ?? null },
+    })
 
     reply.send({
       data: {
@@ -783,9 +789,11 @@ export async function transcriptRoutes(fastify: FastifyInstance) {
     const settings = parsed.data.separationMode
       ? await saveSeparationMode(fastify.prisma, parsed.data.separationMode)
       : await loadDubbingSettings(fastify.prisma)
+    const runpod = await getRunPodStatus(fastify.prisma)
     const backends = describeBackends({
       settings,
       localAvailable: await separation.isAvailable(),
+      runpod: { configured: runpod.configured, healthy: runpod.lastTest?.ok ?? null },
     })
 
     let decision

@@ -20,6 +20,17 @@ import {
  * server and not about whoever happens to be logged in.
  */
 
+/**
+ * Always the same row.
+ *
+ * There should be exactly one InstanceConfig, but nothing enforces that, and an
+ * unordered `findFirst` may return a *different* row after an update — Postgres
+ * is free to move a row on write. That turned a read-modify-write into reading
+ * one row and writing another, which showed up as a connection that saved
+ * successfully and then read back as unconfigured.
+ */
+const INSTANCE_ROW = { orderBy: { createdAt: "asc" } } as const
+
 export type CloudSeparationConfig = {
   /** Identifier for the implementation. */
   provider: string
@@ -68,7 +79,7 @@ export function readDubbingSettings(raw: unknown): DubbingSettings {
 }
 
 export async function loadDubbingSettings(prisma: PrismaClient): Promise<DubbingSettings> {
-  const instance = await prisma.instanceConfig.findFirst({ select: { dubbingConfig: true } })
+  const instance = await prisma.instanceConfig.findFirst({ ...INSTANCE_ROW, select: { dubbingConfig: true } })
   return readDubbingSettings(instance?.dubbingConfig)
 }
 
@@ -77,6 +88,7 @@ export async function saveSeparationMode(
   mode: SeparationMode,
 ): Promise<DubbingSettings> {
   const instance = await prisma.instanceConfig.findFirst({
+    ...INSTANCE_ROW,
     select: { id: true, dubbingConfig: true },
   })
   if (!instance) return DEFAULTS
@@ -96,6 +108,42 @@ export async function saveSeparationMode(
   return readDubbingSettings(updated.dubbingConfig)
 }
 
+function describeCloud(
+  runpod: { configured: boolean; healthy?: boolean | null } | null | undefined,
+  settings: DubbingSettings,
+): SeparationBackendInfo {
+  if (runpod?.configured) {
+    /**
+     * A connection that has never passed its test is offered anyway.
+     *
+     * Refusing it would leave someone who has just entered their details unable
+     * to use them until they remember to press Test — and the dub request runs
+     * the same checks regardless, so a broken connection still fails safely
+     * rather than silently running locally.
+     */
+    return {
+      kind: "cloud",
+      label: "RunPod GPU",
+      available: true,
+      ...(runpod.healthy === false
+        ? { unavailableReason: "The last connection test failed. Test it again in Settings." }
+        : {}),
+    }
+  }
+
+  // A generic provider entry, kept for whatever comes after RunPod.
+  if (settings.cloud?.configured) {
+    return { kind: "cloud", label: settings.cloud.label, available: true }
+  }
+
+  return {
+    kind: "cloud",
+    label: settings.cloud?.label ?? "Cloud",
+    available: false,
+    unavailableReason: "No cloud audio-separation provider is configured.",
+  }
+}
+
 /**
  * The two backends, as the UI needs to describe them.
  *
@@ -105,8 +153,17 @@ export async function saveSeparationMode(
 export function describeBackends(input: {
   settings: DubbingSettings
   localAvailable: boolean
+  /**
+   * The real provider connection, when one is configured.
+   *
+   * Availability is decided here so the panel, the dub request and the worker
+   * cannot disagree about whether Cloud is usable — three places deciding that
+   * independently is exactly how a reader ends up offered an option that fails
+   * an hour later.
+   */
+  runpod?: { configured: boolean; healthy?: boolean | null } | null
 }): { local: SeparationBackendInfo; cloud: SeparationBackendInfo } {
-  const { settings, localAvailable } = input
+  const { settings, localAvailable, runpod } = input
 
   return {
     local: {
@@ -124,13 +181,6 @@ export function describeBackends(input: {
       engine: "Demucs",
       compute: "CPU",
     },
-    cloud: settings.cloud?.configured
-      ? { kind: "cloud", label: settings.cloud.label, available: true }
-      : {
-          kind: "cloud",
-          label: settings.cloud?.label ?? "Cloud",
-          available: false,
-          unavailableReason: "No cloud audio-separation provider is configured.",
-        },
+    cloud: describeCloud(runpod, settings),
   }
 }
