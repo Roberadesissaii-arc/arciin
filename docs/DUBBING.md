@@ -40,15 +40,53 @@ point of the feature, and a quiet downgrade would be worse than an error.
 
 ### Installing a separator
 
-The default backend is `python-audio-separator`, which runs ONNX MDX/UVR models
-on CPU — considerably lighter than a PyTorch stack.
-
 ```bash
-pip install "audio-separator[cpu]"
+python3 -m venv /srv/arce-projects/arciin-separator
+/srv/arce-projects/arciin-separator/bin/pip install torch torchvision \
+  --index-url https://download.pytorch.org/whl/cpu
+/srv/arce-projects/arciin-separator/bin/pip install audio-separator onnxruntime audioread
 ```
 
-The backend is pluggable (`AudioSeparationBackend`), so Demucs, a GPU build, or
-another tool can be substituted without touching the timing, mixing or TTS code.
+Install CPU torch **first, from PyTorch's own index**. `audio-separator[cpu]`
+pulls CUDA wheels regardless of the extra — several gigabytes of `nvidia_*`
+packages that are useless without a GPU, and the download failed part-way
+through on this machine before finishing.
+
+The backend is pluggable (`AudioSeparationBackend`), so a GPU build or another
+tool can be substituted without touching the timing, mixing or TTS code.
+
+### This machine cannot run the ONNX models
+
+Measured, not assumed:
+
+```txt
+CPU:  Intel Celeron N5105 @ 2.00GHz
+avx: NO   avx2: NO   avx512f: NO   fma: NO   sse4_2: yes
+```
+
+`onnxruntime`'s prebuilt kernels assume AVX. On this processor they execute an
+illegal instruction and the process dies with SIGILL partway through loading a
+model — so **MDX/UVR models cannot be used here at all**. It is a property of
+the hardware, not a configuration problem.
+
+Torch survives the same CPU (NNPACK disables itself and falls back), so
+**Demucs models are the viable local option on non-AVX hardware**. They are
+slower, which is why separation runs in the media worker rather than a request.
+
+A machine with AVX2 should prefer the MDX models: they are considerably faster
+for the same job.
+
+### The torchvision shim
+
+`onnx2torch` imports `torchvision` for non-max-suppression — an
+object-detection operation that vocal separation never performs — and
+torchvision's native ops fail to register on Python 3.14. The import, not the
+functionality, is what blocks separation.
+
+The backend therefore runs the separator with a minimal `torchvision` stub
+ahead of it on `PYTHONPATH`. Nothing installed is modified, the stub raises if
+anything ever genuinely calls a vision op, and it can be deleted the moment the
+upstream wheels support the interpreter.
 
 ## Speech synthesis
 
