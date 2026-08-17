@@ -232,6 +232,8 @@ export type AssetAiActivity = {
   current: number | null
   total: number | null
   updatedAt: string | null
+  /** Rolling progress history, so a card can estimate without its own request. */
+  samples: { at: number; completed: number; total: number }[] | null
   status: "running" | "failed"
   /** Which language to open, so a click lands on the job that is running. */
   language: string | null

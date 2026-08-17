@@ -2,6 +2,8 @@
 
 import { AlertTriangle, Globe, Loader2 } from "lucide-react"
 
+import { estimateRemaining } from "@arciin/types"
+
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import type { AssetAiSummary } from "@/lib/types/models"
 import { cn } from "@/lib/utils"
@@ -40,6 +42,7 @@ export function AssetAiIndicator({
   if (!activity) return null
 
   const running = activity.status === "running"
+  const eta = activity.samples?.length ? estimateRemaining(activity.samples) : null
   const label = running
     ? `${activity.label} — ${activity.stage ?? "working"}`
     : `${activity.label} failed`
@@ -89,6 +92,13 @@ export function AssetAiIndicator({
               <p className="text-[11.5px] tabular-nums opacity-90" data-testid="asset-ai-indicator-progress">
                 {activity.current} / {activity.total}
                 {activity.percent !== null ? ` · ${activity.percent}%` : ""}
+              </p>
+            ) : null}
+            {/* Only where it is defensible: the same samples the panel uses, and
+                nothing at all until enough of them exist. */}
+            {eta ? (
+              <p className="text-[11.5px] opacity-90" data-testid="asset-ai-indicator-eta">
+                {eta.label}
               </p>
             ) : null}
           </>

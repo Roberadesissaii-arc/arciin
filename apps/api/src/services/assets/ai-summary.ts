@@ -40,6 +40,14 @@ export type AssetAiActivity = {
   total: number | null
   /** When the counter last moved, so the card can tell slow from stopped. */
   updatedAt: string | null
+  /**
+   * The same rolling history the panel uses.
+   *
+   * Sent with the listing so a card can show remaining time without a request
+   * of its own — the estimate is arithmetic over these, and duplicating that
+   * arithmetic on the server would make the two views disagree between polls.
+   */
+  samples: { at: number; completed: number; total: number }[] | null
   status: "running" | "failed"
   /**
    * Which language to open. Lets clicking the indicator land on the dub that is
@@ -106,6 +114,7 @@ export async function loadAssetAiSummaries(
       progressCurrent: true,
       progressTotal: true,
       progressUpdatedAt: true,
+      progressSamples: true,
       updatedAt: true,
     },
     orderBy: { updatedAt: "desc" },
@@ -147,6 +156,20 @@ export async function loadAssetAiSummaries(
   return summaries
 }
 
+/** Defensive: the column is JSON, and a malformed value must not break a page. */
+function readSamples(raw: unknown): { at: number; completed: number; total: number }[] | null {
+  if (!Array.isArray(raw)) return null
+  const samples = raw.filter(
+    (entry): entry is { at: number; completed: number; total: number } =>
+      Boolean(entry) &&
+      typeof entry === "object" &&
+      typeof (entry as { at?: unknown }).at === "number" &&
+      typeof (entry as { completed?: unknown }).completed === "number" &&
+      typeof (entry as { total?: unknown }).total === "number",
+  )
+  return samples.length > 0 ? samples : null
+}
+
 /**
  * The single most important thing happening to this asset.
  *
@@ -165,6 +188,7 @@ function pickActivity(
     progressCurrent: number | null
     progressTotal: number | null
     progressUpdatedAt: Date | null
+    progressSamples: unknown
     updatedAt: Date
   }[],
   transcript: { language: string | null; status: string; updatedAt: Date } | undefined,
@@ -180,6 +204,7 @@ function pickActivity(
       current: runningDub.progressCurrent,
       total: runningDub.progressTotal,
       updatedAt: (runningDub.progressUpdatedAt ?? runningDub.updatedAt).toISOString(),
+      samples: readSamples(runningDub.progressSamples),
       status: "running",
       language: runningDub.language,
     }
@@ -195,6 +220,7 @@ function pickActivity(
       current: null,
       total: null,
       updatedAt: transcript.updatedAt.toISOString(),
+      samples: null,
       status: "running",
       language: null,
     }
@@ -211,6 +237,7 @@ function pickActivity(
       current: null,
       total: null,
       updatedAt: failedDub.updatedAt.toISOString(),
+      samples: null,
       status: "failed",
       language: failedDub.language,
     }

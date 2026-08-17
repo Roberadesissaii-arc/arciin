@@ -27,10 +27,18 @@ import {
   Search,
   Sparkles,
   VolumeX,
+  ChevronDown,
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { Textarea } from "@/components/ui/textarea"
 import {
   Sheet,
@@ -137,18 +145,47 @@ function TranscriptSegments({
   }))
 
   return (
-    <ol className="mt-3 space-y-3" data-testid="video-transcript-segments">
+    /**
+     * Meant to be read, not scanned like a log.
+     *
+     * A speaker's name appears once at the top of their run rather than on every
+     * line, consecutive lines from one person sit closer together than the gap
+     * between speakers, and nothing is boxed — turning each sentence into a card
+     * is what made the old version feel like debug output. The timestamp keeps
+     * its own column so the eye can ignore it while reading and find it
+     * instantly when seeking.
+     */
+    <ol className="mt-3" data-testid="video-transcript-segments">
       {rows.map(({ s, i, newSpeaker }) => {
+        const active = i === activeIndex
         return (
-          <li key={`${s.startMs}-${i}`}>
+          <li key={`${s.startMs}-${i}`} className={cn(newSpeaker ? "mt-4 first:mt-0" : "mt-1.5")}>
             {newSpeaker ? (
-              <p className="mb-1 text-[12px] font-semibold text-foreground">{s.speaker}</p>
+              <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                {s.speaker}
+              </p>
             ) : null}
-            <div className="flex gap-3">
+            <div
+              className={cn(
+                "flex gap-2.5 rounded-md border-l-2 py-0.5 pl-2 transition-colors",
+                // The playing line, marked without shouting: an accent edge and
+                // the faintest wash, so following along does not turn the page
+                // into a flashing list.
+                active ? "border-primary/70 bg-primary/[0.06]" : "border-transparent",
+              )}
+              data-testid={active ? "transcript-active-segment" : undefined}
+            >
               <button
                 type="button"
                 onClick={() => onSeek(s.startMs)}
-                className="shrink-0 pt-0.5 font-mono text-[11px] tabular-nums text-primary hover:underline"
+                className={cn(
+                  "mt-[3px] h-fit shrink-0 rounded px-1.5 py-0.5 font-mono text-[10.5px] tabular-nums",
+                  // A quiet pill rather than orange text: it has to read as
+                  // interactive without reading as a warning.
+                  "bg-muted text-muted-foreground transition-colors",
+                  "hover:bg-primary/10 hover:text-primary",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30",
+                )}
                 aria-label={`Jump to ${formatTimecode(s.startMs, { forceHours: long })}`}
                 data-testid="transcript-timestamp"
                 data-start-ms={s.startMs}
@@ -157,8 +194,8 @@ function TranscriptSegments({
               </button>
               <p
                 className={cn(
-                  "min-w-0 flex-1 text-[13.5px] leading-relaxed",
-                  i === activeIndex ? "font-medium text-foreground" : "text-foreground/85",
+                  "min-w-0 flex-1 text-[13.5px] leading-[1.65]",
+                  active ? "text-foreground" : "text-foreground/85",
                 )}
               >
                 {needle ? highlight(s.text, needle) : s.text}
@@ -169,6 +206,13 @@ function TranscriptSegments({
       })}
     </ol>
   )
+}
+
+/** How many segments contain the term. Local, and never another model call. */
+function countMatches(segments: { text: string }[], query: string): number {
+  const needle = query.trim().toLowerCase()
+  if (!needle) return 0
+  return segments.filter((s) => s.text.toLowerCase().includes(needle)).length
 }
 
 /** Mark the searched term without dangerouslySetInnerHTML. */
@@ -762,35 +806,89 @@ function TranscriptBody(props: {
           ) : null}
         </div>
 
-        <div className="mt-3 flex flex-wrap gap-1.5">
-          <Button type="button" size="sm" variant="outline" onClick={() => props.onCopy(false)}>
-            <Copy className="size-3.5" /> Copy
-          </Button>
-          <Button type="button" size="sm" variant="outline" onClick={() => props.onCopy(true)}>
-            <Copy className="size-3.5" /> With times
-          </Button>
-          <Button type="button" size="sm" variant="outline" onClick={() => props.onDownload("txt")}>
-            <Download className="size-3.5" /> .txt
-          </Button>
-          <Button type="button" size="sm" variant="outline" onClick={() => props.onDownload("srt")}>
-            <Download className="size-3.5" /> .srt
-          </Button>
-          {/* Hidden while a translation is on screen: an edit there would be
-              overwritten by the next regenerate, so offering it would be a lie. */}
-          {!props.editing && props.onEditStart ? (
-            <Button type="button" size="sm" variant="outline" onClick={props.onEditStart}>
-              <Pencil className="size-3.5" /> Edit
-            </Button>
-          ) : null}
+        {/*
+          Two actions and a menu, instead of six equal buttons.
+
+          The old row gave Copy, With times, .txt, .srt, Edit and Regenerate the
+          same weight, so nothing looked more important than anything else — and
+          Regenerate, which costs money and discards manual edits, sat next to
+          Copy as though they were peers. Copy and Edit are what people reach for
+          while reading; the rest are occasional and live behind More.
+        */}
+        <div className="mt-3 flex flex-wrap items-center gap-1.5">
           <Button
             type="button"
             size="sm"
             variant="outline"
-            onClick={props.onGenerate}
-            data-testid="regenerate-transcript"
+            onClick={() => props.onCopy(false)}
+            data-testid="transcript-copy"
           >
-            <RefreshCw className="size-3.5" /> Regenerate
+            <Copy className="size-3.5" /> Copy
           </Button>
+          {/* Hidden while a translation is on screen: an edit there would be
+              overwritten by the next regenerate, so offering it would be a lie. */}
+          {!props.editing && props.onEditStart ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={props.onEditStart}
+              data-testid="transcript-edit"
+            >
+              <Pencil className="size-3.5" /> Edit
+            </Button>
+          ) : null}
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button type="button" size="sm" variant="outline" data-testid="transcript-more">
+                More
+                <ChevronDown className="size-3.5" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="z-[220] w-56">
+              <DropdownMenuItem
+                onSelect={() => props.onCopy(true)}
+                data-testid="transcript-copy-times"
+              >
+                <Copy className="size-3.5" /> Copy with timestamps
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onSelect={() => props.onDownload("txt")}
+                data-testid="transcript-download-txt"
+              >
+                <Download className="size-3.5" /> Download TXT
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onSelect={() => props.onDownload("srt")}
+                data-testid="transcript-download-srt"
+              >
+                <Download className="size-3.5" /> Download SRT
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              {/*
+                Below the line and last: it spends money and replaces whatever
+                anyone has corrected by hand. It confirms first when there are
+                edits to lose.
+              */}
+              <DropdownMenuItem
+                onSelect={() => {
+                  if (
+                    transcript.edited &&
+                    !window.confirm(
+                      "This transcript has manual edits. Regenerating replaces them. Continue?",
+                    )
+                  ) {
+                    return
+                  }
+                  props.onGenerate()
+                }}
+                data-testid="regenerate-transcript"
+              >
+                <RefreshCw className="size-3.5" /> Regenerate transcript
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
 
         {props.editing ? (
@@ -816,15 +914,31 @@ function TranscriptBody(props: {
           </div>
         ) : (
           <>
-            <div className="relative mt-3">
-              <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={props.search}
-                onChange={(e) => props.onSearch(e.target.value)}
-                placeholder="Search transcript…"
-                className="h-8 pl-8 text-[13px]"
-                data-testid="transcript-search"
-              />
+            {/* Full width, because it is used while reading rather than as one
+                action among several. Sticky so a long transcript can be searched
+                without scrolling back to the top for the box. */}
+            <div className="sticky top-0 z-10 -mx-1 mt-3 bg-card/95 px-1 py-1 backdrop-blur">
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={props.search}
+                  onChange={(e) => props.onSearch(e.target.value)}
+                  placeholder="Search transcript…"
+                  className="h-8 pl-8 pr-20 text-[13px]"
+                  data-testid="transcript-search"
+                />
+                {/* Counted locally from the segments already on screen. Search
+                    is a filter, never another model call. */}
+                {props.search.trim() ? (
+                  <span
+                    className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[11px] tabular-nums text-muted-foreground"
+                    data-testid="transcript-match-count"
+                  >
+                    {countMatches(segments, props.search)}{" "}
+                    {countMatches(segments, props.search) === 1 ? "match" : "matches"}
+                  </span>
+                ) : null}
+              </div>
             </div>
             <TranscriptSegments
               segments={segments}
