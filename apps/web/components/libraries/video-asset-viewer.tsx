@@ -25,8 +25,17 @@ export function VideoAssetViewer({
   mediaRef,
   onTimeChange,
   compact = false,
+  dubAudioSrc = null,
 }: {
   src: string
+  /**
+   * A dubbed audio track to play instead of the video's own sound.
+   *
+   * Kept as a separate element rather than muxed: switching language then costs
+   * nothing, needs no re-encode, and — most importantly — does not touch the
+   * video element, so the playhead stays exactly where it was.
+   */
+  dubAudioSrc?: string | null
   /**
    * Size the player to its container, with smaller chrome.
    *
@@ -47,6 +56,7 @@ export function VideoAssetViewer({
   className?: string
 }) {
   const videoRef = useRef<HTMLVideoElement>(null)
+  const dubRef = useRef<HTMLAudioElement>(null)
   const shellRef = useRef<HTMLDivElement>(null)
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const isSeekingRef = useRef(false)
@@ -173,6 +183,63 @@ export function VideoAssetViewer({
     revealControls()
   }, [revealControls])
 
+  /**
+   * Follow the video, and correct drift without chasing it.
+   *
+   * Two media elements will not stay locked on their own. Play/pause/seek are
+   * mirrored on the events that cause them, and a periodic check nudges the
+   * audio only when it is more than a threshold out — re-seeking on every tick
+   * produces an audible stutter loop, which is worse than a few milliseconds of
+   * drift nobody can hear.
+   */
+  useEffect(() => {
+    const video = videoRef.current
+    const dub = dubRef.current
+    if (!video) return
+
+    // No dub selected: the video keeps its own sound.
+    if (!dub || !dubAudioSrc) {
+      video.muted = false
+      return
+    }
+
+    // The original dialogue must not play underneath the translated dialogue.
+    video.muted = true
+    dub.currentTime = video.currentTime
+    if (!video.paused) void dub.play().catch(() => {})
+
+    const sync = () => {
+      dub.currentTime = video.currentTime
+    }
+    const onPlay = () => {
+      sync()
+      void dub.play().catch(() => {})
+    }
+    const onPause = () => dub.pause()
+    const onRate = () => {
+      dub.playbackRate = video.playbackRate
+    }
+    const DRIFT_TOLERANCE_SECONDS = 0.25
+    const drift = window.setInterval(() => {
+      if (video.paused) return
+      if (Math.abs(dub.currentTime - video.currentTime) > DRIFT_TOLERANCE_SECONDS) sync()
+    }, 1000)
+
+    video.addEventListener("play", onPlay)
+    video.addEventListener("pause", onPause)
+    video.addEventListener("seeked", sync)
+    video.addEventListener("ratechange", onRate)
+    return () => {
+      window.clearInterval(drift)
+      video.removeEventListener("play", onPlay)
+      video.removeEventListener("pause", onPause)
+      video.removeEventListener("seeked", sync)
+      video.removeEventListener("ratechange", onRate)
+      dub.pause()
+      video.muted = false
+    }
+  }, [dubAudioSrc])
+
   const sliderMax = duration > 0 ? duration : 0
   const sliderValue = isSeeking ? seekValue : currentTime
   const progressPct =
@@ -189,6 +256,20 @@ export function VideoAssetViewer({
         className,
       )}
     >
+      {/* The dubbed track. Hidden, and driven entirely by the video below:
+          switching language must not touch the video element, so the
+          playhead never moves when the audio changes. */}
+      {dubAudioSrc ? (
+        <audio
+          ref={dubRef}
+          key={dubAudioSrc}
+          src={dubAudioSrc}
+          preload="auto"
+          crossOrigin="use-credentials"
+          data-testid="dub-audio-track"
+          className="hidden"
+        />
+      ) : null}
       {!ready && !error ? (
         <Loader2 className="absolute size-8 animate-spin text-zinc-500" aria-hidden />
       ) : null}

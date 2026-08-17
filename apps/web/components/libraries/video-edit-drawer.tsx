@@ -43,11 +43,13 @@ import { toast } from "@/lib/notifications/arciin-toast"
 import {
   getAssetTranscript,
   requestAssetTranscript,
+  dubAudioUrl,
   requestTranscriptTranslation,
   saveAssetTranscript,
   type TranscriptTranslation,
 } from "@/lib/api/transcripts"
 import { VideoAiTitle } from "@/components/libraries/video-ai-title"
+import { VideoDubbing } from "@/components/libraries/video-dubbing"
 import { TranscriptLanguageBar } from "@/components/libraries/transcript-language-bar"
 import { VideoAssetViewer } from "@/components/libraries/video-asset-viewer"
 import { formatBytes } from "@/lib/utils/format-bytes"
@@ -245,7 +247,14 @@ export function VideoTranscriptSection({
    * second copy of any of them.
    */
   const [activeLanguage, setActiveLanguage] = useState<string | null>(null)
-  const [aiTab, setAiTab] = useState<"transcript" | "title">("transcript")
+  const [aiTab, setAiTab] = useState<"transcript" | "dubbing" | "title">("transcript")
+  /**
+   * Which audio track is playing. `null` is the original.
+   *
+   * Lives here because the player is here: switching tracks must not disturb
+   * the video element, so the dub is a separate audio source kept in step.
+   */
+  const [audioLanguage, setAudioLanguage] = useState<string | null>(null)
   const activeTranslation = activeLanguage
     ? (translations.find((t) => t.language === activeLanguage) ?? null)
     : null
@@ -409,6 +418,14 @@ export function VideoTranscriptSection({
                 mediaRef={videoRef}
                 onTimeChange={(seconds) => setCurrentMs(seconds * 1000)}
                 compact
+                /**
+                 * The dub plays as a second audio source over the untouched
+                 * video, so switching language never re-encodes anything and
+                 * never disturbs the playhead.
+                 */
+                dubAudioSrc={
+                  audioLanguage ? dubAudioUrl(asset.id, audioLanguage) : null
+                }
               />
             </div>
 
@@ -470,6 +487,7 @@ export function VideoTranscriptSection({
               {(
                 [
                   ["transcript", "Transcript"],
+                  ["dubbing", "Dubbing"],
                   ["title", "AI Title"],
                 ] as const
               ).map(([key, label]) => (
@@ -492,6 +510,16 @@ export function VideoTranscriptSection({
               ))}
             </nav>
 
+            {aiTab === "dubbing" ? (
+              <VideoDubbing
+                asset={asset}
+                translations={translations}
+                sourceLanguage={transcript?.language ?? null}
+                activeAudioLanguage={audioLanguage}
+                onUseAudio={setAudioLanguage}
+              />
+            ) : null}
+
             {aiTab === "title" ? (
               <VideoAiTitle
                 asset={asset}
@@ -513,7 +541,7 @@ export function VideoTranscriptSection({
             ) : null}
 
             <div
-              className={cn("mt-1", aiTab === "title" && "hidden")}
+              className={cn("mt-1", aiTab !== "transcript" && "hidden")}
               data-testid="video-transcript"
             >
               {/* Only once there is something to translate. */}

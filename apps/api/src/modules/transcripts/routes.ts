@@ -15,7 +15,12 @@ import { z } from "zod"
 
 import { JOB_TYPES, normalizeTranscriptSegments } from "@arciin/shared"
 import { isSameLanguage, languageName } from "@arciin/types"
+import { access } from "node:fs/promises"
+
+import { candidateStorageObjectPaths } from "@arciin/storage"
+
 import { assertAssetFolderAccess } from "@/services/folders/folder-lock"
+import { streamFileResponse } from "@/services/media/stream-file-response"
 import { mediaQueue } from "@/services/jobs/queues"
 import {
   AudioSeparationService,
@@ -721,6 +726,77 @@ export async function transcriptRoutes(fastify: FastifyInstance) {
       data: { dub: serializeDub(dub, translation.updatedAt, transcript.updatedAt) },
     })
   })
+
+  /**
+   * Stream a finished dub.
+   *
+   * By asset and language rather than by storage-object id: an opaque object id
+   * in a URL is a second, weaker way to reach a file, and this one has to pass
+   * the same ownership check everything else does.
+   *
+   * Ranges are honoured because the player seeks — without them, moving the
+   * playhead in a dubbed track would re-download from the start.
+   */
+  fastify.get(
+    "/assets/:assetId/dubs/:language/audio",
+    { preHandler: guard },
+    async (request, reply) => {
+      const { assetId, language } = z
+        .object({ assetId: z.string(), language: z.string() })
+        .parse(request.params)
+
+      const asset = await loadAccessibleAsset(request, reply, assetId)
+      if (!asset) return
+
+      const dub = await fastify.prisma.mediaDub.findUnique({
+        where: { assetId_language: { assetId, language } },
+      })
+      if (!dub?.audioStorageObjectId) {
+        reply.status(404).send({ error: { code: "NOT_FOUND", message: "No dub for that language." } })
+        return
+      }
+
+      const object = await fastify.prisma.storageObject.findUnique({
+        where: { id: dub.audioStorageObjectId },
+        include: { storageLocation: { select: { rootPath: true } } },
+      })
+      if (!object) {
+        reply.status(404).send({ error: { code: "NOT_FOUND", message: "Dub audio is missing." } })
+        return
+      }
+
+      const instance = await fastify.prisma.instanceConfig.findFirst()
+      let resolved: string | null = null
+      for (const candidate of candidateStorageObjectPaths(
+        instance?.storageRoot ?? null,
+        object.physicalPath,
+        object.objectKey,
+        [object.storageLocation?.rootPath],
+      )) {
+        try {
+          await access(candidate)
+          resolved = candidate
+          break
+        } catch {
+          continue
+        }
+      }
+      if (!resolved) {
+        reply.status(404).send({
+          error: { code: "NOT_FOUND", message: "Dub audio is missing on the server." },
+        })
+        return
+      }
+
+      reply.header("X-Content-Type-Options", "nosniff")
+      return streamFileResponse(reply, {
+        path: resolved,
+        contentType: object.mimeType || "audio/mp4",
+        contentDisposition: `inline; filename="${asset.originalFilename}.${language}.dub.m4a"`,
+        rangeHeader: request.headers.range ?? null,
+      })
+    },
+  )
 
   fastify.patch(
     "/assets/:assetId/transcript",

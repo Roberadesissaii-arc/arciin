@@ -94,3 +94,71 @@ export function requestTitleSuggestions(assetId: string, input?: { count?: numbe
     body: input ?? {},
   })
 }
+
+/**
+ * A generated dub: translated speech mixed over the preserved background.
+ *
+ * A third thing beside transcript and translation. Reading a translation never
+ * makes one, and playing one never regenerates it.
+ */
+export type MediaDub = {
+  id: string
+  language: string
+  status: "PENDING" | "SEPARATING" | "SYNTHESIZING" | "MIXING" | "READY" | "FAILED" | "NEEDS_REVIEW"
+  /** Honest wording for what the worker is doing right now. */
+  stage: string | null
+  error: string | null
+  provider: string | null
+  model: string | null
+  voiceProfiles: unknown
+  backgroundStrategy: string | null
+  reviewSegments: unknown
+  hasAudio: boolean
+  durationMs: number | null
+  /** The words or voices moved after this audio was made. */
+  stale: boolean
+  generatedAt: string | null
+  updatedAt: string
+}
+
+export type DubsResponse = {
+  dubs: MediaDub[]
+  /** False when this server has no separator, so dubbing cannot preserve background. */
+  separatorAvailable: boolean
+  dubbableLanguages: string[]
+}
+
+export function getAssetDubs(assetId: string, signal?: AbortSignal) {
+  return fetchApi<DubsResponse>(`/assets/${assetId}/dubs`, { signal })
+}
+
+/**
+ * Start a dub. Returns immediately with the pending row.
+ *
+ * The work outlives this request — and the panel that made it — so the UI
+ * follows the persisted status rather than holding a promise open.
+ */
+export function requestAssetDub(
+  assetId: string,
+  input: { language: string; profileId?: string; voiceProfiles?: unknown[] },
+) {
+  return fetchApi<{ dub: MediaDub }>(`/assets/${assetId}/dubs`, {
+    method: "POST",
+    body: input,
+  })
+}
+
+/** Where the player and the download button both point. */
+export function dubAudioUrl(assetId: string, language: string): string {
+  return `/api/assets/${assetId}/dubs/${encodeURIComponent(language)}/audio`
+}
+
+/** Statuses that mean the worker is still busy. */
+export function isDubRunning(status: MediaDub["status"]): boolean {
+  return ["PENDING", "SEPARATING", "SYNTHESIZING", "MIXING"].includes(status)
+}
+
+/** Statuses where audio exists and can be played. */
+export function isDubPlayable(status: MediaDub["status"]): boolean {
+  return status === "READY" || status === "NEEDS_REVIEW"
+}
