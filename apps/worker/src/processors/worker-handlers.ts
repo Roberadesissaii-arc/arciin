@@ -47,10 +47,7 @@ import type {
 } from "@arciin/media-ai"
 
 import { workerConfig } from "@/config"
-import {
-  acquireSeparationSlot,
-  hasMemoryForSeparation,
-} from "@/services/separation-resources"
+import { acquireSeparationSlot } from "@/services/separation-resources"
 import { runApplyUpdate, runStageUpdate } from "@/services/auto-update"
 import { syncConnectorMirrorsForAsset } from "@/services/connector-mirror"
 import { createRealtimeEvent, publishRealtimeEvent } from "@/services/realtime"
