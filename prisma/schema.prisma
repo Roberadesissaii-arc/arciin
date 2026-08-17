@@ -474,6 +474,7 @@ model Asset {
   fileRequestId           String?
   fileRequestSubmissionId String?
   transcript              MediaTranscript?
+  dubs                    MediaDub[]
   createdAt               DateTime               @default(now())
   updatedAt               DateTime               @updatedAt
   deletedAt               DateTime?
@@ -622,9 +623,85 @@ model MediaTranslation {
   updatedAt       DateTime  @updatedAt
 
   transcript MediaTranscript @relation(fields: [transcriptId], references: [id], onDelete: Cascade)
+  dubs       MediaDub[]
 
   @@unique([transcriptId, language])
   @@index([transcriptId])
+}
+
+/// Generated translated speech, mixed over the original background.
+///
+/// A third thing, deliberately separate from Transcript (what was said) and
+/// Translation (what it says in another language). Reading a translation must
+/// never spend money on speech, and speech must never be re-generated just
+/// because someone pressed play.
+model MediaDub {
+  id            String   @id @default(cuid())
+  assetId       String
+  transcriptId  String
+  translationId String
+  /// BCP-47 tag of the spoken language, matching its translation.
+  language      String
+
+  status   MediaDubStatus @default(PENDING)
+  /// Which stage a running job is in, for honest progress text.
+  stage    String?
+  error    String?
+  jobId    String?
+
+  provider String?
+  model    String?
+
+  /**
+   * Per-speaker synthesis settings, as chosen or overridden.
+   *
+   * Vocal character for the purpose of picking a voice — never a claim about
+   * anyone's real age, gender or nationality. See `dub-voice.ts`.
+   */
+  voiceProfiles Json?
+  /// "separated" | "replaced" — how the original non-dialogue audio was handled.
+  backgroundStrategy String?
+  /// Segments the timeline could not fit without unnatural speed.
+  reviewSegments Json?
+
+  /// The mixed dub audio, and optionally a remuxed video.
+  audioStorageObjectId String?
+  videoStorageObjectId String?
+  durationMs           Int?
+
+  /**
+   * What this dub was made from.
+   *
+   * A dub describes specific words spoken in a specific way; if the
+   * translation is re-translated, the transcript edited, or the voice settings
+   * changed, the audio no longer matches and is reported as outdated rather
+   * than played as current.
+   */
+  translationUpdatedAt DateTime?
+  transcriptUpdatedAt  DateTime?
+  settingsFingerprint  String?
+
+  generatedAt DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  asset       Asset            @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  translation MediaTranslation @relation(fields: [translationId], references: [id], onDelete: Cascade)
+
+  @@unique([assetId, language])
+  @@index([assetId])
+  @@index([status])
+}
+
+enum MediaDubStatus {
+  PENDING
+  SEPARATING
+  SYNTHESIZING
+  MIXING
+  READY
+  FAILED
+  /// Generated, but some segments could not be fitted naturally.
+  NEEDS_REVIEW
 }
 
 enum MediaTranscriptStatus {
