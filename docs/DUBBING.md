@@ -93,6 +93,31 @@ ahead of it on `PYTHONPATH`. Nothing installed is modified, the stub raises if
 anything ever genuinely calls a vision op, and it can be deleted the moment the
 upstream wheels support the interpreter.
 
+### Measured separation quality
+
+Verified against ground truth rather than by ear: a fixture was built by mixing
+the speech fixture with a synthetic music bed at a known level, so the music
+that *should* come back is known exactly.
+
+```txt
+recovered background   -29.2 dB    ground-truth music   -28.9 dB
+correlation, recovered background vs true music   +0.839
+correlation, recovered vocals     vs true music   +0.053
+```
+
+The background returns at within 0.3 dB of the level it went in at, and the
+vocal stem is nearly free of music. That is real separation.
+
+It is **not** perfect, and the number says so: 0.839, not 1.0. Roughly a sixth
+of the waveform is not recovered exactly, which is what spectrogram separation
+costs — expect some smearing of music under speech. The test also used tonal
+synthetic music, which is an easier case than a dense real mix.
+
+`tests/fixtures/e2e-video-music-fixture.mp4` holds that fixture. The
+speech-only fixture cannot demonstrate any of this: Demucs correctly routes
+almost all of its energy to vocals and leaves the other stems near-silent,
+because there is no background in it to preserve.
+
 ## Speech synthesis
 
 ```txt
