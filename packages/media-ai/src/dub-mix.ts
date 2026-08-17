@@ -16,6 +16,17 @@ export type PlacedClip = {
   startMs: number
   /** 1 = untouched. Applied with atempo, which preserves pitch. */
   rate: number
+  /**
+   * How long this clip may play, once placed.
+   *
+   * `layoutTimeline` works this out — it is what stops a late clip running past
+   * the end of the picture — and for a while nothing applied it. The timeline
+   * computed the clamp, the worker copied only `startMs` across, and a real
+   * two-speaker dub came out 16.3 seconds long for a 10.0-second video.
+   *
+   * Omitted means "play in full", which is right for a clip that fits.
+   */
+  playMs?: number
 }
 
 export type MixOptions = {
@@ -30,6 +41,14 @@ export type MixOptions = {
    * ducking again would leave the music audibly pumping.
    */
   duck?: boolean
+  /**
+   * The picture's length. Nothing may be heard after it.
+   *
+   * A backstop rather than the mechanism: clips are trimmed individually, and
+   * this caps the output as well so no future arrangement of them can produce
+   * audio that outlives the video.
+   */
+  durationMs?: number
   /** How far to duck, in dB, when enabled. */
   duckDb?: number
 }
@@ -86,6 +105,16 @@ export function buildMixFilter(options: MixOptions): string {
       "aresample=48000",
       "aformat=sample_fmts=fltp:channel_layouts=stereo",
       clip.rate === 1 ? null : atempoChain(clip.rate),
+      /**
+       * Trimmed to its allotted time, after the tempo change.
+       *
+       * Order matters: atempo alters length, so trimming first would cut to the
+       * wrong duration. asetpts follows because atrim leaves the original
+       * timestamps, and adelay would then add its offset to them.
+       */
+      clip.playMs !== undefined && clip.playMs > 0
+        ? `atrim=end=${(clip.playMs / 1000).toFixed(3)},asetpts=PTS-STARTPTS`
+        : null,
       `adelay=${Math.max(0, Math.round(clip.startMs))}|${Math.max(0, Math.round(clip.startMs))}`,
     ].filter(Boolean)
     parts.push(`[${input}:a]${filters.join(",")}[${label}]`)
@@ -134,17 +163,13 @@ export function buildMixFilter(options: MixOptions): string {
 export function buildMixArgs(options: MixOptions): string[] {
   const args = ["-y", "-i", options.backgroundPath]
   for (const clip of options.clips) args.push("-i", clip.path)
-  args.push(
-    "-filter_complex",
-    buildMixFilter(options),
-    "-map",
-    "[out]",
-    "-c:a",
-    "aac",
-    "-b:a",
-    "192k",
-    options.outputPath,
-  )
+  args.push("-filter_complex", buildMixFilter(options), "-map", "[out]")
+  // The hard bound. Speech that begins after the picture has finished is
+  // speech nobody will ever hear.
+  if (options.durationMs && options.durationMs > 0) {
+    args.push("-t", (options.durationMs / 1000).toFixed(3))
+  }
+  args.push("-c:a", "aac", "-b:a", "192k", options.outputPath)
   return args
 }
 

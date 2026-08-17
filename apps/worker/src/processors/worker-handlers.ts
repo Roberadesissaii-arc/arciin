@@ -974,7 +974,11 @@ export async function handleMediaJob(
       const placed = media.layoutTimeline(fits, mediaDurationMs || undefined)
       placed.forEach((slot, index) => {
         const clip = clips[index]
-        if (clip) clip.startMs = slot.startMs
+        if (!clip) return
+        clip.startMs = slot.startMs
+        // The clamp the timeline worked out. Copying only startMs across left
+        // it computed and unused, which is how a 10.0s video got a 16.3s dub.
+        if (slot.clamped) clip.playMs = slot.playMs
       })
       const clamped = placed.filter((slot) => slot.clamped).length
 
@@ -987,6 +991,8 @@ export async function handleMediaJob(
           backgroundPath: stems.backgroundPath,
           clips,
           outputPath: dubAudioPath,
+          // Belt and braces: individually trimmed, and capped as a whole.
+          ...(mediaDurationMs > 0 ? { durationMs: mediaDurationMs } : {}),
         }),
       )
 

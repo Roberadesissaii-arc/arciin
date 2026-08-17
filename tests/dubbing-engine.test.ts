@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest"
 
+import { buildMixArgs, buildMixFilter } from "../packages/media-ai/src/dub-mix"
+
 import {
   GEMINI_VOICES,
   NEUTRAL_VOICE,
@@ -620,5 +622,96 @@ describe("free-text voice direction", () => {
     const base = buildVoiceProfile({ speakerId: "A" })
     const directed = buildVoiceProfile({ speakerId: "A" }, { directorNotes: "sound tired" })
     expect(voiceSettingsFingerprint([base])).not.toBe(voiceSettingsFingerprint([directed]))
+  })
+})
+
+/* ------------------------------------------- the dub must fit the picture */
+
+/**
+ * A dub that outlives its video.
+ *
+ * This regressed once already and was caught only by a real two-speaker run: a
+ * 10.005-second video produced 16.277 seconds of audio. `layoutTimeline` had
+ * worked out the clamp correctly the whole time — the mix simply never applied
+ * it, because the caller copied `startMs` across and dropped `playMs`.
+ *
+ * So these assert the property at the filter level, where it is now enforced,
+ * rather than trusting the arithmetic upstream.
+ */
+describe("a dub cannot outlive its video", () => {
+  it("trims a clamped clip to the time it was given", () => {
+    const filter = buildMixFilter({
+      backgroundPath: "bg.wav",
+      clips: [{ path: "a.wav", startMs: 8000, rate: 1, playMs: 2000 }],
+      outputPath: "out.m4a",
+    })
+    expect(filter).toContain("atrim=end=2.000")
+    // Without resetting timestamps, adelay adds its offset to the originals.
+    expect(filter).toContain("asetpts=PTS-STARTPTS")
+  })
+
+  it("trims after the tempo change, not before", () => {
+    const filter = buildMixFilter({
+      backgroundPath: "bg.wav",
+      clips: [{ path: "a.wav", startMs: 0, rate: 1.15, playMs: 1000 }],
+      outputPath: "out.m4a",
+    })
+    // atempo alters length, so trimming first would cut to the wrong duration.
+    expect(filter.indexOf("atempo")).toBeLessThan(filter.indexOf("atrim"))
+    expect(filter.indexOf("atrim")).toBeLessThan(filter.indexOf("adelay"))
+  })
+
+  it("leaves a clip that fits completely alone", () => {
+    const filter = buildMixFilter({
+      backgroundPath: "bg.wav",
+      clips: [{ path: "a.wav", startMs: 0, rate: 1 }],
+      outputPath: "out.m4a",
+    })
+    expect(filter).not.toContain("atrim")
+  })
+
+  it("caps the whole mix at the length of the picture", () => {
+    const args = buildMixArgs({
+      backgroundPath: "bg.wav",
+      clips: [{ path: "a.wav", startMs: 0, rate: 1 }],
+      outputPath: "out.m4a",
+      durationMs: 10_005,
+    })
+    const index = args.indexOf("-t")
+    expect(index).toBeGreaterThan(-1)
+    expect(args[index + 1]).toBe("10.005")
+    // Before the output path, or ffmpeg treats it as an input option.
+    expect(index).toBeLessThan(args.indexOf("out.m4a"))
+  })
+
+  it("does not cap when the duration is genuinely unknown", () => {
+    const args = buildMixArgs({
+      backgroundPath: "bg.wav",
+      clips: [{ path: "a.wav", startMs: 0, rate: 1 }],
+      outputPath: "out.m4a",
+    })
+    expect(args).not.toContain("-t")
+  })
+
+  it("places and bounds a real overrunning timeline end to end", () => {
+    /**
+     * Ten one-second slots, each needing 1.6 seconds of speech — the shape of
+     * the fixture that produced the 16.3-second dub.
+     */
+    const fits = Array.from({ length: 10 }, (_, i) => ({
+      startMs: i * 1000,
+      targetMs: 1000,
+      actualMs: 1600,
+      rate: 1.15,
+      needsReview: true,
+    }))
+    const placed = layoutTimeline(fits, 10_005)
+    const end = placed.reduce((max, p) => Math.max(max, p.startMs + p.playMs), 0)
+    expect(end, "nothing is heard after the picture ends").toBeLessThanOrEqual(10_005)
+
+    // And the clamped ones carry a play length the mix can act on.
+    const clamped = placed.filter((p) => p.clamped)
+    expect(clamped.length).toBeGreaterThan(0)
+    for (const slot of clamped) expect(slot.playMs).toBeLessThan(Math.round(1600 / 1.15))
   })
 })
