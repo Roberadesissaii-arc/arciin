@@ -663,6 +663,15 @@ model MediaDub {
   backgroundStrategy String?
   /// Segments the timeline could not fit without unnatural speed.
   reviewSegments Json?
+  /**
+   * What was actually spoken, line by line.
+   *
+   * A dub sometimes has to say a tighter version of a line to fit the time
+   * available. The saved translation is never altered for that — a reader's
+   * transcript stays complete and faithful — so the spoken wording lives here
+   * beside it, with a flag for the lines that differ.
+   */
+  dubScript Json?
 
   /// The mixed dub audio, and optionally a remuxed video.
   audioStorageObjectId String?

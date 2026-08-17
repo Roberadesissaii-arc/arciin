@@ -114,33 +114,96 @@ function round(value: number): number {
   return Math.round(value * 1000) / 1000
 }
 
-/**
- * Where each segment sits, in order, without overlapping its neighbour.
- *
- * Two people talking over each other in the original would otherwise become two
- * voices talking over each other from the same mono track, which is unlistenable;
- * a segment that would collide is pushed to where the previous one ends.
- */
-export function layoutTimeline(results: FitResult[]): {
+export type PlacedSegment = {
   startMs: number
   playMs: number
   rate: number
   shiftedBy: number
-}[] {
+  /** Trimmed because it would otherwise have run past the end of the picture. */
+  clamped: boolean
+}
+
+/**
+ * Where each segment sits, in order, without overlapping its neighbour — and
+ * without running past the end of the video.
+ *
+ * Avoiding overlap means pushing a late-running segment back, because two
+ * voices from one mono track talking over each other is unlistenable. But
+ * pushing alone is not a solution: on the real ten-second fixture it produced a
+ * 12.77-second dub, and speech that begins after the picture has finished is
+ * speech nobody will ever hear.
+ *
+ * So the shifting is bounded by the media. A segment that cannot fit inside
+ * what remains is trimmed to the remaining time and flagged; a segment with no
+ * time left at all is reported rather than appended past the end. The honest
+ * outcome for an impossible timeline is a dub marked for review, not one that
+ * outlives its video.
+ */
+export function layoutTimeline(
+  results: FitResult[],
+  /** The picture's length. Omit only when it is genuinely unknown. */
+  mediaDurationMs?: number,
+): PlacedSegment[] {
   const ordered = [...results].sort((a, b) => a.startMs - b.startMs)
-  const placed: { startMs: number; playMs: number; rate: number; shiftedBy: number }[] = []
+  const placed: PlacedSegment[] = []
   let cursor = 0
 
   for (const result of ordered) {
-    const playMs = Math.round(result.actualMs / result.rate)
+    const wanted = Math.round(result.actualMs / result.rate)
     const startMs = Math.max(result.startMs, cursor)
+
+    let playMs = wanted
+    let clamped = false
+    if (mediaDurationMs !== undefined && mediaDurationMs > 0) {
+      const remaining = mediaDurationMs - startMs
+      if (remaining <= 0) {
+        // No room left. Recorded as clamped to nothing rather than placed
+        // beyond the picture, so the caller can mark the dub for review.
+        placed.push({ startMs: Math.min(startMs, mediaDurationMs), playMs: 0, rate: result.rate, shiftedBy: startMs - result.startMs, clamped: true })
+        cursor = mediaDurationMs
+        continue
+      }
+      if (wanted > remaining) {
+        playMs = remaining
+        clamped = true
+      }
+    }
+
     placed.push({
       startMs,
       playMs,
       rate: result.rate,
       shiftedBy: startMs - result.startMs,
+      clamped,
     })
     cursor = startMs + playMs
   }
   return placed
+}
+
+/**
+ * How far past the picture the dub would run if nothing were clamped.
+ *
+ * Used to decide whether a line needs rewriting for speech before any of it is
+ * generated a second time.
+ */
+export function timelineOverrunMs(results: FitResult[], mediaDurationMs: number): number {
+  const laid = layoutTimeline(results)
+  const end = laid.reduce((max, p) => Math.max(max, p.startMs + p.playMs), 0)
+  return Math.max(0, end - mediaDurationMs)
+}
+
+/**
+ * How much shorter a line needs to be, as a fraction of what it is now.
+ *
+ * Expressed as a ratio because that is what a rewrite instruction can act on:
+ * "about two thirds as long" is followable, "1,400 ms shorter" is not.
+ */
+export function adaptationRatio(targetMs: number, actualMs: number): number {
+  if (targetMs <= 0 || actualMs <= 0) return 1
+  // Aim at the slot times the rate we are willing to apply, so the rewrite and
+  // the stretch share the work rather than the rewrite doing all of it.
+  const reachable = targetMs * MAX_RATE
+  if (actualMs <= reachable) return 1
+  return Math.max(0.35, reachable / actualMs)
 }

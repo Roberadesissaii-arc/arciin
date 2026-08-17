@@ -38,6 +38,7 @@ import { buildObjectKey, candidateStorageObjectPaths,
   resolveArciinStorageRoot,
 } from "@arciin/storage"
 import { normalizeTranscriptSegments } from "@arciin/shared"
+import { languageName } from "@arciin/types"
 import type {
   DubSegment,
   FitResult,
@@ -719,34 +720,105 @@ export async function handleMediaJob(
 
       const clips: PlacedClip[] = []
       const fits: FitResult[] = []
+      /** What was actually spoken, when it differs from the saved translation. */
+      const script: {
+        startMs: number
+        sourceText: string
+        spokenText: string
+        adapted: boolean
+        lostMeaning: boolean
+      }[] = []
+
+      const targetLanguageName = languageName(translation.language) || translation.language
 
       for (const [speaker, speakerSegments] of bySpeaker) {
         const profile =
           profiles.find((p) => p.speakerId === speaker) ?? profiles[0]!
         // Chunked so a long transcript does not drift, and never mixing speakers.
         for (const chunk of media.chunkSegments(speakerSegments)) {
-          const result = await media.synthesizeDubChunk({
-            config,
-            profile,
-            segments: chunk,
-            sourceLanguage: translation.transcript.language,
-            targetLanguage: translation.language,
-          })
           const chunkStart = chunk[0]!.startMs
           const chunkEnd = chunk[chunk.length - 1]!.endMs ?? chunkStart
-          const fit = media.fitSegment({
+          const sourceText = chunk.map((c) => c.text).join(" ")
+
+          const speak = async (segments: typeof chunk) =>
+            media.synthesizeDubChunk({
+              config,
+              profile,
+              segments,
+              sourceLanguage: translation.transcript.language,
+              targetLanguage: translation.language,
+            })
+
+          let spoken = chunk
+          let result = await speak(spoken)
+          let fit = media.fitSegment({
             startMs: chunkStart,
             endMs: chunkEnd,
             actualMs: result.durationMs,
             speaker,
           })
+          let adaptation = { adapted: false, lostMeaning: false, text: sourceText }
+
+          /**
+           * Too long to say in the time available: rewrite the line, not the
+           * timeline.
+           *
+           * The saved translation is left exactly as it is — a reader's
+           * transcript stays complete and faithful — while the dub speaks a
+           * tighter version of the same line. Pushing it later instead produced
+           * a 12.8-second dub for a 10-second video, which is speech nobody
+           * ever hears.
+           */
+          if (fit.needsReview) {
+            const ratio = media.adaptationRatio(fit.targetMs, result.durationMs)
+            adaptation = await media.adaptDubLine({
+              config,
+              text: sourceText,
+              languageName: targetLanguageName,
+              ratio,
+              targetMs: fit.targetMs,
+            })
+
+            if (adaptation.adapted) {
+              spoken = [{ ...chunk[0]!, text: adaptation.text, endMs: chunkEnd }]
+              result = await speak(spoken)
+              fit = media.fitSegment({
+                startMs: chunkStart,
+                endMs: chunkEnd,
+                actualMs: result.durationMs,
+                speaker,
+              })
+            }
+          }
+
           fits.push(fit)
+          script.push({
+            startMs: chunkStart,
+            sourceText,
+            spokenText: adaptation.adapted ? adaptation.text : sourceText,
+            adapted: adaptation.adapted,
+            lostMeaning: adaptation.lostMeaning,
+          })
 
           const clipPath = path.join(workDir, `clip-${clips.length}.wav`)
           await writeFile(clipPath, media.pcmToWav(result.pcm))
           clips.push({ path: clipPath, startMs: chunkStart, rate: fit.rate })
         }
       }
+
+      /**
+       * Place everything inside the picture.
+       *
+       * The media duration is the hard bound: a clip that will not fit in what
+       * remains is trimmed and flagged rather than appended past the end.
+       */
+      const mediaDurationMs = Math.round((asset.durationSeconds ?? 0) * 1000)
+      const placed = media.layoutTimeline(fits, mediaDurationMs || undefined)
+      placed.forEach((slot, index) => {
+        const clip = clips[index]
+        if (clip) clip.startMs = slot.startMs
+      })
+      const clamped = placed.filter((slot) => slot.clamped).length
 
       // ── mix ─────────────────────────────────────────────────────────────
       await stage("MIXING", "Mixing the original soundtrack", 75)
@@ -761,6 +833,7 @@ export async function handleMediaJob(
       )
 
       const stored = await storeDubArtifact(dubAudioPath, storageRoot, "audio/mp4")
+      // Anything the rate could not fix, or the picture could not hold.
       const review = fits.filter((f) => f.needsReview)
       const summary = media.summariseFit(fits)
 
@@ -768,7 +841,7 @@ export async function handleMediaJob(
         where: { id: payload.dubId },
         data: {
           // Generated, but honest that some lines could not be fitted naturally.
-          status: review.length > 0 ? "NEEDS_REVIEW" : "READY",
+          status: review.length > 0 || clamped > 0 ? "NEEDS_REVIEW" : "READY",
           stage: null,
           error: null,
           provider: "gemini",
@@ -777,6 +850,8 @@ export async function handleMediaJob(
           audioStorageObjectId: stored.id,
           durationMs: Math.round((asset.durationSeconds ?? 0) * 1000) || null,
           reviewSegments: review as unknown as object,
+          // The spoken script, so a reader can see where words were tightened.
+          dubScript: script as unknown as object,
           translationUpdatedAt: translation.updatedAt,
           transcriptUpdatedAt: translation.transcript.updatedAt,
           generatedAt: new Date(),
@@ -785,7 +860,13 @@ export async function handleMediaJob(
       await markJob(payload.jobRecordId, {
         status: "COMPLETED",
         progress: 100,
-        result: { segments: summary.total, adjusted: summary.adjusted, review: review.length },
+        result: {
+          segments: summary.total,
+          adjusted: summary.adjusted,
+          review: review.length,
+          clamped,
+          adapted: script.filter((line) => line.adapted).length,
+        },
       })
     } catch (error) {
       await failDub(error instanceof Error ? error.message : "The dub could not be generated.")

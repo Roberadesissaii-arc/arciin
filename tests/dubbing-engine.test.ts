@@ -23,11 +23,17 @@ import {
 } from "../packages/media-ai/src/dub-prompt"
 import {
   MAX_RATE,
+  adaptationRatio,
   fitSegment,
   fitSegments,
   layoutTimeline,
   summariseFit,
+  timelineOverrunMs,
 } from "../packages/media-ai/src/dub-timing"
+import {
+  buildDubAdaptationPrompt,
+  parseAdaptedLine,
+} from "../packages/media-ai/src/transcript-text-ai"
 import {
   AudioSeparationService,
   SeparationUnavailableError,
@@ -392,5 +398,135 @@ describe("knowing when a dub is out of date", () => {
     const a = profile({ speakerId: "Speaker 1" })
     const b = profile({ speakerId: "Speaker 2", selectedGeminiVoice: "Leda" })
     expect(voiceSettingsFingerprint([a, b])).toBe(voiceSettingsFingerprint([b, a]))
+  })
+})
+
+describe("a dub must not outlive its video", () => {
+  /**
+   * The exact failure from the real ten-second fixture.
+   *
+   * A faithful Spanish line needed 14,720 ms of speech for a 9,000 ms slot.
+   * Capping the rate was right; letting the timeline grow to 12.77 s for a
+   * 10 s video was not — speech that starts after the picture ends is speech
+   * nobody hears.
+   */
+  const REAL_CASE = { startMs: 0, endMs: 9000, actualMs: 14_720 }
+  const VIDEO_MS = 10_000
+
+  it("reproduces the overrun when nothing bounds it", () => {
+    const overrun = timelineOverrunMs(fitSegments([REAL_CASE]), VIDEO_MS)
+    expect(overrun, "unbounded, this ran past the picture").toBeGreaterThan(0)
+  })
+
+  it("never places audio past the end of the picture", () => {
+    const placed = layoutTimeline(fitSegments([REAL_CASE]), VIDEO_MS)
+    for (const segment of placed) {
+      expect(segment.startMs + segment.playMs).toBeLessThanOrEqual(VIDEO_MS)
+    }
+  })
+
+  it("flags what it had to trim rather than trimming silently", () => {
+    const placed = layoutTimeline(fitSegments([REAL_CASE]), VIDEO_MS)
+    expect(placed.some((p) => p.clamped)).toBe(true)
+  })
+
+  it("does not start a segment that has no time left at all", () => {
+    const placed = layoutTimeline(
+      fitSegments([
+        { startMs: 0, endMs: 5000, actualMs: 9500 },
+        { startMs: 5000, endMs: 9000, actualMs: 4000 },
+      ]),
+      VIDEO_MS,
+    )
+    for (const segment of placed) {
+      expect(segment.startMs).toBeLessThanOrEqual(VIDEO_MS)
+      expect(segment.startMs + segment.playMs).toBeLessThanOrEqual(VIDEO_MS)
+    }
+  })
+
+  it("leaves a comfortable timeline completely alone", () => {
+    const placed = layoutTimeline(
+      fitSegments([
+        { startMs: 0, endMs: 3000, actualMs: 2900 },
+        { startMs: 3000, endMs: 6000, actualMs: 2950 },
+      ]),
+      VIDEO_MS,
+    )
+    expect(placed.every((p) => !p.clamped)).toBe(true)
+    expect(placed.every((p) => p.shiftedBy === 0)).toBe(true)
+  })
+
+  it("works without a known duration, as before", () => {
+    // Duration is optional; omitting it must not crash or clamp.
+    const placed = layoutTimeline(fitSegments([REAL_CASE]))
+    expect(placed[0]!.clamped).toBe(false)
+  })
+})
+
+describe("asking for a shorter spoken line", () => {
+  it("asks for a share of the current length, not a byte count", () => {
+    // 14,720 ms into a 9,000 ms slot: the rewrite and the stretch share the work.
+    const ratio = adaptationRatio(9000, 14_720)
+    expect(ratio).toBeLessThan(1)
+    expect(ratio).toBeGreaterThan(0.5)
+  })
+
+  it("asks for nothing when the line already fits", () => {
+    expect(adaptationRatio(9000, 9000)).toBe(1)
+    expect(adaptationRatio(9000, 9500)).toBe(1)
+  })
+
+  it("never asks for an absurdly short rewrite", () => {
+    // Below roughly a third, a rewrite stops being the same line.
+    expect(adaptationRatio(1000, 60_000)).toBeGreaterThanOrEqual(0.35)
+  })
+
+  it("instructs the model to keep meaning, not to summarise", () => {
+    const prompt = buildDubAdaptationPrompt({
+      text: "Nuestro entorno es el espacio de trabajo autoalojado para archivos, IA y datos.",
+      languageName: "Spanish",
+      ratio: 0.7,
+      targetMs: 9000,
+    })
+    expect(prompt).toMatch(/not summarising/i)
+    expect(prompt).toMatch(/Keep every name, number/i)
+    expect(prompt).toMatch(/Invent nothing/i)
+    expect(prompt).toMatch(/9\.0 seconds/)
+    // One line only — never the whole transcript.
+    expect(prompt).toContain("Nuestro entorno")
+  })
+
+  it("keeps the original when the rewrite is not shorter", () => {
+    const original = "Una frase corta."
+    const result = parseAdaptedLine(
+      JSON.stringify({ text: "Una frase considerablemente mas larga que antes." }),
+      original,
+    )
+    // Spending a second synthesis to reproduce the problem is worse than none.
+    expect(result.text).toBe(original)
+    expect(result.adapted).toBe(false)
+  })
+
+  it("keeps the original when the model returns nothing usable", () => {
+    const original = "Tu servidor."
+    expect(parseAdaptedLine("not json", original).text).toBe(original)
+    expect(parseAdaptedLine(JSON.stringify({ text: "   " }), original).text).toBe(original)
+  })
+
+  it("accepts a genuinely shorter line and records that it changed", () => {
+    const result = parseAdaptedLine(
+      JSON.stringify({ text: "Espacio de trabajo autoalojado." }),
+      "Nuestro entorno es el espacio de trabajo autoalojado para archivos, IA y datos.",
+    )
+    expect(result.adapted).toBe(true)
+    expect(result.text).toBe("Espacio de trabajo autoalojado.")
+  })
+
+  it("passes on the model's own warning that meaning suffered", () => {
+    const result = parseAdaptedLine(
+      JSON.stringify({ text: "Corto.", lostMeaning: true }),
+      "Una frase bastante larga con detalles importantes.",
+    )
+    expect(result.lostMeaning).toBe(true)
   })
 })
