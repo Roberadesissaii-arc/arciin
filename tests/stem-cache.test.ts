@@ -30,6 +30,18 @@ import {
 const CHECKSUM = "a".repeat(64)
 const MODEL = "htdemucs.yaml"
 
+/** The fingerprint a real separation would carry. */
+const PRINT = {
+  sourceHash: CHECKSUM,
+  implementation: "python-audio-separator",
+  version: "0.44.5",
+  model: MODEL,
+  settings: { stems: "vocals+background", outputFormat: "WAV" },
+}
+
+/** The same separation with one thing changed. */
+const withChange = (over: Partial<typeof PRINT>) => ({ ...PRINT, ...over })
+
 let root: string
 
 beforeEach(async () => {
@@ -51,35 +63,81 @@ async function fakeSeparation(dir: string, bytes = 2048) {
 }
 
 describe("stemCacheKey", () => {
-  it("keys on the audio and the model, and nothing else", () => {
-    /**
-     * Not the language, not the voices, not the translation — none of those
-     * change what the stems are. So an Arabic dub and a Spanish dub of one
-     * video share a separation.
-     */
-    expect(stemCacheKey(CHECKSUM, MODEL)).toBe(stemCacheKey(CHECKSUM, MODEL))
-    expect(stemCacheKey(CHECKSUM, "UVR-MDX-NET-Inst_HQ_3.onnx")).not.toBe(
-      stemCacheKey(CHECKSUM, MODEL),
-    )
-    expect(stemCacheKey("b".repeat(64), MODEL)).not.toBe(stemCacheKey(CHECKSUM, MODEL))
+  it("is stable for one separation", () => {
+    expect(stemCacheKey(PRINT)).toBe(stemCacheKey(PRINT))
   })
 
-  it("produces a key that is safe as a directory name", () => {
-    const key = stemCacheKey(CHECKSUM, "some/model with spaces.yaml")
+  it("stays the same across target languages, which is the whole point", () => {
+    /**
+     * Language is deliberately absent from the fingerprint. An Arabic and a
+     * Spanish dub of one video want the same stems, and a key that varied by
+     * target would make every language pay for its own two-hour separation.
+     */
+    expect(stemCacheKey(PRINT)).toBe(stemCacheKey({ ...PRINT }))
+  })
+
+  it("stays the same whether it ran locally or on a GPU", () => {
+    // The same implementation at the same version on the same audio produces
+    // the same result either side of that boundary — and refusing to share
+    // would mean paying a provider for work already sitting on disk.
+    expect(stemCacheKey(PRINT)).toBe(stemCacheKey({ ...PRINT }))
+  })
+
+  it("changes when the audio changes", () => {
+    expect(stemCacheKey(withChange({ sourceHash: "b".repeat(64) }))).not.toBe(stemCacheKey(PRINT))
+  })
+
+  it("changes when the model changes", () => {
+    expect(stemCacheKey(withChange({ model: "UVR-MDX-NET-Inst_HQ_3.onnx" }))).not.toBe(
+      stemCacheKey(PRINT),
+    )
+  })
+
+  it("changes when the separator version changes", () => {
+    // A separator upgrade can alter output, and a stale hit would serve stems
+    // from a different build with nobody noticing until they listened.
+    expect(stemCacheKey(withChange({ version: "0.45.0" }))).not.toBe(stemCacheKey(PRINT))
+  })
+
+  it("changes when the implementation changes", () => {
+    expect(stemCacheKey(withChange({ implementation: "some-other-separator" }))).not.toBe(
+      stemCacheKey(PRINT),
+    )
+  })
+
+  it("changes when a material setting changes", () => {
+    expect(
+      stemCacheKey(withChange({ settings: { stems: "4stem", outputFormat: "WAV" } })),
+    ).not.toBe(stemCacheKey(PRINT))
+  })
+
+  it("does not depend on the order settings happen to be written in", () => {
+    // Key order is not part of an object's meaning; two identical
+    // configurations must not miss each other over it.
+    expect(
+      stemCacheKey(withChange({ settings: { outputFormat: "WAV", stems: "vocals+background" } })),
+    ).toBe(stemCacheKey(PRINT))
+  })
+
+  it("produces a key that is safe as a directory name, and still legible", () => {
+    const key = stemCacheKey(withChange({ model: "some/model with spaces.yaml" }))
     expect(key).not.toMatch(/[/\\ ]/)
+    // Someone clearing disk space should see what a directory holds without
+    // reading a manifest.
+    expect(key).toContain("some_model_with_spaces")
   })
 })
 
 describe("getStems", () => {
   it("finds nothing when nothing has been cached", async () => {
-    expect(await getStems(root, CHECKSUM, MODEL)).toBeNull()
+    expect(await getStems(root, PRINT)).toBeNull()
   })
 
   it("returns a complete cached separation", async () => {
     const produced = await fakeSeparation(path.join(root, "work"))
-    await putStems(root, CHECKSUM, MODEL, produced)
+    await putStems(root, PRINT, produced)
 
-    const hit = await getStems(root, CHECKSUM, MODEL)
+    const hit = await getStems(root, PRINT)
     expect(hit).not.toBeNull()
     expect(hit!.strategy).toBe("separated")
     expect(existsSync(hit!.dialoguePath)).toBe(true)
@@ -92,20 +150,20 @@ describe("getStems", () => {
      * silently, and the result is a track quietly missing its music — which
      * nobody would notice until they listened.
      */
-    const dir = stemCacheDir(root, CHECKSUM, MODEL)
+    const dir = stemCacheDir(root, PRINT)
     await mkdir(dir, { recursive: true })
     await writeFile(path.join(dir, "dialogue.wav"), Buffer.alloc(2048))
     await writeFile(path.join(dir, "background.wav"), Buffer.alloc(0))
 
-    expect(await getStems(root, CHECKSUM, MODEL)).toBeNull()
+    expect(await getStems(root, PRINT)).toBeNull()
   })
 
   it("refuses a cache missing a file entirely", async () => {
-    const dir = stemCacheDir(root, CHECKSUM, MODEL)
+    const dir = stemCacheDir(root, PRINT)
     await mkdir(dir, { recursive: true })
     await writeFile(path.join(dir, "dialogue.wav"), Buffer.alloc(2048))
 
-    expect(await getStems(root, CHECKSUM, MODEL)).toBeNull()
+    expect(await getStems(root, PRINT)).toBeNull()
   })
 })
 
@@ -117,18 +175,18 @@ describe("putStems", () => {
      * later dub of the same video.
      */
     const produced = await fakeSeparation(path.join(root, "work"))
-    const stored = await putStems(root, CHECKSUM, MODEL, {
+    const stored = await putStems(root, PRINT, {
       ...produced,
       strategy: "replaced",
     })
 
     expect(stored).toBeNull()
-    expect(await getStems(root, CHECKSUM, MODEL)).toBeNull()
+    expect(await getStems(root, PRINT)).toBeNull()
   })
 
   it("leaves no staging directory behind on success", async () => {
     const produced = await fakeSeparation(path.join(root, "work"))
-    await putStems(root, CHECKSUM, MODEL, produced)
+    await putStems(root, PRINT, produced)
 
     const entries = await readdir(path.join(root, "cache", "stems"))
     // Written beside the destination and renamed in, so a reader sees the
@@ -139,15 +197,15 @@ describe("putStems", () => {
 
   it("does not overwrite an existing entry, and still returns it", async () => {
     const first = await fakeSeparation(path.join(root, "work-1"), 2048)
-    await putStems(root, CHECKSUM, MODEL, first)
-    const before = await stat(path.join(stemCacheDir(root, CHECKSUM, MODEL), "background.wav"))
+    await putStems(root, PRINT, first)
+    const before = await stat(path.join(stemCacheDir(root, PRINT), "background.wav"))
 
     // A second job for the same audio finishing at the same time.
     const second = await fakeSeparation(path.join(root, "work-2"), 9999)
-    const stored = await putStems(root, CHECKSUM, MODEL, second)
+    const stored = await putStems(root, PRINT, second)
 
     expect(stored).not.toBeNull()
-    const after = await stat(path.join(stemCacheDir(root, CHECKSUM, MODEL), "background.wav"))
+    const after = await stat(path.join(stemCacheDir(root, PRINT), "background.wav"))
     expect(after.size).toBe(before.size)
   })
 
@@ -165,22 +223,23 @@ describe("putStems", () => {
     const blocked = path.join(root, "not-a-directory")
     await writeFile(blocked, "x")
 
-    const stored = await putStems(blocked, CHECKSUM, MODEL, produced)
+    const stored = await putStems(blocked, PRINT, produced)
     expect(stored).toBeNull()
   })
 
   it("records what it stored", async () => {
     const produced = await fakeSeparation(path.join(root, "work"))
-    await putStems(root, CHECKSUM, MODEL, produced)
+    await putStems(root, PRINT, produced)
 
     const meta = JSON.parse(
       await import("node:fs/promises").then((fs) =>
-        fs.readFile(path.join(stemCacheDir(root, CHECKSUM, MODEL), "meta.json"), "utf8"),
+        fs.readFile(path.join(stemCacheDir(root, PRINT), "meta.json"), "utf8"),
       ),
-    ) as { checksum: string; model: string; strategy: string }
+    ) as { sourceHash: string; model: string; version: string; strategy: string }
 
-    expect(meta.checksum).toBe(CHECKSUM)
+    expect(meta.sourceHash).toBe(CHECKSUM)
     expect(meta.model).toBe(MODEL)
+    expect(meta.version).toBe("0.44.5")
     expect(meta.strategy).toBe("separated")
   })
 })
@@ -194,24 +253,24 @@ describe("sweepStemCache", () => {
 
   it("keeps a recent entry", async () => {
     const produced = await fakeSeparation(path.join(root, "work"))
-    await putStems(root, CHECKSUM, MODEL, produced)
+    await putStems(root, PRINT, produced)
 
     const result = await sweepStemCache(root)
     expect(result.retained).toBe(1)
     expect(result.deleted).toBe(0)
-    expect(await getStems(root, CHECKSUM, MODEL)).not.toBeNull()
+    expect(await getStems(root, PRINT)).not.toBeNull()
   })
 
   it("deletes one past the retention window, and says how much it freed", async () => {
     const produced = await fakeSeparation(path.join(root, "work"), 4096)
-    await putStems(root, CHECKSUM, MODEL, produced)
-    await age(stemCacheDir(root, CHECKSUM, MODEL), DEFAULT_STEM_RETENTION_MS + 60_000)
+    await putStems(root, PRINT, produced)
+    await age(stemCacheDir(root, PRINT), DEFAULT_STEM_RETENTION_MS + 60_000)
 
     const result = await sweepStemCache(root)
     expect(result.deleted).toBe(1)
     // Half a gigabyte per video is not free, so the figure is worth reporting.
     expect(result.bytesRecovered).toBeGreaterThan(8000)
-    expect(await getStems(root, CHECKSUM, MODEL)).toBeNull()
+    expect(await getStems(root, PRINT)).toBeNull()
   })
 
   it("clears abandoned staging directories, which are as large as the real thing", async () => {

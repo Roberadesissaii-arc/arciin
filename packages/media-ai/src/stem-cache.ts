@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto"
 import { access, copyFile, mkdir, readdir, rename, rm, stat, writeFile } from "node:fs/promises"
 import path from "node:path"
 
@@ -22,6 +23,37 @@ import type { AudioStems } from "./audio-separation"
  * separation, which is the same saving again.
  */
 
+/**
+ * Everything that changes what a separation produces.
+ *
+ * The hard part is what to leave out. Language must not be here — an Arabic and
+ * a Spanish dub of one video want the same stems, and including the target
+ * would defeat the whole point. Nor may the voice, the accent, the TTS model or
+ * the GPU: none of them touch the separation. Nor even *where* it ran, because
+ * the same implementation at the same version on the same audio produces the
+ * same result whether that was this server's CPU or a rented GPU — and refusing
+ * to share across that boundary would mean paying a provider for work already
+ * sitting on disk.
+ *
+ * What must be here is anything that would make two outputs semantically
+ * different: the audio, the implementation, its version, the model, and any
+ * setting that alters inference. Getting this wrong in the permissive direction
+ * is the dangerous one — a stale hit serves stems from a different model and
+ * nobody notices until they listen.
+ */
+export type SeparationFingerprint = {
+  /** SHA-256 of the source audio. */
+  sourceHash: string
+  /** "python-audio-separator", or whatever else produced these. */
+  implementation: string
+  /** Its version, because a separator upgrade can change output. */
+  version: string
+  /** "htdemucs.yaml". */
+  model: string
+  /** How four stems became two, and anything else that alters inference. */
+  settings?: Record<string, string | number | boolean | undefined>
+}
+
 /** What a hit contains. Two files, not four. */
 export const DIALOGUE_FILE = "dialogue.wav"
 export const BACKGROUND_FILE = "background.wav"
@@ -32,9 +64,7 @@ const META_FILE = "meta.json"
  * the last three into one background track. Caching the raw four would double
  * the disk for something no consumer wants.
  */
-export type StemCacheMeta = {
-  checksum: string
-  model: string
+export type StemCacheMeta = SeparationFingerprint & {
   createdAt: string
   /** Only ever "separated": see `putStems`. */
   strategy: string
@@ -50,18 +80,41 @@ export type StemCacheMeta = {
 export const DEFAULT_STEM_RETENTION_MS = 7 * 24 * 60 * 60 * 1000
 
 /**
- * Where one separation's output lives.
+ * A stable digest of everything that matters.
  *
- * Keyed on content rather than on the asset id: two copies of the same file
- * genuinely have the same stems, and a re-upload should not pay twice.
+ * Hashed rather than concatenated so the directory name stays a fixed length
+ * whatever the settings contain, and so adding a field later cannot produce a
+ * key that collides with an old one. Settings are sorted, because an object's
+ * key order is not part of its meaning and two identical configurations must
+ * not miss each other over it.
  */
-export function stemCacheKey(checksum: string, model: string): string {
-  const safeModel = model.replace(/[^\w.-]+/g, "_").replace(/\.(yaml|onnx|ckpt|th)$/i, "")
-  return `${checksum}-${safeModel}`
+export function stemCacheKey(fingerprint: SeparationFingerprint): string {
+  const settings = Object.entries(fingerprint.settings ?? {})
+    .filter(([, value]) => value !== undefined)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, value]) => `${key}=${String(value)}`)
+    .join(",")
+
+  const material = [
+    fingerprint.sourceHash,
+    fingerprint.implementation,
+    fingerprint.version,
+    fingerprint.model,
+    settings,
+  ].join("|")
+
+  const digest = createHash("sha256").update(material).digest("hex").slice(0, 32)
+
+  // The model stays legible in the path: someone clearing disk space should be
+  // able to see what a directory holds without reading a manifest.
+  const readableModel = fingerprint.model
+    .replace(/[^\w.-]+/g, "_")
+    .replace(/\.(yaml|onnx|ckpt|th)$/i, "")
+  return `${readableModel}-${digest}`
 }
 
-export function stemCacheDir(storageRoot: string, checksum: string, model: string): string {
-  return path.join(storageRoot, "cache", "stems", stemCacheKey(checksum, model))
+export function stemCacheDir(storageRoot: string, fingerprint: SeparationFingerprint): string {
+  return path.join(storageRoot, "cache", "stems", stemCacheKey(fingerprint))
 }
 
 /**
@@ -73,10 +126,9 @@ export function stemCacheDir(storageRoot: string, checksum: string, model: strin
  */
 export async function getStems(
   storageRoot: string,
-  checksum: string,
-  model: string,
+  fingerprint: SeparationFingerprint,
 ): Promise<AudioStems | null> {
-  const dir = stemCacheDir(storageRoot, checksum, model)
+  const dir = stemCacheDir(storageRoot, fingerprint)
   const dialoguePath = path.join(dir, DIALOGUE_FILE)
   const backgroundPath = path.join(dir, BACKGROUND_FILE)
 
@@ -104,19 +156,18 @@ export async function getStems(
  */
 export async function putStems(
   storageRoot: string,
-  checksum: string,
-  model: string,
+  fingerprint: SeparationFingerprint,
   stems: AudioStems,
 ): Promise<AudioStems | null> {
   if (stems.strategy !== "separated") return null
 
-  const finalDir = stemCacheDir(storageRoot, checksum, model)
+  const finalDir = stemCacheDir(storageRoot, fingerprint)
   const stagingDir = `${finalDir}.incoming-${process.pid}-${Date.now()}`
 
   try {
     // Already there — another job for the same audio got here first.
     await access(finalDir)
-    return await getStems(storageRoot, checksum, model)
+    return await getStems(storageRoot, fingerprint)
   } catch {
     // Not cached yet, which is the normal path.
   }
@@ -127,8 +178,7 @@ export async function putStems(
     await copyFile(stems.backgroundPath, path.join(stagingDir, BACKGROUND_FILE))
 
     const meta: StemCacheMeta = {
-      checksum,
-      model,
+      ...fingerprint,
       createdAt: new Date().toISOString(),
       strategy: stems.strategy,
     }
@@ -136,7 +186,7 @@ export async function putStems(
 
     await mkdir(path.dirname(finalDir), { recursive: true })
     await rename(stagingDir, finalDir)
-    return await getStems(storageRoot, checksum, model)
+    return await getStems(storageRoot, fingerprint)
   } catch {
     // Losing the cache must never lose the dub: the caller already has usable
     // stems in its work directory and can carry on without this.

@@ -52,6 +52,35 @@ const DEFAULT_BINARY = "/srv/arce-projects/arciin-separator/bin/audio-separator"
  */
 export const DEFAULT_SEPARATOR_MODEL = "htdemucs.yaml"
 
+/** Named in the cache fingerprint, so a different tool cannot serve its stems. */
+export const SEPARATOR_IMPLEMENTATION = "python-audio-separator"
+
+let cachedVersion: string | null = null
+
+/**
+ * Which version of the separator this host runs.
+ *
+ * Part of the cache fingerprint: an upgrade can change what a model outputs,
+ * and a stale hit would serve stems from a different build with nobody noticing
+ * until they listened. Asked once and remembered — it cannot change without the
+ * process restarting.
+ *
+ * "unknown" when it cannot be determined, which is deliberately a *distinct*
+ * fingerprint rather than a wildcard: entries written by a host that could not
+ * identify itself are not shared with ones that could.
+ */
+export async function separatorVersion(binaryPath?: string): Promise<string> {
+  if (cachedVersion) return cachedVersion
+  const bin = binaryPath ?? process.env.ARCIIN_AUDIO_SEPARATOR_BIN ?? DEFAULT_BINARY
+  try {
+    const { stdout } = await run(bin, ["--version"], { timeout: 30_000 })
+    cachedVersion = (stdout.match(/\d+\.\d+\.\d+/)?.[0] ?? stdout.trim() ?? "unknown").slice(0, 40)
+  } catch {
+    cachedVersion = "unknown"
+  }
+  return cachedVersion
+}
+
 const DEFAULT_MODEL = DEFAULT_SEPARATOR_MODEL
 
 /**

@@ -835,6 +835,22 @@ export async function handleMediaJob(
       /** Must match the backend's own default, or a hit would be a wrong hit. */
       const separatorModel =
         process.env.ARCIIN_AUDIO_SEPARATOR_MODEL ?? media.DEFAULT_SEPARATOR_MODEL
+
+      /**
+       * Everything that changes what a separation produces, and nothing else.
+       *
+       * The audio, the implementation, its version, the model and the settings
+       * that alter inference. Deliberately not the language, the voices or
+       * where it ran — those do not change the stems, and including them would
+       * make every target language pay for its own two-hour separation.
+       */
+      const fingerprint = {
+        sourceHash: asset.checksumSha256,
+        implementation: media.SEPARATOR_IMPLEMENTATION,
+        version: await media.separatorVersion(),
+        model: separatorModel,
+        settings: { stems: "vocals+background", outputFormat: "WAV" },
+      }
       const sourceAudio = path.join(workDir, "source.wav")
       await runFfmpeg(["-y", "-i", objectFilePath, "-vn", "-ac", "2", "-ar", "44100", sourceAudio])
 
@@ -850,7 +866,7 @@ export async function handleMediaJob(
        * Keyed on the audio and the model only, so a second language reuses the
        * first language's separation.
        */
-      const cached = await media.getStems(storageRoot, asset.checksumSha256, separatorModel)
+      const cached = await media.getStems(storageRoot, fingerprint)
       if (cached) {
         await prisma.mediaDub.update({
           where: { id: payload.dubId },
@@ -939,12 +955,7 @@ export async function handleMediaJob(
        * so a cache failure must not cost the dub the work it just did.
        */
       if (stemsHolder) {
-        const kept = await media.putStems(
-          storageRoot,
-          asset.checksumSha256,
-          separatorModel,
-          stemsHolder,
-        )
+        const kept = await media.putStems(storageRoot, fingerprint, stemsHolder)
         if (kept) stemsHolder = kept
       }
       }
