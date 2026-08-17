@@ -24,8 +24,18 @@ export function VideoAssetViewer({
   className,
   mediaRef,
   onTimeChange,
+  compact = false,
 }: {
   src: string
+  /**
+   * Size the player to its container, with smaller chrome.
+   *
+   * The default height is viewport-based, which is right for the full preview
+   * and wrong inside a narrow side panel: the video rendered at its intrinsic
+   * height, overflowed, and the bottom-anchored controls ended up floating
+   * across the middle of a clipped frame. Compact fills the box it is given.
+   */
+  compact?: boolean
   /**
    * Lets a caller drive playback — the transcript seeks through this.
    *
@@ -171,7 +181,11 @@ export function VideoAssetViewer({
   return (
     <div
       className={cn(
-        "relative flex h-full items-center justify-center bg-zinc-50 p-4 sm:p-6",
+        "relative flex h-full items-center justify-center",
+        // The full preview mats the video against the page; inside a panel the
+        // panel is already the frame, so the padding and wash only shrink the
+        // picture and leave a grey band around it.
+        compact ? "w-full" : "bg-zinc-50 p-4 sm:p-6",
         className,
       )}
     >
@@ -184,7 +198,8 @@ export function VideoAssetViewer({
         <div
           ref={shellRef}
           className={cn(
-            "group/video relative max-h-full max-w-full overflow-hidden rounded-xl",
+            "group/video relative overflow-hidden rounded-xl",
+            compact ? "h-full w-full" : "max-h-full max-w-full",
             "bg-zinc-950 shadow-[0_4px_24px_rgba(0,0,0,0.12)] ring-1 ring-black/10",
             !ready && "opacity-0",
             isFullscreen && "rounded-none",
@@ -209,7 +224,12 @@ export function VideoAssetViewer({
             playsInline
             preload="metadata"
             crossOrigin="use-credentials"
-            className="block max-h-[min(100%,calc(100dvh-8rem))] max-w-full cursor-pointer object-contain"
+            className={cn(
+              "block cursor-pointer object-contain",
+              compact
+                ? "h-full w-full"
+                : "max-h-[min(100%,calc(100dvh-8rem))] max-w-full",
+            )}
             onClick={togglePlay}
             onLoadedData={() => setReady(true)}
             onLoadedMetadata={() => {
@@ -265,8 +285,16 @@ export function VideoAssetViewer({
               aria-label="Play"
               onClick={togglePlay}
             >
-              <span className="flex size-14 items-center justify-center rounded-2xl bg-black/35 text-white shadow-lg ring-1 ring-white/20 backdrop-blur-md">
-                <Play className="size-6 translate-x-0.5" fill="currentColor" />
+              <span
+                className={cn(
+                  "flex items-center justify-center rounded-2xl bg-black/35 text-white shadow-lg ring-1 ring-white/20 backdrop-blur-md",
+                  compact ? "size-10" : "size-14",
+                )}
+              >
+                <Play
+                  className={cn("translate-x-0.5", compact ? "size-4" : "size-6")}
+                  fill="currentColor"
+                />
               </span>
             </button>
           ) : null}
@@ -274,7 +302,8 @@ export function VideoAssetViewer({
           {/* Custom control bar — light frosted glass over the video */}
           <div
             className={cn(
-              "pointer-events-none absolute inset-x-0 bottom-0 z-[2] bg-gradient-to-t from-black/40 via-black/15 to-transparent px-3 pb-3 pt-10 transition-opacity duration-200",
+              "pointer-events-none absolute inset-x-0 bottom-0 z-[2] bg-gradient-to-t from-black/40 via-black/15 to-transparent transition-opacity duration-200",
+              compact ? "px-2 pb-1.5 pt-6" : "px-3 pb-3 pt-10",
               controlsVisible || !playing ? "opacity-100" : "opacity-0",
             )}
           >
@@ -348,7 +377,10 @@ export function VideoAssetViewer({
                 <Button
                   type="button"
                   size="icon"
-                  className="size-9 shrink-0 rounded-xl bg-primary text-white hover:bg-primary/90"
+                  className={cn(
+                    "shrink-0 rounded-xl bg-primary text-white hover:bg-primary/90",
+                    compact ? "size-7" : "size-9",
+                  )}
                   aria-label={playing ? "Pause" : "Play"}
                   onClick={togglePlay}
                 >

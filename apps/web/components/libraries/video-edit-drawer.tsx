@@ -200,7 +200,14 @@ function highlight(text: string, needle: string): React.ReactNode {
  * timestamp seeking. Re-implementing it for the panel would have meant two
  * transcript UIs to keep in step, and the one users already rely on is this one.
  */
-export function VideoTranscriptSection({ asset }: { asset: AssetSummary | null }) {
+export function VideoTranscriptSection({
+  asset,
+  showDetails = true,
+}: {
+  asset: AssetSummary | null
+  /** False inside the asset panel, where Overview already shows all of this. */
+  showDetails?: boolean
+}) {
   const queryClient = useQueryClient()
   const videoRef = useRef<HTMLVideoElement>(null)
   const [search, setSearch] = useState("")
@@ -391,17 +398,28 @@ export function VideoTranscriptSection({ asset }: { asset: AssetSummary | null }
   return (
     <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-8">
             {/* The library's own player, lent a ref so the transcript can seek it. */}
+            {/* A definite box, so the player fills it instead of overflowing a
+                max-height and pushing its controls across the frame. */}
             <div
-              className="mt-4 flex max-h-[280px] items-center justify-center overflow-hidden rounded-xl bg-black"
+              className="mt-4 aspect-video w-full overflow-hidden rounded-xl bg-black"
               data-testid="video-edit-player"
             >
               <VideoAssetViewer
                 src={`/api/assets/${asset.id}/download?inline=1&v=${encodeURIComponent(asset.updatedAt)}`}
                 mediaRef={videoRef}
                 onTimeChange={(seconds) => setCurrentMs(seconds * 1000)}
+                compact
               />
             </div>
 
+            {/*
+              The file's own summary — shown when this section is the whole
+              drawer, hidden when it sits inside the asset panel, where Overview
+              already carries the player and the details table. Repeating them
+              here pushed the actual AI tools below the fold.
+            */}
+            {showDetails ? (
+              <>
             <p className="mt-3 truncate text-[13.5px] font-medium text-foreground" title={asset.originalFilename}>
               {asset.originalFilename}
             </p>
@@ -438,6 +456,8 @@ export function VideoTranscriptSection({ asset }: { asset: AssetSummary | null }
                 })}
               </dd>
             </dl>
+              </>
+            ) : null}
 
             {/* Transcript and Title are two jobs on the same text, so they sit
                 side by side here rather than becoming top-level asset tabs. */}
@@ -476,7 +496,19 @@ export function VideoTranscriptSection({ asset }: { asset: AssetSummary | null }
               <VideoAiTitle
                 asset={asset}
                 hasTranscript={Boolean(transcript && transcript.status === "READY")}
-                onGenerateTranscript={() => setAiTab("transcript")}
+                /**
+                 * Start it, then show it.
+                 *
+                 * The button says "Generate transcript", so it queues the job
+                 * through the same path the transcript panel uses and moves the
+                 * reader there to watch it — rather than switching tabs and
+                 * leaving them to press a second, identical button.
+                 */
+                onGenerateTranscript={() => {
+                  startGenerate()
+                  setAiTab("transcript")
+                }}
+                transcriptRunning={running || generate.isPending}
               />
             ) : null}
 

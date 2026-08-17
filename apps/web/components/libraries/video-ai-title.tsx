@@ -57,11 +57,20 @@ export function VideoAiTitle({
   asset,
   hasTranscript,
   onGenerateTranscript,
+  transcriptRunning = false,
 }: {
   asset: AssetSummary
   hasTranscript: boolean
-  /** Sends the reader to the transcript rather than starting one behind them. */
+  /**
+   * Actually starts the transcript.
+   *
+   * It used to only switch tabs, which made a button labelled "Generate
+   * transcript" navigate instead of generate — the reader pressed it, landed on
+   * another placeholder, and nothing had happened.
+   */
   onGenerateTranscript: () => void
+  /** A transcript is already being produced, so don't offer to start another. */
+  transcriptRunning?: boolean
 }) {
   const [titles, setTitles] = useState<string[]>([])
   const [selected, setSelected] = useState<string | null>(null)
@@ -102,22 +111,32 @@ export function VideoAiTitle({
 
   if (!hasTranscript) {
     return (
+      // Same placeholder as the transcript's own empty state: two panels of the
+      // same section should not look like two different products.
       <div
         className="mt-3 rounded-lg border border-dashed border-border px-4 py-5 text-center"
         data-testid="ai-title-needs-transcript"
       >
-        <p className="text-[12.5px] text-muted-foreground">
-          Generate a transcript first to create an AI title.
+        <Sparkles className="mx-auto size-5 text-primary" />
+        <p className="mt-2 text-[13px] font-medium text-foreground">AI title</p>
+        <p className="mx-auto mt-1 max-w-[38ch] text-[12.5px] text-muted-foreground">
+          A title comes from what the video says, so it needs a transcript first.
+          Generating one here starts it and shows the progress.
         </p>
         <Button
           type="button"
           size="sm"
-          variant="outline"
-          className="mt-3 h-8 gap-1.5 text-[12px]"
+          className="mt-3"
           onClick={onGenerateTranscript}
+          disabled={transcriptRunning}
+          data-testid="ai-title-generate-transcript"
         >
-          <Sparkles className="size-3.5" />
-          Generate Transcript
+          {transcriptRunning ? (
+            <Loader2 className="size-3.5 animate-spin" />
+          ) : (
+            <Sparkles className="size-3.5" />
+          )}
+          {transcriptRunning ? "Transcribing…" : "Generate transcript"}
         </Button>
       </div>
     )
@@ -130,13 +149,16 @@ export function VideoAiTitle({
     <div className="mt-3 space-y-3" data-testid="ai-title-section">
       {titles.length === 0 ? (
         <div className="rounded-lg border border-dashed border-border px-4 py-5 text-center">
-          <p className="text-[12.5px] text-muted-foreground">
-            Suggest a name based on what this video says.
+          <Wand2 className="mx-auto size-5 text-primary" />
+          <p className="mt-2 text-[13px] font-medium text-foreground">AI title</p>
+          <p className="mx-auto mt-1 max-w-[38ch] text-[12.5px] text-muted-foreground">
+            Suggest a name from what this video says. Gemini reads the saved transcript, never the
+            video again.
           </p>
           <Button
             type="button"
             size="sm"
-            className="mt-3 h-8 gap-1.5 bg-primary text-[12px] text-white hover:bg-primary/90"
+            className="mt-3"
             disabled={busy}
             onClick={() => suggest.mutate()}
             data-testid="generate-ai-title"

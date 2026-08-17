@@ -43,7 +43,7 @@ function AssetPreview({ asset }: { asset: AssetSummary }) {
   const src = `/api/assets/${asset.id}/download?inline=1&v=${encodeURIComponent(asset.updatedAt)}`
 
   if (asset.mediaType === "VIDEO") {
-    return <VideoAssetViewer src={src} />
+    return <VideoAssetViewer src={src} compact />
   }
   if (asset.mediaType === "IMAGE") {
     return (
@@ -188,7 +188,14 @@ export function AssetOverviewContent({
       <div className="scrollbar-hide flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-2">
         {/* The file itself, framed rather than floating on the panel. */}
         <div
-          className="flex max-h-[240px] min-h-[120px] items-center justify-center overflow-hidden rounded-xl border border-border bg-gradient-to-b from-muted/10 to-muted/40 ring-1 ring-black/[0.03]"
+          className={cn(
+            "flex items-center justify-center overflow-hidden rounded-xl border border-border",
+            "bg-gradient-to-b from-muted/10 to-muted/40 ring-1 ring-black/[0.03]",
+            // Video gets a real box to fill; stills and icons size themselves.
+            asset.mediaType === "VIDEO"
+              ? "aspect-video w-full"
+              : "max-h-[240px] min-h-[120px]",
+          )}
           data-testid="asset-panel-preview"
         >
           <AssetPreview asset={asset} />

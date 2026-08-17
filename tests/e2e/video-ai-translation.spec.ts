@@ -107,6 +107,59 @@ test.describe("translation and titles never reach for the media", () => {
     await expect(picker.getByTestId("transcript-target-fr")).toHaveCount(0)
   })
 
+  test("the AI Title placeholder actually generates a transcript", async ({ page }) => {
+    /**
+     * The button used to only switch tabs.
+     *
+     * It says "Generate transcript", so pressing it must queue one — the old
+     * behaviour moved the reader to another placeholder and left them to press
+     * a second, identical button, which reads as the feature being broken.
+     *
+     * The transcript is stubbed absent so the empty state renders, and the POST
+     * is fulfilled rather than forwarded: this proves the wiring without paying
+     * for a transcription or disturbing the fixture.
+     */
+    const posted: string[] = []
+    await page.route(/\/api\/assets\/[^/]+\/transcript(\?|$)/, async (route) => {
+      const method = route.request().method()
+      if (method === "GET") {
+        return route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ data: { transcript: null, translations: [], transcribable: true } }),
+        })
+      }
+      if (method === "POST") {
+        posted.push(route.request().url())
+        return route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            data: { transcript: { id: "stub", assetId: "stub", status: "PENDING", segments: [] } },
+          }),
+        })
+      }
+      return route.continue()
+    })
+
+    await openAiSection(page)
+    await page.getByTestId("video-ai-tab-title").click()
+
+    const empty = panel(page).getByTestId("ai-title-needs-transcript")
+    await expect(empty).toBeVisible({ timeout: 20_000 })
+    // The same placeholder language and shape the transcript panel uses.
+    await expect(empty).toContainText("AI title")
+    await expect(empty).toContainText(/transcript/i)
+
+    await panel(page).getByTestId("ai-title-generate-transcript").click()
+
+    // It queued the work, and moved the reader to where the progress shows.
+    await expect
+      .poll(() => posted.length, { timeout: 15_000 })
+      .toBeGreaterThan(0)
+    await expect(panel(page).getByTestId("video-transcript")).toBeVisible({ timeout: 10_000 })
+  })
+
   test("AI Title asks for a transcript rather than starting one", async ({ page }) => {
     const posts = watchMediaRequests(page)
     await openAiSection(page)

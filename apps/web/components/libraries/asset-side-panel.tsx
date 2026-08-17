@@ -334,7 +334,7 @@ function PanelSections({
       {active === "edit" ? (
         <AssetEditContent asset={asset} onDone={() => setSection("overview")} />
       ) : null}
-      {active === "ai" ? <VideoTranscriptSection asset={asset} /> : null}
+      {active === "ai" ? <VideoTranscriptSection asset={asset} showDetails={false} /> : null}
       {active === "move" ? (
         <AssetMoveContent asset={asset} onDone={() => selection?.clear()} />
       ) : null}
