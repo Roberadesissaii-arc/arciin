@@ -9,8 +9,30 @@
 import { fetchApi } from "@/lib/api/client"
 import type { MediaTranscript, TranscriptSegment } from "@arciin/types"
 
+/**
+ * A saved translation of the transcript into one language.
+ *
+ * Carries the original's timings: translation is a text transformation, so the
+ * timeline that makes a timestamp seek the video is the original's.
+ */
+export type TranscriptTranslation = {
+  id: string
+  language: string
+  status: string
+  provider: string | null
+  model: string | null
+  fullText: string | null
+  segments: TranscriptSegment[]
+  error: string | null
+  /** The original moved after this was produced — offer a regenerate. */
+  stale: boolean
+  generatedAt: string | null
+  updatedAt: string
+}
+
 export type TranscriptResponse = {
   transcript: MediaTranscript | null
+  translations: TranscriptTranslation[]
   transcribable: boolean
 }
 
@@ -40,5 +62,35 @@ export function saveAssetTranscript(
   return fetchApi<{ transcript: MediaTranscript }>(`/assets/${assetId}/transcript`, {
     method: "PATCH",
     body: input,
+  })
+}
+
+/**
+ * Translate the saved transcript.
+ *
+ * Text only: the server reads the stored segments, so the video is not
+ * uploaded again and no audio is extracted. Loading a translation that already
+ * exists never comes through here — it arrives with the transcript.
+ */
+export function requestTranscriptTranslation(
+  assetId: string,
+  input: { language: string; profileId?: string },
+) {
+  return fetchApi<{ translation: TranscriptTranslation }>(
+    `/assets/${assetId}/transcript/translations`,
+    { method: "POST", body: input },
+  )
+}
+
+/**
+ * Ask for title suggestions based on what the video says.
+ *
+ * Returns choices only. Renaming happens through the ordinary asset update, on
+ * an explicit Apply — a suggestion must never rename anything by itself.
+ */
+export function requestTitleSuggestions(assetId: string, input?: { count?: number }) {
+  return fetchApi<{ titles: string[]; model: string }>(`/assets/${assetId}/title-suggestions`, {
+    method: "POST",
+    body: input ?? {},
   })
 }

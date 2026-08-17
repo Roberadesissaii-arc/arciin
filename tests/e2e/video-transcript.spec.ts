@@ -106,7 +106,16 @@ test.describe("video transcript", () => {
     // Headings, not any text: the sheet's screen-reader description also says
     // "details", and a loose text match found that instead.
     await expect(drawer.getByRole("heading", { name: "Details" })).toBeVisible()
-    await expect(drawer.getByRole("heading", { name: "Transcript" })).toBeVisible()
+    /**
+     * The transcript now lives under an "AI" heading, beside AI Title.
+     *
+     * Grouping them stopped the panel's top navigation growing a tab per
+     * capability; the transcript itself is unchanged, and is still the section
+     * shown by default.
+     */
+    await expect(drawer.getByTestId("video-ai-nav")).toBeVisible()
+    await expect(drawer.getByTestId("video-ai-tab-transcript")).toBeVisible()
+    await expect(drawer.getByTestId("video-ai-tab-title")).toBeVisible()
     // Either state is correct here: the section exists whether or not an
     // earlier run in this database already produced a transcript. Asserting
     // only "generate" made this pass or fail on leftover data rather than on

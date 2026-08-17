@@ -43,8 +43,12 @@ import { toast } from "@/lib/notifications/arciin-toast"
 import {
   getAssetTranscript,
   requestAssetTranscript,
+  requestTranscriptTranslation,
   saveAssetTranscript,
+  type TranscriptTranslation,
 } from "@/lib/api/transcripts"
+import { VideoAiTitle } from "@/components/libraries/video-ai-title"
+import { TranscriptLanguageBar } from "@/components/libraries/transcript-language-bar"
 import { VideoAssetViewer } from "@/components/libraries/video-asset-viewer"
 import { formatBytes } from "@/lib/utils/format-bytes"
 import { cn } from "@/lib/utils"
@@ -224,10 +228,51 @@ export function VideoTranscriptSection({ asset }: { asset: AssetSummary | null }
   })
 
   const transcript: MediaTranscript | null = transcriptQuery.data?.transcript ?? null
+  const translations: TranscriptTranslation[] = transcriptQuery.data?.translations ?? []
+
+  /**
+   * Which language is on screen. `null` is the original.
+   *
+   * Everything below reads from `segments`, so switching language switches what
+   * search, copy, the exports and timestamp seeking all operate on — without a
+   * second copy of any of them.
+   */
+  const [activeLanguage, setActiveLanguage] = useState<string | null>(null)
+  const [aiTab, setAiTab] = useState<"transcript" | "title">("transcript")
+  const activeTranslation = activeLanguage
+    ? (translations.find((t) => t.language === activeLanguage) ?? null)
+    : null
+
   // Memoised so the active-segment lookup below is not recomputed on every
   // render just because `?? []` produced a fresh array.
-  const segments = useMemo(() => transcript?.segments ?? [], [transcript])
+  const segments = useMemo(
+    () => activeTranslation?.segments ?? transcript?.segments ?? [],
+    [activeTranslation, transcript],
+  )
   const running = transcript ? isTranscriptRunning(transcript.status) : false
+
+  /**
+   * Translate into one language.
+   *
+   * Sends nothing but a language tag: the server already holds the transcript,
+   * so the video is not touched. Loading a language that already exists never
+   * reaches this — it arrives with the transcript query.
+   */
+  const translate = useMutation({
+    mutationFn: (language: string) => requestTranscriptTranslation(assetId!, { language }),
+    onSuccess: (data) => {
+      setActiveLanguage(data.translation.language)
+      void queryClient.invalidateQueries({ queryKey: transcriptKey(assetId!) })
+      toast.success("Translation ready", {
+        description: `${languageLabel(data.translation.language)} is now saved with this video.`,
+      })
+    },
+    onError: (error) => {
+      toast.error("Could not translate", {
+        description: error instanceof Error ? error.message : "Try again in a moment.",
+      })
+    },
+  })
 
   const generate = useMutation({
     mutationFn: () => requestAssetTranscript(assetId!),
@@ -394,8 +439,63 @@ export function VideoTranscriptSection({ asset }: { asset: AssetSummary | null }
               </dd>
             </dl>
 
-            <SectionHeading>Transcript</SectionHeading>
-            <div className="mt-3" data-testid="video-transcript">
+            {/* Transcript and Title are two jobs on the same text, so they sit
+                side by side here rather than becoming top-level asset tabs. */}
+            <SectionHeading>AI</SectionHeading>
+            <nav
+              className="mt-2 flex items-center gap-1"
+              aria-label="Video AI sections"
+              data-testid="video-ai-nav"
+            >
+              {(
+                [
+                  ["transcript", "Transcript"],
+                  ["title", "AI Title"],
+                ] as const
+              ).map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setAiTab(key)}
+                  aria-current={aiTab === key ? "page" : undefined}
+                  data-testid={`video-ai-tab-${key}`}
+                  className={cn(
+                    "rounded-lg px-2.5 py-1.5 text-[12.5px] font-medium transition-colors",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30",
+                    aiTab === key
+                      ? "bg-primary/10 text-primary"
+                      : "text-muted-foreground hover:bg-muted/50 hover:text-foreground",
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
+            </nav>
+
+            {aiTab === "title" ? (
+              <VideoAiTitle
+                asset={asset}
+                hasTranscript={Boolean(transcript && transcript.status === "READY")}
+                onGenerateTranscript={() => setAiTab("transcript")}
+              />
+            ) : null}
+
+            <div
+              className={cn("mt-1", aiTab === "title" && "hidden")}
+              data-testid="video-transcript"
+            >
+              {/* Only once there is something to translate. */}
+              {transcript && transcript.status === "READY" ? (
+                <TranscriptLanguageBar
+                  sourceLanguage={transcript.language}
+                  translations={translations}
+                  activeLanguage={activeLanguage}
+                  onSelect={setActiveLanguage}
+                  onTranslate={(language) => translate.mutate(language)}
+                  translating={translate.isPending}
+                  pendingLanguage={translate.variables ?? null}
+                />
+              ) : null}
               <TranscriptBody
                 transcript={transcript}
                 loading={transcriptQuery.isLoading}
@@ -409,12 +509,18 @@ export function VideoTranscriptSection({ asset }: { asset: AssetSummary | null }
                 onGenerate={startGenerate}
                 onCopy={copy}
                 onDownload={download}
-                editing={editing}
+                editing={editing && activeLanguage === null}
                 draft={draft}
-                onEditStart={() => {
-                  setDraft(segments.map((s) => s.text).join("\n"))
-                  setEditing(true)
-                }}
+                // Corrections belong to the original; a translation is derived
+                // from it, so editing one would be edited away by a regenerate.
+                onEditStart={
+                  activeLanguage === null
+                    ? () => {
+                        setDraft(segments.map((s) => s.text).join("\n"))
+                        setEditing(true)
+                      }
+                    : undefined
+                }
                 onDraftChange={setDraft}
                 onEditCancel={() => setEditing(false)}
                 onEditSave={() => saveEdit.mutate(draft)}
@@ -483,7 +589,8 @@ function TranscriptBody(props: {
   onDownload: (kind: "txt" | "srt") => void
   editing: boolean
   draft: string
-  onEditStart: () => void
+  /** Absent while a translation is on screen — corrections belong to the original. */
+  onEditStart?: () => void
   onDraftChange: (v: string) => void
   onEditCancel: () => void
   onEditSave: () => void
@@ -596,7 +703,9 @@ function TranscriptBody(props: {
           <Button type="button" size="sm" variant="outline" onClick={() => props.onDownload("srt")}>
             <Download className="size-3.5" /> .srt
           </Button>
-          {!props.editing ? (
+          {/* Hidden while a translation is on screen: an edit there would be
+              overwritten by the next regenerate, so offering it would be a lie. */}
+          {!props.editing && props.onEditStart ? (
             <Button type="button" size="sm" variant="outline" onClick={props.onEditStart}>
               <Pencil className="size-3.5" /> Edit
             </Button>

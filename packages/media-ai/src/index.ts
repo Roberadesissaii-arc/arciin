@@ -9,3 +9,4 @@
 export * from "./gemini-media-provider"
 export * from "./model-key"
 export * from "./transcribe-media"
+export * from "./transcript-text-ai"

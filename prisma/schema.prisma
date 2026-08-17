@@ -585,9 +585,46 @@ model MediaTranscript {
   createdAt       DateTime              @default(now())
   updatedAt       DateTime              @updatedAt
 
-  asset Asset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  asset        Asset              @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  translations MediaTranslation[]
 
   @@index([status])
+}
+
+/// A saved translation of one transcript into one language.
+///
+/// A row per language rather than a column on the transcript: a video can carry
+/// Amharic and Spanish at once, and the original must survive both. Translation
+/// is a text transformation of `MediaTranscript.segments`, so the media is never
+/// read again — see `translate-transcript.ts`.
+model MediaTranslation {
+  id           String                @id @default(cuid())
+  transcriptId String
+  /// BCP-47 target tag, e.g. "es", "am", "om".
+  language     String
+  status       MediaTranscriptStatus @default(PENDING)
+  provider     String?
+  model        String?
+  fullText     String?
+  /// Same shape as the original, with the original's timings carried over.
+  segments     Json?
+  error        String?
+  /**
+   * The original's `updatedAt` at the moment this was produced.
+   *
+   * Editing or regenerating the transcript moves that timestamp, which is how
+   * a translation is known to be describing text that no longer exists — shown
+   * as "may be outdated" rather than silently served as current.
+   */
+  sourceUpdatedAt DateTime?
+  generatedAt     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  transcript MediaTranscript @relation(fields: [transcriptId], references: [id], onDelete: Cascade)
+
+  @@unique([transcriptId, language])
+  @@index([transcriptId])
 }
 
 enum MediaTranscriptStatus {

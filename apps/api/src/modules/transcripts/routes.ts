@@ -14,12 +14,14 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify"
 import { z } from "zod"
 
 import { JOB_TYPES, normalizeTranscriptSegments } from "@arciin/shared"
-
+import { isSameLanguage, languageName } from "@arciin/types"
 import { assertAssetFolderAccess } from "@/services/folders/folder-lock"
 import { mediaQueue } from "@/services/jobs/queues"
 import {
   GeminiNotConfiguredError,
   resolveGeminiMediaConfig,
+  suggestTitles,
+  translateTranscript,
 } from "@arciin/media-ai"
 import { requireRole } from "@/services/security/auth"
 import { recordAndBroadcastActivity } from "@/services/activity/record-and-broadcast-activity"
@@ -58,6 +60,43 @@ function serializeTranscript(row: {
     edited: row.edited,
     error: row.error,
     jobId: row.jobId,
+    generatedAt: row.generatedAt?.toISOString() ?? null,
+    updatedAt: row.updatedAt.toISOString(),
+  }
+}
+
+function serializeTranslation(
+  row: {
+    id: string
+    language: string
+    status: string
+    provider: string | null
+    model: string | null
+    fullText: string | null
+    segments: unknown
+    error: string | null
+    sourceUpdatedAt: Date | null
+    generatedAt: Date | null
+    updatedAt: Date
+  },
+  sourceUpdatedAt: Date,
+) {
+  return {
+    id: row.id,
+    language: row.language,
+    status: row.status,
+    provider: row.provider,
+    model: row.model,
+    fullText: row.fullText,
+    segments: normalizeTranscriptSegments(row.segments),
+    error: row.error,
+    /**
+     * The original has moved since this was produced.
+     *
+     * Derived rather than stored so an edit to the transcript marks every
+     * translation at once, without a fan-out write that could half-succeed.
+     */
+    stale: Boolean(row.sourceUpdatedAt && row.sourceUpdatedAt < sourceUpdatedAt),
     generatedAt: row.generatedAt?.toISOString() ?? null,
     updatedAt: row.updatedAt.toISOString(),
   }
@@ -110,11 +149,15 @@ export async function transcriptRoutes(fastify: FastifyInstance) {
 
       const transcript = await fastify.prisma.mediaTranscript.findUnique({
         where: { assetId },
+        include: { translations: { orderBy: { language: "asc" } } },
       })
 
       reply.send({
         data: {
           transcript: transcript ? serializeTranscript(transcript) : null,
+          translations: transcript
+            ? transcript.translations.map((t) => serializeTranslation(t, transcript.updatedAt))
+            : [],
           transcribable: isTranscribableAsset(asset.mediaType),
         },
       })
@@ -232,6 +275,194 @@ export async function transcriptRoutes(fastify: FastifyInstance) {
   )
 
   // ── manual correction ────────────────────────────────────────────────────
+  /**
+   * Translate the saved transcript into one language.
+   *
+   * Text in, text out. The media is never opened: the segments already exist,
+   * so re-reading the video would cost a second upload to re-derive words the
+   * instance is already holding.
+   *
+   * Synchronous rather than queued, unlike transcription — this is a few
+   * kilobytes of text and returns in seconds, and a job would add a polling
+   * surface for no benefit.
+   */
+  fastify.post(
+    "/assets/:assetId/transcript/translations",
+    { preHandler: guard },
+    async (request, reply) => {
+      const { assetId } = z.object({ assetId: z.string() }).parse(request.params)
+      const parsed = z
+        .object({
+          language: z.string().min(2).max(16),
+          profileId: z.string().optional(),
+        })
+        .safeParse(request.body)
+
+      if (!parsed.success) {
+        reply.status(400).send({
+          error: { code: "VALIDATION_ERROR", message: "Pick a language to translate into." },
+        })
+        return
+      }
+
+      // Ownership is re-checked here, not inherited from the transcript: an
+      // asset id is guessable and this endpoint spends money.
+      const asset = await loadAccessibleAsset(request, reply, assetId)
+      if (!asset) return
+
+      const transcript = await fastify.prisma.mediaTranscript.findUnique({ where: { assetId } })
+      if (!transcript || transcript.status !== "READY") {
+        reply.status(409).send({
+          error: {
+            code: "NO_TRANSCRIPT",
+            message: "Generate a transcript before translating it.",
+          },
+        })
+        return
+      }
+
+      const segments = normalizeTranscriptSegments(transcript.segments)
+      if (segments.length === 0) {
+        reply.status(409).send({
+          error: { code: "EMPTY_TRANSCRIPT", message: "This transcript has no speech to translate." },
+        })
+        return
+      }
+
+      const target = parsed.data.language.trim()
+      // Translating English into English is a paid request for nothing.
+      if (isSameLanguage(target, transcript.language)) {
+        reply.status(400).send({
+          error: {
+            code: "SAME_LANGUAGE",
+            message: "That is already the transcript's language.",
+          },
+        })
+        return
+      }
+
+      let config
+      try {
+        config = await resolveGeminiMediaConfig(fastify.prisma, parsed.data.profileId)
+      } catch (error) {
+        if (error instanceof GeminiNotConfiguredError) {
+          reply.status(409).send({
+            error: {
+              code: "GEMINI_NOT_CONFIGURED",
+              message: "Add a Gemini model profile under Models to translate.",
+            },
+          })
+          return
+        }
+        throw error
+      }
+
+      try {
+        const result = await translateTranscript({
+          config,
+          segments,
+          targetLanguageName: languageName(target) || target,
+          sourceLanguageName: transcript.language ? languageName(transcript.language) : null,
+        })
+
+        const data = {
+          status: "READY" as const,
+          provider: "gemini",
+          model: result.model,
+          fullText: result.fullText,
+          segments: result.segments as unknown as object,
+          error: null,
+          sourceUpdatedAt: transcript.updatedAt,
+          generatedAt: new Date(),
+        }
+
+        const row = await fastify.prisma.mediaTranslation.upsert({
+          where: { transcriptId_language: { transcriptId: transcript.id, language: target } },
+          create: { transcriptId: transcript.id, language: target, ...data },
+          // Regenerating replaces in place rather than accumulating rows.
+          update: data,
+        })
+
+        reply.send({ data: { translation: serializeTranslation(row, transcript.updatedAt) } })
+      } catch (error) {
+        reply.status(502).send({
+          error: {
+            code: "TRANSLATION_FAILED",
+            message:
+              error instanceof Error ? error.message : "The model did not return a translation.",
+          },
+        })
+      }
+    },
+  )
+
+  /**
+   * Title suggestions from what the video actually says.
+   *
+   * Reads the saved original transcript — never a translation, and never the
+   * media. Returns choices; renaming is a separate, explicit act.
+   */
+  fastify.post(
+    "/assets/:assetId/title-suggestions",
+    { preHandler: guard },
+    async (request, reply) => {
+      const { assetId } = z.object({ assetId: z.string() }).parse(request.params)
+      const body = z
+        .object({ profileId: z.string().optional(), count: z.number().int().min(1).max(6).optional() })
+        .safeParse(request.body ?? {})
+
+      const asset = await loadAccessibleAsset(request, reply, assetId)
+      if (!asset) return
+
+      const transcript = await fastify.prisma.mediaTranscript.findUnique({ where: { assetId } })
+      const text = transcript?.fullText?.trim()
+      if (!transcript || transcript.status !== "READY" || !text) {
+        reply.status(409).send({
+          error: {
+            code: "NO_TRANSCRIPT",
+            message: "Generate a transcript first to create an AI title.",
+          },
+        })
+        return
+      }
+
+      let config
+      try {
+        config = await resolveGeminiMediaConfig(
+          fastify.prisma,
+          body.success ? body.data.profileId : undefined,
+        )
+      } catch (error) {
+        if (error instanceof GeminiNotConfiguredError) {
+          reply.status(409).send({
+            error: {
+              code: "GEMINI_NOT_CONFIGURED",
+              message: "Add a Gemini model profile under Models to suggest titles.",
+            },
+          })
+          return
+        }
+        throw error
+      }
+
+      try {
+        const result = await suggestTitles({
+          config,
+          transcriptText: text,
+          count: body.success ? body.data.count : undefined,
+        })
+        reply.send({ data: { titles: result.titles, model: result.model } })
+      } catch (error) {
+        reply.status(502).send({
+          error: {
+            code: "TITLE_FAILED",
+            message: error instanceof Error ? error.message : "The model did not return titles.",
+          },
+        })
+      }
+    },
+  )
+
   fastify.patch(
     "/assets/:assetId/transcript",
     { preHandler: guard },
