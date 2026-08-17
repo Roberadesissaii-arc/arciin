@@ -274,7 +274,18 @@ function PanelSections({
     <>
       <nav
         aria-label="Asset sections"
-        className="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-border px-2 py-1.5"
+        /**
+         * A grid, not a scrolling row.
+         *
+         * Five items with icon-and-label overflowed the panel and grew arrows,
+         * so reaching Share meant scrolling a five-item menu. Equal columns fit
+         * every section at once at any panel width, and the labels stack under
+         * their icons rather than competing with them for horizontal space.
+         */
+        className="grid shrink-0 gap-0.5 border-b border-border p-1.5"
+        // Columns follow the number of sections, so a file without an AI
+        // section does not leave a gap where its tab would have been.
+        style={{ gridTemplateColumns: `repeat(${sections.length}, minmax(0, 1fr))` }}
         data-testid="asset-panel-nav"
       >
         {sections.map((key) => {
@@ -287,16 +298,27 @@ function PanelSections({
               onClick={() => setSection(key)}
               aria-current={current ? "page" : undefined}
               data-testid={`asset-panel-tab-${key}`}
+              title={SECTION_LABELS[key]}
               className={cn(
-                "inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[12.5px] font-medium transition-colors",
+                "group relative flex flex-col items-center gap-1 rounded-lg px-1 pb-1.5 pt-2 transition-colors",
                 "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30",
                 current
                   ? "bg-primary/10 text-primary"
-                  : "text-muted-foreground hover:bg-muted/50 hover:text-foreground",
+                  : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
               )}
             >
-              <Icon className="size-3.5" aria-hidden />
-              {SECTION_LABELS[key]}
+              <Icon className="size-4 shrink-0" aria-hidden />
+              <span className="text-[10.5px] font-semibold leading-none tracking-tight">
+                {SECTION_LABELS[key]}
+              </span>
+              {/* The active marker, in the accent — a tab bar without the scroll. */}
+              <span
+                aria-hidden
+                className={cn(
+                  "absolute inset-x-2 -bottom-px h-[2px] rounded-full transition-opacity",
+                  current ? "bg-primary opacity-100" : "opacity-0",
+                )}
+              />
             </button>
           )
         })}
