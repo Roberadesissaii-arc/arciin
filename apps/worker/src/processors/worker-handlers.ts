@@ -1,4 +1,6 @@
-import { access, lstat, mkdir, readdir, readlink, rm, unlink } from "node:fs/promises"
+import { access, copyFile, lstat, mkdir, readdir, readlink, rm, stat, unlink, writeFile } from "node:fs/promises"
+import { createHash } from "node:crypto"
+import { createReadStream } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
 
@@ -26,15 +28,22 @@ import {
   type MigrateStoragePayload,
   type ExtractMetadataPayload,
   type GenerateThumbnailPayload,
+  type DubMediaPayload,
   type TranscribeMediaPayload,
   type PlexSyncPlaceholderPayload,
   type StageUpdatePayload,
 } from "@arciin/shared"
-import {
-  candidateStorageObjectPaths,
+import { buildObjectKey, candidateStorageObjectPaths,
   normalizeConfiguredStorageRoot,
   resolveArciinStorageRoot,
 } from "@arciin/storage"
+import { normalizeTranscriptSegments } from "@arciin/shared"
+import type {
+  DubSegment,
+  FitResult,
+  PlacedClip,
+  VoiceProfile,
+} from "@arciin/media-ai"
 
 import { workerConfig } from "@/config"
 import { runApplyUpdate, runStageUpdate } from "@/services/auto-update"
@@ -338,13 +347,62 @@ async function generateThumbnail(
   }
 }
 
+/** ffmpeg, quietly, failing loudly. */
+async function runFfmpeg(args: string[]) {
+  await execa("ffmpeg", ["-hide_banner", "-loglevel", "error", ...args], {
+    timeout: 30 * 60 * 1000,
+  })
+}
+
+/**
+ * Move a generated file into content-addressed storage.
+ *
+ * The same layout uploads use, so a dub is an ordinary stored object that the
+ * download route and cleanup already understand.
+ */
+async function storeDubArtifact(filePath: string, storageRoot: string, mimeType: string) {
+  const checksum = await new Promise<string>((resolve, reject) => {
+    const hash = createHash("sha256")
+    createReadStream(filePath)
+      .on("data", (chunk) => hash.update(chunk))
+      .on("end", () => resolve(hash.digest("hex")))
+      .on("error", reject)
+  })
+
+  const extension = path.extname(filePath) || ".m4a"
+  const objectKey = buildObjectKey(checksum, extension)
+  const physicalPath = path.join(storageRoot, objectKey)
+  await mkdir(path.dirname(physicalPath), { recursive: true })
+  await copyFile(filePath, physicalPath)
+  const size = (await stat(physicalPath)).size
+
+  const location = await prisma.storageLocation.findFirst({ where: { isDefault: true } })
+  if (!location) throw new Error("No default storage location is configured.")
+
+  // Content-addressed, so re-generating an identical dub reuses the row.
+  const existing = await prisma.storageObject.findUnique({ where: { objectKey } })
+  if (existing) return existing
+
+  return prisma.storageObject.create({
+    data: {
+      storageLocationId: location.id,
+      objectKey,
+      physicalPath,
+      sizeBytes: BigInt(size),
+      checksumSha256: checksum,
+      mimeType,
+    },
+  })
+}
+
 export async function handleMediaJob(
   name: string,
   data:
     | (AnalyzeFilePayload & { jobRecordId?: string })
     | (ExtractMetadataPayload & { jobRecordId?: string })
     | (GenerateThumbnailPayload & { jobRecordId?: string })
-    | (TranscribeMediaPayload & { jobRecordId?: string }),
+    | (TranscribeMediaPayload & { jobRecordId?: string })
+    | (DubMediaPayload & { jobRecordId?: string }),
   redis: Redis
 ) {
   await markJob(data.jobRecordId, { status: "ACTIVE", progress: 10 })
@@ -557,6 +615,185 @@ export async function handleMediaJob(
       await failTranscript(message, "FAILED")
       return
     }
+  }
+
+  if (name === JOB_TYPES.dubMedia && "dubId" in data) {
+    /**
+     * A dub: separate, synthesise, fit, mix, store.
+     *
+     * Every stage here is unbounded, and separation alone runs at roughly 13x
+     * realtime on a CPU without AVX, so this cannot live in a request. The dub
+     * row is updated as the stages pass, which is what lets a panel closed
+     * mid-run reopen onto the current state rather than starting again.
+     *
+     * The media never leaves the server. Separation is local; only translated
+     * text and performance instructions go to Gemini, and audio comes back.
+     */
+    const payload = data as DubMediaPayload & { jobRecordId?: string }
+    const media = await import("@arciin/media-ai")
+
+    const stage = async (
+      status: "SEPARATING" | "SYNTHESIZING" | "MIXING",
+      label: string,
+      progress: number,
+    ) => {
+      await prisma.mediaDub.update({
+        where: { id: payload.dubId },
+        data: { status, stage: label },
+      })
+      await markJob(payload.jobRecordId, { status: "ACTIVE", progress })
+    }
+
+    const failDub = async (message: string) => {
+      await prisma.mediaDub.update({
+        where: { id: payload.dubId },
+        data: { status: "FAILED", stage: null, error: message },
+      })
+      await markJob(payload.jobRecordId, { status: "FAILED", progress: 100, error: message })
+    }
+
+    const workDir = path.join(storageRoot, "temp", `dub-${payload.dubId}`)
+
+    try {
+      const translation = await prisma.mediaTranslation.findUnique({
+        where: { id: payload.translationId },
+        include: { transcript: true },
+      })
+      if (!translation || translation.status !== "READY") {
+        await failDub("The translation is not ready.")
+        return
+      }
+
+      const segments = normalizeTranscriptSegments(translation.segments)
+      if (segments.length === 0) {
+        await failDub("The translation has no speech to dub.")
+        return
+      }
+
+      const dubRow = await prisma.mediaDub.findUnique({ where: { id: payload.dubId } })
+      const profiles = (dubRow?.voiceProfiles ?? []) as unknown as VoiceProfile[]
+      if (profiles.length === 0) {
+        await failDub("No voice settings were saved for this dub.")
+        return
+      }
+
+      let config
+      try {
+        config = await media.resolveGeminiMediaConfig(prisma, payload.profileId)
+      } catch {
+        await failDub("Add a Gemini model profile under Models to generate a dub.")
+        return
+      }
+
+      await mkdir(workDir, { recursive: true })
+
+      // ── separate ────────────────────────────────────────────────────────
+      await stage("SEPARATING", "Separating dialogue from background", 20)
+      const separation = new media.AudioSeparationService([new media.AudioSeparatorBackend()])
+      if (!(await separation.isAvailable())) {
+        await failDub(
+          "Audio dubbing needs a separator so the original music and ambience can be kept. See docs/DUBBING.md.",
+        )
+        return
+      }
+
+      const sourceAudio = path.join(workDir, "source.wav")
+      await runFfmpeg(["-y", "-i", objectFilePath, "-vn", "-ac", "2", "-ar", "44100", sourceAudio])
+      const stems = await separation.separate({
+        inputPath: sourceAudio,
+        workDir,
+        onStage: (label) => {
+          void prisma.mediaDub.update({ where: { id: payload.dubId }, data: { stage: label } })
+        },
+      })
+
+      // ── synthesise ──────────────────────────────────────────────────────
+      await stage("SYNTHESIZING", "Generating translated voices", 45)
+      const bySpeaker = new Map<string, DubSegment[]>()
+      for (const segment of segments) {
+        const speaker = segment.speaker ?? profiles[0]!.speakerId
+        const list = bySpeaker.get(speaker) ?? []
+        list.push({ ...segment, speaker })
+        bySpeaker.set(speaker, list)
+      }
+
+      const clips: PlacedClip[] = []
+      const fits: FitResult[] = []
+
+      for (const [speaker, speakerSegments] of bySpeaker) {
+        const profile =
+          profiles.find((p) => p.speakerId === speaker) ?? profiles[0]!
+        // Chunked so a long transcript does not drift, and never mixing speakers.
+        for (const chunk of media.chunkSegments(speakerSegments)) {
+          const result = await media.synthesizeDubChunk({
+            config,
+            profile,
+            segments: chunk,
+            sourceLanguage: translation.transcript.language,
+            targetLanguage: translation.language,
+          })
+          const chunkStart = chunk[0]!.startMs
+          const chunkEnd = chunk[chunk.length - 1]!.endMs ?? chunkStart
+          const fit = media.fitSegment({
+            startMs: chunkStart,
+            endMs: chunkEnd,
+            actualMs: result.durationMs,
+            speaker,
+          })
+          fits.push(fit)
+
+          const clipPath = path.join(workDir, `clip-${clips.length}.wav`)
+          await writeFile(clipPath, media.pcmToWav(result.pcm))
+          clips.push({ path: clipPath, startMs: chunkStart, rate: fit.rate })
+        }
+      }
+
+      // ── mix ─────────────────────────────────────────────────────────────
+      await stage("MIXING", "Mixing the original soundtrack", 75)
+      const audioName = media.dubFilename(asset.originalFilename, translation.language, "audio")
+      const dubAudioPath = path.join(workDir, audioName)
+      await runFfmpeg(
+        media.buildMixArgs({
+          backgroundPath: stems.backgroundPath,
+          clips,
+          outputPath: dubAudioPath,
+        }),
+      )
+
+      const stored = await storeDubArtifact(dubAudioPath, storageRoot, "audio/mp4")
+      const review = fits.filter((f) => f.needsReview)
+      const summary = media.summariseFit(fits)
+
+      await prisma.mediaDub.update({
+        where: { id: payload.dubId },
+        data: {
+          // Generated, but honest that some lines could not be fitted naturally.
+          status: review.length > 0 ? "NEEDS_REVIEW" : "READY",
+          stage: null,
+          error: null,
+          provider: "gemini",
+          model: media.DUB_TTS_MODEL,
+          backgroundStrategy: stems.strategy,
+          audioStorageObjectId: stored.id,
+          durationMs: Math.round((asset.durationSeconds ?? 0) * 1000) || null,
+          reviewSegments: review as unknown as object,
+          translationUpdatedAt: translation.updatedAt,
+          transcriptUpdatedAt: translation.transcript.updatedAt,
+          generatedAt: new Date(),
+        },
+      })
+      await markJob(payload.jobRecordId, {
+        status: "COMPLETED",
+        progress: 100,
+        result: { segments: summary.total, adjusted: summary.adjusted, review: review.length },
+      })
+    } catch (error) {
+      await failDub(error instanceof Error ? error.message : "The dub could not be generated.")
+    } finally {
+      // The stems and clips are large and only needed during the run.
+      await rm(workDir, { recursive: true, force: true }).catch(() => {})
+    }
+    return
   }
 
   if (name === JOB_TYPES.generateThumbnail) {

@@ -88,4 +88,5 @@ export const JOB_TYPES = {
   applyUpdate: "apply_update",
   purgeExpiredTrash: "purge_expired_trash",
   transcribeMedia: "transcribe_media",
+  dubMedia: "dub_media",
 } as const
