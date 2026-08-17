@@ -44,8 +44,13 @@ point of the feature, and a quiet downgrade would be worse than an error.
 python3 -m venv /srv/arce-projects/arciin-separator
 /srv/arce-projects/arciin-separator/bin/pip install torch torchvision \
   --index-url https://download.pytorch.org/whl/cpu
-/srv/arce-projects/arciin-separator/bin/pip install audio-separator onnxruntime audioread
+/srv/arce-projects/arciin-separator/bin/pip install audio-separator onnxruntime audioread "librosa<1.0"
 ```
+
+`librosa<1.0` is not cosmetic. `audio-separator` calls
+`librosa.get_duration(filename=...)`, and 1.0 renamed that argument — so with
+the current release the model runs to completion and then dies while *writing*
+the stems, after all the compute has been spent.
 
 Install CPU torch **first, from PyTorch's own index**. `audio-separator[cpu]`
 pulls CUDA wheels regardless of the extra — several gigabytes of `nvidia_*`

@@ -30,12 +30,29 @@ const run = promisify(execFile)
 const DEFAULT_BINARY = "/srv/arce-projects/arciin-separator/bin/audio-separator"
 
 /**
- * A vocal/instrumental model, not a four-stem one.
+ * The default model, chosen for what actually runs.
  *
- * Splitting into drums and bass would be wasted work: the dub needs one
- * boundary, between speech and everything else.
+ * A two-stem MDX model would be the faster answer — the dub needs exactly one
+ * boundary, between speech and everything else, so splitting out drums and bass
+ * is work it never uses. But MDX runs on onnxruntime, whose prebuilt kernels
+ * assume AVX, and on a CPU without it the process dies with an illegal
+ * instruction part-way through loading. Demucs runs on torch, which falls back.
+ *
+ * Override with `ARCIIN_AUDIO_SEPARATOR_MODEL` on hardware with AVX2, where
+ * `UVR-MDX-NET-Inst_HQ_3.onnx` is considerably quicker for the same job.
  */
-const DEFAULT_MODEL = "UVR-MDX-NET-Inst_HQ_3.onnx"
+const DEFAULT_MODEL = "htdemucs.yaml"
+
+/**
+ * Non-vocal stems a four-stem model produces.
+ *
+ * Demucs splits into vocals, drums, bass and other rather than emitting a
+ * single instrumental, so the background has to be summed back together. Doing
+ * that is cheap; noticing it is necessary — an earlier version looked only for
+ * an "(Instrumental)" file and would have reported a successful separation as
+ * having produced nothing.
+ */
+const BACKGROUND_STEMS = [/\(Drums\)/i, /\(Bass\)/i, /\(Other\)/i]
 
 export type SeparatorBackendOptions = {
   /** Overridable so a GPU build or a different install can be pointed at. */
@@ -92,21 +109,52 @@ export class AudioSeparatorBackend implements AudioSeparationBackend {
       { timeout: this.timeoutMs, signal: request.signal, maxBuffer: 32 * 1024 * 1024 },
     )
 
-    const produced = await readdir(request.workDir)
+    const produced = (await readdir(request.workDir)).filter((n) =>
+      n.toLowerCase().endsWith(".wav"),
+    )
     const find = (marker: RegExp) => {
-      const hit = produced.find((name) => marker.test(name) && name.toLowerCase().endsWith(".wav"))
+      const hit = produced.find((name) => marker.test(name))
       return hit ? path.join(request.workDir, hit) : null
     }
 
     // The tool names stems by what they contain, with the model appended.
-    const backgroundPath = find(/\(Instrumental\)|_Instrumental|no_vocals/i)
     const dialoguePath = find(/\(Vocals\)|_Vocals|^vocals/i)
-
-    if (!backgroundPath || !dialoguePath) {
+    if (!dialoguePath) {
       throw new Error(
-        `Separation produced no usable stems in ${request.workDir}. Files: ${produced.join(", ") || "(none)"}`,
+        `Separation produced no vocal stem in ${request.workDir}. Files: ${produced.join(", ") || "(none)"}`,
       )
     }
+
+    // A two-stem model hands back the background directly.
+    const instrumental = find(/\(Instrumental\)|_Instrumental|no_vocals/i)
+    if (instrumental) {
+      return { dialoguePath, backgroundPath: instrumental, strategy: "separated" }
+    }
+
+    // A four-stem model does not: everything that is not speech has to be
+    // summed back into the world the dub plays over.
+    const pieces = BACKGROUND_STEMS.map(find).filter((p): p is string => Boolean(p))
+    if (pieces.length === 0) {
+      throw new Error(
+        `Separation produced no background stems in ${request.workDir}. Files: ${produced.join(", ")}`,
+      )
+    }
+
+    request.onStage?.("Combining background stems")
+    const backgroundPath = path.join(request.workDir, "background.wav")
+    await run(
+      "ffmpeg",
+      [
+        "-y",
+        ...pieces.flatMap((p) => ["-i", p]),
+        "-filter_complex",
+        // normalize=0: summing the parts must reproduce the original level,
+        // not average it down by the number of stems.
+        `amix=inputs=${pieces.length}:normalize=0`,
+        backgroundPath,
+      ],
+      { timeout: 10 * 60 * 1000, signal: request.signal, maxBuffer: 32 * 1024 * 1024 },
+    )
 
     return { dialoguePath, backgroundPath, strategy: "separated" }
   }
