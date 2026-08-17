@@ -1,5 +1,6 @@
 import type { ComponentType } from "react"
 import {
+  AudioWaveform,
   Accessibility,
   Bell,
   Database,
@@ -33,12 +34,14 @@ export type SettingsTab =
   | "session"
   | "api-protection"
   | "ai"
+  | "audio-separation"
   | "ai-security"
   | "notifications"
   | "appearance"
   | "accessibility"
 
 export const SETTINGS_VALID_TABS: SettingsTab[] = [
+  "audio-separation",
   "storage",
   "attached-disks",
   "domain",
@@ -93,6 +96,8 @@ export const SETTINGS_NAV: SettingsNavItem[][] = [
   ],
   [
     { id: "ai", label: "Planning", icon: Layers },
+    // Where dubbing's expensive half runs, and the provider that runs it.
+    { id: "audio-separation", label: "Audio separation", icon: AudioWaveform },
     { id: "ai-security", label: "AI Security", icon: ShieldAlert },
   ],
   [
