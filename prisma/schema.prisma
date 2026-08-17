@@ -196,6 +196,14 @@ model InstanceConfig {
   /// channel — so it is stored as ciphertext and never returned by the API.
   discordConfig      Json?
   aiConfig           Json?
+  /**
+   * Dubbing defaults and the cloud separation provider, if one is set up.
+   * `{ separationMode, cloudSeparation: { provider, label, ... } }`. On the
+   * instance rather than per user because the separator is a property of this
+   * server: whether a local one is installed, and which external service it is
+   * allowed to send audio to, are decisions about the machine.
+   */
+  dubbingConfig      Json?
   /// { enabled, hour (0-23 local, preferred stage time), stagedVersion, stagedAt,
   /// lastCheckedAt, lastError } — staged updates are never applied without a
   /// user clicking "Apply now"; this only controls the unattended stage step.
@@ -672,6 +680,23 @@ model MediaDub {
   progressCurrent   Int?
   progressTotal     Int?
   progressUpdatedAt DateTime?
+  /**
+   * A short rolling history of readings: [{ at, completed, total }].
+   * Persisted rather than held in the worker because the estimate has to
+   * survive a reload and a second browser — and because the worker that
+   * observed the samples is not the process that renders them. Bounded to a
+   * dozen entries: older readings describe a rate that has since changed.
+   */
+  progressSamples   Json?
+
+  /**
+   * Where the separation actually ran, and what was asked for.
+   * Both, because they differ: Auto records what it chose. A dub is a claim
+   * about where someone's audio went, so the answer is stored with the result
+   * rather than recomputed later from settings that may since have changed.
+   */
+  separationMode    String?
+  separationBackend String?
 
   provider String?
   model    String?

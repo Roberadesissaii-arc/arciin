@@ -9,13 +9,18 @@ import {
   Loader2,
   Mic,
   RefreshCw,
-  ShieldCheck,
   TriangleAlert,
   Volume2,
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { DubFailure, DubProgress } from "@/components/libraries/dub-progress"
+import {
+  DubPrivacyDisclosure,
+  DubProcessing,
+  processingLabel,
+  type SeparationMode,
+} from "@/components/libraries/dub-processing"
 import {
   DubVoiceSettings,
   type VoiceOverride,
@@ -91,6 +96,14 @@ export function VideoDubbing({
    * request that does.
    */
   const [overrides, setOverrides] = useState<Record<string, VoiceOverride>>({})
+  /**
+   * Null until the reader touches it, so the instance default shows through.
+   *
+   * Holding a local copy from the first render would pin the panel to whatever
+   * the default happened to be when it opened, and quietly ignore a change made
+   * elsewhere.
+   */
+  const [modeOverride, setModeOverride] = useState<SeparationMode | null>(null)
 
   const dubsQuery = useQuery({
     queryKey: dubsQueryKey(asset.id),
@@ -103,6 +116,8 @@ export function VideoDubbing({
   const dubs = dubsQuery.data?.dubs ?? []
   const dubbable = new Set(dubsQuery.data?.dubbableLanguages ?? [])
   const separatorAvailable = dubsQuery.data?.separatorAvailable ?? false
+  const processing = dubsQuery.data?.processing ?? null
+  const mode: SeparationMode = modeOverride ?? processing?.mode ?? "auto"
 
   const selected = language ?? translations[0]?.language ?? null
   const selectedTranslation = selected
@@ -129,6 +144,10 @@ export function VideoDubbing({
         language: target,
         // Auto sends nothing, so the server matches every speaker itself.
         ...(voiceMode === "auto" ? {} : { voiceProfiles: Object.values(overrides) }),
+        // Sent only when the reader chose: the server otherwise applies its own
+        // remembered default, and sending it back would overwrite a change made
+        // elsewhere with a stale copy.
+        ...(modeOverride ? { separationMode: modeOverride } : {}),
       }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: dubsQueryKey(asset.id) })
@@ -227,7 +246,12 @@ export function VideoDubbing({
                 <p className="mt-1 text-[12.5px] text-muted-foreground">Not generated</p>
               ) : (
                 <div className="mt-1 space-y-1.5">
-                  {isDubRunning(dub.status) ? <DubProgress dub={dub} /> : null}
+                  {isDubRunning(dub.status) ? (
+                    <DubProgress
+                      dub={dub}
+                      processingLabel={processing ? processingLabel(mode, processing) : undefined}
+                    />
+                  ) : null}
                   {dub.status === "FAILED" ? (
                     <DubFailure
                       dub={dub}
@@ -275,6 +299,18 @@ export function VideoDubbing({
                   ) : null}
                 </div>
               )}
+
+              {/* ── where the heavy work runs ──────────────────────────── */}
+              {processing ? (
+                <div className="mt-3 border-t border-border pt-3">
+                  <DubProcessing
+                    processing={processing}
+                    value={mode}
+                    onChange={setModeOverride}
+                    disabled={generate.isPending || (dub ? isDubRunning(dub.status) : false)}
+                  />
+                </div>
+              ) : null}
 
               {/* ── how each speaker should sound ─────────────────────── */}
               <div className="mt-3 border-t border-border pt-3">
@@ -374,32 +410,22 @@ export function VideoDubbing({
       ) : null}
 
       {/* ── where the work happens ─────────────────────────────────────── */}
-      <details className="rounded-lg border border-border px-3 py-2" data-testid="dub-privacy">
+      <details className="rounded-lg border border-border px-3 py-2">
         <summary className="cursor-pointer text-[12px] text-muted-foreground">
           What leaves this server
         </summary>
-        <dl className="mt-2 space-y-1 text-[11.5px]">
-          <div className="flex items-start gap-1.5">
-            <ShieldCheck className="mt-0.5 size-3 shrink-0 text-primary" aria-hidden />
-            <span className="text-muted-foreground">
-              <span className="text-foreground">Audio separation</span> — local. The video and its
-              soundtrack stay here.
-            </span>
-          </div>
-          <div className="flex items-start gap-1.5">
-            <Volume2 className="mt-0.5 size-3 shrink-0 text-muted-foreground" aria-hidden />
-            <span className="text-muted-foreground">
-              <span className="text-foreground">Voice generation</span> — Gemini receives the
-              translated text and the performance directions, and returns audio. The video is never
-              uploaded to it.
-            </span>
-          </div>
-          {sourceLanguage ? (
-            <div className="text-muted-foreground">
-              Source language: {languageName(sourceLanguage)}
-            </div>
+        <div className="mt-2">
+          {/* Dynamic: it used to say "local" whatever the backend was, which is
+              the one sentence in this feature that must not be approximate. */}
+          {processing ? (
+            <DubPrivacyDisclosure processing={processing} mode={mode} />
           ) : null}
-        </dl>
+          {sourceLanguage ? (
+            <p className="mt-1.5 text-[11.5px] text-muted-foreground">
+              Source language: {languageName(sourceLanguage)}
+            </p>
+          ) : null}
+        </div>
       </details>
     </div>
   )

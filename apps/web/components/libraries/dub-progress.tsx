@@ -10,6 +10,7 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible"
 import { Progress } from "@/components/ui/progress"
+import { estimateRemaining } from "@arciin/types"
 import { isDubRunning, type MediaDub } from "@/lib/api/transcripts"
 import { cn } from "@/lib/utils"
 
@@ -22,18 +23,25 @@ import { cn } from "@/lib/utils"
  * obvious temptation of `setInterval(() => percent++)`, which would look better
  * and mean nothing.
  *
- * There is deliberately no estimated finish. On this hardware a chunk takes
- * somewhere between thirty-five and sixty seconds and the variance is the whole
- * problem — an ETA built on that would be wrong by many minutes, and being told
- * "about 12 minutes left" for forty minutes is worse than being told nothing.
- * What is shown instead is the fact that it is moving, and when it last moved.
+ * The remaining time is real, and it waits. It comes from persisted samples of
+ * the separator's own chunk counter, smoothed, and withheld until enough
+ * intervals have been observed — at 1 of 122 the only rate seen includes model
+ * loading and the figure would be wrong by a factor of several. A stage that
+ * cannot count gets its name and an indeterminate bar instead, because one
+ * honest stage name beats one fabricated countdown.
  */
 
 /** After this much silence, say so rather than implying smooth progress. */
 const STALL_NOTICE_MS = 5 * 60 * 1000
 
-/** How often the "last updated" line recomputes. Display only. */
-const TICK_MS = 15_000
+/**
+ * How often the estimate and the "last updated" line recompute.
+ *
+ * Display only — it recomputes from persisted samples and never invents
+ * progress. Five seconds so the remaining time visibly counts down between the
+ * four-second polls rather than stepping in whole chunks.
+ */
+const TICK_MS = 5_000
 
 /**
  * The unit each stage is counting.
@@ -78,13 +86,29 @@ function useNow(active: boolean): number {
   return now
 }
 
-export function DubProgress({ dub }: { dub: MediaDub }) {
+export function DubProgress({
+  dub,
+  processingLabel,
+}: {
+  dub: MediaDub
+  /** "Running locally", or the cloud provider's name. */
+  processingLabel?: string
+}) {
   const running = isDubRunning(dub.status)
   const now = useNow(running)
 
   const percent = dub.progressPercent
   const hasCounter =
     dub.progressCurrent !== null && dub.progressTotal !== null && dub.progressTotal > 0
+
+  /**
+   * The estimate, computed in the browser from persisted samples.
+   *
+   * Here rather than on the server because it has to move between polls — the
+   * time spent on the chunk in flight counts, and a value baked at fetch time
+   * would freeze for four seconds and then jump.
+   */
+  const eta = dub.progressSamples?.length ? estimateRemaining(dub.progressSamples, now) : null
 
   const updatedAgo = dub.progressUpdatedAt ? now - new Date(dub.progressUpdatedAt).getTime() : null
   const stalled = updatedAgo !== null && updatedAgo >= STALL_NOTICE_MS
@@ -120,6 +144,20 @@ export function DubProgress({ dub }: { dub: MediaDub }) {
       </div>
 
       {/*
+        How much longer, from measured speed only.
+
+        Nothing is shown until enough intervals have been observed: at 1 of 122
+        the only rate seen includes model loading, and the resulting figure is
+        wrong by a factor of several. "Estimating" costs nothing; being an hour
+        out costs belief in every number afterwards.
+      */}
+      {running ? (
+        <p className="text-[12px] font-medium text-foreground" data-testid="dub-progress-eta">
+          {eta ? eta.label : hasCounter ? "Estimating time…" : ""}
+        </p>
+      ) : null}
+
+      {/*
         Long is normal here, and saying so is the difference between a slow
         feature and a broken one. Demucs on a CPU without AVX runs at roughly
         13x realtime, so a twelve-minute video is over an hour of work.
@@ -130,7 +168,7 @@ export function DubProgress({ dub }: { dub: MediaDub }) {
       >
         <Server className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" aria-hidden />
         <div className="space-y-0.5 text-[11.5px] leading-relaxed">
-          <p className="font-medium text-foreground">Running locally</p>
+          <p className="font-medium text-foreground">{processingLabel ?? "Running locally"}</p>
           <p className="text-muted-foreground">
             Audio separation on this server can take a while for long videos. You can close this
             panel or leave the page — the job keeps going.

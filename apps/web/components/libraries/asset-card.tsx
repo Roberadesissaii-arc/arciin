@@ -435,6 +435,18 @@ export function AssetCard({ asset }: { asset: AssetSummary }) {
         ) : null}
       </div>
 
+      {/*
+        Three rows, always three rows.
+
+        The title gets one to itself because it needs the full width to truncate
+        naturally — a language count sitting beside it would eat the part of the
+        filename that distinguishes one recording from another.
+
+        Row two pairs the file's own facts with its language facts. Row three is
+        the footer, and it stays at the same height on every card in the grid:
+        the language line is always rendered, so a video with no translations
+        does not pull its source badge up out of line with its neighbours.
+      */}
       <div className="mt-2.5 min-w-0">
         <p
           className="truncate text-[12.5px] font-medium leading-snug text-zinc-900"
@@ -442,17 +454,20 @@ export function AssetCard({ asset }: { asset: AssetSummary }) {
         >
           {asset.originalFilename}
         </p>
-        <p
-          className="mt-1 truncate text-[11px] tabular-nums text-zinc-400"
-          suppressHydrationWarning
-        >
-          {metaLine}
-        </p>
-        {/* Permanent language state, which a running job does not hide. */}
-        <AssetAiMetadata ai={asset.ai} />
+
+        <div className="mt-1 flex items-center justify-between gap-2">
+          <p className="truncate text-[11px] tabular-nums text-zinc-400" suppressHydrationWarning>
+            {metaLine}
+          </p>
+          {/* Permanent language state, which a running job does not hide. */}
+          <AssetAiMetadata ai={asset.ai} mediaType={asset.mediaType} />
+        </div>
       </div>
 
-      <div className="mt-2 flex items-center justify-between gap-1.5">
+      <div
+        className="mt-2 flex items-center justify-between gap-1.5"
+        data-testid="asset-card-footer"
+      >
         <span
           className="max-w-[7rem] truncate rounded-md border border-zinc-200 bg-zinc-50 px-1.5 py-0.5 text-[11px] font-medium text-zinc-600"
           title={source}

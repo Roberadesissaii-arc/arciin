@@ -25,6 +25,11 @@ import { promisify } from "node:util"
 import { candidateStorageObjectPaths } from "@arciin/storage"
 
 import { assertAssetFolderAccess } from "@/services/folders/folder-lock"
+import {
+  describeBackends,
+  loadDubbingSettings,
+  saveSeparationMode,
+} from "@/services/dubbing/separation-settings"
 import { streamFileResponse } from "@/services/media/stream-file-response"
 import { mediaQueue } from "@/services/jobs/queues"
 import {
@@ -39,6 +44,8 @@ import {
   voiceSettingsFingerprint,
   GEMINI_VOICES,
   buildRemuxArgs,
+  resolveSeparationBackend,
+  SeparationModeUnavailableError,
   type VoiceProfile,
 } from "@arciin/media-ai"
 import { requireRole } from "@/services/security/auth"
@@ -609,6 +616,10 @@ export async function transcriptRoutes(fastify: FastifyInstance) {
 
     const separation = new AudioSeparationService([new AudioSeparatorBackend()])
 
+    const dubbingSettings = await loadDubbingSettings(fastify.prisma)
+    const localAvailable = await separation.isAvailable()
+    const backends = describeBackends({ settings: dubbingSettings, localAvailable })
+
     reply.send({
       data: {
         dubs: dubs.map((dub) => {
@@ -626,7 +637,18 @@ export async function transcriptRoutes(fastify: FastifyInstance) {
          * separation is a precondition, and discovering it is missing halfway
          * through means the reader waited for nothing.
          */
-        separatorAvailable: await separation.isAvailable(),
+        separatorAvailable: localAvailable,
+        /**
+         * Where separation can run, and what this instance defaults to.
+         *
+         * Sent with the listing so the panel never has to ask separately, and
+         * so "is Cloud actually usable" is answered in exactly one place.
+         */
+        processing: {
+          mode: dubbingSettings.separationMode,
+          local: backends.local,
+          cloud: backends.cloud,
+        },
         dubbableLanguages: (transcript?.translations ?? [])
           .map((t) => t.language)
           .filter(isDubbableLanguage),
@@ -689,6 +711,15 @@ export async function transcriptRoutes(fastify: FastifyInstance) {
         profileId: z.string().optional(),
         /** Per-speaker overrides. Anything omitted is matched automatically. */
         voiceProfiles: z.array(voiceOverrideSchema).max(24).optional(),
+        /**
+         * Where to run the separation for this job.
+         *
+         * Optional: omitted means "use the instance default". Supplying it both
+         * overrides this job and becomes the new default, because a reader who
+         * changes it here has expressed a preference and should not have to
+         * express it again next time.
+         */
+        separationMode: z.enum(["auto", "local", "cloud"]).optional(),
       })
       .safeParse(request.body)
 
@@ -726,16 +757,39 @@ export async function transcriptRoutes(fastify: FastifyInstance) {
       return
     }
 
+    /**
+     * Which backend this job will use, decided before anything is queued.
+     *
+     * An explicit choice is never quietly substituted. Someone who picks Cloud
+     * because their machine is slow must not discover ninety minutes later that
+     * it ran locally anyway, and someone who picks Local has usually made a
+     * decision about where their audio may go. So an unavailable explicit
+     * choice is refused here, with the reason, rather than fallen back from.
+     */
     const separation = new AudioSeparationService([new AudioSeparatorBackend()])
-    if (!(await separation.isAvailable())) {
-      reply.status(409).send({
-        error: {
-          code: "SEPARATOR_UNAVAILABLE",
-          message:
-            "Dubbing needs an audio separator so the original music and ambience can be kept. See docs/DUBBING.md.",
-        },
+    const settings = parsed.data.separationMode
+      ? await saveSeparationMode(fastify.prisma, parsed.data.separationMode)
+      : await loadDubbingSettings(fastify.prisma)
+    const backends = describeBackends({
+      settings,
+      localAvailable: await separation.isAvailable(),
+    })
+
+    let decision
+    try {
+      decision = resolveSeparationBackend({
+        mode: parsed.data.separationMode ?? settings.separationMode,
+        local: backends.local,
+        cloud: backends.cloud,
       })
-      return
+    } catch (error) {
+      if (error instanceof SeparationModeUnavailableError) {
+        reply.status(409).send({
+          error: { code: "SEPARATOR_UNAVAILABLE", message: error.message },
+        })
+        return
+      }
+      throw error
     }
 
     try {
@@ -795,6 +849,10 @@ export async function transcriptRoutes(fastify: FastifyInstance) {
       model: DUB_TTS_MODEL,
       voiceProfiles: profiles as unknown as object,
       settingsFingerprint: voiceSettingsFingerprint(profiles),
+      // Recorded with the result: a dub is a claim about where audio went, and
+      // settings may change before anyone reads it.
+      separationMode: decision.mode,
+      separationBackend: decision.kind,
       jobId: jobRecord.id,
     }
 

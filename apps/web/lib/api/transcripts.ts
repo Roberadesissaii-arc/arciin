@@ -130,6 +130,14 @@ export type MediaDub = {
   progressTotal: number | null
   /** When the counter last moved. What makes a stall visible. */
   progressUpdatedAt: string | null
+  /**
+   * A short history of readings, so an estimate can be computed from measured
+   * speed rather than from one early sample.
+   */
+  progressSamples: { at: number; completed: number; total: number }[] | null
+  /** What was asked for, and where it actually ran. */
+  separationMode: "auto" | "local" | "cloud" | null
+  separationBackend: "local" | "cloud" | null
   provider: string | null
   model: string | null
   voiceProfiles: unknown
@@ -143,10 +151,26 @@ export type MediaDub = {
   updatedAt: string
 }
 
+/** One place someone's audio could be separated, and whether it is usable. */
+export type SeparationBackendInfo = {
+  kind: "local" | "cloud"
+  label: string
+  available: boolean
+  unavailableReason?: string
+  engine?: string
+  compute?: string
+}
+
 export type DubsResponse = {
   dubs: MediaDub[]
   /** False when this server has no separator, so dubbing cannot preserve background. */
   separatorAvailable: boolean
+  /** Where separation can run, and what this instance defaults to. */
+  processing: {
+    mode: "auto" | "local" | "cloud"
+    local: SeparationBackendInfo
+    cloud: SeparationBackendInfo
+  }
   dubbableLanguages: string[]
 }
 
@@ -162,7 +186,13 @@ export function getAssetDubs(assetId: string, signal?: AbortSignal) {
  */
 export function requestAssetDub(
   assetId: string,
-  input: { language: string; profileId?: string; voiceProfiles?: unknown[] },
+  input: {
+    language: string
+    profileId?: string
+    voiceProfiles?: unknown[]
+    /** Overrides this job and becomes the remembered default. */
+    separationMode?: "auto" | "local" | "cloud"
+  },
 ) {
   return fetchApi<{ dub: MediaDub }>(`/assets/${assetId}/dubs`, {
     method: "POST",

@@ -163,10 +163,38 @@ test.describe("card language metadata", () => {
     await expect(card(page).getByTestId("asset-ai-languages")).toHaveText("3 languages")
   })
 
-  test("names a single dub rather than counting it", async ({ page }) => {
+  test("keeps the footer at the same height whether or not there are translations", async ({
+    page,
+  }) => {
     await openVideos(page)
-    // "Spanish" is more use than "1 dub" at this width.
-    await expect(card(page).getByTestId("asset-ai-dubs")).toHaveText("Spanish")
+
+    /**
+     * The structural requirement. A card whose language line vanishes has a
+     * footer a few pixels higher than the ones beside it, and in a grid that
+     * reads as misalignment rather than as absence — so the line is always
+     * rendered, even when the honest answer is "1 language".
+     */
+    const withLanguages = card(page)
+    const withoutLanguages = card(page, "dev-video-promo")
+    await expect(withoutLanguages).toBeVisible()
+
+    await expect(withLanguages.getByTestId("asset-ai-metadata")).toBeVisible()
+    await expect(withoutLanguages.getByTestId("asset-ai-metadata")).toBeVisible()
+    await expect(withoutLanguages.getByTestId("asset-ai-languages")).toHaveText("1 language")
+
+    // Footers land on the same line, measured rather than assumed.
+    const a = await withLanguages.getByTestId("asset-card-footer").boundingBox()
+    const b = await withoutLanguages.getByTestId("asset-card-footer").boundingBox()
+    expect(Math.abs(a!.y - b!.y), "footers must share a baseline").toBeLessThan(2)
+  })
+
+  test("puts the language count on the metadata row, not beside the title", async ({ page }) => {
+    await openVideos(page)
+    // The title needs the full width to truncate naturally; a count beside it
+    // eats the part of a filename that tells one recording from another.
+    const title = await card(page).getByText(`${FIXTURE}.mp4`).boundingBox()
+    const languages = await card(page).getByTestId("asset-ai-languages").boundingBox()
+    expect(languages!.y).toBeGreaterThan(title!.y + title!.height - 2)
   })
 
   test("keeps permanent metadata visible while another language generates", async ({ page }) => {

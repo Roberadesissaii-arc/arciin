@@ -47,6 +47,10 @@ import type {
 } from "@arciin/media-ai"
 
 import { workerConfig } from "@/config"
+import {
+  acquireSeparationSlot,
+  hasMemoryForSeparation,
+} from "@/services/separation-resources"
 import { runApplyUpdate, runStageUpdate } from "@/services/auto-update"
 import { syncConnectorMirrorsForAsset } from "@/services/connector-mirror"
 import { createRealtimeEvent, publishRealtimeEvent } from "@/services/realtime"
@@ -717,6 +721,7 @@ export async function handleMediaJob(
           progressPercent: null,
           progressCurrent: null,
           progressTotal: null,
+          progressSamples: [],
           progressUpdatedAt: new Date(),
         },
       })
@@ -731,6 +736,16 @@ export async function handleMediaJob(
      * reader is waiting for. `progressUpdatedAt` moves on every write it does
      * make, which is what lets the panel tell slow from stopped.
      */
+    /**
+     * A short history of readings, kept beside the current one.
+     *
+     * This is what makes a real estimate possible: a single number cannot say
+     * how fast the work is going, and the process that observes the samples is
+     * not the one that renders them. Bounded, because it is persisted on the
+     * row and read on every poll.
+     */
+    let samples: { at: number; completed: number; total: number }[] = []
+
     const reportProgress = async (
       status: "SEPARATING" | "SYNTHESIZING" | "MIXING",
       current: number,
@@ -738,6 +753,9 @@ export async function handleMediaJob(
       label?: string,
     ) => {
       const percent = media.percentOf(current, total)
+      // Sampled on every reading, written only when the throttle allows: the
+      // estimate wants the fine-grained history, the database does not.
+      samples = media.appendSample(samples, { at: Date.now(), completed: current, total })
       if (!throttle.shouldWrite(percent)) return
       await prisma.mediaDub.update({
         where: { id: payload.dubId },
@@ -746,6 +764,7 @@ export async function handleMediaJob(
           progressCurrent: current,
           progressTotal: total,
           progressUpdatedAt: new Date(),
+          progressSamples: samples as unknown as object,
           ...(label ? { stage: label } : {}),
         },
       })
@@ -815,10 +834,52 @@ export async function handleMediaJob(
         return
       }
 
+      let stemsHolder: Awaited<ReturnType<typeof separation.separate>> | undefined
       const sourceAudio = path.join(workDir, "source.wav")
       await runFfmpeg(["-y", "-i", objectFilePath, "-vn", "-ac", "2", "-ar", "44100", sourceAudio])
 
-      const stems = await separation.separate({
+      /**
+       * One local separation at a time on this machine, and not until there is
+       * memory for it.
+       *
+       * Both guards exist because of an observed kill: the separator reached
+       * 2.28 GB while the browser suite was also running, and the kernel took
+       * it after twenty minutes of correct work. Waiting is strictly better
+       * than starting — a job that waits five minutes runs, a job that starts
+       * short of memory is killed having achieved nothing.
+       *
+       * A Redis lock rather than a flag in this process, because the queue may
+       * run more than one worker and a per-process boolean is the same bug with
+       * a longer fuse.
+       */
+      const slot = await acquireSeparationSlot(redis, {
+        onWaiting: async (reason) => {
+          await prisma.mediaDub.update({
+            where: { id: payload.dubId },
+            data: {
+              stage:
+                reason === "memory"
+                  ? "Waiting for local processing resources"
+                  : "Waiting for the separator — another dub is running",
+              progressUpdatedAt: new Date(),
+            },
+          })
+        },
+      })
+      if (!slot) {
+        await failDub(
+          "The server was busy with another separation for too long. Try again in a while.",
+        )
+        return
+      }
+
+      try {
+        await prisma.mediaDub.update({
+          where: { id: payload.dubId },
+          data: { stage: "Separating dialogue from background", progressUpdatedAt: new Date() },
+        })
+
+      stemsHolder = await separation.separate({
         inputPath: sourceAudio,
         workDir,
         onStage: (label) => {
@@ -842,6 +903,14 @@ export async function handleMediaJob(
         /** The whole log, kept where diagnostics belong rather than in a column. */
         onDiagnostics: (output) => writeDubDiagnostics(payload.dubId, storageRoot, output),
       })
+      } finally {
+        // Released whatever happened: a crashed job must not leave the machine
+        // permanently marked busy.
+        await slot.release()
+      }
+      // Non-null: the separator either produced stems or threw, and a throw
+      // leaves through the catch rather than arriving here.
+      const stems = stemsHolder!
 
       // ── synthesise ──────────────────────────────────────────────────────
       await stage("SYNTHESIZING", "Generating translated voices")

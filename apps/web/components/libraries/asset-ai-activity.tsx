@@ -1,9 +1,8 @@
 "use client"
 
-import { AlertTriangle, Globe, Loader2, Volume2 } from "lucide-react"
+import { AlertTriangle, Globe, Loader2 } from "lucide-react"
 
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
-import { languageName } from "@arciin/types"
 import type { AssetAiSummary } from "@/lib/types/models"
 import { cn } from "@/lib/utils"
 
@@ -102,41 +101,45 @@ export function AssetAiIndicator({
 }
 
 /**
- * "3 languages · Arabic" under the title.
+ * "3 languages" on the right of the metadata row.
  *
- * Named when there is one dub, counted when there are several — "Arabic" is more
- * use than "1 dub", and "3 dubs" is more use than three truncated names. The
- * whole line is one row of the same muted text the size and date use; subtle on
- * purpose, because this is a property of the file and not an announcement.
+ * Always rendered for media that could have languages, even when the answer is
+ * one. That is not padding: a card whose language line disappears is a card
+ * whose footer sits a few pixels higher than the ones beside it, and in a grid
+ * that reads as misalignment rather than as absence. "1 language" is also true
+ * and mildly useful, which is a better trade than a hole.
+ *
+ * Dubs are deliberately not counted here. The thumbnail already carries the
+ * transient state and the panel carries the detail; adding a second figure to a
+ * row this narrow made it noisy without answering a question anyone had.
  */
-export function AssetAiMetadata({ ai }: { ai: AssetAiSummary | undefined }) {
-  if (!ai) return null
-  const { languageCount, dubLanguages } = ai
-  // Nothing to say: no transcript, no translations, no dubs.
-  if (languageCount < 2 && dubLanguages.length === 0) return null
+export function AssetAiMetadata({
+  ai,
+  mediaType,
+}: {
+  ai: AssetAiSummary | undefined
+  mediaType?: string
+}) {
+  // A photo has no spoken language, so the row would be answering nothing.
+  const canHaveLanguages = mediaType === "VIDEO" || mediaType === "AUDIO"
+  if (!canHaveLanguages) return null
 
-  const dubLabel =
-    dubLanguages.length === 1
-      ? languageName(dubLanguages[0]!) || dubLanguages[0]!
-      : `${dubLanguages.length} dubs`
+  const count = Math.max(1, ai?.languageCount ?? 1)
 
   return (
     <p
-      className="mt-1 flex min-w-0 items-center gap-2 text-[11px] text-zinc-400"
+      className="flex shrink-0 items-center gap-1 text-[11px] text-zinc-400"
       data-testid="asset-ai-metadata"
+      title={
+        count > 1
+          ? "The original plus its translations"
+          : "No translations yet"
+      }
     >
-      {languageCount >= 2 ? (
-        <span className="flex min-w-0 items-center gap-1" data-testid="asset-ai-languages">
-          <Globe className="size-3 shrink-0" aria-hidden />
-          <span className="truncate">{languageCount} languages</span>
-        </span>
-      ) : null}
-      {dubLanguages.length > 0 ? (
-        <span className="flex min-w-0 items-center gap-1" data-testid="asset-ai-dubs">
-          <Volume2 className="size-3 shrink-0" aria-hidden />
-          <span className="truncate">{dubLabel}</span>
-        </span>
-      ) : null}
+      <Globe className="size-3 shrink-0" aria-hidden />
+      <span data-testid="asset-ai-languages">
+        {count} {count === 1 ? "language" : "languages"}
+      </span>
     </p>
   )
 }
