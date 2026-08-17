@@ -215,6 +215,35 @@ export type FolderSummary = {
   deletedAt?: string | null
 }
 
+/**
+ * Compact AI state, sent with the listing so a card needs no request of its own.
+ *
+ * Deliberately about activity rather than about dubbing: transcription and
+ * translation will want the same indicator, and a card should not be redesigned
+ * each time another operation learns to run in the background.
+ */
+export type AssetAiActivity = {
+  active: boolean
+  kind: "dub" | "transcript"
+  /** Human, for a tooltip: "Arabic dub". Never an internal id. */
+  label: string
+  stage: string | null
+  percent: number | null
+  current: number | null
+  total: number | null
+  updatedAt: string | null
+  status: "running" | "failed"
+  /** Which language to open, so a click lands on the job that is running. */
+  language: string | null
+}
+
+export type AssetAiSummary = {
+  /** Original plus translated. A Hindi video with two translations is 3. */
+  languageCount: number
+  dubLanguages: string[]
+  activity: AssetAiActivity | null
+}
+
 export type AssetSummary = {
   id: string
   libraryId: string
@@ -247,6 +276,8 @@ export type AssetSummary = {
   createdAt: string
   updatedAt: string
   deletedAt?: string | null
+  /** Absent on responses that predate the summary, or on single-asset reads. */
+  ai?: AssetAiSummary
 }
 
 export type ShareResourceType = "ASSET" | "ASSETS" | "FOLDER"

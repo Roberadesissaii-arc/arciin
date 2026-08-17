@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 
 import { AssetBulkActionsBar } from "@/components/libraries/asset-bulk-actions-bar"
 import { AssetSidePanel } from "@/components/libraries/asset-side-panel"
+import { AssetPanelIntentProvider } from "@/components/libraries/asset-panel-intent"
 import { AssetViewerProvider } from "@/components/libraries/asset-viewer-context"
 import { AssetSelectionProvider, useAssetSelectionRequired } from "@/components/libraries/asset-selection"
 import { cn } from "@/lib/utils"
@@ -196,6 +197,16 @@ function SelectableAssetsContainerInner({
   )
 }
 
+/** Turns "open this asset at Dubbing" into the selection that opens the panel. */
+function PanelIntentBridge({ children }: { children: ReactNode }) {
+  const { selectOnly } = useAssetSelectionRequired()
+  return (
+    <AssetPanelIntentProvider onOpen={selectOnly}>
+      {children}
+    </AssetPanelIntentProvider>
+  )
+}
+
 export function SelectableAssetsContainer({
   assets,
   children,
@@ -208,9 +219,13 @@ export function SelectableAssetsContainer({
   return (
     <AssetSelectionProvider assets={assets}>
       <AssetViewerProvider assets={assets}>
-        <SelectableAssetsContainerInner defaultLibraryId={defaultLibraryId}>
-          {children}
-        </SelectableAssetsContainerInner>
+        {/* Inside the selection provider, because selecting one asset is what
+            opens the panel that the intent then steers. */}
+        <PanelIntentBridge>
+          <SelectableAssetsContainerInner defaultLibraryId={defaultLibraryId}>
+            {children}
+          </SelectableAssetsContainerInner>
+        </PanelIntentBridge>
       </AssetViewerProvider>
     </AssetSelectionProvider>
   )

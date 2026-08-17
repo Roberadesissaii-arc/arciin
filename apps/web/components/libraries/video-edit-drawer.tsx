@@ -205,10 +205,19 @@ function highlight(text: string, needle: string): React.ReactNode {
 export function VideoTranscriptSection({
   asset,
   showDetails = true,
+  initialTab,
+  initialDubLanguage,
 }: {
   asset: AssetSummary | null
   /** False inside the asset panel, where Overview already shows all of this. */
   showDetails?: boolean
+  /**
+   * Where to land, when the reader asked for somewhere specific — clicking a
+   * card's running-dub indicator, rather than merely selecting the card.
+   */
+  initialTab?: "transcript" | "dubbing" | "title"
+  /** Which dub language to select on arrival. */
+  initialDubLanguage?: string
 }) {
   const queryClient = useQueryClient()
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -247,7 +256,9 @@ export function VideoTranscriptSection({
    * second copy of any of them.
    */
   const [activeLanguage, setActiveLanguage] = useState<string | null>(null)
-  const [aiTab, setAiTab] = useState<"transcript" | "dubbing" | "title">("transcript")
+  const [aiTab, setAiTab] = useState<"transcript" | "dubbing" | "title">(
+    initialTab ?? "transcript",
+  )
   /**
    * Which audio track is playing. `null` is the original.
    *
@@ -517,6 +528,7 @@ export function VideoTranscriptSection({
                 sourceLanguage={transcript?.language ?? null}
                 activeAudioLanguage={audioLanguage}
                 onUseAudio={setAudioLanguage}
+                initialLanguage={initialDubLanguage}
               />
             ) : null}
 

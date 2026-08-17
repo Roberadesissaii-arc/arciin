@@ -60,6 +60,7 @@ import { signMediaToken } from "@/services/security/media-token"
 import { requireAssetMediaAccess, requireSessionRolesOrApiKeyScopes } from "@/services/security/auth"
 import { getPdfNavigationIndex } from "@/services/chat/read-pdf-asset"
 import { serializeAsset } from "@/services/serializers"
+import { loadAssetAiSummaries, withAiSummaries } from "@/services/assets/ai-summary"
 import { loadUserPreferences } from "@/services/user/preferences"
 
 /**
@@ -296,7 +297,12 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
       })
 
       reply.send({
-        data: assets.map(serializeAsset),
+        // Batched for the whole page — a request per card would be two hundred
+        // requests to draw two hundred badges.
+        data: withAiSummaries(
+          assets.map(serializeAsset),
+          await loadAssetAiSummaries(fastify.prisma, assets.map((a) => a.id)),
+        ),
       })
     }
   )
@@ -392,7 +398,10 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
 
       reply.send({
         data: {
-          items: page.items.map(serializeAsset),
+          items: withAiSummaries(
+            page.items.map(serializeAsset),
+            await loadAssetAiSummaries(fastify.prisma, page.items.map((a) => a.id)),
+          ),
           nextCursor: page.nextCursor,
           hasMore: page.hasMore,
           ...(total !== undefined ? { total } : {}),

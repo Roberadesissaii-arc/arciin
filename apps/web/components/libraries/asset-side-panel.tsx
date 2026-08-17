@@ -8,6 +8,7 @@ import { AssetEditContent } from "@/components/libraries/rename-asset-dialog"
 import { AssetMoveContent } from "@/components/libraries/move-asset-dialog"
 import { AssetShareContent } from "@/components/shares/share-dialog"
 import { VideoTranscriptSection } from "@/components/libraries/video-edit-drawer"
+import { useAssetPanelIntent } from "@/components/libraries/asset-panel-intent"
 import { AssetOverviewContent } from "@/components/libraries/asset-overview-content"
 import { useAssetSelection } from "@/components/libraries/asset-selection"
 import {
@@ -266,8 +267,19 @@ function PanelSections({
   onDeleteRequest: () => void
 }) {
   const selection = useAssetSelection()
+  const intentContext = useAssetPanelIntent()
   const sections = sectionsFor(asset)
-  const [section, setSection] = useState<Section>("overview")
+
+  /**
+   * Read once, while mounting for this asset.
+   *
+   * This component is keyed by asset id, so the initialiser runs exactly when a
+   * new file is opened — which is the moment an intent is either relevant or
+   * spent. Consuming it here rather than in an effect also means the first paint
+   * is already on the right section, with no flash of Overview.
+   */
+  const [intent] = useState(() => intentContext?.consume(asset.id) ?? null)
+  const [section, setSection] = useState<Section>(intent?.section ?? "overview")
   const active = sections.includes(section) ? section : "overview"
 
   return (
@@ -334,7 +346,14 @@ function PanelSections({
       {active === "edit" ? (
         <AssetEditContent asset={asset} onDone={() => setSection("overview")} />
       ) : null}
-      {active === "ai" ? <VideoTranscriptSection asset={asset} showDetails={false} /> : null}
+      {active === "ai" ? (
+        <VideoTranscriptSection
+          asset={asset}
+          showDetails={false}
+          initialTab={intent?.aiTab}
+          initialDubLanguage={intent?.language}
+        />
+      ) : null}
       {active === "move" ? (
         <AssetMoveContent asset={asset} onDone={() => selection?.clear()} />
       ) : null}

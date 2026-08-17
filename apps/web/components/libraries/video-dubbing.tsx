@@ -63,16 +63,25 @@ export function VideoDubbing({
   sourceLanguage,
   onUseAudio,
   activeAudioLanguage,
+  initialLanguage,
 }: {
   asset: AssetSummary
   translations: TranscriptTranslation[]
   sourceLanguage: string | null
+  /**
+   * Which language to show first.
+   *
+   * Set when the reader arrived by clicking a card's running-dub indicator: they
+   * asked to see *that* dub, so defaulting to the first translation instead
+   * would answer a question nobody asked.
+   */
+  initialLanguage?: string
   /** Hands the chosen track to the player. `null` restores the original. */
   onUseAudio?: (language: string | null) => void
   activeAudioLanguage?: string | null
 }) {
   const queryClient = useQueryClient()
-  const [language, setLanguage] = useState<string | null>(null)
+  const [language, setLanguage] = useState<string | null>(initialLanguage ?? null)
   const [voiceMode, setVoiceMode] = useState<VoiceSettingsMode>("auto")
   /**
    * Local until Generate is pressed.

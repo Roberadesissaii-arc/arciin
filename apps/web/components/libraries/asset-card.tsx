@@ -26,6 +26,11 @@ import { getUserPreferences } from "@/lib/api/user-preferences"
 import { queryKeys } from "@/lib/api/query-keys"
 import { resolveAssetBadge } from "@/lib/utils/asset-badge"
 import { formatBytes } from "@/lib/utils/format-bytes"
+import {
+  AssetAiIndicator,
+  AssetAiMetadata,
+} from "@/components/libraries/asset-ai-activity"
+import { useAssetPanelIntent } from "@/components/libraries/asset-panel-intent"
 import { formatCardRelativeTime } from "@/lib/utils/format-card-relative-time"
 import { inferDestinationLabel } from "@/lib/utils/media-type"
 import { cn } from "@/lib/utils"
@@ -323,6 +328,7 @@ export function AssetCard({ asset }: { asset: AssetSummary }) {
   const selection = useAssetSelection()
   const viewer = useAssetViewerOptional()
   const videoEditor = useVideoEditor()
+  const panelIntent = useAssetPanelIntent()
   const selected = selection?.isSelected(asset.id) ?? false
   const canOpen = isViewableAsset(asset) && Boolean(viewer?.canOpen(asset))
   const source = sourceChipLabel(asset)
@@ -381,6 +387,23 @@ export function AssetCard({ asset }: { asset: AssetSummary }) {
       <div className="relative">
         <MediaPreview asset={asset} hover={hover} />
         {/*
+          Running or failed AI work, on the picture.
+          Top-right, small, and never over the title — a grid of a hundred videos
+          has to stay calm. Edit moves aside for it below.
+        */}
+        <AssetAiIndicator
+          ai={asset.ai}
+          filename={asset.originalFilename}
+          onOpen={() =>
+            panelIntent?.open({
+              assetId: asset.id,
+              section: "ai",
+              aiTab: asset.ai?.activity?.kind === "transcript" ? "transcript" : "dubbing",
+              language: asset.ai?.activity?.language ?? undefined,
+            })
+          }
+        />
+        {/*
           Edit, on the card, for media that has an editor.
           Revealed on hover so a grid of a hundred videos stays calm, but always
           in the accessibility tree so it is reachable by keyboard and by tests.
@@ -397,7 +420,9 @@ export function AssetCard({ asset }: { asset: AssetSummary }) {
               videoEditor.openEditor(asset)
             }}
             className={cn(
-              "absolute right-1.5 top-1.5 z-10 flex items-center gap-1 rounded-md px-2 py-1",
+              "absolute top-1.5 z-10 flex items-center gap-1 rounded-md px-2 py-1",
+              // Out of the AI indicator's corner when there is one to avoid.
+              asset.ai?.activity ? "right-9" : "right-1.5",
               "bg-black/65 text-[11px] font-medium text-white backdrop-blur-sm",
               "transition-opacity duration-150 hover:bg-black/80",
               "focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70",
@@ -423,6 +448,8 @@ export function AssetCard({ asset }: { asset: AssetSummary }) {
         >
           {metaLine}
         </p>
+        {/* Permanent language state, which a running job does not hide. */}
+        <AssetAiMetadata ai={asset.ai} />
       </div>
 
       <div className="mt-2 flex items-center justify-between gap-1.5">
