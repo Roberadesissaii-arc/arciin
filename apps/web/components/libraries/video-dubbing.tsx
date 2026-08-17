@@ -15,6 +15,7 @@ import {
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
+import { DubFailure, DubProgress } from "@/components/libraries/dub-progress"
 import {
   DubVoiceSettings,
   type VoiceOverride,
@@ -26,7 +27,6 @@ import {
   isDubPlayable,
   isDubRunning,
   requestAssetDub,
-  type MediaDub,
   type TranscriptTranslation,
 } from "@/lib/api/transcripts"
 import { toast } from "@/lib/notifications/arciin-toast"
@@ -56,26 +56,6 @@ export const dubsQueryKey = (assetId: string) => ["asset-dubs", assetId] as cons
 
 /** While a job is running. Long enough not to hammer, short enough to feel live. */
 const RUNNING_POLL_MS = 4000
-
-function StatusLine({ dub }: { dub: MediaDub }) {
-  if (isDubRunning(dub.status)) {
-    return (
-      <p className="flex items-center gap-1.5 text-[12px] text-primary">
-        <Loader2 className="size-3.5 shrink-0 animate-spin" aria-hidden />
-        {dub.stage ?? "Working…"}
-      </p>
-    )
-  }
-  if (dub.status === "FAILED") {
-    return (
-      <p className="flex items-start gap-1.5 text-[12px] text-destructive">
-        <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden />
-        {dub.error ?? "The dub could not be generated."}
-      </p>
-    )
-  }
-  return null
-}
 
 export function VideoDubbing({
   asset,
@@ -237,7 +217,14 @@ export function VideoDubbing({
                 <p className="mt-1 text-[12.5px] text-muted-foreground">Not generated</p>
               ) : (
                 <div className="mt-1 space-y-1.5">
-                  <StatusLine dub={dub} />
+                  {isDubRunning(dub.status) ? <DubProgress dub={dub} /> : null}
+                  {dub.status === "FAILED" ? (
+                    <DubFailure
+                      dub={dub}
+                      retrying={generate.isPending}
+                      onRetry={() => generate.mutate(dub.language)}
+                    />
+                  ) : null}
 
                   {isDubPlayable(dub.status) ? (
                     <>
@@ -356,14 +343,9 @@ export function VideoDubbing({
                 ) : null}
               </div>
 
-              {/* The wait is real on this hardware. Better to say so than to
-                  leave someone watching a spinner. */}
-              {dub && isDubRunning(dub.status) ? (
-                <p className="mt-2 text-[11.5px] text-muted-foreground" data-testid="dub-long-run">
-                  Audio separation runs on this server and can take a while. You can leave this
-                  page — the job keeps going.
-                </p>
-              ) : null}
+              {/* The "this takes a while, and it keeps going" notice now lives
+                  beside the progress bar in DubProgress, where the reader is
+                  already looking. Repeating it here said the same thing twice. */}
             </>
           )}
         </div>

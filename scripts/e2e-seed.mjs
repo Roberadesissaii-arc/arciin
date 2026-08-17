@@ -101,6 +101,18 @@ export const E2E_IMAGE_METADATA = {
  * real against the provider. That is a different question from this one.
  */
 export const E2E_DUB_LANGUAGE = "es"
+
+/**
+ * A second language, left mid-separation on purpose.
+ *
+ * The progress and card-indicator tests need a job that is genuinely running
+ * with genuinely persisted numbers, and they must not need a worker or ninety
+ * minutes of CPU to get one. 39 of 122 is the exact point the real 11:51 video
+ * reached before the old wall-clock timeout killed it, which is the failure the
+ * progress work exists to make visible.
+ */
+export const E2E_RUNNING_DUB_LANGUAGE = "ar"
+export const E2E_RUNNING_DUB_PROGRESS = { current: 39, total: 122, percent: 32 }
 export const E2E_DUB_AUDIO_SOURCE = path.join(
   path.resolve(import.meta.dirname, ".."),
   "tests/fixtures/e2e-dub-audio-fixture.m4a",
@@ -228,7 +240,77 @@ async function seedDubFixture(prisma, storageRoot, assetId) {
     update: dubData,
   })
 
-  return { language: E2E_DUB_LANGUAGE, sizeBytes, durationMs: E2E_DUB_DURATION_MS }
+  /**
+   * A running dub, and a translation for it to be running against.
+   *
+   * Separate language from the ready one so both states are visible at once —
+   * which is also the product requirement: a card must show existing language
+   * metadata while another language is still generating.
+   */
+  const runningTranslationData = {
+    status: "READY",
+    provider: "seed",
+    model: "fixture",
+    fullText: "شكرا",
+    segments: E2E_TRANSCRIPT_SEGMENTS.map((segment, i) => ({
+      ...segment,
+      text: `هذا هو السطر ${i + 1}`,
+    })),
+    error: null,
+    sourceUpdatedAt: transcript.updatedAt,
+    generatedAt: new Date(),
+  }
+  const runningTranslation = await prisma.mediaTranslation.upsert({
+    where: {
+      transcriptId_language: {
+        transcriptId: transcript.id,
+        language: E2E_RUNNING_DUB_LANGUAGE,
+      },
+    },
+    create: {
+      transcriptId: transcript.id,
+      language: E2E_RUNNING_DUB_LANGUAGE,
+      ...runningTranslationData,
+    },
+    update: runningTranslationData,
+    select: { id: true, updatedAt: true },
+  })
+
+  const runningDubData = {
+    transcriptId: transcript.id,
+    translationId: runningTranslation.id,
+    status: "SEPARATING",
+    stage: "Separating dialogue from background",
+    error: null,
+    errorDetail: null,
+    provider: "gemini",
+    model: "fixture",
+    voiceProfiles: [],
+    progressCurrent: E2E_RUNNING_DUB_PROGRESS.current,
+    progressTotal: E2E_RUNNING_DUB_PROGRESS.total,
+    progressPercent: E2E_RUNNING_DUB_PROGRESS.percent,
+    // Recent, so the "still processing" stall notice is not triggered. A test
+    // that wants the stall notice moves this back itself.
+    progressUpdatedAt: new Date(),
+    audioStorageObjectId: null,
+    durationMs: null,
+    translationUpdatedAt: runningTranslation.updatedAt,
+    transcriptUpdatedAt: transcript.updatedAt,
+    settingsFingerprint: "e2e-fixture-running",
+    generatedAt: null,
+  }
+  await prisma.mediaDub.upsert({
+    where: { assetId_language: { assetId, language: E2E_RUNNING_DUB_LANGUAGE } },
+    create: { assetId, language: E2E_RUNNING_DUB_LANGUAGE, ...runningDubData },
+    update: runningDubData,
+  })
+
+  return {
+    language: E2E_DUB_LANGUAGE,
+    sizeBytes,
+    durationMs: E2E_DUB_DURATION_MS,
+    running: E2E_RUNNING_DUB_LANGUAGE,
+  }
 }
 
 /**
@@ -489,6 +571,9 @@ if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(import.met
       )
       console.log(
         `dub fixture ${result.dub.language} ready (${Math.round(result.dub.sizeBytes / 1024)} KB, ${result.dub.durationMs} ms)`,
+      )
+      console.log(
+        `dub fixture ${result.dub.running} left running at ${E2E_RUNNING_DUB_PROGRESS.current}/${E2E_RUNNING_DUB_PROGRESS.total}`,
       )
     })
     .catch((error) => {
