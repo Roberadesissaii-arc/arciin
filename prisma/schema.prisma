@@ -698,6 +698,31 @@ model MediaDub {
   separationMode    String?
   separationBackend String?
 
+  /**
+   * The paid external execution, so it is never bought twice.
+   * BullMQ is at-least-once: a crash, a stall or a restart re-enters the
+   * processor, and without a durable id the obvious thing to do on re-entry is
+   * submit again — a second GPU job for work already running or already done.
+   * The id is written the instant the provider returns it, before any other
+   * fallible step, and every entry checks for it before considering submission.
+   * The correlation key is derived from the cache key, so a retry addresses the
+   * same remote objects instead of uploading a second copy of the audio.
+   */
+  providerName           String?
+  providerJobId          String?
+  providerCorrelationKey String?
+  providerStatus         String?
+  providerSubmittedAt    DateTime?
+  providerLastPolledAt   DateTime?
+  providerCompletedAt    DateTime?
+  /**
+   * Remote files that still need deleting.
+   * A failed cleanup must not turn a finished dub into a failed one, but it
+   * also must not leave someone's audio on a third party's storage — so it is
+   * recorded and retried separately.
+   */
+  providerCleanupPrefix  String?
+
   provider String?
   model    String?
 
