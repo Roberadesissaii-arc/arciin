@@ -16,15 +16,42 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
+# Pinned, all of it.
+#
+# The stem cache is keyed on the separator's implementation and version, so
+# local and cloud results are only interchangeable while both run the same
+# build. A floating `latest` would silently change the fingerprint on some
+# future rebuild: every cached separation would miss, every language would pay
+# again, and it would look like a cache bug rather than a dependency drift.
+#
+# ARCIIN_SEPARATOR_VERSION must match what this server runs — check with
+# `audio-separator --version` locally before changing it. Upgrading on purpose
+# is fine and simply invalidates the cache, which is the correct outcome.
+ARG ARCIIN_SEPARATOR_VERSION=0.44.5
+ARG ARCIIN_TORCH_VERSION=2.13.0
+ARG ARCIIN_RUNPOD_SDK_VERSION=1.7.7
+
 # Torch first, from the CUDA index, so the resolver cannot quietly settle on a
 # CPU build to satisfy a later dependency. Arciin's own host hit this in
 # reverse: `audio-separator[cpu]` pulled two gigabytes of CUDA wheels.
 RUN pip3 install --upgrade pip && \
-    pip3 install torch torchaudio --index-url https://download.pytorch.org/whl/cu124
+    pip3 install "torch==${ARCIIN_TORCH_VERSION}" torchaudio \
+        --index-url https://download.pytorch.org/whl/cu124
 
-# The same separator stack the local backend uses, so a dub sounds the same
-# whichever side of the boundary produced it.
-RUN pip3 install "audio-separator[gpu]" runpod
+# The same separator stack, at the same version, as the local backend.
+RUN pip3 install \
+        "audio-separator[gpu]==${ARCIIN_SEPARATOR_VERSION}" \
+        "runpod==${ARCIIN_RUNPOD_SDK_VERSION}"
+
+# Fail the build rather than ship an image whose fingerprint would lie.
+RUN installed=$(pip3 show audio-separator | awk '/^Version:/{print $2}') && \
+    if [ "$installed" != "${ARCIIN_SEPARATOR_VERSION}" ]; then \
+        echo "separator version drift: wanted ${ARCIIN_SEPARATOR_VERSION}, got $installed" >&2; \
+        exit 1; \
+    fi && \
+    echo "[build] separator pinned at $installed"
+
+ENV ARCIIN_SEPARATOR_VERSION=${ARCIIN_SEPARATOR_VERSION}
 
 # Baked in rather than fetched on first request: a cold start that downloads a
 # model turns the first job of the day into a much slower one, and RunPod bills

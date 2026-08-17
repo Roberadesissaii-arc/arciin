@@ -157,3 +157,43 @@ class TestJobContract:
                 handler.handler(
                     {"input": {"input_key": "jobs/x/source.wav", "output_prefix": "jobs/x"}}
                 )
+
+
+class TestSeparatorReport:
+    """The fingerprint must describe what actually ran."""
+
+    def test_reads_the_installed_version_rather_than_the_pin(self):
+        """A pinned constant would let a drifted image lie.
+
+        The stem cache is keyed on this, so an image whose separator quietly
+        moved would serve stems under a fingerprint that does not describe them
+        — and nobody would notice until they listened.
+        """
+        completed = mock.MagicMock(stdout="audio-separator 0.44.5\n")
+        with mock.patch.object(handler.subprocess, "run", return_value=completed):
+            report = handler.separator_report()
+
+        assert report["version"] == "0.44.5"
+        assert report["implementation"] == "python-audio-separator"
+
+    def test_flags_drift_from_the_pin(self, monkeypatch):
+        monkeypatch.setenv("ARCIIN_SEPARATOR_VERSION", "0.44.5")
+        completed = mock.MagicMock(stdout="audio-separator 0.99.0\n")
+        with mock.patch.object(handler.subprocess, "run", return_value=completed):
+            report = handler.separator_report()
+
+        # Surfaced rather than swallowed: results from a drifted image should
+        # not share a cache with the version it claims to be.
+        assert "drift" in report
+        assert "0.99.0" in report["drift"]
+
+    def test_says_unknown_rather_than_guessing(self):
+        with mock.patch.object(handler.subprocess, "run", side_effect=OSError("missing")):
+            assert handler.separator_report()["version"] == "unknown"
+
+    def test_health_reports_the_separator_too(self):
+        # The connection test needs it: a healthy GPU running the wrong
+        # separator version is still the wrong worker.
+        with mock.patch.object(handler, "gpu_report", return_value={"cuda_available": True}):
+            result = handler.handler({"input": {"op": "health"}})
+        assert "separator" in result

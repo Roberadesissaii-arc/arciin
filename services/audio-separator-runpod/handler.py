@@ -54,6 +54,32 @@ class GpuUnavailable(RuntimeError):
     """Raised when the worker cannot do the one thing it is for."""
 
 
+def separator_report() -> dict[str, Any]:
+    """What this worker actually runs, read rather than assumed.
+
+    The stem cache is keyed on these values, so reporting a pinned constant
+    instead of the installed reality would let a drifted image serve stems under
+    a fingerprint that does not describe them.
+    """
+    report = {"implementation": "python-audio-separator", "version": "unknown", "pinned": None}
+    report["pinned"] = os.environ.get("ARCIIN_SEPARATOR_VERSION")
+    try:
+        output = subprocess.run(
+            ["audio-separator", "--version"], capture_output=True, text=True, timeout=30
+        ).stdout
+        match = re.search(r"\d+\.\d+\.\d+", output)
+        if match:
+            report["version"] = match.group(0)
+    except Exception as error:  # pragma: no cover - environment dependent
+        report["error"] = str(error)
+
+    # A mismatch is worth surfacing: it means the image drifted from its pin and
+    # its results should not share a cache with the version it claims.
+    if report["pinned"] and report["version"] not in ("unknown", report["pinned"]):
+        report["drift"] = f"pinned {report['pinned']} but running {report['version']}"
+    return report
+
+
 def gpu_report() -> dict[str, Any]:
     """What this worker can actually do, checked rather than assumed."""
     report: dict[str, Any] = {
@@ -203,6 +229,7 @@ def handler(job: dict[str, Any]) -> dict[str, Any]:
         return {
             "ok": True,
             "gpu": gpu_report(),
+            "separator": separator_report(),
             "model": payload.get("model", DEFAULT_MODEL),
             "volume_mounted": VOLUME_ROOT.exists(),
             "separator_available": shutil.which("audio-separator") is not None,
@@ -259,6 +286,7 @@ def handler(job: dict[str, Any]) -> dict[str, Any]:
 
     result = {
         "ok": True,
+        "separator": separator_report(),
         "dialogue_key": f"{output_prefix}/dialogue.wav",
         "background_key": f"{output_prefix}/background.wav",
         "model": model,
