@@ -18,10 +18,16 @@ import { isSameLanguage, languageName } from "@arciin/types"
 import { assertAssetFolderAccess } from "@/services/folders/folder-lock"
 import { mediaQueue } from "@/services/jobs/queues"
 import {
+  AudioSeparationService,
+  AudioSeparatorBackend,
+  DUB_TTS_MODEL,
   GeminiNotConfiguredError,
+  buildVoiceProfile,
   resolveGeminiMediaConfig,
   suggestTitles,
   translateTranscript,
+  voiceSettingsFingerprint,
+  type VoiceProfile,
 } from "@arciin/media-ai"
 import { requireRole } from "@/services/security/auth"
 import { recordAndBroadcastActivity } from "@/services/activity/record-and-broadcast-activity"
@@ -60,6 +66,73 @@ function serializeTranscript(row: {
     edited: row.edited,
     error: row.error,
     jobId: row.jobId,
+    generatedAt: row.generatedAt?.toISOString() ?? null,
+    updatedAt: row.updatedAt.toISOString(),
+  }
+}
+
+/**
+ * Languages the speech model can actually voice.
+ *
+ * Translation reaches far more languages than TTS does, so a dub button must
+ * not appear for a language the provider cannot speak — the reader would pay
+ * for a job that could only fail.
+ */
+const DUBBABLE_LANGUAGES = new Set([
+  "ar", "bn", "de", "en", "es", "fr", "gu", "hi", "id", "it", "ja", "kn", "ko",
+  "ml", "mr", "nl", "pl", "pt", "ro", "ru", "ta", "te", "th", "tr", "uk", "ur",
+  "vi", "zh",
+])
+
+export function isDubbableLanguage(tag: string): boolean {
+  return DUBBABLE_LANGUAGES.has(tag.trim().toLowerCase().split(/[-_]/)[0] ?? "")
+}
+
+function serializeDub(
+  row: {
+    id: string
+    language: string
+    status: string
+    stage: string | null
+    error: string | null
+    provider: string | null
+    model: string | null
+    voiceProfiles: unknown
+    backgroundStrategy: string | null
+    reviewSegments: unknown
+    audioStorageObjectId: string | null
+    durationMs: number | null
+    translationUpdatedAt: Date | null
+    transcriptUpdatedAt: Date | null
+    settingsFingerprint: string | null
+    generatedAt: Date | null
+    updatedAt: Date
+  },
+  translationUpdatedAt: Date,
+  transcriptUpdatedAt: Date,
+) {
+  return {
+    id: row.id,
+    language: row.language,
+    status: row.status,
+    stage: row.stage,
+    error: row.error,
+    provider: row.provider,
+    model: row.model,
+    voiceProfiles: (row.voiceProfiles ?? []) as unknown,
+    backgroundStrategy: row.backgroundStrategy,
+    reviewSegments: (row.reviewSegments ?? []) as unknown,
+    hasAudio: Boolean(row.audioStorageObjectId),
+    durationMs: row.durationMs,
+    /**
+     * The words or the voices have moved since this audio was made.
+     *
+     * Derived on read so one edit marks every dub at once, and so a stale dub
+     * is never played as though it matched the text on screen.
+     */
+    stale:
+      (row.translationUpdatedAt !== null && row.translationUpdatedAt < translationUpdatedAt) ||
+      (row.transcriptUpdatedAt !== null && row.transcriptUpdatedAt < transcriptUpdatedAt),
     generatedAt: row.generatedAt?.toISOString() ?? null,
     updatedAt: row.updatedAt.toISOString(),
   }
@@ -462,6 +535,192 @@ export async function transcriptRoutes(fastify: FastifyInstance) {
       }
     },
   )
+
+  /** Every dub for this asset, and whether dubbing can run at all here. */
+  fastify.get("/assets/:assetId/dubs", { preHandler: guard }, async (request, reply) => {
+    const { assetId } = z.object({ assetId: z.string() }).parse(request.params)
+    const asset = await loadAccessibleAsset(request, reply, assetId)
+    if (!asset) return
+
+    const transcript = await fastify.prisma.mediaTranscript.findUnique({
+      where: { assetId },
+      include: { translations: true },
+    })
+    const dubs = await fastify.prisma.mediaDub.findMany({
+      where: { assetId },
+      orderBy: { language: "asc" },
+    })
+
+    const separation = new AudioSeparationService([new AudioSeparatorBackend()])
+
+    reply.send({
+      data: {
+        dubs: dubs.map((dub) => {
+          const translation = transcript?.translations.find((t) => t.language === dub.language)
+          return serializeDub(
+            dub,
+            translation?.updatedAt ?? dub.updatedAt,
+            transcript?.updatedAt ?? dub.updatedAt,
+          )
+        }),
+        /**
+         * Whether the reader can be offered a dub at all.
+         *
+         * Checked before the button exists rather than after the job fails:
+         * separation is a precondition, and discovering it is missing halfway
+         * through means the reader waited for nothing.
+         */
+        separatorAvailable: await separation.isAvailable(),
+        dubbableLanguages: (transcript?.translations ?? [])
+          .map((t) => t.language)
+          .filter(isDubbableLanguage),
+      },
+    })
+  })
+
+  /**
+   * Generate or regenerate a dub for one translated language.
+   *
+   * Creates the row, then queues the work — that ordering is what lets a panel
+   * closed mid-run reopen onto the current stage instead of an empty state.
+   */
+  fastify.post("/assets/:assetId/dubs", { preHandler: guard }, async (request, reply) => {
+    const { assetId } = z.object({ assetId: z.string() }).parse(request.params)
+    const parsed = z
+      .object({
+        language: z.string().min(2).max(16),
+        profileId: z.string().optional(),
+        /** Per-speaker overrides. Anything omitted is matched automatically. */
+        voiceProfiles: z.array(z.record(z.string(), z.unknown())).max(24).optional(),
+      })
+      .safeParse(request.body)
+
+    if (!parsed.success) {
+      reply.status(400).send({
+        error: { code: "VALIDATION_ERROR", message: "Pick a language to dub." },
+      })
+      return
+    }
+
+    // Ownership re-checked here: this endpoint spends money and reads speech.
+    const asset = await loadAccessibleAsset(request, reply, assetId)
+    if (!asset) return
+
+    const language = parsed.data.language.trim()
+    if (!isDubbableLanguage(language)) {
+      reply.status(409).send({
+        error: {
+          code: "LANGUAGE_NOT_DUBBABLE",
+          message: "Audio dubbing is not currently supported for this language.",
+        },
+      })
+      return
+    }
+
+    const transcript = await fastify.prisma.mediaTranscript.findUnique({
+      where: { assetId },
+      include: { translations: { where: { language } } },
+    })
+    const translation = transcript?.translations[0]
+    if (!transcript || !translation || translation.status !== "READY") {
+      reply.status(409).send({
+        error: { code: "NO_TRANSLATION", message: "Translate this video before dubbing it." },
+      })
+      return
+    }
+
+    const separation = new AudioSeparationService([new AudioSeparatorBackend()])
+    if (!(await separation.isAvailable())) {
+      reply.status(409).send({
+        error: {
+          code: "SEPARATOR_UNAVAILABLE",
+          message:
+            "Dubbing needs an audio separator so the original music and ambience can be kept. See docs/DUBBING.md.",
+        },
+      })
+      return
+    }
+
+    try {
+      await resolveGeminiMediaConfig(fastify.prisma, parsed.data.profileId)
+    } catch (error) {
+      if (error instanceof GeminiNotConfiguredError) {
+        reply.status(409).send({
+          error: {
+            code: "GEMINI_NOT_CONFIGURED",
+            message: "Add a Gemini model profile under Models to generate a dub.",
+          },
+        })
+        return
+      }
+      throw error
+    }
+
+    /**
+     * One profile per speaker the transcript actually names.
+     *
+     * Built from whatever the caller overrode, defaulted otherwise — a reader
+     * who cares about one field should not have to supply the rest.
+     */
+    const speakers = [
+      ...new Set(
+        normalizeTranscriptSegments(translation.segments)
+          .map((s) => s.speaker)
+          .filter((s): s is string => Boolean(s)),
+      ),
+    ]
+    const speakerIds = speakers.length > 0 ? speakers : ["Speaker 1"]
+    const overrides = (parsed.data.voiceProfiles ?? []) as Partial<VoiceProfile>[]
+    const profiles = speakerIds.map((speakerId) =>
+      buildVoiceProfile(
+        { speakerId },
+        (overrides.find((o) => o.speakerId === speakerId) ?? {}) as Partial<VoiceProfile>,
+      ),
+    )
+
+    const jobRecord = await fastify.prisma.job.create({
+      data: {
+        type: JOB_TYPES.dubMedia,
+        status: "QUEUED",
+        progress: 0,
+        payload: { assetId, language, filename: asset.originalFilename },
+      },
+    })
+
+    const dubData = {
+      transcriptId: transcript.id,
+      translationId: translation.id,
+      status: "PENDING" as const,
+      stage: "Queued",
+      error: null,
+      provider: "gemini",
+      model: DUB_TTS_MODEL,
+      voiceProfiles: profiles as unknown as object,
+      settingsFingerprint: voiceSettingsFingerprint(profiles),
+      jobId: jobRecord.id,
+    }
+
+    const dub = await fastify.prisma.mediaDub.upsert({
+      where: { assetId_language: { assetId, language } },
+      create: { assetId, language, ...dubData },
+      // Regenerating replaces in place; the previous audio stays reachable
+      // until the new run overwrites it.
+      update: dubData,
+    })
+
+    await mediaQueue.add(JOB_TYPES.dubMedia, {
+      assetId,
+      dubId: dub.id,
+      translationId: translation.id,
+      userId: request.auth!.user.id,
+      ...(parsed.data.profileId ? { profileId: parsed.data.profileId } : {}),
+      jobRecordId: jobRecord.id,
+    })
+
+    reply.status(202).send({
+      data: { dub: serializeDub(dub, translation.updatedAt, transcript.updatedAt) },
+    })
+  })
 
   fastify.patch(
     "/assets/:assetId/transcript",
