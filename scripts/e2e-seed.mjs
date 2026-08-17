@@ -84,6 +84,154 @@ export const E2E_IMAGE_METADATA = {
 }
 
 /**
+ * A finished dub, seeded rather than generated.
+ *
+ * The playback suite tests the *player*: that switching to a dubbed track keeps
+ * the picture where it was, that play, pause and seek stay in step, and that
+ * pressing play never causes a paid request. None of that needs the audio to
+ * have come from a voice model, and making it come from one would mean every
+ * run waited on source separation at 13x realtime and spent money to re-derive
+ * bytes that were identical last time.
+ *
+ * So the audio is a committed file, and it is a tone that steps in pitch once a
+ * second — ten distinguishable seconds, so a person opening it can hear where
+ * in the timeline they are rather than taking a number's word for it.
+ *
+ * Real synthesised speech is verified separately, by running the pipeline for
+ * real against the provider. That is a different question from this one.
+ */
+export const E2E_DUB_LANGUAGE = "es"
+export const E2E_DUB_AUDIO_SOURCE = path.join(
+  path.resolve(import.meta.dirname, ".."),
+  "tests/fixtures/e2e-dub-audio-fixture.m4a",
+)
+/** Matches the video's 10.005s closely enough to test drift honestly. */
+export const E2E_DUB_DURATION_MS = 10_000
+
+/**
+ * Lines whose timings are the video's, one per second.
+ *
+ * Two speakers, because the voice settings UI renders a card per speaker and a
+ * single-speaker fixture would let a bug that only appears with two through.
+ */
+export const E2E_TRANSCRIPT_SEGMENTS = Array.from({ length: 10 }, (_, i) => ({
+  startMs: i * 1000,
+  endMs: (i + 1) * 1000,
+  speaker: i % 2 === 0 ? "Speaker 1" : "Speaker 2",
+  text: `This is line ${i + 1} of the fixture.`,
+}))
+
+export const E2E_TRANSLATION_SEGMENTS = E2E_TRANSCRIPT_SEGMENTS.map((segment, i) => ({
+  ...segment,
+  text: `Esta es la linea ${i + 1} del archivo de prueba.`,
+}))
+
+/**
+ * A transcript, a Spanish translation and a ready dub, all idempotent.
+ *
+ * Seeded together because they are meaningless apart: a dub row without its
+ * translation cannot be served, and a translation without a transcript is not
+ * reachable through the API at all.
+ */
+async function seedDubFixture(prisma, storageRoot, assetId) {
+  if (!existsSync(E2E_DUB_AUDIO_SOURCE)) {
+    throw new Error(
+      `missing fixture ${E2E_DUB_AUDIO_SOURCE}. It is committed to the repository; ` +
+        "a clean checkout should have it.",
+    )
+  }
+
+  const bytes = readFileSync(E2E_DUB_AUDIO_SOURCE)
+  const checksumSha256 = createHash("sha256").update(bytes).digest("hex")
+  const sizeBytes = statSync(E2E_DUB_AUDIO_SOURCE).size
+  const objectKey = fixtureObjectKey(checksumSha256, ".m4a")
+  const physicalPath = path.join(storageRoot, objectKey)
+
+  if (!existsSync(physicalPath)) {
+    mkdirSync(path.dirname(physicalPath), { recursive: true })
+    copyFileSync(E2E_DUB_AUDIO_SOURCE, physicalPath)
+  }
+
+  const storageLocation = await prisma.storageLocation.findFirst({ where: { isDefault: true } })
+  const existingObject = await prisma.storageObject.findUnique({ where: { objectKey } })
+  const audioObject =
+    existingObject ??
+    (await prisma.storageObject.create({
+      data: {
+        storageLocationId: storageLocation.id,
+        objectKey,
+        physicalPath,
+        sizeBytes: BigInt(sizeBytes),
+        checksumSha256,
+        mimeType: "audio/mp4",
+      },
+    }))
+
+  const transcriptData = {
+    status: "READY",
+    provider: "seed",
+    model: "fixture",
+    language: "en",
+    fullText: E2E_TRANSCRIPT_SEGMENTS.map((s) => s.text).join("\n"),
+    segments: E2E_TRANSCRIPT_SEGMENTS,
+    durationSeconds: E2E_VIDEO_METADATA.durationSeconds,
+    error: null,
+    generatedAt: new Date(),
+  }
+  const transcript = await prisma.mediaTranscript.upsert({
+    where: { assetId },
+    create: { assetId, ...transcriptData },
+    update: transcriptData,
+    select: { id: true, updatedAt: true },
+  })
+
+  const translationData = {
+    status: "READY",
+    provider: "seed",
+    model: "fixture",
+    fullText: E2E_TRANSLATION_SEGMENTS.map((s) => s.text).join("\n"),
+    segments: E2E_TRANSLATION_SEGMENTS,
+    error: null,
+    // Current as of this transcript, so the panel does not mark it outdated.
+    sourceUpdatedAt: transcript.updatedAt,
+    generatedAt: new Date(),
+  }
+  const translation = await prisma.mediaTranslation.upsert({
+    where: { transcriptId_language: { transcriptId: transcript.id, language: E2E_DUB_LANGUAGE } },
+    create: { transcriptId: transcript.id, language: E2E_DUB_LANGUAGE, ...translationData },
+    update: translationData,
+    select: { id: true, updatedAt: true },
+  })
+
+  const dubData = {
+    transcriptId: transcript.id,
+    translationId: translation.id,
+    status: "READY",
+    stage: null,
+    error: null,
+    provider: "seed",
+    model: "fixture",
+    voiceProfiles: [],
+    backgroundStrategy: "separated",
+    reviewSegments: [],
+    audioStorageObjectId: audioObject.id,
+    durationMs: E2E_DUB_DURATION_MS,
+    // Matching the sources, so the dub is served as current rather than stale.
+    translationUpdatedAt: translation.updatedAt,
+    transcriptUpdatedAt: transcript.updatedAt,
+    settingsFingerprint: "e2e-fixture",
+    generatedAt: new Date(),
+  }
+  await prisma.mediaDub.upsert({
+    where: { assetId_language: { assetId, language: E2E_DUB_LANGUAGE } },
+    create: { assetId, language: E2E_DUB_LANGUAGE, ...dubData },
+    update: dubData,
+  })
+
+  return { language: E2E_DUB_LANGUAGE, sizeBytes, durationMs: E2E_DUB_DURATION_MS }
+}
+
+/**
  * Where a checksum lands under the storage root.
  *
  * Mirrors `createObjectStoragePath` in the API's local-storage service — the
@@ -321,8 +469,9 @@ export async function seedE2EUser() {
     const storageRoot =
       process.env.ARCIIN_DATA_DIR ?? instance.storageRoot ?? "/srv/arce-projects/arciin-dev-storage"
     const video = await seedVideoFixture(prisma, user.id, storageRoot)
+    const dub = await seedDubFixture(prisma, storageRoot, video.assetId)
 
-    return { databaseName, email: user.email, instanceId: instance.id, video }
+    return { databaseName, email: user.email, instanceId: instance.id, video, dub }
   } finally {
     await prisma.$disconnect()
   }
@@ -337,6 +486,9 @@ if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(import.met
       )
       console.log(
         `video fixture ${result.video.assetId} ready (${Math.round(result.video.sizeBytes / 1024)} KB)`,
+      )
+      console.log(
+        `dub fixture ${result.dub.language} ready (${Math.round(result.dub.sizeBytes / 1024)} KB, ${result.dub.durationMs} ms)`,
       )
     })
     .catch((error) => {

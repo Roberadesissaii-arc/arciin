@@ -305,6 +305,7 @@ export function VideoAssetViewer({
             playsInline
             preload="metadata"
             crossOrigin="use-credentials"
+            data-testid="asset-video"
             className={cn(
               "block cursor-pointer object-contain",
               compact
@@ -463,6 +464,7 @@ export function VideoAssetViewer({
                     compact ? "size-7" : "size-9",
                   )}
                   aria-label={playing ? "Pause" : "Play"}
+                  data-testid="video-play-toggle"
                   onClick={togglePlay}
                 >
                   {playing ? (
