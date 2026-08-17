@@ -410,3 +410,103 @@ this hardware. And a `SIGKILL` from the separator is reported as what it almost
 always is here — the failure message says the system stopped it, most likely for
 memory, and suggests a shorter video, because that is the actionable answer
 rather than a stack trace.
+
+## Where separation runs
+
+Separation is the expensive half of a dub *and* the half that reads the original
+audio. Those two facts pull against each other — a cloud service is faster and
+means the media leaves the building — so the choice belongs to whoever owns the
+media, not to the implementation.
+
+**Auto / Local / Cloud**, remembered on `InstanceConfig.dubbingConfig` and
+overridable per job. The preference lives on the instance rather than on a user
+because the separator is a property of the machine: whether a local one is
+installed, and which external service this server may send audio to, are
+decisions about the server.
+
+The rule that matters is that an explicit choice is never quietly substituted:
+
+| Chosen | Backend missing | What happens |
+| --- | --- | --- |
+| Local | no separator installed | refused, with the reason |
+| Cloud | no provider configured | refused, with the reason |
+| Auto | either | picks the other, and says which |
+
+Falling back either way would undo the reason for choosing. Cloud is usually
+picked because the machine is slow — running it here anyway means finding out
+ninety minutes later. Local is usually picked because the audio should stay put,
+and a cloud fallback would send it exactly where it was being kept from.
+
+Cloud appears in the list even when nothing is configured, disabled, with a
+Configure link. Hiding it would suggest cloud separation does not exist;
+enabling it would promise something that can only fail after a long wait.
+
+Auto is deliberately simple: local first when it exists, cloud only when there is
+no local separator. A cleverer rule — long media to the cloud, short media local
+— needs timing data this instance does not have yet, and guessing would make Auto
+unpredictable.
+
+### The disclosure is per provider
+
+Separation and voice generation are stated separately and never merged. With a
+local separator the media genuinely does not leave; the voice model receives
+translated text and performance direction either way. A single combined sentence
+would have to be either alarmist or misleading, and "Local" must never be read as
+"nothing leaves this server".
+
+## Estimated time remaining
+
+Real, derived from the separator's own chunk counter — the one place in this
+pipeline where an estimate can be honest, because the work is uniform, the units
+are countable and the rate is observable.
+
+Three things separate a useful estimate from one that erodes trust:
+
+- **It waits.** At `1/122` the only interval observed includes model loading, and
+  the figure is wrong by a factor of several. Four samples (three intervals) are
+  required; until then the panel says "Estimating time…".
+- **It smooths.** An EMA at α = 0.35, with each observation clamped to within a
+  factor of two of the current estimate. A plain EMA still doubled off one slow
+  chunk — measured, a single 180-second chunk moved a settled 45-second rate to
+  92 — which is precisely the `40m → 2h → 31m` lurching this is meant to prevent.
+- **It refuses.** No samples, unknown total, or an uncountable stage returns
+  nothing and the UI shows the stage name instead.
+
+Samples are persisted on the row (bounded to twelve) and the arithmetic lives in
+`@arciin/types`, so the browser recomputes between polls — time spent on the
+chunk in flight counts, and a figure baked at fetch time would freeze for four
+seconds and then step by a whole chunk.
+
+Only separation gets an estimate. There is no single job-wide ETA, because only
+one stage can be estimated defensibly and averaging that with stages that cannot
+would be inventing the difference.
+
+## One separation at a time
+
+Measured on this machine, the separator peaks at **2.88 GB resident** on the
+11:51 file, with 7.1 GB total and swap already substantially used. Two at once is
+not slow — it is fatal to one of them, which is what happened when the browser
+suite ran alongside a dub and the kernel killed the separator at chunk 39.
+
+Two guards, both of which wait rather than fail:
+
+- A **Redis lock**, not a flag in the worker process — the queue may eventually
+  run more than one worker, and a per-process boolean is the same bug with a
+  longer fuse. It expires on its own and is renewed while the work continues, so
+  a crashed worker frees the machine within minutes instead of until someone
+  notices.
+- A **free-memory precheck** before launching. A job that waits five minutes
+  runs; a job that starts short of memory is killed twenty minutes later having
+  achieved nothing.
+
+Waiting is reported as a stage a person can read — "Waiting for local processing
+resources" — not as an error.
+
+## Never kill by name
+
+`pkill -f arciin` matches anything whose command line contains that string: an
+editor, a grep, a test runner, a production worker on a machine that also runs
+the dev stack. It has gone wrong here twice. `tests/no-broad-pkill.test.ts`
+forbids `pkill` and `killall` across the repository, stripping comments first
+because the files most likely to mention it are the ones explaining why they
+avoid it. Track the PID, signal the process group, or ask the service manager.
