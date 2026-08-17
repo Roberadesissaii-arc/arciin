@@ -43,7 +43,16 @@ const DEFAULT_BINARY = "/srv/arce-projects/arciin-separator/bin/audio-separator"
  * Override with `ARCIIN_AUDIO_SEPARATOR_MODEL` on hardware with AVX2, where
  * `UVR-MDX-NET-Inst_HQ_3.onnx` is considerably quicker for the same job.
  */
-const DEFAULT_MODEL = "htdemucs.yaml"
+/**
+ * Exported because the stem cache is keyed on it.
+ *
+ * A cache entry is only valid for the model that produced it, so the worker has
+ * to name the same default this backend would pick. Two copies of the string
+ * would eventually diverge and serve stems from the wrong model.
+ */
+export const DEFAULT_SEPARATOR_MODEL = "htdemucs.yaml"
+
+const DEFAULT_MODEL = DEFAULT_SEPARATOR_MODEL
 
 /**
  * Non-vocal stems a four-stem model produces.

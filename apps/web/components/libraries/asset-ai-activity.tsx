@@ -42,7 +42,19 @@ export function AssetAiIndicator({
   if (!activity) return null
 
   const running = activity.status === "running"
-  const eta = activity.samples?.length ? estimateRemaining(activity.samples) : null
+  /**
+   * Counted work done, stage still going.
+   *
+   * Same window the panel handles: the separator's chunk loop has ended but
+   * Demucs is still reconstructing stems, silently. Without this the tooltip
+   * showed "122 / 122 · 100%" beside a spinner, which reads as stuck.
+   */
+  const finalising =
+    running &&
+    activity.current !== null &&
+    activity.total !== null &&
+    activity.current >= activity.total
+  const eta = !finalising && activity.samples?.length ? estimateRemaining(activity.samples) : null
   const label = running
     ? `${activity.label} — ${activity.stage ?? "working"}`
     : `${activity.label} failed`
@@ -95,9 +107,9 @@ export function AssetAiIndicator({
           {running ? (
             <>
               <p className="text-[11.5px] opacity-90" data-testid="asset-ai-indicator-stage">
-                {activity.stage ?? "Working…"}
+                {finalising ? "Finalising separated audio" : (activity.stage ?? "Working…")}
               </p>
-              {activity.current !== null && activity.total !== null ? (
+              {!finalising && activity.current !== null && activity.total !== null ? (
                 <p
                   className="text-[11.5px] tabular-nums opacity-90"
                   data-testid="asset-ai-indicator-progress"

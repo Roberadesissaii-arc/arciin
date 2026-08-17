@@ -258,3 +258,90 @@ test.describe("dub failure", () => {
     await expect(failure).toContainText(/shorter video/i)
   })
 })
+
+test.describe("the quiet phase after the last chunk", () => {
+  test.setTimeout(120_000)
+
+  /**
+   * The state a real 11:51 run spent thirty-five minutes in.
+   *
+   * Demucs' counter measures its chunk loop. When that loop ends it still has
+   * to overlap-add every chunk into four full-length stems and write them —
+   * observed holding a gigabyte of float arrays and emitting nothing at all. The
+   * panel showed a full bar, "Estimating time…", and "Still processing. Last
+   * progress update 37 min ago", which together read as a hung job.
+   */
+  async function finalisingState(page: Page) {
+    await stubDub(page, {
+      status: "SEPARATING",
+      stage: "Separating dialogue from background",
+      progressCurrent: 122,
+      progressTotal: 122,
+      progressPercent: 100,
+      // Long enough that the old stall notice would have fired.
+      progressUpdatedAt: new Date(Date.now() - 37 * 60_000).toISOString(),
+    })
+  }
+
+  test("does not claim the stage is finished", async ({ page }) => {
+    await finalisingState(page)
+    await openDubbing(page)
+
+    const progress = panel(page).getByTestId("dub-progress")
+    await expect(progress.getByTestId("dub-progress-stage")).toHaveText(
+      "Finalising separated audio",
+    )
+    // A full determinate bar beside unfinished work is the claim that misled.
+    await expect(progress.getByTestId("dub-progress-bar")).toHaveAttribute(
+      "data-state",
+      "indeterminate",
+    )
+    await expect(progress.getByTestId("dub-progress-percent")).toHaveCount(0)
+  })
+
+  test("explains that this phase is silent by design", async ({ page }) => {
+    await finalisingState(page)
+    await openDubbing(page)
+
+    await expect(panel(page).getByTestId("dub-progress-finalising")).toContainText(
+      /reports no progress/i,
+    )
+    // The counter still says the chunks are done, because they are.
+    await expect(panel(page).getByTestId("dub-progress-counter")).toContainText(
+      /All audio chunks separated/i,
+    )
+  })
+
+  test("does not accuse a working job of having stalled", async ({ page }) => {
+    await finalisingState(page)
+    await openDubbing(page)
+
+    /**
+     * Thirty-seven minutes of silence would normally be worth flagging. Here it
+     * is expected, and saying "last update 37 min ago" next to a spinner is how
+     * a correct job came to look broken.
+     */
+    await expect(panel(page).getByTestId("dub-progress-stalled")).toHaveCount(0)
+  })
+
+  test("stops offering an estimate for work that is already counted", async ({ page }) => {
+    await finalisingState(page)
+    await openDubbing(page)
+
+    // "Estimating time…" reappearing after a real figure reads as the estimate
+    // giving up, rather than as the work having moved on.
+    await expect(panel(page).getByTestId("dub-progress-eta")).toHaveCount(0)
+  })
+
+  test("still warns about a genuine stall before the chunks are done", async ({ page }) => {
+    // The notice must not be lost — only silenced where silence is expected.
+    await stubDub(page, {
+      progressCurrent: 39,
+      progressTotal: 122,
+      progressPercent: 32,
+      progressUpdatedAt: new Date(Date.now() - 37 * 60_000).toISOString(),
+    })
+    await openDubbing(page)
+    await expect(panel(page).getByTestId("dub-progress-stalled")).toBeVisible()
+  })
+})

@@ -832,9 +832,35 @@ export async function handleMediaJob(
       }
 
       let stemsHolder: Awaited<ReturnType<typeof separation.separate>> | undefined
+      /** Must match the backend's own default, or a hit would be a wrong hit. */
+      const separatorModel =
+        process.env.ARCIIN_AUDIO_SEPARATOR_MODEL ?? media.DEFAULT_SEPARATOR_MODEL
       const sourceAudio = path.join(workDir, "source.wav")
       await runFfmpeg(["-y", "-i", objectFilePath, "-vn", "-ac", "2", "-ar", "44100", sourceAudio])
 
+      /**
+       * A previous separation of this exact audio, if there is one.
+       *
+       * Separation is deterministic and slow — two and a half hours for a
+       * twelve-minute video here — while synthesis afterwards is quick and is
+       * the part that actually failed. Without this, a provider hiccup at
+       * "segment 1 of 12" threw away a successful two-hour separation, and the
+       * retry did the whole thing again.
+       *
+       * Keyed on the audio and the model only, so a second language reuses the
+       * first language's separation.
+       */
+      const cached = await media.getStems(storageRoot, asset.checksumSha256, separatorModel)
+      if (cached) {
+        await prisma.mediaDub.update({
+          where: { id: payload.dubId },
+          data: {
+            stage: "Reusing previously separated audio",
+            progressUpdatedAt: new Date(),
+          },
+        })
+        stemsHolder = cached
+      } else {
       /**
        * One local separation at a time on this machine, and not until there is
        * memory for it.
@@ -904,6 +930,23 @@ export async function handleMediaJob(
         // Released whatever happened: a crashed job must not leave the machine
         // permanently marked busy.
         await slot.release()
+      }
+
+      /**
+       * Keep it, so the next attempt starts at synthesis.
+       *
+       * Best effort: the job already holds usable stems in its work directory,
+       * so a cache failure must not cost the dub the work it just did.
+       */
+      if (stemsHolder) {
+        const kept = await media.putStems(
+          storageRoot,
+          asset.checksumSha256,
+          separatorModel,
+          stemsHolder,
+        )
+        if (kept) stemsHolder = kept
+      }
       }
       // Non-null: the separator either produced stems or threw, and a throw
       // leaves through the catch rather than arriving here.
@@ -1111,8 +1154,27 @@ export async function handleMediaJob(
        * shape is not safe to present as technical output.
        */
       const summary = describeDubFailure(error)
-      const detail = error instanceof media.MediaToolError ? error.detail : undefined
-      await failDub(summary, detail)
+      /**
+       * Always keep the original, bounded and sanitised.
+       *
+       * The summary sometimes reads "open technical details for the full
+       * output", and until now that pointed at nothing unless the error
+       * happened to be a MediaToolError — only those carried a detail. A real
+       * synthesis failure on a twelve-minute video was reduced to that sentence
+       * and the cause was recorded nowhere: not on the row, not on the job, not
+       * in the log. The one message that exists to explain a failure told the
+       * reader to open something that was never written.
+       */
+      const detail = media.sanitizeToolOutput(
+        error instanceof media.MediaToolError
+          ? error.detail
+          : error instanceof Error
+            ? [error.name, error.message, error.stack].filter(Boolean).join("\n")
+            : String(error),
+      )
+      // And to the log as well, because a row can be overwritten by a retry.
+      console.error(`[worker] dub ${payload.dubId} failed:`, error)
+      await failDub(summary, detail || undefined)
     } finally {
       // The stems and clips are large and only needed during the run.
       await rm(workDir, { recursive: true, force: true }).catch(() => {})

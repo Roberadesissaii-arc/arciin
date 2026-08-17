@@ -404,6 +404,27 @@ describe("dub worker: failures", () => {
     expect(dub.status).toBe("FAILED")
     expect(dub.error!.length).toBeLessThan(300)
     expect(dub.error).toMatch(/technical details/i)
+
+    /**
+     * And those details exist.
+     *
+     * A real 11:51 dub failed in synthesis and was summarised into exactly this
+     * sentence with `errorDetail` null — the message told the reader to open
+     * something that had never been written, and the cause was recorded nowhere
+     * at all. Pointing at an empty drawer is worse than saying nothing.
+     */
+    expect(dub.errorDetail, "the summary promises details, so there must be some").toBeTruthy()
+    expect(dub.errorDetail!.length).toBeGreaterThan(20)
+  }, 120_000)
+
+  it("keeps the cause of a plain synthesis failure", async () => {
+    const seed = await seedDubJob()
+    behaviour.synthesize = "throw"
+
+    const dub = await runDub(seed)
+    expect(dub.status).toBe("FAILED")
+    // Not a MediaToolError, which is precisely the case that used to lose it.
+    expect(dub.errorDetail).toContain("the voice model refused")
   }, 120_000)
 
   it("records a synthesis failure", async () => {

@@ -110,8 +110,33 @@ export function DubProgress({
    */
   const eta = dub.progressSamples?.length ? estimateRemaining(dub.progressSamples, now) : null
 
+  /**
+   * The counted work is done, but the stage is not.
+   *
+   * This is the gap that made a working job look broken. The separator's counter
+   * measures its *chunk loop*, and when that loop ends Demucs still has to
+   * overlap-add every chunk back into four full-length stems and write them —
+   * observed on a 12-minute video, thirty-plus minutes holding a gigabyte of
+   * float arrays, emitting nothing at all.
+   *
+   * So the bar sat at 100%, the ETA fell back to "Estimating time…", and the
+   * stall notice announced that nothing had been heard for half an hour. Every
+   * one of those was locally true and collectively a lie: the job was fine and
+   * working hard.
+   *
+   * Inferred here rather than reported by the worker because nothing can report
+   * it — the separator is mid-run and silent, so there is no event to hang a
+   * stage change on. Counter complete plus stage still SEPARATING is exactly
+   * that window.
+   */
+  const finalising =
+    dub.status === "SEPARATING" &&
+    hasCounter &&
+    (dub.progressCurrent ?? 0) >= (dub.progressTotal ?? 0)
+
   const updatedAgo = dub.progressUpdatedAt ? now - new Date(dub.progressUpdatedAt).getTime() : null
-  const stalled = updatedAgo !== null && updatedAgo >= STALL_NOTICE_MS
+  // Silence during finalising is expected, not evidence of a stall.
+  const stalled = !finalising && updatedAgo !== null && updatedAgo >= STALL_NOTICE_MS
 
   if (!running) return null
 
@@ -119,24 +144,33 @@ export function DubProgress({
     <div className="space-y-2" data-testid="dub-progress">
       <p className="flex items-center gap-1.5 text-[12.5px] font-medium text-primary">
         <Loader2 className="size-3.5 shrink-0 animate-spin" aria-hidden />
-        <span data-testid="dub-progress-stage">{dub.stage ?? "Working…"}</span>
+        <span data-testid="dub-progress-stage">
+          {finalising ? "Finalising separated audio" : (dub.stage ?? "Working…")}
+        </span>
       </p>
 
-      {/* Indeterminate when the stage genuinely cannot count, never faked. */}
+      {/*
+        Indeterminate when the stage genuinely cannot count, never faked — and
+        that includes finalising, where a full bar would claim the stage is over.
+      */}
       <Progress
-        value={percent}
+        value={finalising ? null : percent}
         className="h-2"
         data-testid="dub-progress-bar"
-        aria-label={dub.stage ?? "Dub progress"}
+        aria-label={finalising ? "Finalising separated audio" : (dub.stage ?? "Dub progress")}
       />
 
       <div className="flex items-baseline justify-between gap-2 text-[11.5px] text-muted-foreground">
         <span data-testid="dub-progress-counter">
-          {hasCounter
-            ? counterLabel(dub.status, dub.progressCurrent!, dub.progressTotal!)
-            : "Starting…"}
+          {finalising
+            ? "All audio chunks separated · combining stems"
+            : hasCounter
+              ? counterLabel(dub.status, dub.progressCurrent!, dub.progressTotal!)
+              : "Starting…"}
         </span>
-        {percent !== null ? (
+        {/* The percentage belongs to the counted work; showing 100% beside a
+            stage that has not finished is the claim that misled. */}
+        {percent !== null && !finalising ? (
           <span className="font-medium tabular-nums text-foreground" data-testid="dub-progress-percent">
             {percent}%
           </span>
@@ -151,9 +185,20 @@ export function DubProgress({
         wrong by a factor of several. "Estimating" costs nothing; being an hour
         out costs belief in every number afterwards.
       */}
-      {running ? (
+      {/*
+        No estimate while finalising. There is nothing left to count, and
+        "Estimating time…" reappearing after a real figure reads as the estimate
+        having given up rather than as the work having moved on.
+      */}
+      {running && !finalising ? (
         <p className="text-[12px] font-medium text-foreground" data-testid="dub-progress-eta">
           {eta ? eta.label : hasCounter ? "Estimating time…" : ""}
+        </p>
+      ) : null}
+
+      {finalising ? (
+        <p className="text-[12px] text-muted-foreground" data-testid="dub-progress-finalising">
+          This last stage reports no progress and can take several minutes on a long video.
         </p>
       ) : null}
 
