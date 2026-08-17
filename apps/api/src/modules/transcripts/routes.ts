@@ -122,6 +122,9 @@ function serializeDub(
     progressCurrent: number | null
     progressTotal: number | null
     progressUpdatedAt: Date | null
+    progressSamples: unknown
+    separationMode: string | null
+    separationBackend: string | null
     provider: string | null
     model: string | null
     voiceProfiles: unknown
@@ -150,6 +153,16 @@ function serializeDub(
     progressCurrent: row.progressCurrent,
     progressTotal: row.progressTotal,
     progressUpdatedAt: row.progressUpdatedAt?.toISOString() ?? null,
+    /**
+     * The rolling history the estimate is computed from.
+     *
+     * Sent rather than reduced to a number on the server, because the browser
+     * recomputes between polls — time spent on the chunk in flight counts, and
+     * a figure baked at fetch time would freeze for four seconds and then jump.
+     */
+    progressSamples: Array.isArray(row.progressSamples) ? row.progressSamples : null,
+    separationMode: row.separationMode,
+    separationBackend: row.separationBackend,
     provider: row.provider,
     model: row.model,
     voiceProfiles: (row.voiceProfiles ?? []) as unknown,

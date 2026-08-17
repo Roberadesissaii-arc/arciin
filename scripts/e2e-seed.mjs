@@ -289,6 +289,19 @@ async function seedDubFixture(prisma, storageRoot, assetId) {
     progressCurrent: E2E_RUNNING_DUB_PROGRESS.current,
     progressTotal: E2E_RUNNING_DUB_PROGRESS.total,
     progressPercent: E2E_RUNNING_DUB_PROGRESS.percent,
+    /**
+     * Eight readings at the real cadence, ending at the current count.
+     *
+     * The estimate is arithmetic over these, so a fixture without them can only
+     * ever show "Estimating time…" — which would leave the one thing worth
+     * asserting untestable. 45 seconds a chunk is what the 11:51 video actually
+     * averaged, and 83 chunks remaining at that rate is a little over an hour.
+     */
+    progressSamples: Array.from({ length: 8 }, (_, i) => ({
+      at: Date.now() - (8 - i) * 45_000,
+      completed: E2E_RUNNING_DUB_PROGRESS.current - (7 - i),
+      total: E2E_RUNNING_DUB_PROGRESS.total,
+    })),
     // Recent, so the "still processing" stall notice is not triggered. A test
     // that wants the stall notice moves this back itself.
     progressUpdatedAt: new Date(),

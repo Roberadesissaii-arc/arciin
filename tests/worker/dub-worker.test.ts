@@ -6,6 +6,8 @@ import { promisify } from "node:util"
 
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest"
 
+import IORedis from "ioredis"
+
 import { JOB_TYPES } from "@arciin/config"
 
 import {
@@ -135,6 +137,15 @@ async function silentWav(file: string, seconds: number) {
 
 let fixtures: Fixtures
 let storageRoot: string
+/**
+ * A real client against the isolated test database.
+ *
+ * The handler takes the machine's separation lock through Redis, and that is
+ * worth exercising rather than stubbing: "only one separation at a time" is a
+ * property of the lock, and a fake would assert only that the code calls
+ * something.
+ */
+let redis: IORedis
 /** Imported after the mock is registered, so the dynamic import picks it up. */
 let handleMediaJob: typeof import("../../apps/worker/src/processors/worker-handlers")["handleMediaJob"]
 
@@ -142,10 +153,12 @@ beforeAll(async () => {
   storageRoot = await createTestStorageRoot()
   await resetDatabase()
   fixtures = await seedBaseFixtures(storageRoot)
+  redis = new IORedis(process.env.REDIS_URL!, { maxRetriesPerRequest: null })
   ;({ handleMediaJob } = await import("../../apps/worker/src/processors/worker-handlers"))
 }, 120_000)
 
 afterAll(async () => {
+  await redis.quit().catch(() => {})
   await resetDatabase()
   await removeTestStorageRoot()
   await prisma.$disconnect()
@@ -161,6 +174,8 @@ beforeEach(async () => {
   await prisma.mediaTranslation.deleteMany()
   await prisma.mediaTranscript.deleteMany()
   await prisma.job.deleteMany()
+  // A lock left by a failed run would block every test after it.
+  await redis.del("arciin:separation:local")
 })
 
 afterEach(() => {
@@ -258,7 +273,7 @@ async function runDub(seed: Awaited<ReturnType<typeof seedDubJob>>) {
       language: "es",
       jobRecordId: seed.job.id,
     } as never,
-    null as never,
+    redis as never,
   )
   return prisma.mediaDub.findUniqueOrThrow({ where: { id: seed.dub.id } })
 }
@@ -457,4 +472,50 @@ describe("dub worker: diagnostics", () => {
     expect(logs, "a log file per dub").toContain(`dub-${seed.dub.id}.log`)
   }, 120_000)
 
+})
+
+describe("dub worker: one separation at a time", () => {
+  it("waits rather than starting a second one, and says why", async () => {
+    /**
+     * The guard that exists because of an observed kill: the separator reached
+     * 2.28 GB while something else was running, and the kernel took it after
+     * twenty minutes of correct work. Two at once on this machine is not slow,
+     * it is fatal to one of them.
+     */
+    const seed = await seedDubJob()
+
+    // Somebody else holds the machine's slot.
+    await redis.set("arciin:separation:local", "another-worker", "EX", 60)
+
+    const stages: string[] = []
+    const watch = setInterval(() => {
+      void prisma.mediaDub
+        .findUnique({ where: { id: seed.dub.id }, select: { stage: true } })
+        .then((row) => {
+          if (row?.stage && !stages.includes(row.stage)) stages.push(row.stage)
+        })
+    }, 100)
+
+    // Released shortly, so the job proceeds rather than timing out.
+    setTimeout(() => void redis.del("arciin:separation:local"), 1200)
+
+    const dub = await runDub(seed)
+    clearInterval(watch)
+
+    // It waited, and it said so in words a person can act on.
+    expect(stages.some((s) => /waiting/i.test(s)), `stages seen: ${stages.join(" | ")}`).toBe(true)
+    // And then it ran: waiting is not failing.
+    expect(dub.status).not.toBe("FAILED")
+  }, 120_000)
+
+  it("frees the slot when the job fails", async () => {
+    const seed = await seedDubJob()
+    behaviour.separate = "throw-tool-error"
+
+    await runDub(seed)
+
+    // A crashed job that kept the lock would leave the machine permanently
+    // unable to separate anything until someone noticed.
+    expect(await redis.get("arciin:separation:local")).toBeNull()
+  }, 120_000)
 })

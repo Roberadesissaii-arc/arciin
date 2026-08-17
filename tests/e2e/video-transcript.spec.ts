@@ -120,11 +120,11 @@ test.describe("video transcript", () => {
     // earlier run in this database already produced a transcript. Asserting
     // only "generate" made this pass or fail on leftover data rather than on
     // the drawer being right.
+    // Regenerate moved into More — it costs money and replaces manual edits, so
+    // it no longer sits at the same weight as Copy. The empty state still shows
+    // Generate directly.
     await expect(
-      drawer
-        .getByTestId("generate-transcript")
-        .or(drawer.getByTestId("regenerate-transcript"))
-        .first(),
+      drawer.getByTestId("generate-transcript").or(drawer.getByTestId("transcript-more")).first(),
     ).toBeVisible()
   })
 
@@ -177,11 +177,14 @@ test.describe("video transcript", () => {
       const drawer = await openVideosAndEdit(page)
       const transcript = drawer.getByTestId("video-transcript")
 
-      // Start from nothing, whatever an earlier run left behind.
+      // Start from nothing, whatever an earlier run left behind. Regenerate now
+      // lives behind More, so reaching it takes the menu.
       const generate = transcript.getByTestId("generate-transcript")
-      const regenerate = transcript.getByTestId("regenerate-transcript")
-      if (await regenerate.isVisible().catch(() => false)) {
-        await regenerate.click()
+      const more = transcript.getByTestId("transcript-more")
+      if (await more.isVisible().catch(() => false)) {
+        await more.click()
+        await page.getByTestId("regenerate-transcript").click()
+        // Confirms first when there are edits to lose; this fixture has none.
       } else {
         await generate.click()
       }

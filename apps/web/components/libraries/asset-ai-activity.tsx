@@ -81,30 +81,43 @@ export function AssetAiIndicator({
       </TooltipTrigger>
       {/* Below and end-aligned: a card at the right edge of the grid pushed a
           side tooltip into a two-word-per-line column. */}
-      <TooltipContent side="bottom" align="end" className="w-[210px]">
-        <p className="text-[12px] font-medium">{activity.label}</p>
-        {running ? (
-          <>
-            <p className="text-[11.5px] opacity-90" data-testid="asset-ai-indicator-stage">
-              {activity.stage ?? "Working…"}
-            </p>
-            {activity.current !== null && activity.total !== null ? (
-              <p className="text-[11.5px] tabular-nums opacity-90" data-testid="asset-ai-indicator-progress">
-                {activity.current} / {activity.total}
-                {activity.percent !== null ? ` · ${activity.percent}%` : ""}
+      <TooltipContent side="bottom" align="end" className="max-w-none">
+        {/*
+          One flex child, deliberately.
+
+          TooltipContent is an `inline-flex` row, so sibling paragraphs became
+          side-by-side columns and every line wrapped after a word or two. A
+          single column child keeps the stacking and lets the text set its own
+          width.
+        */}
+        <div className="flex flex-col gap-0.5 whitespace-nowrap">
+          <p className="text-[12px] font-medium">{activity.label}</p>
+          {running ? (
+            <>
+              <p className="text-[11.5px] opacity-90" data-testid="asset-ai-indicator-stage">
+                {activity.stage ?? "Working…"}
               </p>
-            ) : null}
-            {/* Only where it is defensible: the same samples the panel uses, and
-                nothing at all until enough of them exist. */}
-            {eta ? (
-              <p className="text-[11.5px] opacity-90" data-testid="asset-ai-indicator-eta">
-                {eta.label}
-              </p>
-            ) : null}
-          </>
-        ) : (
-          <p className="text-[11.5px] opacity-90">Open AI for details</p>
-        )}
+              {activity.current !== null && activity.total !== null ? (
+                <p
+                  className="text-[11.5px] tabular-nums opacity-90"
+                  data-testid="asset-ai-indicator-progress"
+                >
+                  {activity.current} / {activity.total}
+                  {activity.percent !== null ? ` · ${activity.percent}%` : ""}
+                </p>
+              ) : null}
+              {/* Only where it is defensible: the same samples the panel uses,
+                  and nothing at all until enough of them exist. */}
+              {eta ? (
+                <p className="text-[11.5px] opacity-90" data-testid="asset-ai-indicator-eta">
+                  {eta.label}
+                </p>
+              ) : null}
+            </>
+          ) : (
+            <p className="text-[11.5px] opacity-90">Open AI for details</p>
+          )}
+        </div>
       </TooltipContent>
     </Tooltip>
   )
