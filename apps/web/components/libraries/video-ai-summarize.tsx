@@ -4,7 +4,6 @@ import { useEffect, useRef, useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import {
   Clapperboard,
-  ExternalLink,
   Hash,
   Loader2,
   Sparkles,
@@ -12,24 +11,16 @@ import {
   TextQuote,
 } from "lucide-react"
 
+import { AiSummaryLinks } from "@/components/libraries/ai-summary-links"
 import { Button } from "@/components/ui/button"
 import { friendlyAiError } from "@/lib/ai/friendly-ai-error"
 import { requestTranscriptSummary } from "@/lib/api/transcripts"
 import { toast } from "@/lib/notifications/arciin-toast"
 import type { AssetSummary } from "@/lib/types/models"
 import type { TranscriptAiAbout, TranscriptAiInsight } from "@arciin/types"
-import { cn } from "@/lib/utils"
 
 /** In-flight summarize runs — survives tab switches and remounts. */
 const pendingSummaries = new Set<string>()
-
-function normalizeHref(raw: string): string | null {
-  const trimmed = raw.trim()
-  if (!trimmed) return null
-  if (/^https?:\/\//i.test(trimmed)) return trimmed
-  if (/^[\w.-]+\.[a-z]{2,}([/:?#].*)?$/i.test(trimmed)) return `https://${trimmed}`
-  return null
-}
 
 function aboutKindLabel(kind: string): string {
   switch (kind) {
@@ -344,41 +335,7 @@ export function VideoAiSummarize({
             </section>
           ) : null}
 
-          {links.length > 0 ? (
-            <section className="overflow-hidden rounded-xl border border-zinc-200 bg-white">
-              <div className="flex items-center gap-1.5 border-b border-zinc-100 px-3 py-2">
-                <ExternalLink className="size-3.5 text-zinc-400" />
-                <h4 className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
-                  Links mentioned
-                </h4>
-              </div>
-              <ul className="divide-y divide-zinc-100" data-testid="ai-summary-links">
-                {links.map((link) => {
-                  const href = normalizeHref(link)
-                  return (
-                    <li key={link} className="px-3 py-2.5">
-                      {href ? (
-                        <a
-                          href={href}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className={cn(
-                            "inline-flex max-w-full items-center gap-1.5 break-all text-[12.5px] font-medium",
-                            "text-primary hover:underline",
-                          )}
-                        >
-                          <ExternalLink className="size-3 shrink-0" />
-                          {link}
-                        </a>
-                      ) : (
-                        <span className="break-all text-[12.5px] text-zinc-700">{link}</span>
-                      )}
-                    </li>
-                  )
-                })}
-              </ul>
-            </section>
-          ) : null}
+          {links.length > 0 ? <AiSummaryLinks links={links} /> : null}
 
           <Button
             type="button"
