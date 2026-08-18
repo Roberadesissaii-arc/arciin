@@ -56,7 +56,14 @@ export function LibraryBrowser({
     page,
     setPage,
   } = useLibraryBrowserFilters()
-  const [scope, setScope] = useState<LibraryAssetScope>("all")
+  /**
+   * Root only by default.
+   *
+   * Once AI Chat (or anyone) files a photo into a folder, that file belongs
+   * in the folder — not still listed under Assets at the library root. "All
+   * files" remains a deliberate switch for people who want the flat dump.
+   */
+  const [scope, setScope] = useState<LibraryAssetScope>("root")
   const setUploadContext = useUploadStore((state) => state.setUploadContext)
   const librariesQuery = useLibraries()
   const library = useMemo(
@@ -74,16 +81,13 @@ export function LibraryBrowser({
 
   const foldersQuery = useFolders(library?.id || "")
   /**
-   * "All files" is the default so the list matches the sidebar count: that
-   * count is every visible asset in the library, folders included. Root-only
-   * stays available as an explicit filter.
-   *
    * No mediaType filter on the API: kind chips filter client-side so a file
    * filed under a mismatched library stays reachable from its library page.
    */
   const assetsQuery = useAssetsPage({
     libraryId: library?.id,
     search: search || undefined,
+    // Library pages default to root; All Files has no folders so keep the full set.
     ...(librarySlug && scope === "root" ? { rootOnly: true } : {}),
   })
 
@@ -99,7 +103,11 @@ export function LibraryBrowser({
     assetsQuery.data?.pages.length,
   ])
 
-  const folders = foldersQuery.data ?? []
+  /** Only top-level folders on the library page — nested ones live inside their parent. */
+  const folders = useMemo(
+    () => (foldersQuery.data ?? []).filter((f) => f.parentFolderId == null),
+    [foldersQuery.data],
+  )
   const rawAssets = useMemo(
     () => assetsQuery.data?.pages.flatMap((page) => page.items) ?? [],
     [assetsQuery.data],

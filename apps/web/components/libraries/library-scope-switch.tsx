@@ -7,9 +7,9 @@ import { cn } from "@/lib/utils"
 /**
  * Which slice of a library the asset list is showing.
  *
- * "all" is the default and is what the sidebar count reflects — every visible
- * asset in the library, folders included. "root" narrows to assets sitting
- * directly at the library root.
+ * "root" is the default: files already filed into a folder belong in that
+ * folder, not still listed at the library root. "all" is the flat dump —
+ * every visible asset including folder contents — for when someone wants it.
  */
 export type LibraryAssetScope = "all" | "root"
 
@@ -20,16 +20,16 @@ const OPTIONS: Array<{
   icon: typeof Layers
 }> = [
   {
-    value: "all",
-    label: "All files",
-    hint: "Every file in this library, including files inside folders",
-    icon: Layers,
-  },
-  {
     value: "root",
     label: "Root only",
     hint: "Only files sitting directly in the library, not inside a folder",
     icon: FolderTree,
+  },
+  {
+    value: "all",
+    label: "All files",
+    hint: "Every file in this library, including files inside folders",
+    icon: Layers,
   },
 ]
 

@@ -172,16 +172,16 @@ export function LibraryBrowserToolbar({
               aria-label="Library file scope"
             >
               <SoftChip
-                active={scope === "all"}
-                label="All files"
-                title="Every file in this library, including files inside folders"
-                onClick={() => onScopeChange("all")}
-              />
-              <SoftChip
                 active={scope === "root"}
                 label="Root only"
                 title="Only files sitting directly in the library, not inside a folder"
                 onClick={() => onScopeChange("root")}
+              />
+              <SoftChip
+                active={scope === "all"}
+                label="All files"
+                title="Every file in this library, including files inside folders"
+                onClick={() => onScopeChange("all")}
               />
             </div>
           ) : null}

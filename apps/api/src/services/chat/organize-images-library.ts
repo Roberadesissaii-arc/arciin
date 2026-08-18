@@ -136,12 +136,15 @@ export async function organizeImagesLibrary(opts: {
   })
   const folders: FolderRow[] = [...folderRows]
 
+  // Root only — files already filed into a folder stay there. Organizing
+  // again would yank them back out of the place Chat just put them.
   const assets = await opts.prisma.asset.findMany({
     where: {
       libraryId: library.id,
       deletedAt: null,
       mediaType: "IMAGE",
       status: "READY",
+      folderId: null,
     },
     orderBy: { createdAt: "asc" },
     take: maxAssets,
