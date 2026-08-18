@@ -12,7 +12,6 @@
     "@arciin/config": "workspace:*",
     "@arciin/shared": "workspace:*",
     "@arciin/types": "workspace:*",
-    "@arciin/ui": "workspace:*",
-    "@lobehub/icons": "^5.10.1"
+    "@arciin/ui": "workspace:*"
   }
 }

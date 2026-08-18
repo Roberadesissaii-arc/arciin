@@ -5,16 +5,8 @@ import { Server } from "socket.io"
 import { isSelfHostedLanOrigin, type RealtimeEvent } from "@arciin/shared"
 
 import { apiConfig } from "@/config"
+import { isActiveTunnelOrigin } from "@/plugins/cors-origins"
 import { hashApiKey, hashToken, scopeAllows } from "@/services/security/auth"
-
-function isCloudflareQuickTunnelOrigin(origin: string): boolean {
-  try {
-    const { hostname, protocol } = new URL(origin)
-    return protocol === "https:" && hostname.endsWith(".trycloudflare.com")
-  } catch {
-    return false
-  }
-}
 
 function emitRealtimeEvent(io: Server, event: RealtimeEvent) {
   let emitted = false
@@ -77,7 +69,7 @@ export async function registerSocket(fastify: FastifyInstance) {
         if (
           corsOrigins.includes(origin) ||
           isSelfHostedLanOrigin(origin) ||
-          isCloudflareQuickTunnelOrigin(origin)
+          isActiveTunnelOrigin(origin)
         ) {
           callback(null, true)
           return
@@ -119,7 +111,15 @@ export async function registerSocket(fastify: FastifyInstance) {
           },
         })
 
-        if (session && session.expiresAt >= new Date()) {
+        // Same three conditions as the Bearer branch below. The status check
+        // used to be missing here, so suspending a user revoked their HTTP
+        // access while their existing cookie kept a realtime socket open and
+        // still receiving asset, job and activity events.
+        if (
+          session &&
+          session.expiresAt >= new Date() &&
+          session.user.status === "ACTIVE"
+        ) {
           socket.data.user = session.user
           socket.data.session = session
           next()

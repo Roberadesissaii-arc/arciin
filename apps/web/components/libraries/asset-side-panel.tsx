@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useState } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import { ChevronLeft, Loader2, X } from "lucide-react"
 
@@ -253,7 +253,7 @@ function PanelSections({
   const [seed] = useState(() => intentContext?.consume(asset.id) ?? null)
   const [section, setSection] = useState<Section>(seed?.section ?? "overview")
   const [aiTab, setAiTab] = useState<"transcript" | "title" | undefined>(seed?.aiTab)
-  const appliedGeneration = useRef(intentContext?.generation ?? 0)
+  const [appliedGeneration, setAppliedGeneration] = useState(intentContext?.generation ?? 0)
 
   /**
    * Apply a later intent without remounting.
@@ -261,17 +261,27 @@ function PanelSections({
    * Right-click → Edit while this file is already selected does not change the
    * asset key, so the mount initialiser never runs again. Watching generation
    * is what makes that path land on the requested section.
+   *
+   * Adjusted during render rather than in an effect. An effect would paint
+   * Overview first and then correct it, which is the cascading render the
+   * lint rule is about; setting state while rendering lets React discard this
+   * pass and re-render on the right section before anything reaches the screen.
+   * The generation guard runs the branch exactly once per intent.
    */
+  const generation = intentContext?.generation ?? 0
+  if (generation !== appliedGeneration) {
+    setAppliedGeneration(generation)
+    const next = intentContext?.peek(asset.id) ?? null
+    if (next?.section && sectionsFor(asset).includes(next.section)) {
+      setSection(next.section)
+      if (next.aiTab) setAiTab(next.aiTab)
+    }
+  }
+
+  // Drop the intent once it has been committed, not while rendering.
   useEffect(() => {
-    const gen = intentContext?.generation ?? 0
-    if (gen === appliedGeneration.current) return
-    appliedGeneration.current = gen
-    const next = intentContext?.consume(asset.id)
-    if (!next?.section) return
-    if (!sectionsFor(asset).includes(next.section)) return
-    setSection(next.section)
-    if (next.aiTab) setAiTab(next.aiTab)
-  }, [asset, intentContext])
+    intentContext?.clear(asset.id)
+  }, [appliedGeneration, asset.id, intentContext])
 
   const active = sections.includes(section) ? section : "overview"
 

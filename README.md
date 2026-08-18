@@ -110,7 +110,7 @@ Use **[Arciin Mobile](https://github.com/Roberadesissaii-arc/arciin-app)** on yo
 | 1. Run Arciin (this repo) on your server | Docker or native install below |
 | 2. Claim instance and sign in on desktop | `http://<server>:3004` |
 | 3. Generate a pairing code | **Settings → Mobile connection** |
-| 4. Install the mobile PWA | Vercel deploy or `pnpm dev:mobile` from `arciin-app` |
+| 4. Install the mobile PWA | Vercel deploy or `pnpm dev:mobile` **in the separate `arciin-app` repo** (not this one) |
 | 5. Pair once, then sign in | Server URL + 6-digit code + email/password |
 
 The mobile app supports home overview, files, uploads, jobs, activity, **AI chat**, models, notifications, profile/settings, password vault, API keys, and offline reconnect when the server is unreachable. See the mobile README for deploy and troubleshooting.

@@ -45,3 +45,37 @@ avatars/**
 
 # Local PM2 / runtime
 .pm2
+
+# ── Never runtime: tests, docs, reports, local caches ─────────────────────
+# `COPY . .` in the builder stage would otherwise carry all of this into the
+# image. None of it is read at runtime.
+tests
+tests/**
+playwright.config.ts
+vitest.config.ts
+vitest.integration.config.ts
+test-results
+test-results/**
+reports
+reports/**
+coverage
+coverage/**
+docs
+docs/**
+*.md
+!README.md
+.next-dev
+.next-dev/**
+.next-e2e
+.next-e2e/**
+apps/web/.next-dev
+apps/web/.next-e2e
+.github
+.github/**
+.claude
+.arciin-deploy.lock
+
+# Vendor prototypes (apps/account, apps/license-server) are deliberately NOT
+# excluded: they are pnpm workspace members, and removing their package.json
+# from the build context risks a --frozen-lockfile mismatch. Excluding them is
+# worth doing, but only alongside a Docker build that can verify it.

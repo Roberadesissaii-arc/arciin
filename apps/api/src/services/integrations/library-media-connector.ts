@@ -303,7 +303,7 @@ export async function syncAssetToConnectorMirror(
   const storageRoot = resolveEffectiveStorageRoot(instance?.storageRoot)
 
   if (asset.libraryMirrorPath) {
-    await unlink(path.join(storageRoot, asset.libraryMirrorPath)).catch(() => {})
+    await unlinkMirrorWithinRoot(storageRoot, asset.libraryMirrorPath)
   }
 
   const mirrorPath = await mirrorAsset({
@@ -322,6 +322,38 @@ export async function syncAssetToConnectorMirror(
   return mirrorPath
 }
 
+/**
+ * Resolve a stored mirror path against the storage root, refusing anything that
+ * lands outside it.
+ *
+ * `libraryMirrorPath` is written by mirrorAsset() from a sanitized filename, so
+ * today it is always inside the root. It is still a database value being handed
+ * to unlink(), and the cost of that assumption being wrong once — a stray `..`
+ * from a future writer, a hand-edited row, a restored backup — is deleting an
+ * arbitrary file as the service user. Cheap to check, unbounded to miss.
+ */
+export function resolveMirrorPathWithinRoot(
+  storageRoot: string,
+  mirrorPath: string,
+): string | null {
+  const root = path.resolve(storageRoot)
+  const resolved = path.resolve(root, mirrorPath)
+  if (resolved !== root && !resolved.startsWith(root + path.sep)) return null
+  return resolved
+}
+
+/** Remove a mirrored file, but only when it really is under the storage root. */
+async function unlinkMirrorWithinRoot(storageRoot: string, mirrorPath: string): Promise<void> {
+  const resolved = resolveMirrorPathWithinRoot(storageRoot, mirrorPath)
+  if (!resolved) {
+    console.warn(
+      `[library-mirror] refusing to unlink a mirror path outside the storage root: ${mirrorPath}`,
+    )
+    return
+  }
+  await unlink(resolved).catch(() => {})
+}
+
 export async function clearAssetConnectorMirror(prisma: PrismaClient, assetId: string): Promise<void> {
   const asset = await prisma.asset.findFirst({
     where: { id: assetId },
@@ -331,7 +363,7 @@ export async function clearAssetConnectorMirror(prisma: PrismaClient, assetId: s
 
   const instance = await prisma.instanceConfig.findFirst()
   const storageRoot = resolveEffectiveStorageRoot(instance?.storageRoot)
-  await unlink(path.join(storageRoot, asset.libraryMirrorPath)).catch(() => {})
+  await unlinkMirrorWithinRoot(storageRoot, asset.libraryMirrorPath)
   await prisma.asset.update({
     where: { id: assetId },
     data: { libraryMirrorPath: null },

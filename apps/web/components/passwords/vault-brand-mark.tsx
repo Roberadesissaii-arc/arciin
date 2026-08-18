@@ -3,7 +3,6 @@
 import { useMemo, useState } from "react"
 import { FingerprintPattern } from "lucide-react"
 
-import { VaultLobeHubModelIcon } from "@/components/passwords/vault-lobehub-model-icon"
 import type { PasswordVaultEntry } from "@/lib/types/models"
 import {
   resolveVaultBrand,
@@ -11,7 +10,6 @@ import {
   vaultBrandInitials,
   vaultBrandTileBg,
   vaultBrandTileFg,
-  vaultBrandUsesLobeHub,
 } from "@/lib/passwords/vault-brand"
 import { cn } from "@/lib/utils"
 
@@ -38,9 +36,7 @@ export function VaultBrandMark({
   const [iconFailed, setIconFailed] = useState(false)
 
   const iconSrc = candidates[candidateIdx] ?? null
-  const useLobeHub = match ? vaultBrandUsesLobeHub(match) : false
   const showImage = Boolean(iconSrc) && !iconFailed
-  const showLobeHub = useLobeHub && match
   const tileFg = vaultBrandTileFg(match)
 
   const box =
@@ -51,7 +47,7 @@ export function VaultBrandMark({
         : "size-10 rounded-xl text-[11px]"
 
   const imageSize = size === "lg" ? "size-8" : size === "sm" ? "size-4" : "size-5"
-  const lobeSize = size === "lg" ? 32 : size === "sm" ? 16 : 22
+  const markPx = size === "lg" ? 32 : size === "sm" ? 16 : 22
 
   if (!match && fallbackToVault) {
     return (
@@ -78,7 +74,7 @@ export function VaultBrandMark({
         "flex shrink-0 items-center justify-center overflow-hidden font-bold ring-1 ring-black/10",
         box,
         !match && "bg-zinc-100 text-zinc-600",
-        !showImage && !showLobeHub && match && "text-zinc-800",
+        !showImage && match && "text-zinc-800",
         className,
       )}
       aria-hidden
@@ -88,8 +84,8 @@ export function VaultBrandMark({
           key={iconSrc}
           src={iconSrc!}
           alt=""
-          width={lobeSize}
-          height={lobeSize}
+          width={markPx}
+          height={markPx}
           className={cn(imageSize, "object-contain")}
           onError={() => {
             if (candidateIdx < candidates.length - 1) {
@@ -99,8 +95,6 @@ export function VaultBrandMark({
             setIconFailed(true)
           }}
         />
-      ) : showLobeHub ? (
-        <VaultLobeHubModelIcon match={match} size={lobeSize} />
       ) : (
         <span>{vaultBrandInitials(match, entry.name)}</span>
       )}

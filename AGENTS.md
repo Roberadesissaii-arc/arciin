@@ -261,6 +261,11 @@ before using APIs or conventions that may have changed.
 
 shadcn/ui is already configured.
 
+`shadcn` stays in devDependencies even though it looks like a scaffolding-only
+CLI: `apps/web/app/globals.css` does `@import "shadcn/tailwind.css"`, so the
+package is resolved during the Tailwind build. Removing it fails the build with
+`Can't resolve 'shadcn/tailwind.css'`.
+
 Use the shadcn MCP server when useful to browse, search, inspect, or install components.
 
 The dashboard sidebar must be based on:

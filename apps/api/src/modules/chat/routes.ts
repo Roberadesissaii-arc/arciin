@@ -53,6 +53,10 @@ import {
 } from "@/services/chat/vision-library"
 import { generateConversationTitle } from "@/services/chat/auto-title"
 import { requireFeature, requireRole } from "@/services/security/auth"
+import {
+  AI_RATE_LIMITS,
+  checkAiRateLimit,
+} from "@/services/security/endpoint-rate-limit"
 import { checkEndpointRateLimit } from "@/services/security/endpoint-rate-limit"
 import { getStoragePaths } from "@/services/storage/local-storage"
 
@@ -488,6 +492,8 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
     "/chat/vision-search",
     { preHandler: requireAiChat },
     async (request, reply) => {
+      if (await checkAiRateLimit(request, reply, AI_RATE_LIMITS.vision)) return
+
       const parsed = z.object({
         query:     z.string().min(1).max(500),
         profileId: z.string(),
@@ -636,6 +642,8 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
     "/chat/organize-images",
     { preHandler: requireAiChat },
     async (request, reply) => {
+      if (await checkAiRateLimit(request, reply, AI_RATE_LIMITS.vision)) return
+
       const parsed = z
         .object({
           profileId: z.string(),
@@ -1139,6 +1147,8 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
       bodyLimit: 32 * 1024 * 1024,
     },
     async (request, reply) => {
+      if (await checkAiRateLimit(request, reply, AI_RATE_LIMITS.chat)) return
+
       const parsed = chatSchema.safeParse(request.body)
       if (!parsed.success) {
         reply.status(400).send({ error: { code: "VALIDATION_ERROR", message: "Invalid payload.", details: parsed.error.flatten() } })

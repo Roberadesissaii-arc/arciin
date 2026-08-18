@@ -313,6 +313,10 @@ model Session {
   tokenHash          String    @unique
   userAgent          String?
   ipAddress          String?
+  /// Opaque per-browser id from the long-lived `arciin_device` cookie. Used to
+  /// collapse repeat sign-ins from the same browser into one row. Null for
+  /// clients that send no cookie (mobile Bearer), which are never collapsed.
+  deviceId           String?
   expiresAt          DateTime
   /// Mobile Bearer sessions: vault unlock without relying on cross-origin cookies.
   vaultUnlockedUntil DateTime?
@@ -323,6 +327,7 @@ model Session {
 
   @@index([userId])
   @@index([expiresAt])
+  @@index([userId, deviceId])
 }
 
 /// Short-lived codes for pairing the mobile PWA to this instance (hashed at rest).

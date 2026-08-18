@@ -24,9 +24,15 @@ async function main() {
   process.on("SIGINT", () => void shutdown())
   process.on("SIGTERM", () => void shutdown())
 
+  /**
+   * Loopback by default. This is a prototype vendor service, not part of a
+   * self-hosted Arciin install — there is no reason for it to answer the LAN,
+   * and it was previously reachable from any machine on the network. Set
+   * LICENSE_SERVER_HOST explicitly to expose it somewhere real.
+   */
   await app.listen({
     port: licenseServerConfig.LICENSE_SERVER_PORT,
-    host: "0.0.0.0",
+    host: process.env.LICENSE_SERVER_HOST?.trim() || "127.0.0.1",
   })
 
   app.log.info(

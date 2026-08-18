@@ -17,6 +17,10 @@ import { JOB_TYPES, normalizeTranscriptSegments } from "@arciin/shared"
 import { isSameLanguage, languageName } from "@arciin/types"
 
 import { assertAssetFolderAccess } from "@/services/folders/folder-lock"
+import {
+  AI_RATE_LIMITS,
+  checkAiRateLimit,
+} from "@/services/security/endpoint-rate-limit"
 import { mediaQueue } from "@/services/jobs/queues"
 import {
   GeminiNotConfiguredError,
@@ -170,6 +174,8 @@ export async function transcriptRoutes(fastify: FastifyInstance) {
     "/assets/:assetId/transcript",
     { preHandler: guard },
     async (request, reply) => {
+      if (await checkAiRateLimit(request, reply, AI_RATE_LIMITS.transcribe)) return
+
       const { assetId } = z.object({ assetId: z.string() }).parse(request.params)
       const body = z
         .object({ profileId: z.string().optional(), force: z.boolean().optional() })
@@ -291,6 +297,8 @@ export async function transcriptRoutes(fastify: FastifyInstance) {
     "/assets/:assetId/transcript/translations",
     { preHandler: guard },
     async (request, reply) => {
+      if (await checkAiRateLimit(request, reply, AI_RATE_LIMITS.translate)) return
+
       const { assetId } = z.object({ assetId: z.string() }).parse(request.params)
       const parsed = z
         .object({
@@ -407,6 +415,8 @@ export async function transcriptRoutes(fastify: FastifyInstance) {
     "/assets/:assetId/title-suggestions",
     { preHandler: guard },
     async (request, reply) => {
+      if (await checkAiRateLimit(request, reply, AI_RATE_LIMITS.title)) return
+
       const { assetId } = z.object({ assetId: z.string() }).parse(request.params)
       const body = z
         .object({ profileId: z.string().optional(), count: z.number().int().min(1).max(6).optional() })

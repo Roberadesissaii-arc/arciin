@@ -62,6 +62,48 @@ export function isSecureCookie(request?: FastifyRequest) {
   return false
 }
 
+/** Long-lived, opaque, per-browser id. Not a credential — it authenticates nothing. */
+export const DEVICE_COOKIE_NAME = "arciin_device"
+
+const DEVICE_ID_PATTERN = /^[a-f0-9]{32}$/
+const DEVICE_COOKIE_MAX_AGE_DAYS = 400
+
+/**
+ * A stable identifier for *this browser*, minted on first sign-in.
+ *
+ * Session collapse used to key on (userId, userAgent, ipAddress). That tuple is
+ * not a device: two Chrome profiles, a normal and a private window, or two
+ * people behind one NAT all share it, so signing in on one silently deleted the
+ * other's session. This cookie separates them — different browser, different
+ * id — while still recognising the same browser signing in again.
+ *
+ * Only minted when there is a reply to set it on. Bearer-only clients (mobile)
+ * therefore get no id and are never collapsed.
+ */
+export function resolveDeviceId(
+  request: FastifyRequest,
+  reply?: FastifyReply,
+): string | null {
+  const existing = request.cookies[DEVICE_COOKIE_NAME]?.trim()
+  if (existing && DEVICE_ID_PATTERN.test(existing)) return existing
+
+  if (!reply) return null
+
+  const minted = randomBytes(16).toString("hex")
+  const expires = new Date()
+  expires.setDate(expires.getDate() + DEVICE_COOKIE_MAX_AGE_DAYS)
+
+  reply.setCookie(DEVICE_COOKIE_NAME, minted, {
+    httpOnly: true,
+    sameSite: "lax",
+    path: "/",
+    secure: isSecureCookie(request),
+    expires,
+  })
+
+  return minted
+}
+
 export async function createSession(
   request: FastifyRequest,
   userId: string,
@@ -69,6 +111,8 @@ export async function createSession(
     expiresInDays?: number
     /** Session lifetime from now (overrides expiresInDays when set). */
     expiresInMinutes?: number
+    /** Needed to mint the device cookie on a browser's first sign-in. */
+    reply?: FastifyReply
   }
 ) {
   const rawToken = generateOpaqueToken()
@@ -81,6 +125,7 @@ export async function createSession(
 
   const userAgent = request.headers["user-agent"] ?? null
   const ipAddress = normalizeClientIp(clientIpFromRequest(request))
+  const deviceId = resolveDeviceId(request, options?.reply)
 
   const session = await request.server.prisma.session.create({
     data: {
@@ -88,28 +133,30 @@ export async function createSession(
       tokenHash: hashToken(rawToken),
       userAgent,
       ipAddress,
+      deviceId,
       expiresAt,
     },
   })
 
   /**
-   * Signing in again from a device that already has a session replaces it
-   * rather than stacking another row. Re-authenticating had been appending
-   * one entry per sign-in, so Settings -> Sessions listed the same phone six
-   * times and there was no way to tell which row to revoke — or whether
-   * revoking one of them did anything.
+   * Signing in again from the same browser replaces that browser's session
+   * rather than stacking another row — otherwise Settings → Sessions lists the
+   * same phone six times with no way to tell which row to revoke.
    *
-   * Only exact (user, user-agent, ip) matches collapse, and the new session is
-   * created first so a failure here can never sign anyone out. Sessions with no
-   * user-agent are left alone: too weak a signal to treat as the same device.
+   * Keyed on the device cookie, so it collapses only sessions this browser
+   * actually created. The previous (user, user-agent, ip) key matched *other*
+   * browsers on the same machine and network, so a second profile signing in
+   * logged the first one out. Clients with no device id are never collapsed.
+   *
+   * The new session is created first, so a failure here can never sign anyone
+   * out.
    */
-  if (userAgent && ipAddress) {
+  if (deviceId) {
     await request.server.prisma.session
       .deleteMany({
         where: {
           userId,
-          userAgent,
-          ipAddress,
+          deviceId,
           id: { not: session.id },
         },
       })

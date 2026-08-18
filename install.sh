@@ -527,6 +527,17 @@ ensure_production_secrets() {
     ok "ARCIIN_SETUP_TOKEN secured (random)"
   fi
 
+  # Signing secret for license verification. The API refuses to start in
+  # production with the development value shipped in .env.example, so this has
+  # to be minted here or a fresh install would fail its first boot. Replace the
+  # bundled dev value or anything shorter than 32 chars.
+  if ! grep -qE '^ARCIIN_LICENSE_VERIFY_SECRET=.{32,}$' "$env_file" 2>/dev/null \
+    || grep -q '^ARCIIN_LICENSE_VERIFY_SECRET=arciin-dev-license' "$env_file" 2>/dev/null; then
+    _set_env_kv "$env_file" "ARCIIN_LICENSE_VERIFY_SECRET" \
+      "$(openssl rand -hex 32 2>/dev/null || _gen_secret)"
+    ok "ARCIIN_LICENSE_VERIFY_SECRET secured (random)"
+  fi
+
   # Dedicated key for encrypting the credential vault / webhooks / integrations
   # at rest, independent of SESSION_SECRET. Only minted on a FRESH install — on
   # an existing instance the code falls back to the SESSION_SECRET-derived key,

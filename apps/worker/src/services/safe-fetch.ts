@@ -211,3 +211,62 @@ export async function safeRequest(
   }
   throw new Error("The link redirected too many times.")
 }
+
+/**
+ * Validate a URL that is about to be handed to an *external downloader*.
+ *
+ * yt-dlp and gallery-dl open their own sockets, so none of the protection in
+ * `safeRequest` applies to them — the rebind-safe `lookup` hook, the manual
+ * redirect re-validation and the identity-encoding cap are all properties of
+ * this module's client, not of the URL. Without a check here a caller could
+ * reach a private address simply by picking a link the video path handles.
+ *
+ * This is a pre-flight check, not a guarantee: the binary resolves the name
+ * again when it connects, and can be redirected afterwards. It closes the
+ * straightforward cases (literal private address, name that resolves to one)
+ * and leaves only a rebinding race that cannot be closed without the tools
+ * exposing a way to pin the address.
+ */
+export async function assertExternalDownloadUrlIsPublic(rawUrl: string): Promise<void> {
+  let url: URL
+  try {
+    url = new URL(rawUrl)
+  } catch {
+    throw new Error("That link is not a valid URL.")
+  }
+
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new Error("Only http and https links can be imported.")
+  }
+
+  const host = url.hostname.toLowerCase().replace(/^\[|\]$/g, "").replace(/\.$/, "")
+  if (hostIsBlockedName(host)) {
+    throw new Error("That link points at this server.")
+  }
+
+  if (net.isIP(host) !== 0) {
+    if (isPrivateOrReservedIp(host)) {
+      throw new Error("That link points at a private address.")
+    }
+    return
+  }
+
+  const resolved = await new Promise<LookupAddress[]>((resolve, reject) => {
+    dnsLookup(host, { all: true }, (err, addresses) => {
+      if (err) reject(err)
+      else resolve(addresses as LookupAddress[])
+    })
+  }).catch(() => {
+    throw new Error(`Could not resolve ${host}.`)
+  })
+
+  if (!resolved.length) throw new Error(`Could not resolve ${host}.`)
+
+  // Every address, not just the first: a name with one public and one private
+  // record must not pass on the strength of the order they came back in.
+  for (const { address } of resolved) {
+    if (isPrivateOrReservedIp(address)) {
+      throw new Error("That link resolves to an address on this server's private network.")
+    }
+  }
+}

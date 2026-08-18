@@ -186,6 +186,7 @@ export async function registerAuthRoutes(fastify: FastifyInstance) {
 
     const { session, rawToken } = await createSession(request, user.id, {
       expiresInMinutes: access.sessionTimeoutMinutes,
+      reply,
     })
     setSessionCookie(reply, rawToken, session.expiresAt, request)
 
@@ -248,8 +249,8 @@ export async function registerAuthRoutes(fastify: FastifyInstance) {
       request,
       user.id,
       rememberMe
-        ? { expiresInDays: 30 }
-        : { expiresInMinutes: access.sessionTimeoutMinutes },
+        ? { expiresInDays: 30, reply }
+        : { expiresInMinutes: access.sessionTimeoutMinutes, reply },
     )
     setSessionCookie(reply, rawToken, session.expiresAt, request, {
       persistent: rememberMe,

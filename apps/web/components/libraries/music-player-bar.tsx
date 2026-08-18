@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState, useSyncExternalStore } from "react"
 import { createPortal } from "react-dom"
 import { Pause, Play, X } from "lucide-react"
 
@@ -18,6 +18,27 @@ function formatPlaybackTime(seconds: number) {
   return `${m}:${String(s).padStart(2, "0")}`
 }
 
+/**
+ * False during SSR and the hydration pass, true afterwards.
+ *
+ * The player renders into a portal, so it cannot be part of the server HTML —
+ * it has to wait for the DOM. This used to be `useState(false)` flipped by an
+ * empty-dependency effect, which is a render → effect → setState → render
+ * cascade on every mount. `useSyncExternalStore` expresses the same thing as
+ * what it actually is: a value that differs between server and client, which is
+ * the one job this hook exists for. `subscribe` returns a no-op teardown
+ * because the answer never changes again once hydrated.
+ */
+const subscribeToNothing = () => () => {}
+
+function useIsHydrated(): boolean {
+  return useSyncExternalStore(
+    subscribeToNothing,
+    () => true,
+    () => false,
+  )
+}
+
 export function MusicPlayerBar() {
   const nowPlaying = useMusicPlayerStore((s) => s.nowPlaying)
   const isPlaying = useMusicPlayerStore((s) => s.isPlaying)
@@ -31,7 +52,7 @@ export function MusicPlayerBar() {
   const [duration, setDuration] = useState(0)
   const [seekValue, setSeekValue] = useState(0)
   const [isSeeking, setIsSeeking] = useState(false)
-  const [mounted, setMounted] = useState(false)
+  const mounted = useIsHydrated()
 
   const audioSrc = nowPlaying
     ? `/api/assets/${nowPlaying.id}/download${INLINE_DOWNLOAD}`
@@ -90,10 +111,6 @@ export function MusicPlayerBar() {
   useEffect(() => {
     if (!trackId) loadedTrackIdRef.current = null
   }, [trackId])
-
-  useEffect(() => {
-    setMounted(true)
-  }, [])
 
   function commitSeek(value: number) {
     const el = audioRef.current

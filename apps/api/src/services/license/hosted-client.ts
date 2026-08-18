@@ -15,12 +15,15 @@ export function licenseServerBaseUrl(): string | null {
   return url || null
 }
 
+/**
+ * Resolved and validated once at startup (apps/api/src/config.ts).
+ *
+ * There is deliberately no fallback here: in production a missing or bundled
+ * secret fails the boot rather than silently verifying signatures with a value
+ * anyone can read out of this repository.
+ */
 export function licenseVerifySecret(): string {
-  return (
-    apiConfig.ARCIIN_LICENSE_VERIFY_SECRET ||
-    process.env.LICENSE_SIGNING_SECRET ||
-    "arciin-dev-license-signing-secret-change-me"
-  )
+  return apiConfig.licenseVerifySecret
 }
 
 export function licenseDevFallbackEnabled(): boolean {

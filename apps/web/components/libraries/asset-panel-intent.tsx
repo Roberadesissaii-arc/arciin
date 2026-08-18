@@ -31,6 +31,18 @@ type ContextValue = {
   /** Reads and clears the intent, if it is for this asset. */
   consume: (assetId: string) => AssetPanelIntent | null
   /**
+   * Reads the intent without clearing it.
+   *
+   * The panel applies a new intent while rendering (React's "adjust state when
+   * a prop changes"), and a render may run more than once for the same update —
+   * StrictMode does it deliberately. A read that also cleared would hand the
+   * intent to the first pass and null to the second, losing the navigation.
+   * Reading is idempotent; clearing happens after commit.
+   */
+  peek: (assetId: string) => AssetPanelIntent | null
+  /** Drops the intent once the panel has committed it. */
+  clear: (assetId: string) => void
+  /**
    * Bumps every time an intent is posted.
    * The panel watches this so a right-click action still works when the same
    * file is already selected (no remount → no useState initialiser).
@@ -67,7 +79,20 @@ export function AssetPanelIntentProvider({
     return intent
   }, [])
 
-  const value = useMemo(() => ({ open, consume, generation }), [open, consume, generation])
+  const peek = useCallback((assetId: string) => {
+    const intent = pending.current
+    if (!intent || intent.assetId !== assetId) return null
+    return intent
+  }, [])
+
+  const clear = useCallback((assetId: string) => {
+    if (pending.current?.assetId === assetId) pending.current = null
+  }, [])
+
+  const value = useMemo(
+    () => ({ open, consume, peek, clear, generation }),
+    [open, consume, peek, clear, generation],
+  )
 
   return (
     <AssetPanelIntentContext.Provider value={value}>{children}</AssetPanelIntentContext.Provider>

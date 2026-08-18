@@ -1,9 +1,49 @@
-FROM node:20-alpine
+# Arciin API + worker image.
+#
+# Multi-stage so the development toolchain does not ship. The previous image was
+# a single stage running `pnpm install` with no `--prod` and then `COPY . .`, so
+# eslint, typescript, vitest, tailwind, the Playwright client and the whole test
+# and docs tree all landed in production.
+#
+# What *does* have to ship is less obvious than usual: this deployment runs the
+# API from TypeScript source through `tsx` rather than from compiled output, and
+# the entrypoint applies migrations with the Prisma CLI before starting. Both are
+# therefore runtime dependencies (they are declared as such in package.json), and
+# apps/*/src is runtime code, not build input. Pruning either would produce a
+# smaller image that cannot boot.
 
+# ---------- deps: full install, used only to build ----------
+FROM node:20-alpine AS deps
+WORKDIR /app
+RUN corepack enable
+
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY apps/api/package.json apps/api/package.json
+COPY apps/worker/package.json apps/worker/package.json
+COPY packages/database/package.json packages/database/package.json
+COPY packages/shared/package.json packages/shared/package.json
+COPY packages/config/package.json packages/config/package.json
+COPY packages/types/package.json packages/types/package.json
+COPY packages/storage/package.json packages/storage/package.json
+COPY packages/ui/package.json packages/ui/package.json
+COPY packages/media-ai/package.json packages/media-ai/package.json
+
+# postinstall (pdfjs wasm copy) needs scripts/ on disk, which is not in this
+# layer yet — it is re-run explicitly in the builder stage below.
+RUN pnpm install --frozen-lockfile --ignore-scripts
+
+# ---------- builder: generate the Prisma client ----------
+FROM deps AS builder
+WORKDIR /app
+COPY . .
+RUN pnpm db:generate
+
+# ---------- runtime: production dependencies only ----------
+FROM node:20-alpine AS runtime
 WORKDIR /app
 
-# bash/psql/curl for scripts + health; ffmpeg + poppler-utils (pdftoppm) power
-# on-demand image/PDF thumbnail generation.
+# bash/psql/curl for the entrypoint + health checks; ffmpeg and poppler-utils
+# (pdftoppm) power on-demand video/PDF thumbnail generation.
 RUN apk add --no-cache bash postgresql-client curl ca-certificates ffmpeg poppler-utils
 
 COPY scripts/install-cloudflared.sh /tmp/install-cloudflared.sh
@@ -20,17 +60,26 @@ COPY packages/config/package.json packages/config/package.json
 COPY packages/types/package.json packages/types/package.json
 COPY packages/storage/package.json packages/storage/package.json
 COPY packages/ui/package.json packages/ui/package.json
+COPY packages/media-ai/package.json packages/media-ai/package.json
 
-# postinstall needs scripts/ on disk — not available until full COPY.
-RUN pnpm install --frozen-lockfile --ignore-scripts
+# --prod drops eslint, typescript, vitest, tailwind, @types/* and the Playwright
+# client. tsx and prisma stay because they are declared as dependencies.
+RUN pnpm install --frozen-lockfile --prod --ignore-scripts
 
-COPY . .
+# Runtime source. .dockerignore keeps tests, docs, reports and caches out.
+COPY apps/api ./apps/api
+COPY apps/worker ./apps/worker
+COPY packages ./packages
+COPY prisma ./prisma
+COPY scripts ./scripts
+COPY tsconfig.base.json tsconfig.json ./
 
-RUN pnpm db:generate
+# The generated client, rather than re-running the generator with no CLI here.
+COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
+COPY --from=builder /app/node_modules/@prisma/client ./node_modules/@prisma/client
 
 ENV NODE_ENV=production
 ENV API_PORT=4000
-
 EXPOSE 4000
 
 RUN chmod +x scripts/arciin-init.sh scripts/entrypoint-api.sh

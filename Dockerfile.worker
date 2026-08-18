@@ -1,5 +1,36 @@
-FROM node:20-alpine
+# Arciin worker image.
+#
+# Same shape as Dockerfile.api and for the same reason: the previous single
+# stage shipped the full dev toolchain and the whole repo. The worker also runs
+# from TypeScript source via tsx, so apps/worker/src and tsx are runtime, not
+# build input.
 
+# ---------- deps ----------
+FROM node:20-alpine AS deps
+WORKDIR /app
+RUN corepack enable
+
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY apps/api/package.json apps/api/package.json
+COPY apps/worker/package.json apps/worker/package.json
+COPY packages/database/package.json packages/database/package.json
+COPY packages/shared/package.json packages/shared/package.json
+COPY packages/config/package.json packages/config/package.json
+COPY packages/types/package.json packages/types/package.json
+COPY packages/storage/package.json packages/storage/package.json
+COPY packages/ui/package.json packages/ui/package.json
+COPY packages/media-ai/package.json packages/media-ai/package.json
+
+RUN pnpm install --frozen-lockfile --ignore-scripts
+
+# ---------- builder: Prisma client ----------
+FROM deps AS builder
+WORKDIR /app
+COPY . .
+RUN pnpm db:generate
+
+# ---------- runtime ----------
+FROM node:20-alpine AS runtime
 WORKDIR /app
 
 # Media pipeline tools: ffmpeg (video/audio probe + transcode), poppler-utils
@@ -17,13 +48,19 @@ COPY packages/config/package.json packages/config/package.json
 COPY packages/types/package.json packages/types/package.json
 COPY packages/storage/package.json packages/storage/package.json
 COPY packages/ui/package.json packages/ui/package.json
+COPY packages/media-ai/package.json packages/media-ai/package.json
 
-# postinstall needs scripts/ on disk — not available until full COPY.
-RUN pnpm install --frozen-lockfile --ignore-scripts
+RUN pnpm install --frozen-lockfile --prod --ignore-scripts
 
-COPY . .
+COPY apps/worker ./apps/worker
+COPY apps/api ./apps/api
+COPY packages ./packages
+COPY prisma ./prisma
+COPY scripts ./scripts
+COPY tsconfig.base.json tsconfig.json ./
 
-RUN pnpm db:generate
+COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
+COPY --from=builder /app/node_modules/@prisma/client ./node_modules/@prisma/client
 
 ENV NODE_ENV=production
 

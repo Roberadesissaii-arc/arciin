@@ -6,7 +6,7 @@ import path from "node:path"
 import type { Readable } from "node:stream"
 import { once } from "node:events"
 
-import { safeRequest } from "@/services/safe-fetch"
+import { assertExternalDownloadUrlIsPublic, safeRequest } from "@/services/safe-fetch"
 
 import { Queue } from "bullmq"
 import { execa } from "execa"
@@ -272,6 +272,11 @@ async function tryYtDlp(
   workDir: string,
   opts: YtDlpImportOptions = {},
 ): Promise<ResolvedDownload | null> {
+  // yt-dlp opens its own sockets, so safeRequest's rebind-safe lookup never
+  // sees this URL. Check it here or the video path becomes the way around the
+  // guard the plain-HTTP path enforces.
+  await assertExternalDownloadUrlIsPublic(rawUrl)
+
   const bin = resolveBinary("yt-dlp", "ARCIIN_YTDLP_BIN")
   const outDir = path.join(workDir, "ytdlp")
   await mkdir(outDir, { recursive: true })
@@ -355,6 +360,9 @@ async function tryYtDlp(
 }
 
 async function tryGalleryDl(rawUrl: string, workDir: string): Promise<ResolvedDownload | null> {
+  // Same reasoning as tryYtDlp — gallery-dl fetches on its own.
+  await assertExternalDownloadUrlIsPublic(rawUrl)
+
   const bin = resolveBinary("gallery-dl", "ARCIIN_GALLERYDL_BIN")
   const outDir = path.join(workDir, "gallerydl")
   await mkdir(outDir, { recursive: true })

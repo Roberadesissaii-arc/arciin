@@ -95,6 +95,8 @@ const LOCAL_ICON_FILES: Record<VaultBrandCategory, Record<string, string>> = {
     deepseek: "deepseek.svg",
     qwen: "qwen-color.svg",
     grok: "grok.svg",
+    xai: "xai.svg",
+    cohere: "cohere.svg",
     mistral: "mistral.svg",
     elevenlabs: "elevenlabs.svg",
     huggingface: "huggingface.svg",
@@ -151,11 +153,16 @@ const ICON_FALLBACKS: Partial<Record<string, string[]>> = {
 }
 
 /** LobeHub fallback when no local SVG is registered. */
-export const LOBEHUB_MODEL_KEYS = new Set([
-  "cohere",
-  "xai",
-  "qwen",
-])
+/**
+ * Kept as a named empty set rather than deleted.
+ *
+ * These three were the entire reason `@lobehub/icons` was a dependency, and
+ * that package pulled antd, mermaid and emoji-mart behind it — roughly a
+ * quarter of a gigabyte of install for three marks, two of which (cohere, xai)
+ * were the only ones ever rendered; qwen already had a local file. They are
+ * local SVGs now, in the same directory as every other provider mark.
+ */
+export const LOBEHUB_MODEL_KEYS = new Set<string>()
 
 const LOBEHUB_APP_KEYS = new Set<string>()
 
