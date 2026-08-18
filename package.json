@@ -43,7 +43,7 @@
     "icons:generate": "node scripts/generate-pwa-icons.mjs ./apps/web/public && node scripts/generate-pwa-icons.mjs ../arciin-app/public",
     "install:verify": "bash scripts/verify-install-parity.sh",
     "pdfjs:copy-wasm": "node scripts/copy-pdfjs-wasm.mjs",
-    "postinstall": "pnpm pdfjs:copy-wasm",
+    "postinstall": "prisma generate && pnpm pdfjs:copy-wasm",
     "build:docker:web": "bash scripts/docker-build-images.sh web",
     "build:docker:api": "bash scripts/docker-build-images.sh api",
     "build:docker:worker": "bash scripts/docker-build-images.sh worker",

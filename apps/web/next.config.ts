@@ -107,9 +107,17 @@ function connectSources(): string[] {
  *   silently shows a grey placeholder.
  */
 function securityHeaders() {
+  /**
+   * React's development build uses `eval()` — for component stacks and other
+   * debugging, and it says so in the console when a CSP blocks it. Production
+   * never does, so this is granted only where it is actually needed rather
+   * than shipped to users to keep `next dev` working.
+   */
+  const devEval = process.env.NODE_ENV === "production" ? "" : " 'unsafe-eval'"
+
   const csp = [
     "default-src 'self'",
-    "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'",
+    `script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'${devEval}`,
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob:",
     "font-src 'self' data:",
