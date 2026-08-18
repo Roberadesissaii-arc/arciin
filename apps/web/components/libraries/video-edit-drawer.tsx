@@ -502,8 +502,22 @@ export function VideoTranscriptSection({
                 asset={asset}
                 hasTranscript={Boolean(transcript && transcript.status === "READY")}
                 transcriptStatus={transcript?.status ?? null}
+                savedInsight={transcript?.aiInsight ?? null}
                 onGenerateTranscript={startGenerate}
                 transcriptRunning={running || generate.isPending}
+                onInsightSaved={(insight) => {
+                  if (!assetId) return
+                  queryClient.setQueryData(transcriptKey(assetId), (prev: unknown) => {
+                    const current = prev as
+                      | { transcript: typeof transcript; translations: unknown; transcribable: boolean }
+                      | undefined
+                    if (!current?.transcript) return prev
+                    return {
+                      ...current,
+                      transcript: { ...current.transcript, aiInsight: insight },
+                    }
+                  })
+                }}
               />
             ) : null}
 
@@ -586,19 +600,17 @@ export function VideoEditDrawer({
           "dashboard-main text-foreground sm:max-w-[480px]",
         )}
       >
-        <SheetHeader className="relative shrink-0 space-y-1 border-b border-border px-4 py-3 pr-11">
-          <div className="min-w-0">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">AI</p>
-            <SheetTitle
-              className="truncate text-[15px] font-semibold tracking-tight text-zinc-900"
-              title={asset?.originalFilename}
-            >
-              {asset?.originalFilename ?? "Video"}
-            </SheetTitle>
-            <SheetDescription className="text-[12px] text-zinc-500">
-              Transcript, title suggestions, and summarize.
-            </SheetDescription>
-          </div>
+        <SheetHeader className="relative shrink-0 space-y-0.5 border-b border-border px-4 py-3 pr-11">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">Assist</p>
+          <SheetTitle
+            className="truncate text-[15px] font-semibold tracking-tight text-zinc-900"
+            title={asset?.originalFilename}
+          >
+            {asset?.originalFilename ?? "Video"}
+          </SheetTitle>
+          <SheetDescription className="sr-only">
+            Transcript, title suggestions, and summarize for this video.
+          </SheetDescription>
         </SheetHeader>
         {open ? <VideoTranscriptSection asset={asset} /> : null}
       </SheetContent>
@@ -836,22 +848,23 @@ function TranscriptBody(props: {
         </div>
 
         {props.editing ? (
-          <div className="mt-3">
-            <p className="mb-2 text-[12px] text-zinc-500">
-              One line per segment. Timings stay as they are.
+          <div className="mt-3 space-y-3">
+            <p className="text-[12px] leading-snug text-zinc-500">
+              One line per segment — leave a blank line between speakers if you like. Timings stay as
+              they are.
             </p>
             <Textarea
               value={props.draft}
               onChange={(e) => props.onDraftChange(e.target.value)}
-              rows={12}
-              className="rounded-xl font-mono text-[12.5px]"
+              rows={14}
+              className="min-h-[16rem] rounded-xl border-zinc-200 bg-zinc-50/80 px-3 py-3 font-sans text-[13.5px] leading-7 tracking-normal"
             />
-            <div className="mt-2 flex gap-1.5">
-              <Button type="button" size="sm" onClick={props.onEditSave} disabled={props.saving}>
+            <div className="flex gap-2">
+              <Button type="button" size="sm" className="h-9" onClick={props.onEditSave} disabled={props.saving}>
                 {props.saving ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
                 Save
               </Button>
-              <Button type="button" size="sm" variant="ghost" onClick={props.onEditCancel}>
+              <Button type="button" size="sm" variant="ghost" className="h-9" onClick={props.onEditCancel}>
                 Cancel
               </Button>
             </div>

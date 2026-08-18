@@ -30,6 +30,15 @@ export type TranscriptSegment = {
   text: string
 }
 
+/** Saved Assist → Summarize payload (lives on the transcript row). */
+export type TranscriptAiInsight = {
+  summary: string
+  keywords: string[]
+  links: string[]
+  model: string | null
+  generatedAt: string | null
+}
+
 export type MediaTranscript = {
   id: string
   assetId: string
@@ -45,6 +54,8 @@ export type MediaTranscript = {
   edited: boolean
   error: string | null
   jobId: string | null
+  /** Summarize output — survives closing the Assist drawer. */
+  aiInsight: TranscriptAiInsight | null
   generatedAt: string | null
   updatedAt: string
 }

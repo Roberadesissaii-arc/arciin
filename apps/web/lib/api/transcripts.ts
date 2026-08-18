@@ -104,7 +104,8 @@ export function requestTranscriptSummary(assetId: string, input?: { profileId?: 
     summary: string
     keywords: string[]
     links: string[]
-    model: string
+    model: string | null
+    generatedAt: string | null
   }>(`/assets/${assetId}/transcript-summary`, {
     method: "POST",
     body: input ?? {},

@@ -586,6 +586,8 @@ model MediaTranscript {
   error           String?
   /// The queued job, so the drawer can follow progress after a reload.
   jobId           String?
+  /// Saved Summarize output: { summary, keywords, links, model, generatedAt }.
+  aiInsight       Json?
   generatedAt     DateTime?
   createdAt       DateTime              @default(now())
   updatedAt       DateTime              @updatedAt

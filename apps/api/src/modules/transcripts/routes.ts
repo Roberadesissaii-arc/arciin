@@ -37,6 +37,26 @@ function isTranscribableAsset(mediaType: string): boolean {
   return mediaType === "VIDEO" || mediaType === "AUDIO"
 }
 
+function serializeAiInsight(value: unknown) {
+  if (!value || typeof value !== "object") return null
+  const row = value as Record<string, unknown>
+  const summary = typeof row.summary === "string" ? row.summary : ""
+  const keywords = Array.isArray(row.keywords)
+    ? row.keywords.filter((k): k is string => typeof k === "string")
+    : []
+  const links = Array.isArray(row.links)
+    ? row.links.filter((k): k is string => typeof k === "string")
+    : []
+  if (!summary && keywords.length === 0 && links.length === 0) return null
+  return {
+    summary,
+    keywords,
+    links,
+    model: typeof row.model === "string" ? row.model : null,
+    generatedAt: typeof row.generatedAt === "string" ? row.generatedAt : null,
+  }
+}
+
 function serializeTranscript(row: {
   id: string
   assetId: string
@@ -50,6 +70,7 @@ function serializeTranscript(row: {
   edited: boolean
   error: string | null
   jobId: string | null
+  aiInsight?: unknown
   generatedAt: Date | null
   updatedAt: Date
 }) {
@@ -66,6 +87,7 @@ function serializeTranscript(row: {
     edited: row.edited,
     error: row.error,
     jobId: row.jobId,
+    aiInsight: serializeAiInsight(row.aiInsight),
     generatedAt: row.generatedAt?.toISOString() ?? null,
     updatedAt: row.updatedAt.toISOString(),
   }
@@ -526,14 +548,20 @@ export async function transcriptRoutes(fastify: FastifyInstance) {
 
       try {
         const result = await suggestVideoSummary({ config, transcriptText: text })
-        reply.send({
-          data: {
-            summary: result.summary,
-            keywords: result.keywords,
-            links: result.links,
-            model: result.model,
-          },
+        const generatedAt = new Date().toISOString()
+        const aiInsight = {
+          summary: result.summary,
+          keywords: result.keywords,
+          links: result.links,
+          model: result.model,
+          generatedAt,
+        }
+        // Persist on the transcript row so closing Assist does not lose it.
+        await fastify.prisma.mediaTranscript.update({
+          where: { assetId },
+          data: { aiInsight },
         })
+        reply.send({ data: aiInsight })
       } catch (error) {
         reply.status(502).send({
           error: {

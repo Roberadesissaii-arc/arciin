@@ -192,16 +192,19 @@ export const TITLE_RESPONSE_SCHEMA = {
 
 export function buildTitlePrompt(transcriptText: string, count = 3): string {
   return [
-    `Suggest ${count} titles for a video, based on what is actually said in it.`,
+    `Suggest ${count} short titles for a video, based only on what is said in it.`,
     "",
-    "Each title should:",
-    "- describe what the video is about, specifically",
-    "- read naturally, as a library entry a person would recognise later",
-    "- be roughly 4 to 12 words",
+    "Each title MUST:",
+    "- be ONE or TWO words only (never three or more)",
+    "- name the main topic, place, person, or thing (like a library label)",
+    "- be distinct from the other suggestions — avoid near-duplicates",
+    "",
+    "Examples of good titles: \"Coffee\", \"Tokyo night\", \"Budget tips\", \"Mars rover\"",
+    "Examples of bad titles: \"How to make the perfect latte at home\", \"A day in my life\"",
     "",
     "Never:",
     "- use quotation marks, emoji, or a file extension",
-    "- use clickbait, hype, or a question the video does not answer",
+    "- use clickbait, hype, or a full sentence",
     "- invent details that are not in the transcript",
     "",
     "Transcript:",
@@ -340,7 +343,7 @@ export function parseTitles(modelText: string): string[] {
   const titles: string[] = []
   for (const entry of raw) {
     if (typeof entry !== "string") continue
-    const cleaned = entry
+    let cleaned = entry
       .replace(/[\r\n]+/g, " ")
       // Surrounding quotes, straight or curly.
       .replace(/^\s*["'“”‘’]+|["'“”‘’]+\s*$/g, "")
@@ -348,8 +351,11 @@ export function parseTitles(modelText: string): string[] {
       .replace(/\.(mp4|mov|mkv|webm|avi|m4v|mp3|wav|m4a)\s*$/i, "")
       .replace(/\s+/g, " ")
       .trim()
-      .slice(0, 120)
+      .slice(0, 80)
     if (!cleaned) continue
+    // Hard cap: keep at most two words so library names stay short.
+    const words = cleaned.split(" ").filter(Boolean)
+    if (words.length > 2) cleaned = words.slice(0, 2).join(" ")
     const key = cleaned.toLowerCase()
     if (seen.has(key)) continue
     seen.add(key)
