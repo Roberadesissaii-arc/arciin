@@ -32,7 +32,7 @@
     "test:book": "cd apps/web && tsx lib/chat/book/book.test.ts && tsx lib/chat/book/book-document.test.ts && tsx lib/chat/book/book-watchdog.test.ts && tsx lib/tasks/ai-tasks.test.ts && tsx lib/auth/idle-policy.test.ts",
     "test:watch": "vitest",
     "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build",
-    "typecheck": "pnpm db:generate && tsc --noEmit -p apps/web/tsconfig.json && tsc --noEmit -p apps/api/tsconfig.json && tsc --noEmit -p apps/worker/tsconfig.json && tsc --noEmit -p packages/types/tsconfig.json && tsc --noEmit -p packages/config/tsconfig.json && tsc --noEmit -p packages/storage/tsconfig.json && tsc --noEmit -p packages/ui/tsconfig.json && tsc --noEmit -p packages/shared/tsconfig.json && tsc --noEmit -p packages/database/tsconfig.json",
+    "typecheck": "pnpm db:generate && tsc --noEmit -p apps/web/tsconfig.json && tsc --noEmit -p apps/api/tsconfig.json && tsc --noEmit -p apps/worker/tsconfig.json && tsc --noEmit -p packages/types/tsconfig.json && tsc --noEmit -p packages/config/tsconfig.json && tsc --noEmit -p packages/storage/tsconfig.json && tsc --noEmit -p packages/ui/tsconfig.json && tsc --noEmit -p packages/shared/tsconfig.json && tsc --noEmit -p packages/database/tsconfig.json && tsc --noEmit -p packages/media-ai/tsconfig.json",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",

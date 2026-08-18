@@ -55,11 +55,78 @@ jobs:
       - name: ESLint
         run: pnpm lint
 
+  # ── tests ────────────────────────────────────────────────────────────────────
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    # Postgres and Redis are real, not stubbed. The integration suite exists to
+    # test what happens against an actual database — a mocked one would assert
+    # only that the code calls something.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: arciin
+          POSTGRES_PASSWORD: arciin
+          POSTGRES_DB: arciin
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U arciin"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      # The integration config derives `arciin_test` and Redis db 15 from these,
+      # and supplies its own isolation guard values; see
+      # vitest.integration.config.ts.
+      DATABASE_URL: postgresql://arciin:arciin@localhost:5432/arciin
+      REDIS_URL: redis://localhost:6379
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.32.1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm db:generate
+
+      - name: Unit suite
+        run: pnpm test
+
+      # The suite talks to `arciin_test`; create it and put the schema in place.
+      # `db push` rather than `migrate deploy` matches scripts/setup-test-db.sh.
+      - name: Prepare the integration database
+        run: |
+          PGPASSWORD=arciin psql -h localhost -U arciin -d arciin \
+            -c "CREATE DATABASE arciin_test" || true
+          DATABASE_URL=postgresql://arciin:arciin@localhost:5432/arciin_test \
+            pnpm exec prisma db push --skip-generate --accept-data-loss
+
+      - name: Integration suite
+        run: pnpm test:integration
+
   # ── compile build ─────────────────────────────────────────────────────────────
   build:
     name: Build
     runs-on: ubuntu-latest
-    needs: [typecheck, lint]
+    needs: [typecheck, lint, test]
     steps:
       - uses: actions/checkout@v4
 
