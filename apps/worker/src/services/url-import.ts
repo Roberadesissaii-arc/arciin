@@ -43,6 +43,14 @@ const MAX_HTML_BYTES = 5 * 1024 * 1024
 const VIDEO_PLATFORM_HINT =
   /(youtube\.com|youtu\.be|vimeo\.com|linkedin\.com|tiktok\.com|twitter\.com|x\.com|facebook\.com|fb\.watch|dailymotion\.com|twitch\.tv|reddit\.com|streamable\.com)/i
 
+/**
+ * Streaming hosts that use DRM (or equivalent closed apps). yt-dlp will never
+ * return a usable file — fail fast with a clear message instead of a generic
+ * "could not find a downloadable file".
+ */
+const DRM_HOST_HINT =
+  /(^|\.)(spotify\.com|scdn\.co|spotifycdn\.com|netflix\.com|disneyplus\.com|hulu\.com|max\.com|hbomax\.com|primevideo\.com|amazon\.com\/gp\/video|music\.apple\.com|tv\.apple\.com|tidal\.com|deezer\.com|pandora\.com|crunchyroll\.com|peacocktv\.com|paramountplus\.com)/i
+
 /** Instagram embed works with crawler UAs; the default Chrome UA often gets a login wall. */
 const INSTAGRAM_EMBED_USER_AGENT = "facebookexternalhit/1.1"
 const INSTAGRAM_EMBED_USER_AGENTS = [
@@ -230,8 +238,20 @@ async function firstFileIn(dir: string): Promise<string | null> {
     const files: { p: string; size: number }[] = []
     for (const entry of entries) {
       if (!entry.isFile()) continue
+      // yt-dlp writes `.part` / `.ytdl` while downloading — never import those.
+      const lower = entry.name.toLowerCase()
+      if (
+        lower.endsWith(".part") ||
+        lower.endsWith(".ytdl") ||
+        lower.endsWith(".temp") ||
+        lower.endsWith(".tmp") ||
+        lower.startsWith(".")
+      ) {
+        continue
+      }
       const full = path.join(dir, entry.name)
       const info = await stat(full)
+      if (info.size <= 0) continue
       files.push({ p: full, size: info.size })
     }
     files.sort((a, b) => b.size - a.size)
@@ -285,6 +305,11 @@ async function tryYtDlp(
       [
         ...args,
         ...ytDlpCookieArgs(),
+        // Android/web clients avoid many YouTube HTTP 403s from datacenter IPs.
+        "--extractor-args",
+        "youtube:player_client=android,web",
+        "--user-agent",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "--no-playlist",
         "--no-warnings",
         "--no-progress",
@@ -582,26 +607,208 @@ async function tryOpenGraphMedia(
   html: string,
   finalUrl: string,
   workDir: string,
+  mode: "video" | "image" | "any" = "any",
 ): Promise<ResolvedDownload | null> {
-  const candidate =
+  const videoCandidate =
     extractMetaContent(html, "og:video:secure_url") ||
     extractMetaContent(html, "og:video:url") ||
-    extractMetaContent(html, "og:video") ||
+    extractMetaContent(html, "og:video")
+  const imageCandidate =
     extractMetaContent(html, "og:image:secure_url") ||
     extractMetaContent(html, "og:image") ||
     extractMetaContent(html, "twitter:image")
-  if (!candidate) return null
 
-  let mediaUrl: string
+  const candidates =
+    mode === "video"
+      ? [videoCandidate]
+      : mode === "image"
+        ? [imageCandidate]
+        : [videoCandidate, imageCandidate]
+
+  for (const candidate of candidates) {
+    if (!candidate) continue
+    let mediaUrl: string
+    try {
+      mediaUrl = new URL(candidate, finalUrl).toString()
+    } catch {
+      continue
+    }
+    if (!isPublicHttpUrl(mediaUrl)) continue
+
+    // OG video may be an embed page (YouTube watch URL) — hand it to yt-dlp.
+    if (VIDEO_PLATFORM_HINT.test(mediaUrl) || /\.(m3u8|mpd)(\?|$)/i.test(mediaUrl)) {
+      const viaYt = await tryYtDlp(mediaUrl, workDir)
+      if (viaYt) return viaYt
+      continue
+    }
+
+    const result = await fetchDirectOrHtml(mediaUrl, workDir)
+    if (result.kind === "file") return result.download
+  }
+  return null
+}
+
+function htmlLooksLikeVideoPage(html: string, finalUrl: string): boolean {
+  const ogType = (extractMetaContent(html, "og:type") || "").toLowerCase()
+  if (ogType.startsWith("video")) return true
+  return /\/(movie|watch|episode|film|video|stream)\b/i.test(finalUrl)
+}
+
+/**
+ * Pull playable embeds out of an HTML page: JSON-LD VideoObject.embedUrl,
+ * iframe players (YouTube/Vimeo/…), and direct .m3u8/.mp4 hrefs.
+ * Movie aggregator pages (123movies clones, etc.) often only expose a trailer
+ * or third-party player this way — better than failing with nothing.
+ */
+function extractEmbeddedPlayerUrls(html: string, baseUrl: string): string[] {
+  const found: string[] = []
+  const push = (raw: string | undefined | null) => {
+    if (!raw) return
+    let absolute: string
+    try {
+      absolute = new URL(decodeHtmlEntities(raw.trim()), baseUrl).toString()
+    } catch {
+      return
+    }
+    if (!isPublicHttpUrl(absolute)) return
+    if (found.includes(absolute)) return
+    found.push(absolute)
+  }
+
+  // JSON-LD blocks — VideoObject.embedUrl / contentUrl
+  // Some hosts omit quotes: type=application/ld+json
+  for (const block of html.matchAll(
+    /<script[^>]+type\s*=\s*(?:["']application\/ld\+json["']|application\/ld\+json)[^>]*>([\s\S]*?)<\/script>/gi,
+  )) {
+    const raw = block[1]?.trim()
+    if (!raw) continue
+    try {
+      const parsed = JSON.parse(raw) as unknown
+      const nodes = Array.isArray(parsed) ? parsed : [parsed]
+      for (const node of nodes) {
+        walkJsonLdForMedia(node, push)
+      }
+    } catch {
+      // Some pages concatenate multiple JSON objects — ignore bad blocks.
+    }
+  }
+
+  // iframe / embed players
+  for (const match of html.matchAll(
+    /<(?:iframe|embed)[^>]+src=["']([^"']+)["']/gi,
+  )) {
+    push(match[1])
+  }
+
+  // Direct stream / file links in the markup
+  for (const match of html.matchAll(
+    /https?:\/\/[^"'<\s]+?\.(?:m3u8|mpd|mp4|webm|mkv)(?:\?[^"'<\s]*)?/gi,
+  )) {
+    push(match[0])
+  }
+
+  // Prefer known extractors first, then streams, then anything else.
+  return found.sort((a, b) => {
+    const score = (u: string) => {
+      if (VIDEO_PLATFORM_HINT.test(u)) return 0
+      if (/\.(m3u8|mpd)(\?|$)/i.test(u)) return 1
+      if (/\.(mp4|webm|mkv)(\?|$)/i.test(u)) return 2
+      return 3
+    }
+    return score(a) - score(b)
+  })
+}
+
+function walkJsonLdForMedia(
+  node: unknown,
+  push: (url: string | null | undefined) => void,
+  depth = 0,
+) {
+  if (!node || depth > 8) return
+  if (Array.isArray(node)) {
+    for (const child of node) walkJsonLdForMedia(child, push, depth + 1)
+    return
+  }
+  if (typeof node !== "object") return
+  const obj = node as Record<string, unknown>
+  push(typeof obj.embedUrl === "string" ? obj.embedUrl : null)
+  push(typeof obj.contentUrl === "string" ? obj.contentUrl : null)
+  if (typeof obj.url === "string" && VIDEO_PLATFORM_HINT.test(obj.url)) {
+    push(obj.url)
+  }
+  for (const value of Object.values(obj)) {
+    if (value && typeof value === "object") {
+      walkJsonLdForMedia(value, push, depth + 1)
+    }
+  }
+}
+
+async function tryEmbeddedPlayers(
+  html: string,
+  finalUrl: string,
+  workDir: string,
+  opts: YtDlpImportOptions,
+): Promise<ResolvedDownload | null> {
+  const embeds = extractEmbeddedPlayerUrls(html, finalUrl).slice(0, 6)
+  for (const embed of embeds) {
+    // Skip self-referential page URLs.
+    try {
+      if (new URL(embed).pathname === new URL(finalUrl).pathname) continue
+    } catch {
+      continue
+    }
+
+    if (VIDEO_PLATFORM_HINT.test(embed) || /\.(m3u8|mpd)(\?|$)/i.test(embed)) {
+      const viaYt = await tryYtDlp(embed, workDir, opts)
+      if (viaYt) {
+        console.info(`[url-import] downloaded embedded player ${embed} for ${finalUrl}`)
+        return viaYt
+      }
+    }
+
+    if (/\.(mp4|webm|mkv)(\?|$)/i.test(embed)) {
+      try {
+        return await downloadMediaUrl(embed, workDir, { referer: finalUrl })
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        console.warn(`[url-import] direct embed download failed for ${embed}: ${message}`)
+      }
+    }
+  }
+  return null
+}
+
+function drmBlockedMessage(rawUrl: string): string | null {
+  let host = ""
   try {
-    mediaUrl = new URL(candidate, finalUrl).toString()
+    host = new URL(rawUrl).hostname.toLowerCase()
   } catch {
     return null
   }
-  if (!isPublicHttpUrl(mediaUrl)) return null
+  if (!DRM_HOST_HINT.test(host) && !DRM_HOST_HINT.test(rawUrl)) return null
 
-  const result = await fetchDirectOrHtml(mediaUrl, workDir)
-  return result.kind === "file" ? result.download : null
+  if (/spotify/i.test(host) || /spotify/i.test(rawUrl)) {
+    return (
+      "Spotify is DRM-protected and cannot be downloaded. " +
+      "Use a YouTube / SoundCloud link, a direct .mp3 URL, or an open podcast RSS episode file instead."
+    )
+  }
+  if (/netflix|disney|hulu|hbo|max\.com|primevideo|peacock|paramount|crunchyroll/i.test(host)) {
+    return (
+      "This streaming service uses DRM and cannot be imported. " +
+      "Paste a YouTube link or a direct video file URL instead."
+    )
+  }
+  if (/apple\.com|tidal|deezer|pandora/i.test(host)) {
+    return (
+      "This music service is DRM-protected and cannot be downloaded. " +
+      "Paste a direct audio file URL or a YouTube / SoundCloud link instead."
+    )
+  }
+  return (
+    "This site uses DRM protection, so Arciin cannot download the media. " +
+    "Try a YouTube link or a direct file URL."
+  )
 }
 
 /** Resolve any link to a concrete file on disk. Throws with a friendly message on failure. */
@@ -610,6 +817,11 @@ async function resolveDownload(
   workDir: string,
   opts: YtDlpImportOptions = {},
 ): Promise<ResolvedDownload> {
+  const drmMessage = drmBlockedMessage(rawUrl)
+  if (drmMessage) {
+    throw new Error(drmMessage)
+  }
+
   if (INSTAGRAM_HINT.test(rawUrl)) {
     return resolveInstagramDownload(rawUrl, workDir, opts)
   }
@@ -643,10 +855,33 @@ async function resolveDownload(
   const viaGallery = await tryGalleryDl(rawUrl, workDir)
   if (viaGallery) return viaGallery
 
-  const viaOg = await tryOpenGraphMedia(initial.html, initial.finalUrl, workDir)
-  if (viaOg) return viaOg
+  // Movie / show aggregator pages: follow embedded YouTube/Vimeo/m3u8 players.
+  const viaEmbed = await tryEmbeddedPlayers(initial.html, initial.finalUrl, workDir, opts)
+  if (viaEmbed) return viaEmbed
 
-  throw new Error("Could not find a downloadable file at that link.")
+  const viaOgVideo = await tryOpenGraphMedia(initial.html, initial.finalUrl, workDir, "video")
+  if (viaOgVideo) return viaOgVideo
+
+  const videoPage = htmlLooksLikeVideoPage(initial.html, initial.finalUrl)
+  // Do not silently save a poster JPG for movie pages — that looks like a successful
+  // download of the film when it is only the cover art.
+  if (!videoPage) {
+    const viaOgImage = await tryOpenGraphMedia(initial.html, initial.finalUrl, workDir, "image")
+    if (viaOgImage) return viaOgImage
+  }
+
+  if (videoPage) {
+    throw new Error(
+      "This looks like a streaming / movie page, but Arciin could not reach a playable video file " +
+        "(player blocked, DRM, or unsupported host). Paste a YouTube link or a direct .mp4 / .m3u8 URL instead.",
+    )
+  }
+
+  throw new Error(
+    "Could not find a downloadable file at that link. " +
+      "Arciin works best with YouTube, TikTok, Instagram, SoundCloud, direct .mp4/.mp3/.pdf URLs, " +
+      "or pages that embed a public player. DRM streaming apps (Spotify, Netflix, etc.) are not supported.",
+  )
 }
 
 async function hashFile(filePath: string): Promise<{ checksum: string; size: number }> {
