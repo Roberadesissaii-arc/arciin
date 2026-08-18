@@ -18,7 +18,8 @@ const ORIGINAL_NAME = "e2e-video-transcript-fixture.mp4"
 /** Opt-in, and only when a credential was actually provisioned. */
 const REAL = process.env.E2E_TRANSCRIPT === "1" && geminiKeyConfigured()
 
-const panel = (page: Page) => page.getByTestId("asset-side-panel")
+/** AI workspace — the video drawer (Edit was removed; AI is the one entry). */
+const panel = (page: Page) => page.getByTestId("video-edit-drawer")
 
 async function openAiSection(page: Page) {
   await page.goto("/videos")
@@ -322,9 +323,10 @@ test.describe("a real translation", () => {
     const card = page.locator(`[data-asset-id="${FIXTURE}"]`)
     await expect(card).toBeVisible({ timeout: 60_000 })
     await card.click()
-    await expect(panel(page)).toContainText(applied, { timeout: 20_000 })
+    const overview = page.getByTestId("asset-side-panel")
+    await expect(overview).toContainText(applied, { timeout: 20_000 })
     await expect(
-      panel(page).getByTestId("asset-panel-preview").locator("video"),
+      overview.getByTestId("asset-panel-preview").locator("video"),
       "still playable after rename",
     ).toBeVisible()
     console.log(`[ai] applied: ${applied}`)
@@ -332,13 +334,15 @@ test.describe("a real translation", () => {
     // ── put the fixture back, so seeding stays stable for every other spec
     await page.locator(`[data-asset-id="${FIXTURE}"]`).click({ button: "right" })
     await page.getByTestId("asset-menu-rename").click()
-    const field = panel(page).locator("input").first()
+    const field = overview.locator("input").first()
     await field.fill(ORIGINAL_NAME)
-    await panel(page).getByRole("button", { name: /save changes/i }).click()
+    await overview.getByRole("button", { name: /save changes/i }).click()
     await page.reload()
     await page.goto("/videos")
     await page.locator(`[data-asset-id="${FIXTURE}"]`).click()
-    await expect(panel(page)).toContainText(ORIGINAL_NAME, { timeout: 20_000 })
+    await expect(page.getByTestId("asset-side-panel")).toContainText(ORIGINAL_NAME, {
+      timeout: 20_000,
+    })
     console.log("[ai] fixture name restored")
   })
 })

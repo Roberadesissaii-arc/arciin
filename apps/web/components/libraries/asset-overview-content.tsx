@@ -202,25 +202,17 @@ function Row({
   )
 }
 
-export function AssetOverviewContent({
+/** Shared Details table — Overview and the video AI workspace both use this. */
+export function AssetOverviewDetails({
   asset,
-  onDownload,
-  onDelete,
+  className,
 }: {
   asset: AssetSummary
-  onDownload: () => void
-  onDelete: () => void
+  className?: string
 }) {
   const duration = formatDuration(asset.durationSeconds)
   const resolution = asset.width && asset.height ? `${asset.width}×${asset.height}` : null
 
-  /**
-   * The whole table, in the order someone reads it.
-   *
-   * Name first because it identifies the thing; then what it is; then the
-   * measurements that used to be tiles; then when it arrived. Rows are omitted
-   * rather than dashed — a PDF has no length, and a row saying so is noise.
-   */
   const rows = [
     { label: "Filename", value: <span className="break-words">{asset.originalFilename}</span> },
     {
@@ -279,6 +271,31 @@ export function AssetOverviewContent({
   ].filter(Boolean) as { label: string; value: React.ReactNode }[]
 
   return (
+    <div className={className}>
+      <h3 className="px-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+        Details
+      </h3>
+      <dl className="mt-1.5 overflow-hidden rounded-xl border border-border">
+        {rows.map((row, index) => (
+          <Row key={row.label} label={row.label} index={index}>
+            {row.value}
+          </Row>
+        ))}
+      </dl>
+    </div>
+  )
+}
+
+export function AssetOverviewContent({
+  asset,
+  onDownload,
+  onDelete,
+}: {
+  asset: AssetSummary
+  onDownload: () => void
+  onDelete: () => void
+}) {
+  return (
     <>
       <div className="scrollbar-hide flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-2">
         {/*
@@ -299,18 +316,7 @@ export function AssetOverviewContent({
           <AssetPreview asset={asset} />
         </div>
 
-        <div>
-          <h3 className="px-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-            Details
-          </h3>
-          <dl className="mt-1.5 overflow-hidden rounded-xl border border-border">
-            {rows.map((row, index) => (
-              <Row key={row.label} label={row.label} index={index}>
-                {row.value}
-              </Row>
-            ))}
-          </dl>
-        </div>
+        <AssetOverviewDetails asset={asset} />
       </div>
 
       {/* Download acts immediately; Delete asks first. */}

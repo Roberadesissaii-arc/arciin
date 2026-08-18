@@ -55,10 +55,10 @@ import {
   saveAssetTranscript,
   type TranscriptTranslation,
 } from "@/lib/api/transcripts"
+import { AssetOverviewDetails } from "@/components/libraries/asset-overview-content"
 import { VideoAiTitle } from "@/components/libraries/video-ai-title"
 import { TranscriptLanguageBar } from "@/components/libraries/transcript-language-bar"
 import { VideoAssetViewer } from "@/components/libraries/video-asset-viewer"
-import { formatBytes } from "@/lib/utils/format-bytes"
 import { cn } from "@/lib/utils"
 import {
   formatTimecode,
@@ -73,12 +73,6 @@ import { libraryGlassSheetPanel } from "@/lib/library-glass-sheet"
 import type { AssetSummary } from "@/lib/types/models"
 
 const transcriptKey = (assetId: string) => ["asset-transcript", assetId] as const
-
-/** Human duration for the header line. */
-function formatDuration(seconds: number | null | undefined): string | null {
-  if (!seconds || !Number.isFinite(seconds)) return null
-  return formatTimecode(seconds * 1000)
-}
 
 /** BCP-47 → a name a person recognises, with the tag as a fallback. */
 function languageLabel(tag: string | null): string | null {
@@ -438,75 +432,28 @@ export function VideoTranscriptSection({
     generate.mutate()
   }
 
-  const duration = formatDuration(asset?.durationSeconds ?? null)
-  const resolution =
-    asset?.width && asset?.height ? `${asset.width}×${asset.height}` : null
-
-
   if (!asset) return null
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-8">
             {/* The library's own player, lent a ref so the transcript can seek it. */}
-            {/* A definite box, so the player fills it instead of overflowing a
-                max-height and pushing its controls across the frame. */}
-            <div
-              className="mt-4 aspect-video w-full overflow-hidden rounded-xl bg-black"
-              data-testid="video-edit-player"
-            >
+            <div className="mt-4 w-full" data-testid="video-edit-player">
               <VideoAssetViewer
                 src={`/api/assets/${asset.id}/download?inline=1&v=${encodeURIComponent(asset.updatedAt)}`}
                 mediaRef={videoRef}
                 onTimeChange={(seconds) => setCurrentMs(seconds * 1000)}
                 compact
+                controlsBelow
               />
             </div>
 
             {/*
-              The file's own summary — shown when this section is the whole
-              drawer, hidden when it sits inside the asset panel, where Overview
-              already carries the player and the details table. Repeating them
-              here pushed the actual AI tools below the fold.
+              Same Details table as Overview — one source of truth for both
+              surfaces. Hidden inside the asset panel, where Overview already
+              shows it above the AI tools.
             */}
             {showDetails ? (
-              <>
-            <p className="mt-3 truncate text-[13.5px] font-medium text-foreground" title={asset.originalFilename}>
-              {asset.originalFilename}
-            </p>
-            <p className="mt-0.5 text-[12px] text-muted-foreground">
-              {[duration, resolution, formatBytes(asset.sizeBytes)].filter(Boolean).join(" · ")}
-            </p>
-
-            <SectionHeading>Details</SectionHeading>
-            <dl className="mt-3 grid grid-cols-[110px_1fr] gap-x-3 gap-y-2 text-[12.5px]">
-              <dt className="text-muted-foreground">Filename</dt>
-              <dd className="min-w-0 break-words text-foreground">{asset.originalFilename}</dd>
-              <dt className="text-muted-foreground">Format</dt>
-              <dd className="text-foreground">{asset.mimeType}</dd>
-              {duration ? (
-                <>
-                  <dt className="text-muted-foreground">Duration</dt>
-                  <dd className="text-foreground tabular-nums">{duration}</dd>
-                </>
-              ) : null}
-              {resolution ? (
-                <>
-                  <dt className="text-muted-foreground">Resolution</dt>
-                  <dd className="text-foreground tabular-nums">{resolution}</dd>
-                </>
-              ) : null}
-              <dt className="text-muted-foreground">Size</dt>
-              <dd className="text-foreground tabular-nums">{formatBytes(asset.sizeBytes)}</dd>
-              <dt className="text-muted-foreground">Added</dt>
-              <dd className="text-foreground">
-                {new Date(asset.createdAt).toLocaleDateString(undefined, {
-                  year: "numeric",
-                  month: "short",
-                  day: "numeric",
-                })}
-              </dd>
-            </dl>
-              </>
+              <AssetOverviewDetails asset={asset} className="mt-4" />
             ) : null}
 
             {/* Transcript and Title are two jobs on the same text, so they sit
@@ -642,9 +589,11 @@ export function VideoEditDrawer({
         )}
       >
         <SheetHeader className="shrink-0 border-b border-border px-5 py-4">
-          <SheetTitle className="text-[15px]">Edit video</SheetTitle>
+          <SheetTitle className="truncate text-[15px]" title={asset?.originalFilename}>
+            {asset?.originalFilename ?? "AI"}
+          </SheetTitle>
           <SheetDescription className="sr-only">
-            Preview this video, review its details, and generate a transcript.
+            Preview this video, review its details, and work with transcripts and AI titles.
           </SheetDescription>
         </SheetHeader>
         {open ? <VideoTranscriptSection asset={asset} /> : null}

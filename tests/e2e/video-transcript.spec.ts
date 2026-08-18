@@ -83,16 +83,16 @@ async function openVideosAndEdit(page: Page) {
   await page.goto("/videos")
   const card = page.locator(`[data-asset-id="${FIXTURE_ASSET_ID}"]`)
   await expect(card).toBeVisible({ timeout: 60_000 })
-  // Hover Edit on the card was removed — open the video editor from the menu.
+  // Edit and AI are the same workspace — open it from AI on the card menu.
   await card.click({ button: "right" })
-  await page.getByTestId("asset-menu-edit").click()
+  await page.getByTestId("asset-menu-ai").click()
   const drawer = page.getByTestId("video-edit-drawer")
   await expect(drawer).toBeVisible({ timeout: 15_000 })
   return drawer
 }
 
 test.describe("video transcript", () => {
-  test("Edit opens a right-side drawer with the video and a transcript section", async ({
+  test("AI opens a right-side drawer with the video, Overview details, and transcript", async ({
     page,
   }) => {
     test.setTimeout(120_000)
@@ -101,11 +101,9 @@ test.describe("video transcript", () => {
     // Right side, not a centred modal.
     await expect(drawer).toHaveAttribute("data-side", "right")
 
-    await expect(drawer.getByText("Edit video")).toBeVisible()
     await expect(drawer.getByText(VIDEO_NAME).first()).toBeVisible()
     await expect(drawer.getByTestId("video-edit-player").locator("video")).toBeVisible()
-    // Headings, not any text: the sheet's screen-reader description also says
-    // "details", and a loose text match found that instead.
+    // Same Details table as Overview (not a separate Edit-only layout).
     await expect(drawer.getByRole("heading", { name: "Details" })).toBeVisible()
     /**
      * The transcript now lives under an "AI" heading, beside AI Title.

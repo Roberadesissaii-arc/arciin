@@ -389,22 +389,20 @@ export function AssetCard({ asset }: { asset: AssetSummary }) {
   /**
    * Right-click goes straight to a section.
    *
-   * Clicking a card always lands on Overview. Actions live on this menu so the
-   * card does not need a hover Edit button.
-   *
-   * For videos, Edit opens the video editor drawer. Rename (videos) and Edit
-   * (everything else) open the side-panel rename form.
+   * Clicking a card always lands on Overview. For videos, Edit and AI were the
+   * same workspace — keep AI only (opens the video AI drawer). Rename covers
+   * the filename form. Other files still use Edit for rename.
    */
   const openAt = (section: "overview" | "edit" | "ai" | "move" | "share") => {
     panelIntent?.open({ assetId: asset.id, section })
   }
 
-  const openEdit = () => {
+  const openAi = () => {
     if (videoEditor?.canEdit(asset)) {
       videoEditor.openEditor(asset)
       return
     }
-    openAt("edit")
+    openAt("ai")
   }
 
   return (
@@ -436,13 +434,15 @@ export function AssetCard({ asset }: { asset: AssetSummary }) {
         <AssetAiIndicator
           ai={asset.ai}
           filename={asset.originalFilename}
-          onOpen={() =>
-            panelIntent?.open({
-              assetId: asset.id,
-              section: "ai",
-              aiTab: "transcript",
-            })
-          }
+          onOpen={() => {
+            if (videoEditor?.canEdit(asset)) videoEditor.openEditor(asset)
+            else
+              panelIntent?.open({
+                assetId: asset.id,
+                section: "ai",
+                aiTab: "transcript",
+              })
+          }}
         />
       </div>
 
@@ -503,36 +503,35 @@ export function AssetCard({ asset }: { asset: AssetSummary }) {
           <Info />
           Overview
         </ContextMenuItem>
-        <ContextMenuItem
-          className={libraryGlassContextMenuItem}
-          onSelect={openEdit}
-          data-testid="asset-menu-edit"
-        >
-          <Pencil />
-          Edit
-        </ContextMenuItem>
-        {/* Videos already use Edit for the editor — offer rename separately. */}
         {asset.mediaType === "VIDEO" ? (
+          <>
+            <ContextMenuItem
+              className={libraryGlassContextMenuItem}
+              onSelect={openAi}
+              data-testid="asset-menu-ai"
+            >
+              <Sparkles />
+              AI
+            </ContextMenuItem>
+            <ContextMenuItem
+              className={libraryGlassContextMenuItem}
+              onSelect={() => openAt("edit")}
+              data-testid="asset-menu-rename"
+            >
+              <PencilLine />
+              Rename
+            </ContextMenuItem>
+          </>
+        ) : (
           <ContextMenuItem
             className={libraryGlassContextMenuItem}
             onSelect={() => openAt("edit")}
-            data-testid="asset-menu-rename"
+            data-testid="asset-menu-edit"
           >
-            <PencilLine />
-            Rename
+            <Pencil />
+            Edit
           </ContextMenuItem>
-        ) : null}
-        {/* Only where there is something behind it — a PNG has no transcript. */}
-        {asset.mediaType === "VIDEO" ? (
-          <ContextMenuItem
-            className={libraryGlassContextMenuItem}
-            onSelect={() => openAt("ai")}
-            data-testid="asset-menu-ai"
-          >
-            <Sparkles />
-            AI
-          </ContextMenuItem>
-        ) : null}
+        )}
         <ContextMenuSeparator className="-mx-0.5 my-1" />
         <ContextMenuItem
           className={libraryGlassContextMenuItem}

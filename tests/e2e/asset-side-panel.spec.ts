@@ -140,13 +140,17 @@ test.describe("the single-asset panel", () => {
     await expect(page.getByTestId("asset-panel-nav")).toHaveCount(0)
     await expect(page.getByTestId("asset-panel-download")).toBeVisible()
 
-    // A video's menu offers Overview / Edit / AI / Move / Share.
-    await expectMenuSections(page, card, ["overview", "edit", "ai", "move", "share"])
-
-    // Edit on a video opens the video editor drawer (not the rename form).
+    // A video's menu offers Overview / AI / Rename / Move / Share (no duplicate Edit).
+    await expectMenuSections(page, card, ["overview", "ai", "move", "share"], ["edit"])
     await card.click({ button: "right" })
-    await page.getByTestId("asset-menu-edit").click()
+    await expect(page.getByTestId("asset-menu-rename")).toBeVisible()
+    await page.keyboard.press("Escape")
+
+    // AI opens the video workspace (same Details as Overview + transcript tools).
+    await card.click({ button: "right" })
+    await page.getByTestId("asset-menu-ai").click()
     await expect(page.getByTestId("video-edit-drawer")).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByTestId("video-edit-drawer").getByRole("heading", { name: "Details" })).toBeVisible()
     await page.keyboard.press("Escape")
     await expect(page.getByTestId("video-edit-drawer")).toHaveCount(0)
 
@@ -155,10 +159,6 @@ test.describe("the single-asset panel", () => {
     await page.getByTestId("asset-menu-rename").click()
     await expect(panel(page)).toContainText(/file name/i)
     await expect(panel(page).getByRole("button", { name: /save changes/i })).toBeVisible()
-
-    // AI shows the transcript, not a stub.
-    await openSectionFromMenu(page, card, "ai")
-    await expect(panel(page).getByTestId("video-transcript")).toBeVisible({ timeout: 20_000 })
 
     // Move shows destination pickers.
     await openSectionFromMenu(page, card, "move")
@@ -374,7 +374,10 @@ test.describe("asset type decides the sections", () => {
   test("a video offers AI; other types do not", async ({ page }) => {
     await openVideos(page)
     const videoCard = page.locator(`[data-asset-id="${VIDEO_FIXTURE}"]`)
-    await expectMenuSections(page, videoCard, ["overview", "edit", "ai", "move", "share"])
+    await expectMenuSections(page, videoCard, ["overview", "ai", "move", "share"], ["edit"])
+    await videoCard.click({ button: "right" })
+    await expect(page.getByTestId("asset-menu-rename")).toBeVisible()
+    await page.mouse.click(8, 8)
 
     // A document must not be offered a transcript it cannot have.
     await page.goto("/documents")

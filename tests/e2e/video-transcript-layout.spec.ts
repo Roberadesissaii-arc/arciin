@@ -12,7 +12,7 @@ import { expect, test, type Page } from "@playwright/test"
 
 const FIXTURE = "e2e-video-transcript-fixture"
 
-const panel = (page: Page) => page.getByTestId("asset-side-panel")
+const panel = (page: Page) => page.getByTestId("video-edit-drawer")
 const transcript = (page: Page) => panel(page).getByTestId("video-transcript")
 
 async function openTranscript(page: Page) {
