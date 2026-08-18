@@ -113,11 +113,20 @@ describe("upload session lifecycle in PostgreSQL", () => {
   })
 
   it("creates immediately-ready uploads READY with completedAt set", async () => {
+    /**
+     * A media type the worker has nothing to do for.
+     *
+     * This used to use DOCUMENT, which stopped being true when PDFs began
+     * needing page/author extraction — DOCUMENT now goes through PROCESSING
+     * like video and audio. OTHER is the honest example of "stored, nothing
+     * left to do", and it will stay honest: the moment a type needs a worker
+     * pass it is no longer immediately ready, which is the property under test.
+     */
     const asset = await createAsset(fixtures, {
-      librarySlug: "documents",
-      mediaType: "DOCUMENT",
+      librarySlug: "inbox",
+      mediaType: "OTHER",
     })
-    const session = await createSession(asset.id, "DOCUMENT")
+    const session = await createSession(asset.id, "OTHER")
 
     const stored = await prisma.uploadSession.findUniqueOrThrow({ where: { id: session.id } })
     expect(stored.status).toBe("READY")

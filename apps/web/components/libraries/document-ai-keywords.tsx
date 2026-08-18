@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { Hash, Loader2, Sparkles, Tag } from "lucide-react"
 
@@ -28,11 +28,21 @@ export function DocumentAiKeywords({
   const [keywords, setKeywords] = useState<string[]>(savedInsight?.keywords ?? [])
   const [topics, setTopics] = useState<string[]>(savedInsight?.topics ?? [])
 
-  useEffect(() => {
-    if (!savedInsight) return
+  /**
+   * Adopt a newly-saved insight without an effect.
+   *
+   * This is state derived from a prop that the component also edits locally, so
+   * it cannot simply be read from the prop. React's answer is to adjust it
+   * while rendering, guarded by the previous value: an effect would paint the
+   * stale keywords first and correct them on a second pass, which is the
+   * cascading render the lint rule is about.
+   */
+  const [appliedInsight, setAppliedInsight] = useState(savedInsight ?? null)
+  if (savedInsight && savedInsight !== appliedInsight) {
+    setAppliedInsight(savedInsight)
     setKeywords(savedInsight.keywords ?? [])
     setTopics(savedInsight.topics ?? [])
-  }, [savedInsight])
+  }
 
   const generate = useMutation({
     mutationKey: ["document-keywords", asset.id],

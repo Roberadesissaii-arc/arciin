@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import {
   Clapperboard,
@@ -58,14 +58,16 @@ export function DocumentAiSummarize({
   const [about, setAbout] = useState<DocumentInsight["about"]>(savedInsight?.about ?? null)
   const [topics, setTopics] = useState<string[]>(savedInsight?.topics ?? [])
 
-  useEffect(() => {
-    if (!savedInsight) return
+  /** Same render-phase adoption as the keywords panel — see the note there. */
+  const [appliedInsight, setAppliedInsight] = useState(savedInsight ?? null)
+  if (savedInsight && savedInsight !== appliedInsight) {
+    setAppliedInsight(savedInsight)
     setSummary(savedInsight.summary || null)
     setKeywords(savedInsight.keywords ?? [])
     setLinks(savedInsight.links ?? [])
     setAbout(savedInsight.about ?? null)
     setTopics(savedInsight.topics ?? [])
-  }, [savedInsight])
+  }
 
   const summarize = useMutation({
     mutationKey: ["document-summary", asset.id],

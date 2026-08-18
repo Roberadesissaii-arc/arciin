@@ -38,9 +38,23 @@ export function DocumentAssistSection({
     asset?.documentInsight ?? null,
   )
 
-  useEffect(() => {
+  /**
+   * Follow the selected asset without an effect.
+   *
+   * `insight` is the asset's saved value plus whatever this panel has just
+   * generated, so it is derived state the component also writes. Adjusting it
+   * during render — keyed on the asset and its saved insight — swaps it before
+   * paint instead of showing the previous document's summary for a frame.
+   */
+  const [appliedFrom, setAppliedFrom] = useState<{
+    id: string | null
+    saved: AssetSummary["documentInsight"] | null
+  }>({ id: asset?.id ?? null, saved: asset?.documentInsight ?? null })
+
+  if (appliedFrom.id !== (asset?.id ?? null) || appliedFrom.saved !== (asset?.documentInsight ?? null)) {
+    setAppliedFrom({ id: asset?.id ?? null, saved: asset?.documentInsight ?? null })
     setInsight(asset?.documentInsight ?? null)
-  }, [asset?.id, asset?.documentInsight])
+  }
 
   const meta = useMutation({
     mutationFn: (assetId: string) => ensureDocumentMetadata(assetId),

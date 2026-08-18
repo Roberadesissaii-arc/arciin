@@ -74,19 +74,37 @@ export function VideoAiSummarize({
   const [topics, setTopics] = useState<string[]>(savedInsight?.topics ?? [])
   /** True only when Summarize itself asked for a transcript — not when Transcript tab is busy. */
   const [awaitingTranscript, setAwaitingTranscript] = useState(false)
-  const [pendingElsewhere, setPendingElsewhere] = useState(() => pendingSummaries.has(asset.id))
+  /**
+   * Derived, not stored.
+   *
+   * "A summarize is running that this panel did not start" is a fact about the
+   * module-level `pendingSummaries` set and whether the insight has landed yet.
+   * Keeping a copy in state meant writing it from two effects, and the write in
+   * the polling effect below was a synchronous setState in an effect body.
+   */
+  const pendingElsewhere = pendingSummaries.has(asset.id) && !savedInsight
   const kickedOff = useRef(false)
 
-  // Hydrate when the saved insight arrives (or changes after regenerate).
-  useEffect(() => {
-    if (!savedInsight) return
+  /**
+   * Adopt the saved insight when it arrives (or changes after a regenerate).
+   *
+   * Adjusted while rendering rather than in an effect: an effect shows the old
+   * summary for one paint and then replaces it. Clearing the module-level
+   * pending marker is a genuine external-store side effect and stays below.
+   */
+  const [appliedInsight, setAppliedInsight] = useState(savedInsight ?? null)
+  if (savedInsight && savedInsight !== appliedInsight) {
+    setAppliedInsight(savedInsight)
     setSummary(savedInsight.summary || null)
     setKeywords(savedInsight.keywords ?? [])
     setLinks(savedInsight.links ?? [])
     setAbout(savedInsight.about ?? null)
     setTopics(savedInsight.topics ?? [])
+  }
+
+  useEffect(() => {
+    if (!savedInsight) return
     pendingSummaries.delete(asset.id)
-    setPendingElsewhere(false)
   }, [savedInsight, asset.id])
 
   const summarize = useMutation({
@@ -94,11 +112,9 @@ export function VideoAiSummarize({
     mutationFn: () => requestTranscriptSummary(asset.id),
     onMutate: () => {
       pendingSummaries.add(asset.id)
-      setPendingElsewhere(true)
     },
     onSuccess: (data) => {
       pendingSummaries.delete(asset.id)
-      setPendingElsewhere(false)
       setAwaitingTranscript(false)
       kickedOff.current = false
       setSummary(data.summary || null)
@@ -119,7 +135,6 @@ export function VideoAiSummarize({
     },
     onError: (error) => {
       pendingSummaries.delete(asset.id)
-      setPendingElsewhere(false)
       setAwaitingTranscript(false)
       kickedOff.current = false
       const friendly = friendlyAiError(error, {
@@ -143,7 +158,6 @@ export function VideoAiSummarize({
   useEffect(() => {
     if (!pendingSummaries.has(asset.id)) return
     if (savedInsight) return
-    setPendingElsewhere(true)
     const timer = window.setInterval(() => {
       void queryClient.invalidateQueries({ queryKey: ["asset-transcript", asset.id] })
     }, 2000)
