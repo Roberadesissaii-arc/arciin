@@ -24,9 +24,6 @@ import { cn } from "@/lib/utils"
 /** Fixed inspect area — empty and detected states share this footprint. */
 export const IMPORT_LINK_INSPECT_SLOT_HEIGHT = "h-[132px]"
 
-/** Fixed download-options area — enabled/disabled states share this footprint. */
-export const IMPORT_LINK_DOWNLOAD_SLOT_HEIGHT = "h-[232px]"
-
 const CATEGORY_ICONS: Record<LinkContentCategory, LucideIcon> = {
   video: Video,
   audio: Music2,

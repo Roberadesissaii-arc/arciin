@@ -17,12 +17,11 @@ import { useUploadStore } from "@/lib/stores/upload-store"
 
 import {
   ImportLinkInspectSlot,
-  IMPORT_LINK_DOWNLOAD_SLOT_HEIGHT,
   linkSupportsFormatOptions,
 } from "@/components/uploads/import-link-preview"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Field, FieldError, FieldLabel } from "@/components/ui/field"
+import { Field, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import {
@@ -92,19 +91,24 @@ function FormatSlot({
       onClick={onSelect}
       aria-pressed={selected}
       className={cn(
-        "flex h-[72px] flex-col justify-center gap-0.5 rounded-lg border px-2.5 py-2 text-left transition-colors",
+        "flex min-h-[4.25rem] flex-col justify-center gap-0.5 rounded-xl border px-2.5 py-2 text-left transition-colors",
         disabled && "cursor-not-allowed opacity-40",
         !disabled && selected
-          ? "border-primary/50 bg-primary/[0.06] ring-1 ring-primary/30"
-          : !disabled && "border-border bg-card hover:bg-muted/40",
-        disabled && "border-border bg-muted/20",
+          ? "border-primary/45 bg-primary/[0.07] ring-1 ring-primary/25"
+          : !disabled && "border-zinc-200/90 bg-white hover:border-zinc-300 hover:bg-zinc-50/80",
+        disabled && "border-zinc-200/70 bg-zinc-50/80",
       )}
     >
       <span className="flex items-center gap-1.5">
-        <Icon className="size-3.5 shrink-0 text-muted-foreground" />
-        <span className="truncate text-[12px] font-semibold text-foreground">{title}</span>
+        <Icon
+          className={cn(
+            "size-3.5 shrink-0",
+            selected && !disabled ? "text-primary" : "text-zinc-400",
+          )}
+        />
+        <span className="truncate text-[12px] font-semibold text-zinc-900">{title}</span>
       </span>
-      <span className="line-clamp-2 text-[10px] leading-snug text-muted-foreground">{subtitle}</span>
+      <span className="line-clamp-2 text-[10px] leading-snug text-zinc-500">{subtitle}</span>
     </button>
   )
 }
@@ -142,6 +146,7 @@ export function ImportLinkDialog() {
     if (!preview) return
     setFormatId(preview.defaultFormatId)
     setAudioOnlyEnabled(false)
+    setError(undefined)
   }, [preview?.source.href])
 
   useEffect(() => {
@@ -201,15 +206,15 @@ export function ImportLinkDialog() {
     }
   }
 
-  const downloadHint = !preview
-    ? "Format options activate for video links."
+  const optionsHint = !preview
+    ? "Paste a video link to unlock format choices."
     : preview.importBlocked
-      ? (preview.blockReason ?? "This link cannot be imported.")
+      ? "Format options are unavailable for this host."
       : formatOptionsEnabled
         ? audioOnlyEnabled
-          ? "Audio-only — pick MP3 or M4A."
-          : "Video download — pick MP4 or best quality, or switch to audio only."
-        : "This link downloads as-is. Format options are for video links only."
+          ? "Audio only — pick MP3 or M4A."
+          : "Full video or switch on Audio only."
+        : "This link downloads as-is (no format conversion)."
 
   return (
     <Sheet
@@ -230,7 +235,6 @@ export function ImportLinkDialog() {
             floatChip,
             headerControlH,
             "w-10 shrink-0 border-border bg-card text-[color:var(--arciin-accent,#ff4f12)] hover:bg-zinc-50/90 hover:text-[color:var(--arciin-accent-hover,#ff6a33)]",
-            // html is .dark — kill the outline variant's translucent dark:bg-input/30 so the chip stays solid over scrolling content
             "dark:border-border dark:bg-card dark:hover:bg-zinc-50/90",
           )}
         >
@@ -242,32 +246,39 @@ export function ImportLinkDialog() {
         showCloseButton={false}
         className={cn(libraryGlassSheetPanel, "dashboard-main text-foreground")}
       >
-        <SheetHeader className="relative shrink-0 space-y-1 border-b border-border p-2 pr-11">
+        {/* Compact header — title + one short line, no overflow from long copy */}
+        <SheetHeader className="relative shrink-0 space-y-2 border-b border-border px-3 py-3 pr-11">
           <SheetClose asChild>
             <Button
               type="button"
               variant="ghost"
               size="icon-sm"
-              className="absolute top-2 right-2 text-muted-foreground hover:text-foreground"
+              className="absolute top-2.5 right-2 text-muted-foreground hover:text-foreground"
               aria-label="Close"
             >
               <X className="size-4" />
             </Button>
           </SheetClose>
-          <SheetTitle className="font-heading text-lg font-semibold tracking-tight text-foreground">
-            Import from link
-          </SheetTitle>
-          <SheetDescription className="text-[13px] leading-snug text-muted-foreground">
-            Paste a public link — YouTube, SoundCloud, Vimeo, TikTok, images, PDFs, or direct file URLs.
-            DRM apps (Spotify, Audible, Netflix, …) cannot be imported.
-          </SheetDescription>
+          <div className="flex items-start gap-2.5">
+            <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-xl border border-zinc-200 bg-zinc-50 text-[color:var(--arciin-accent,#ff4f12)]">
+              <Link2 className="size-4" />
+            </span>
+            <div className="min-w-0 space-y-0.5">
+              <SheetTitle className="font-heading text-[17px] font-semibold tracking-tight text-zinc-900">
+                Import from link
+              </SheetTitle>
+              <SheetDescription className="text-[12.5px] leading-snug text-zinc-500">
+                Public links only — YouTube, SoundCloud, TikTok, files. Not Spotify or Audible.
+              </SheetDescription>
+            </div>
+          </div>
         </SheetHeader>
 
-        <div className="scrollbar-hide flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-2">
-          <Field>
+        <div className="scrollbar-hide flex min-h-0 flex-1 flex-col gap-3 overflow-x-hidden overflow-y-auto p-3">
+          <Field className="min-w-0 gap-1.5">
             <FieldLabel
               htmlFor="importUrl"
-              className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground"
+              className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500"
             >
               Link
             </FieldLabel>
@@ -289,24 +300,44 @@ export function ImportLinkDialog() {
               }}
               className={glassInput}
             />
-            <FieldError errors={[error ? { message: error } : undefined]} />
+            {error ? (
+              <p
+                role="alert"
+                className="break-words rounded-lg border border-red-200 bg-red-50 px-2.5 py-2 text-[11.5px] leading-snug text-red-700"
+              >
+                {error}
+              </p>
+            ) : null}
           </Field>
 
           <ImportLinkInspectSlot url={url.trim()} />
 
-          <div
+          {preview?.importBlocked && preview.blockReason ? (
+            <div
+              role="status"
+              className="min-w-0 break-words rounded-xl border border-amber-200/90 bg-amber-50 px-3 py-2.5 text-[12px] leading-snug text-amber-900"
+            >
+              {preview.blockReason}
+            </div>
+          ) : null}
+
+          {/* Download options — no fixed height that clips or overflows long hints */}
+          <section
             className={cn(
-              "flex flex-col rounded-xl border border-border bg-muted/15 p-3",
-              IMPORT_LINK_DOWNLOAD_SLOT_HEIGHT,
+              "min-w-0 overflow-hidden rounded-2xl border border-zinc-200/90 bg-white p-3 shadow-sm",
+              preview?.importBlocked && "opacity-60",
             )}
           >
-            <div className="flex shrink-0 items-center justify-between gap-3">
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                Download options
-              </p>
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
+                  Download options
+                </p>
+                <p className="mt-0.5 truncate text-[11px] text-zinc-400">{optionsHint}</p>
+              </div>
               <div
                 className={cn(
-                  "flex items-center gap-2",
+                  "flex shrink-0 items-center gap-2 rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-1",
                   !formatOptionsEnabled && "opacity-40",
                 )}
               >
@@ -319,7 +350,7 @@ export function ImportLinkDialog() {
                 <Label
                   htmlFor="audioOnlyToggle"
                   className={cn(
-                    "text-[12px] font-medium",
+                    "text-[11.5px] font-semibold text-zinc-700",
                     formatOptionsEnabled ? "cursor-pointer" : "cursor-not-allowed",
                   )}
                 >
@@ -328,7 +359,7 @@ export function ImportLinkDialog() {
               </div>
             </div>
 
-            <div className="mt-2 grid shrink-0 grid-cols-2 gap-2">
+            <div className="mt-3 grid grid-cols-2 gap-2">
               {videoFormats.length > 0
                 ? videoFormats.map((format) => (
                     <FormatSlot
@@ -389,27 +420,19 @@ export function ImportLinkDialog() {
                     />
                   ))}
             </div>
+          </section>
 
-            <div className="mt-auto shrink-0 pt-3">
-              <p
-                className={cn(
-                  "min-h-[2rem] text-[11px] leading-relaxed",
-                  preview?.importBlocked ? "text-amber-700" : "text-muted-foreground",
-                )}
-              >
-                {downloadHint}
-              </p>
-            </div>
-          </div>
-
-          <div className="shrink-0 rounded-xl border border-border bg-muted/20 p-3">
-            <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+          <div className="shrink-0 overflow-hidden rounded-2xl border border-zinc-200/90 bg-zinc-50/80 p-3">
+            <p className="mb-2.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
               Supported sources
             </p>
-            <ul className="grid grid-cols-2 gap-2 text-[12px] text-muted-foreground">
+            <ul className="grid grid-cols-2 gap-2">
               {SUPPORTED.map(({ icon: Icon, label }) => (
-                <li key={label} className="flex items-center gap-2">
-                  <span className="flex size-6 items-center justify-center rounded-md bg-muted text-muted-foreground">
+                <li
+                  key={label}
+                  className="flex items-center gap-2 rounded-xl border border-zinc-200/80 bg-white px-2.5 py-2 text-[12px] font-medium text-zinc-700"
+                >
+                  <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-zinc-100 text-zinc-500">
                     <Icon className="size-3.5" />
                   </span>
                   {label}
@@ -419,7 +442,7 @@ export function ImportLinkDialog() {
           </div>
         </div>
 
-        <SheetFooter className="shrink-0 border-t border-border p-2">
+        <SheetFooter className="shrink-0 border-t border-border p-3">
           <Button
             className="h-10 w-full bg-primary text-white hover:bg-primary/90"
             disabled={submitting || !looksLikeUrl(url) || Boolean(preview?.importBlocked)}

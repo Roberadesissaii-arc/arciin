@@ -9,7 +9,11 @@ import { AssetGrid } from "@/components/libraries/asset-grid"
 import { VideoEditProvider } from "@/components/libraries/video-edit-context"
 import { AssetTable } from "@/components/libraries/asset-table"
 import { CreateFolderDialog } from "@/components/libraries/create-folder-dialog"
-import { FolderGrid } from "@/components/libraries/folder-grid"
+import {
+  FolderGrid,
+  FolderViewMoreButton,
+  useFolderGridLimit,
+} from "@/components/libraries/folder-grid"
 import { FoldersEmptyPlaceholder } from "@/components/libraries/folders-empty-placeholder"
 import { LibraryBrowserToolbar } from "@/components/libraries/library-browser-toolbar"
 import type { LibraryAssetScope } from "@/components/libraries/library-scope-switch"
@@ -108,6 +112,7 @@ export function LibraryBrowser({
     () => (foldersQuery.data ?? []).filter((f) => f.parentFolderId == null),
     [foldersQuery.data],
   )
+  const folderLimit = useFolderGridLimit(folders)
   const rawAssets = useMemo(
     () => assetsQuery.data?.pages.flatMap((page) => page.items) ?? [],
     [assetsQuery.data],
@@ -160,10 +165,18 @@ export function LibraryBrowser({
         <section className="space-y-2 pb-2">
           <div className="flex items-center justify-between gap-3 border-b border-zinc-200/90 pb-2">
             <BrowserSectionHeading className="w-auto border-0 pb-0">Folders</BrowserSectionHeading>
-            {library?.id ? <CreateFolderDialog libraryId={library.id} /> : null}
+            <div className="flex shrink-0 items-center gap-2">
+              <FolderViewMoreButton
+                expanded={folderLimit.expanded}
+                needsCollapse={folderLimit.needsCollapse}
+                hiddenCount={folderLimit.hiddenCount}
+                onToggle={folderLimit.toggle}
+              />
+              {library?.id ? <CreateFolderDialog libraryId={library.id} /> : null}
+            </div>
           </div>
           {folders.length > 0 ? (
-            <FolderGrid folders={folders} librarySlug={librarySlug} />
+            <FolderGrid folders={folderLimit.visibleFolders} librarySlug={librarySlug} />
           ) : (
             <FoldersEmptyPlaceholder />
           )}
