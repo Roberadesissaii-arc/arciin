@@ -198,7 +198,7 @@ export function AssetSidePanel() {
             </Button>
             <SheetTitle
               tabIndex={-1}
-              className="truncate font-heading text-lg font-semibold tracking-tight text-foreground outline-none"
+              className="sr-only"
               title={asset.originalFilename}
             >
               {asset.originalFilename}

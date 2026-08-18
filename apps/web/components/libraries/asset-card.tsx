@@ -3,6 +3,7 @@
 import { createElement, useEffect, useRef, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import {
+  ArrowRightLeft,
   AlertTriangle,
   Archive,
   Code2,
@@ -15,6 +16,9 @@ import {
   Pencil,
   Play,
   Video,
+  Info,
+  Share2,
+  Sparkles,
   type LucideIcon,
 } from "lucide-react"
 import { assetSupportsDocumentThumbnail, DEFAULT_USER_PREFERENCES } from "@arciin/shared"
@@ -31,6 +35,13 @@ import {
   AssetAiMetadata,
 } from "@/components/libraries/asset-ai-activity"
 import { useAssetPanelIntent } from "@/components/libraries/asset-panel-intent"
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu"
 import { formatCardRelativeTime } from "@/lib/utils/format-card-relative-time"
 import { inferDestinationLabel } from "@/lib/utils/media-type"
 import { cn } from "@/lib/utils"
@@ -367,7 +378,23 @@ export function AssetCard({ asset }: { asset: AssetSummary }) {
     }
   }
 
+  /**
+   * Right-click goes straight to a section.
+   *
+   * Clicking a card always lands on Overview, which is right: it is what you
+   * asked for by clicking. But reaching Edit or AI then costs a second aim at a
+   * small tab, and the thing people actually want when they right-click a file
+   * is the list of things they can do to it. So the sections are offered here,
+   * and each opens the panel already on that section rather than on Overview
+   * with a tab still to press.
+   */
+  const openAt = (section: "overview" | "edit" | "ai" | "move" | "share") => {
+    panelIntent?.open({ assetId: asset.id, section })
+  }
+
   return (
+    <ContextMenu>
+      <ContextMenuTrigger asChild>
     <article
       data-asset-id={asset.id}
       data-asset-selectable
@@ -476,5 +503,34 @@ export function AssetCard({ asset }: { asset: AssetSummary }) {
         <AiStatusPill asset={asset} />
       </div>
     </article>
+      </ContextMenuTrigger>
+
+      <ContextMenuContent className="min-w-44" data-testid="asset-card-menu">
+        <ContextMenuItem onSelect={() => openAt("overview")} data-testid="asset-menu-overview">
+          <Info className="size-4" />
+          Overview
+        </ContextMenuItem>
+        <ContextMenuItem onSelect={() => openAt("edit")} data-testid="asset-menu-edit">
+          <Pencil className="size-4" />
+          Edit
+        </ContextMenuItem>
+        {/* Only where there is something behind it — a PNG has no transcript. */}
+        {asset.mediaType === "VIDEO" ? (
+          <ContextMenuItem onSelect={() => openAt("ai")} data-testid="asset-menu-ai">
+            <Sparkles className="size-4" />
+            AI
+          </ContextMenuItem>
+        ) : null}
+        <ContextMenuSeparator />
+        <ContextMenuItem onSelect={() => openAt("move")} data-testid="asset-menu-move">
+          <ArrowRightLeft className="size-4" />
+          Move
+        </ContextMenuItem>
+        <ContextMenuItem onSelect={() => openAt("share")} data-testid="asset-menu-share">
+          <Share2 className="size-4" />
+          Share
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
   )
 }

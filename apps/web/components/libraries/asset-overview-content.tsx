@@ -12,10 +12,11 @@ import { cn } from "@/lib/utils"
 /**
  * What a file is, and the two things you most often want to do with it.
  *
- * The facts appear twice on purpose, at two levels of attention: the two or
- * three numbers a person actually scans for as tiles, then everything else as a
- * table beneath. One flat list of six label/value pairs carried the same
- * information and made the useful parts hard to pick out of it.
+ * Every fact is stated once, in one table. An earlier version promoted length,
+ * pixels and size into tiles above it on the theory that they are what people
+ * scan for — but the panel then said the same numbers twice, in two shapes, and
+ * the eye had to check whether the tile and the row agreed. One list, read
+ * straight down, turned out to be easier to use than a summary plus a list.
  *
  * Deliberately adaptive rather than one table for everything: duration and
  * resolution are meaningless for a PDF, and an empty row for them reads as
@@ -43,7 +44,7 @@ function AssetPreview({ asset }: { asset: AssetSummary }) {
   const src = `/api/assets/${asset.id}/download?inline=1&v=${encodeURIComponent(asset.updatedAt)}`
 
   if (asset.mediaType === "VIDEO") {
-    return <VideoAssetViewer src={src} compact />
+    return <VideoAssetViewer src={src} compact controlsBelow />
   }
   if (asset.mediaType === "IMAGE") {
     return (
@@ -68,29 +69,6 @@ function AssetPreview({ asset }: { asset: AssetSummary }) {
       <span className="text-[11px] font-medium uppercase tracking-wider">
         {asset.extension || "file"}
       </span>
-    </div>
-  )
-}
-
-/** One scannable number, with the icon that says which number it is. */
-function StatTile({
-  icon: Icon,
-  label,
-  value,
-}: {
-  icon: typeof Clock
-  label: string
-  value: string
-}) {
-  return (
-    <div className="min-w-0 flex-1 rounded-xl border border-border bg-muted/25 px-2 py-2 text-center">
-      <Icon className="mx-auto size-3.5 text-muted-foreground" aria-hidden />
-      <p className="mt-1 truncate text-[12.5px] font-semibold tabular-nums text-foreground">
-        {value}
-      </p>
-      <p className="mt-0.5 text-[9.5px] font-medium uppercase tracking-wider text-muted-foreground">
-        {label}
-      </p>
     </div>
   )
 }
@@ -130,23 +108,13 @@ export function AssetOverviewContent({
   const duration = formatDuration(asset.durationSeconds)
   const resolution = asset.width && asset.height ? `${asset.width}×${asset.height}` : null
 
-  // Only the numbers this kind of file actually has, so the row never carries a
-  // tile with a dash in it.
-  const tiles = [
-    duration ? { icon: Clock, label: "Length", value: duration } : null,
-    resolution ? { icon: Maximize2, label: "Pixels", value: resolution } : null,
-    { icon: HardDrive, label: "On disk", value: formatBytes(asset.sizeBytes) },
-  ].filter(Boolean) as { icon: typeof Clock; label: string; value: string }[]
-
   /**
-   * Tiles earn their space only in pairs.
+   * The whole table, in the order someone reads it.
    *
-   * A lone "on disk" tile stretched across the panel for a PDF looked like a
-   * placeholder for two missing ones, so a file with a single number skips the
-   * summary and lets the table carry it.
+   * Name first because it identifies the thing; then what it is; then the
+   * measurements that used to be tiles; then when it arrived. Rows are omitted
+   * rather than dashed — a PDF has no length, and a row saying so is noise.
    */
-  const showTiles = tiles.length >= 2
-
   const rows = [
     { label: "Filename", value: <span className="break-words">{asset.originalFilename}</span> },
     {
@@ -158,16 +126,37 @@ export function AssetOverviewContent({
         </span>
       ),
     },
-    // Not repeated when a tile above already says it.
-    duration && !showTiles
-      ? { label: "Duration", value: <span className="tabular-nums">{duration}</span> }
+    duration
+      ? {
+          label: "Length",
+          value: (
+            <span className="inline-flex items-center gap-1.5 tabular-nums">
+              <Clock className="size-3 text-muted-foreground" aria-hidden />
+              {duration}
+            </span>
+          ),
+        }
       : null,
-    resolution && !showTiles
-      ? { label: "Resolution", value: <span className="tabular-nums">{resolution}</span> }
+    resolution
+      ? {
+          label: "Pixels",
+          value: (
+            <span className="inline-flex items-center gap-1.5 tabular-nums">
+              <Maximize2 className="size-3 text-muted-foreground" aria-hidden />
+              {resolution}
+            </span>
+          ),
+        }
       : null,
-    showTiles
-      ? null
-      : { label: "Size", value: <span className="tabular-nums">{formatBytes(asset.sizeBytes)}</span> },
+    {
+      label: "On disk",
+      value: (
+        <span className="inline-flex items-center gap-1.5 tabular-nums">
+          <HardDrive className="size-3 text-muted-foreground" aria-hidden />
+          {formatBytes(asset.sizeBytes)}
+        </span>
+      ),
+    },
     {
       label: "Added",
       value: (
@@ -191,24 +180,14 @@ export function AssetOverviewContent({
           className={cn(
             "flex items-center justify-center overflow-hidden rounded-xl border border-border",
             "bg-gradient-to-b from-muted/10 to-muted/40 ring-1 ring-black/[0.03]",
-            // Video gets a real box to fill; stills and icons size themselves.
-            asset.mediaType === "VIDEO"
-              ? "aspect-video w-full"
-              : "max-h-[240px] min-h-[120px]",
+            // The video player now carries its own frame and its controls
+            // beneath it, so this wrapper only has to hold stills and icons.
+            asset.mediaType === "VIDEO" ? "w-full" : "max-h-[240px] min-h-[120px]",
           )}
           data-testid="asset-panel-preview"
         >
           <AssetPreview asset={asset} />
         </div>
-
-        {/* The numbers worth scanning. */}
-        {showTiles ? (
-          <div className="flex items-stretch gap-2">
-            {tiles.map((tile) => (
-              <StatTile key={tile.label} icon={tile.icon} label={tile.label} value={tile.value} />
-            ))}
-          </div>
-        ) : null}
 
         <div>
           <h3 className="px-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">

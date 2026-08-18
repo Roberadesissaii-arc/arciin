@@ -25,8 +25,20 @@ export function VideoAssetViewer({
   mediaRef,
   onTimeChange,
   compact = false,
+  controlsBelow = false,
 }: {
   src: string
+  /**
+   * Put the controls under the picture instead of over it.
+   *
+   * The overlay is right for a full-screen viewer, where the video *is* the
+   * page and chrome that fades away is chrome that stops covering the shot. It
+   * is wrong in a narrow side panel: a 1080×1920 phone recording is mostly
+   * face, the bar sits across it permanently because the pointer is rarely
+   * inside a panel, and the one frame someone opened the panel to look at is
+   * the part covered up.
+   */
+  controlsBelow?: boolean
   /**
    * Size the player to its container, with smaller chrome.
    *
@@ -178,10 +190,195 @@ export function VideoAssetViewer({
   const progressPct =
     sliderMax > 0 ? Math.min(100, (sliderValue / sliderMax) * 100) : 0
 
+  /**
+   * The control bar, built once and placed one of two ways.
+   *
+   * Over the picture it is frosted glass that fades with the pointer; under it
+   * it is an ordinary bar that never hides, because there is nothing to get out
+   * of the way of.
+   */
+  const controlBar = (
+      <div
+        className={cn(
+          controlsBelow
+            ? "w-full"
+            : cn(
+                "pointer-events-none absolute inset-x-0 bottom-0 z-[2] bg-gradient-to-t from-black/40 via-black/15 to-transparent transition-opacity duration-200",
+                compact ? "px-2 pb-1.5 pt-6" : "px-3 pb-3 pt-10",
+                controlsVisible || !playing ? "opacity-100" : "opacity-0",
+              ),
+        )}
+      >
+        <div
+          className={cn(
+            "pointer-events-auto flex flex-col gap-2 rounded-xl border border-white/15",
+            "bg-zinc-950/45 px-3 py-2.5 shadow-lg backdrop-blur-md backdrop-saturate-150",
+          )}
+        >
+          {/* Progress */}
+          <div className="relative min-w-0">
+            <div
+              className="pointer-events-none absolute inset-x-0 top-1/2 h-1.5 -translate-y-1/2 overflow-hidden rounded-full bg-white/15"
+              aria-hidden
+            >
+              <div
+                className="h-full rounded-full bg-primary transition-[width] duration-75"
+                style={{ width: `${progressPct}%` }}
+              />
+            </div>
+            <input
+              type="range"
+              min={0}
+              max={sliderMax || 100}
+              step={0.05}
+              value={sliderMax > 0 ? sliderValue : 0}
+              disabled={sliderMax <= 0}
+              aria-label="Playback position"
+              aria-valuemin={0}
+              aria-valuemax={sliderMax}
+              aria-valuenow={sliderValue}
+              aria-valuetext={`${formatTime(sliderValue)} of ${formatTime(duration)}`}
+              className={cn(
+                "relative z-[1] h-4 w-full cursor-pointer appearance-none bg-transparent",
+                "disabled:cursor-not-allowed disabled:opacity-40",
+                "[&::-webkit-slider-runnable-track]:h-1.5 [&::-webkit-slider-runnable-track]:rounded-full [&::-webkit-slider-runnable-track]:bg-transparent",
+                "[&::-webkit-slider-thumb]:size-3.5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full",
+                "[&::-webkit-slider-thumb]:bg-primary [&::-webkit-slider-thumb]:shadow-[0_0_0_3px_rgba(255,79,18,0.25)]",
+                "[&::-moz-range-track]:h-1.5 [&::-moz-range-track]:rounded-full [&::-moz-range-track]:bg-transparent",
+                "[&::-moz-range-thumb]:size-3.5 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:bg-primary",
+              )}
+              onChange={(e) => {
+                const value = Number(e.target.value)
+                isSeekingRef.current = true
+                setIsSeeking(true)
+                setSeekValue(value)
+                revealControls()
+              }}
+              onPointerUp={() => {
+                commitSeek(seekValue)
+                isSeekingRef.current = false
+                setIsSeeking(false)
+                revealControls()
+              }}
+              onKeyUp={() => {
+                commitSeek(seekValue)
+                isSeekingRef.current = false
+                setIsSeeking(false)
+              }}
+              onBlur={() => {
+                if (isSeekingRef.current) {
+                  commitSeek(seekValue)
+                  isSeekingRef.current = false
+                  setIsSeeking(false)
+                }
+              }}
+            />
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              size="icon"
+              className={cn(
+                "shrink-0 rounded-xl bg-primary text-white hover:bg-primary/90",
+                compact ? "size-7" : "size-9",
+              )}
+              aria-label={playing ? "Pause" : "Play"}
+              data-testid="video-play-toggle"
+              onClick={togglePlay}
+            >
+              {playing ? (
+                <Pause className="size-4" />
+              ) : (
+                <Play className="size-4 translate-x-px" fill="currentColor" />
+              )}
+            </Button>
+
+            <span className="min-w-[5.5rem] font-mono text-[11px] tabular-nums text-zinc-300">
+              {formatTime(sliderValue)}
+              <span className="text-zinc-500"> / </span>
+              {formatTime(duration)}
+            </span>
+
+            <div className="ml-auto flex items-center gap-1.5">
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                className="size-8 shrink-0 rounded-lg text-zinc-200 hover:bg-white/10 hover:text-white"
+                aria-label={muted || volume === 0 ? "Unmute" : "Mute"}
+                onClick={toggleMute}
+              >
+                {muted || volume === 0 ? (
+                  <VolumeX className="size-4" />
+                ) : (
+                  <Volume2 className="size-4" />
+                )}
+              </Button>
+
+              <div className="relative hidden w-20 sm:block">
+                <div
+                  className="pointer-events-none absolute inset-x-0 top-1/2 h-1 -translate-y-1/2 overflow-hidden rounded-full bg-white/15"
+                  aria-hidden
+                >
+                  <div
+                    className="h-full rounded-full bg-white/70"
+                    style={{ width: `${(muted ? 0 : volume) * 100}%` }}
+                  />
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={0.02}
+                  value={muted ? 0 : volume}
+                  aria-label="Volume"
+                  className={cn(
+                    "relative z-[1] h-4 w-full cursor-pointer appearance-none bg-transparent",
+                    "[&::-webkit-slider-runnable-track]:h-1 [&::-webkit-slider-runnable-track]:rounded-full [&::-webkit-slider-runnable-track]:bg-transparent",
+                    "[&::-webkit-slider-thumb]:size-2.5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white",
+                    "[&::-moz-range-track]:h-1 [&::-moz-range-track]:rounded-full [&::-moz-range-track]:bg-transparent",
+                    "[&::-moz-range-thumb]:size-2.5 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:bg-white",
+                  )}
+                  onChange={(e) => onVolumeChange(Number(e.target.value))}
+                />
+              </div>
+
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                className="size-8 shrink-0 rounded-lg text-zinc-200 hover:bg-white/10 hover:text-white"
+                aria-label={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
+                onClick={() => void toggleFullscreen()}
+              >
+                {isFullscreen ? (
+                  <Minimize2 className="size-4" />
+                ) : (
+                  <Maximize2 className="size-4" />
+                )}
+              </Button>
+            </div>
+          </div>
+        </div>
+      </div>
+  )
+
+
   return (
     <div
       className={cn(
-        "relative flex h-full items-center justify-center",
+        "relative flex items-center justify-center",
+        /**
+         * Height comes from the picture when the bar is underneath it.
+         *
+         * `h-full` inside a container that sizes to its content is a loop: the
+         * box waits for the child, the child waits for the box. It settles at
+         * full height in the viewer, where the parent has one — but in the side
+         * panel it left the whole column shifting, and a Playwright click on the
+         * close button never found it stable.
+         */
+        controlsBelow ? "w-full flex-col" : "h-full",
         // The full preview mats the video against the page; inside a panel the
         // panel is already the frame, so the padding and wash only shrink the
         // picture and leave a grey band around it.
@@ -195,11 +392,15 @@ export function VideoAssetViewer({
       {error ? (
         <p className="max-w-md px-4 text-center text-sm text-zinc-500">{error}</p>
       ) : (
+        <div className={controlsBelow ? "flex w-full flex-col gap-2" : "contents"}>
         <div
           ref={shellRef}
           className={cn(
             "group/video relative overflow-hidden rounded-xl",
             compact ? "h-full w-full" : "max-h-full max-w-full",
+            // The bar no longer sits inside the frame, so the frame owns the
+            // picture's shape rather than the parent stretching both.
+            controlsBelow && "aspect-video w-full",
             "bg-zinc-950 shadow-[0_4px_24px_rgba(0,0,0,0.12)] ring-1 ring-black/10",
             !ready && "opacity-0",
             isFullscreen && "rounded-none",
@@ -300,167 +501,9 @@ export function VideoAssetViewer({
             </button>
           ) : null}
 
-          {/* Custom control bar — light frosted glass over the video */}
-          <div
-            className={cn(
-              "pointer-events-none absolute inset-x-0 bottom-0 z-[2] bg-gradient-to-t from-black/40 via-black/15 to-transparent transition-opacity duration-200",
-              compact ? "px-2 pb-1.5 pt-6" : "px-3 pb-3 pt-10",
-              controlsVisible || !playing ? "opacity-100" : "opacity-0",
-            )}
-          >
-            <div
-              className={cn(
-                "pointer-events-auto flex flex-col gap-2 rounded-xl border border-white/15",
-                "bg-zinc-950/45 px-3 py-2.5 shadow-lg backdrop-blur-md backdrop-saturate-150",
-              )}
-            >
-              {/* Progress */}
-              <div className="relative min-w-0">
-                <div
-                  className="pointer-events-none absolute inset-x-0 top-1/2 h-1.5 -translate-y-1/2 overflow-hidden rounded-full bg-white/15"
-                  aria-hidden
-                >
-                  <div
-                    className="h-full rounded-full bg-primary transition-[width] duration-75"
-                    style={{ width: `${progressPct}%` }}
-                  />
-                </div>
-                <input
-                  type="range"
-                  min={0}
-                  max={sliderMax || 100}
-                  step={0.05}
-                  value={sliderMax > 0 ? sliderValue : 0}
-                  disabled={sliderMax <= 0}
-                  aria-label="Playback position"
-                  aria-valuemin={0}
-                  aria-valuemax={sliderMax}
-                  aria-valuenow={sliderValue}
-                  aria-valuetext={`${formatTime(sliderValue)} of ${formatTime(duration)}`}
-                  className={cn(
-                    "relative z-[1] h-4 w-full cursor-pointer appearance-none bg-transparent",
-                    "disabled:cursor-not-allowed disabled:opacity-40",
-                    "[&::-webkit-slider-runnable-track]:h-1.5 [&::-webkit-slider-runnable-track]:rounded-full [&::-webkit-slider-runnable-track]:bg-transparent",
-                    "[&::-webkit-slider-thumb]:size-3.5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full",
-                    "[&::-webkit-slider-thumb]:bg-primary [&::-webkit-slider-thumb]:shadow-[0_0_0_3px_rgba(255,79,18,0.25)]",
-                    "[&::-moz-range-track]:h-1.5 [&::-moz-range-track]:rounded-full [&::-moz-range-track]:bg-transparent",
-                    "[&::-moz-range-thumb]:size-3.5 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:bg-primary",
-                  )}
-                  onChange={(e) => {
-                    const value = Number(e.target.value)
-                    isSeekingRef.current = true
-                    setIsSeeking(true)
-                    setSeekValue(value)
-                    revealControls()
-                  }}
-                  onPointerUp={() => {
-                    commitSeek(seekValue)
-                    isSeekingRef.current = false
-                    setIsSeeking(false)
-                    revealControls()
-                  }}
-                  onKeyUp={() => {
-                    commitSeek(seekValue)
-                    isSeekingRef.current = false
-                    setIsSeeking(false)
-                  }}
-                  onBlur={() => {
-                    if (isSeekingRef.current) {
-                      commitSeek(seekValue)
-                      isSeekingRef.current = false
-                      setIsSeeking(false)
-                    }
-                  }}
-                />
-              </div>
-
-              <div className="flex items-center gap-2">
-                <Button
-                  type="button"
-                  size="icon"
-                  className={cn(
-                    "shrink-0 rounded-xl bg-primary text-white hover:bg-primary/90",
-                    compact ? "size-7" : "size-9",
-                  )}
-                  aria-label={playing ? "Pause" : "Play"}
-                  data-testid="video-play-toggle"
-                  onClick={togglePlay}
-                >
-                  {playing ? (
-                    <Pause className="size-4" />
-                  ) : (
-                    <Play className="size-4 translate-x-px" fill="currentColor" />
-                  )}
-                </Button>
-
-                <span className="min-w-[5.5rem] font-mono text-[11px] tabular-nums text-zinc-300">
-                  {formatTime(sliderValue)}
-                  <span className="text-zinc-500"> / </span>
-                  {formatTime(duration)}
-                </span>
-
-                <div className="ml-auto flex items-center gap-1.5">
-                  <Button
-                    type="button"
-                    size="icon"
-                    variant="ghost"
-                    className="size-8 shrink-0 rounded-lg text-zinc-200 hover:bg-white/10 hover:text-white"
-                    aria-label={muted || volume === 0 ? "Unmute" : "Mute"}
-                    onClick={toggleMute}
-                  >
-                    {muted || volume === 0 ? (
-                      <VolumeX className="size-4" />
-                    ) : (
-                      <Volume2 className="size-4" />
-                    )}
-                  </Button>
-
-                  <div className="relative hidden w-20 sm:block">
-                    <div
-                      className="pointer-events-none absolute inset-x-0 top-1/2 h-1 -translate-y-1/2 overflow-hidden rounded-full bg-white/15"
-                      aria-hidden
-                    >
-                      <div
-                        className="h-full rounded-full bg-white/70"
-                        style={{ width: `${(muted ? 0 : volume) * 100}%` }}
-                      />
-                    </div>
-                    <input
-                      type="range"
-                      min={0}
-                      max={1}
-                      step={0.02}
-                      value={muted ? 0 : volume}
-                      aria-label="Volume"
-                      className={cn(
-                        "relative z-[1] h-4 w-full cursor-pointer appearance-none bg-transparent",
-                        "[&::-webkit-slider-runnable-track]:h-1 [&::-webkit-slider-runnable-track]:rounded-full [&::-webkit-slider-runnable-track]:bg-transparent",
-                        "[&::-webkit-slider-thumb]:size-2.5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white",
-                        "[&::-moz-range-track]:h-1 [&::-moz-range-track]:rounded-full [&::-moz-range-track]:bg-transparent",
-                        "[&::-moz-range-thumb]:size-2.5 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:bg-white",
-                      )}
-                      onChange={(e) => onVolumeChange(Number(e.target.value))}
-                    />
-                  </div>
-
-                  <Button
-                    type="button"
-                    size="icon"
-                    variant="ghost"
-                    className="size-8 shrink-0 rounded-lg text-zinc-200 hover:bg-white/10 hover:text-white"
-                    aria-label={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
-                    onClick={() => void toggleFullscreen()}
-                  >
-                    {isFullscreen ? (
-                      <Minimize2 className="size-4" />
-                    ) : (
-                      <Maximize2 className="size-4" />
-                    )}
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </div>
+          {controlsBelow ? null : controlBar}
+        </div>
+        {controlsBelow ? controlBar : null}
         </div>
       )}
     </div>
