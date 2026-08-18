@@ -93,7 +93,7 @@ export default defineConfig({
       name: "chromium",
       use: {
         ...devices["Desktop Chrome"],
-        storageState: "test-results/.auth/e2e-user.json",
+        storageState: ".playwright-auth/e2e-user.json",
       },
       dependencies: ["setup"],
     },

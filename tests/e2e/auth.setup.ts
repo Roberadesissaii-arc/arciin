@@ -15,7 +15,18 @@ import { expect, test as setup } from "@playwright/test"
  * production credential and never appears in the repository or the log.
  */
 
-export const STORAGE_STATE = path.resolve(process.cwd(), "test-results/.auth/e2e-user.json")
+/**
+ * Kept out of `test-results/`.
+ *
+ * That directory is Playwright's `outputDir`: it owns it, and it removes and
+ * recreates paths under it as artifacts are written. The shared session used to
+ * live at `test-results/.auth/`, so a run could sweep it away part-way through
+ * — after which every remaining test failed in single-digit milliseconds with
+ * `ENOENT ... e2e-user.json` rather than anything to do with the test. Storing
+ * shared state inside a directory another tool manages is the bug; moving it
+ * out is the fix.
+ */
+export const STORAGE_STATE = path.resolve(process.cwd(), ".playwright-auth/e2e-user.json")
 
 const EMAIL = "e2e@arciin.invalid"
 const PASSWORD_FILE = "/tmp/arciin-e2e-pw"

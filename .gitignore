@@ -82,3 +82,6 @@ test-results/
 
 # Browser-suite build output
 apps/web/.next-e2e/
+
+# Playwright shared auth state (outside outputDir so Playwright cannot sweep it)
+.playwright-auth/
