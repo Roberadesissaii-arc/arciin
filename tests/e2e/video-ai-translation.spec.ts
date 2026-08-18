@@ -99,16 +99,23 @@ test.describe("translation and titles never reach for the media", () => {
      *
      * Languages already saved for this video are deliberately absent — offering
      * one would invite a paid request that could only return what exists — so
-     * this asserts on tags no test translates into, keeping it independent of
-     * whatever an earlier run left behind.
+     * this asserts on tags no test translates into and the fixture does not
+     * seed, keeping it independent of whatever an earlier run left behind.
      */
-    for (const tag of ["am", "om", "fr", "ar", "zh", "ja", "ko", "hi", "pt", "de"]) {
+    for (const tag of ["am", "om", "fr", "zh", "ja", "ko", "hi", "pt", "de"]) {
       await expect(picker.getByTestId(`transcript-target-${tag}`)).toBeVisible()
     }
 
     // English is the transcript's own language: translating to it is a paid
     // request that could only return its input, so it is not offered.
     await expect(picker.getByTestId("transcript-target-en")).toHaveCount(0)
+
+    // And neither are the languages this video already has. The fixture seeds
+    // Spanish and Arabic, and offering either would spend money to reproduce a
+    // translation that is already saved.
+    for (const saved of ["es", "ar"]) {
+      await expect(picker.getByTestId(`transcript-target-${saved}`)).toHaveCount(0)
+    }
 
     await picker.getByTestId("transcript-language-search").fill("amhar")
     await expect(picker.getByTestId("transcript-target-am")).toBeVisible()
