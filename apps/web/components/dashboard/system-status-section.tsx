@@ -139,7 +139,7 @@ export function SystemStatusSection({ className }: { className?: string }) {
         <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
           {SERVICES.map((service) => {
             if (healthQuery.isLoading) {
-              return <Skeleton key={service} className="h-[150px] rounded-2xl" />
+              return <Skeleton key={service} className="h-[11.5rem] rounded-2xl" />
             }
 
             const value = health?.[service]
@@ -149,7 +149,7 @@ export function SystemStatusSection({ className }: { className?: string }) {
             return (
               <div
                 key={service}
-                className="flex min-h-[150px] flex-col rounded-2xl border border-zinc-200/80 bg-card px-4 py-4 shadow-sm"
+                className="flex min-h-[11.5rem] flex-col rounded-2xl border border-zinc-200/80 bg-card px-4 py-5 shadow-sm"
               >
                 <p className="flex items-center justify-between text-[13px] font-semibold text-zinc-800">
                   {SERVICE_LABELS[service] ?? service}
@@ -183,11 +183,11 @@ export function SystemStatusSection({ className }: { className?: string }) {
           })}
 
           {databasesQuery.isLoading ? (
-            <Skeleton className="h-[150px] rounded-2xl" />
+            <Skeleton className="h-[11.5rem] rounded-2xl" />
           ) : (
             <Link
               href="/database/app-data"
-              className="group flex min-h-[150px] flex-col rounded-2xl border border-zinc-200/80 bg-card px-4 py-4 shadow-sm transition-colors hover:border-primary/40 hover:bg-[#fff8f5]"
+              className="group flex min-h-[11.5rem] flex-col rounded-2xl border border-zinc-200/80 bg-card px-4 py-5 shadow-sm transition-colors hover:border-primary/40 hover:bg-[#fff8f5]"
             >
               <p className="flex items-center justify-between text-[13px] font-semibold text-zinc-800">
                 <span className="flex items-center gap-1.5">
