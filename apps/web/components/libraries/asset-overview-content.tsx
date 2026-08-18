@@ -405,7 +405,7 @@ export function AssetOverviewContent({
                 <span className="block text-[13px] font-semibold text-zinc-900">Open Assist</span>
                 <span className="block text-[11.5px] text-zinc-500">
                   {asset.mediaType === "DOCUMENT"
-                    ? "Summarize this document"
+                    ? "Summarize, title, and keywords"
                     : "Transcript, title, and summarize"}
                 </span>
               </span>

@@ -355,7 +355,16 @@ function PanelSections({
             initialTab={aiTab}
           />
         ) : (
-          <DocumentAssistSection asset={asset} />
+          <DocumentAssistSection
+            asset={asset}
+            onDownload={() => downloadAsset(asset.id)}
+            onDelete={onDeleteRequest}
+            onOpen={
+              viewer?.canOpen(asset) && isViewableAsset(asset)
+                ? () => viewer.openViewer(asset.id)
+                : undefined
+            }
+          />
         )
       ) : null}
       {active === "move" ? (

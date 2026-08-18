@@ -11,6 +11,7 @@ import {
   GeminiNotConfiguredError,
   resolveGeminiMediaConfig,
   suggestDocumentSummary,
+  suggestTitles,
 } from "@arciin/media-ai"
 
 import { readPdfAssetContent } from "@/services/chat/read-pdf-asset"
@@ -106,6 +107,96 @@ export async function registerDocumentRoutes(fastify: FastifyInstance) {
           error: {
             code: "METADATA_FAILED",
             message: error instanceof Error ? error.message : "Could not read PDF metadata.",
+          },
+        })
+      }
+    },
+  )
+
+  /**
+   * Short title suggestions from PDF text (1–2 words), same rules as video titles.
+   * Never renames — Apply goes through the normal asset update.
+   */
+  fastify.post(
+    "/assets/:assetId/document-title-suggestions",
+    { preHandler: guard },
+    async (request, reply) => {
+      if (await checkAiRateLimit(request, reply, AI_RATE_LIMITS.title)) return
+
+      const { assetId } = z.object({ assetId: z.string() }).parse(request.params)
+      const body = z
+        .object({
+          profileId: z.string().optional(),
+          count: z.number().int().min(1).max(6).optional(),
+        })
+        .safeParse(request.body ?? {})
+
+      const asset = await loadAccessibleAsset(request, reply, assetId)
+      if (!asset) return
+
+      if (
+        asset.mediaType !== "DOCUMENT" ||
+        !isPdfFilenameOrMime(asset.originalFilename, asset.mimeType)
+      ) {
+        reply.status(409).send({
+          error: { code: "NOT_PDF", message: "Title suggestions are available for PDFs." },
+        })
+        return
+      }
+
+      const pdf = await readPdfAssetContent(fastify.prisma, {
+        assetId,
+        maxChars: 16_000,
+        maxPages: 20,
+      })
+      if ("error" in pdf && pdf.error) {
+        reply.status(409).send({
+          error: {
+            code: String(pdf.error).toUpperCase(),
+            message: typeof pdf.message === "string" ? pdf.message : "Could not read PDF text.",
+          },
+        })
+        return
+      }
+      const text = typeof pdf.content === "string" ? pdf.content : ""
+      if (!text.trim()) {
+        reply.status(409).send({
+          error: { code: "NO_TEXT", message: "No extractable text was found in this PDF." },
+        })
+        return
+      }
+
+      let config
+      try {
+        config = await resolveGeminiMediaConfig(
+          fastify.prisma,
+          body.success ? body.data.profileId : undefined,
+        )
+      } catch (error) {
+        if (error instanceof GeminiNotConfiguredError) {
+          reply.status(409).send({
+            error: {
+              code: "GEMINI_NOT_CONFIGURED",
+              message: "Add a Gemini model profile under Models to suggest titles.",
+            },
+          })
+          return
+        }
+        throw error
+      }
+
+      try {
+        const result = await suggestTitles({
+          config,
+          transcriptText: text,
+          count: body.success ? body.data.count : undefined,
+        })
+        reply.send({ data: { titles: result.titles, model: result.model } })
+      } catch (error) {
+        reply.status(502).send({
+          error: {
+            code: "TITLE_FAILED",
+            message: error instanceof Error ? error.message : "The model did not return titles.",
           },
         })
       }
