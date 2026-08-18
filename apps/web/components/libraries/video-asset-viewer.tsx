@@ -193,9 +193,10 @@ export function VideoAssetViewer({
   /**
    * The control bar, built once and placed one of two ways.
    *
-   * Over the picture it is frosted glass that fades with the pointer; under it
-   * it is an ordinary bar that never hides, because there is nothing to get out
-   * of the way of.
+   * Over the picture (full viewer): frosted glass that fades with the pointer.
+   * Under it (side-panel Overview): a plain solid bar — no blur, no glass —
+   * because the panel is already a card and glass chrome on top of glass is
+   * noise. Play lives on this bar, not as an overlay on the frame.
    */
   const controlBar = (
       <div
@@ -211,14 +212,19 @@ export function VideoAssetViewer({
       >
         <div
           className={cn(
-            "pointer-events-auto flex flex-col gap-2 rounded-xl border border-white/15",
-            "bg-zinc-950/45 px-3 py-2.5 shadow-lg backdrop-blur-md backdrop-saturate-150",
+            "pointer-events-auto flex flex-col gap-2 px-2.5 py-2",
+            controlsBelow
+              ? "rounded-lg border border-border bg-muted/50"
+              : "rounded-xl border border-white/15 bg-zinc-950/45 shadow-lg backdrop-blur-md backdrop-saturate-150",
           )}
         >
           {/* Progress */}
           <div className="relative min-w-0">
             <div
-              className="pointer-events-none absolute inset-x-0 top-1/2 h-1.5 -translate-y-1/2 overflow-hidden rounded-full bg-white/15"
+              className={cn(
+                "pointer-events-none absolute inset-x-0 top-1/2 h-1.5 -translate-y-1/2 overflow-hidden rounded-full",
+                controlsBelow ? "bg-zinc-200" : "bg-white/15",
+              )}
               aria-hidden
             >
               <div
@@ -281,7 +287,7 @@ export function VideoAssetViewer({
               size="icon"
               className={cn(
                 "shrink-0 rounded-xl bg-primary text-white hover:bg-primary/90",
-                compact ? "size-7" : "size-9",
+                compact || controlsBelow ? "size-7" : "size-9",
               )}
               aria-label={playing ? "Pause" : "Play"}
               data-testid="video-play-toggle"
@@ -294,9 +300,14 @@ export function VideoAssetViewer({
               )}
             </Button>
 
-            <span className="min-w-[5.5rem] font-mono text-[11px] tabular-nums text-zinc-300">
+            <span
+              className={cn(
+                "min-w-[5.5rem] font-mono text-[11px] tabular-nums",
+                controlsBelow ? "text-zinc-600" : "text-zinc-300",
+              )}
+            >
               {formatTime(sliderValue)}
-              <span className="text-zinc-500"> / </span>
+              <span className={controlsBelow ? "text-zinc-400" : "text-zinc-500"}> / </span>
               {formatTime(duration)}
             </span>
 
@@ -305,7 +316,12 @@ export function VideoAssetViewer({
                 type="button"
                 size="icon"
                 variant="ghost"
-                className="size-8 shrink-0 rounded-lg text-zinc-200 hover:bg-white/10 hover:text-white"
+                className={cn(
+                  "size-8 shrink-0 rounded-lg",
+                  controlsBelow
+                    ? "text-zinc-600 hover:bg-zinc-200/80 hover:text-zinc-900"
+                    : "text-zinc-200 hover:bg-white/10 hover:text-white",
+                )}
                 aria-label={muted || volume === 0 ? "Unmute" : "Mute"}
                 onClick={toggleMute}
               >
@@ -318,11 +334,17 @@ export function VideoAssetViewer({
 
               <div className="relative hidden w-20 sm:block">
                 <div
-                  className="pointer-events-none absolute inset-x-0 top-1/2 h-1 -translate-y-1/2 overflow-hidden rounded-full bg-white/15"
+                  className={cn(
+                    "pointer-events-none absolute inset-x-0 top-1/2 h-1 -translate-y-1/2 overflow-hidden rounded-full",
+                    controlsBelow ? "bg-zinc-200" : "bg-white/15",
+                  )}
                   aria-hidden
                 >
                   <div
-                    className="h-full rounded-full bg-white/70"
+                    className={cn(
+                      "h-full rounded-full",
+                      controlsBelow ? "bg-zinc-500" : "bg-white/70",
+                    )}
                     style={{ width: `${(muted ? 0 : volume) * 100}%` }}
                   />
                 </div>
@@ -336,9 +358,10 @@ export function VideoAssetViewer({
                   className={cn(
                     "relative z-[1] h-4 w-full cursor-pointer appearance-none bg-transparent",
                     "[&::-webkit-slider-runnable-track]:h-1 [&::-webkit-slider-runnable-track]:rounded-full [&::-webkit-slider-runnable-track]:bg-transparent",
-                    "[&::-webkit-slider-thumb]:size-2.5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white",
+                    controlsBelow
+                      ? "[&::-webkit-slider-thumb]:size-2.5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-zinc-600 [&::-moz-range-thumb]:size-2.5 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:bg-zinc-600"
+                      : "[&::-webkit-slider-thumb]:size-2.5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white [&::-moz-range-thumb]:size-2.5 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:bg-white",
                     "[&::-moz-range-track]:h-1 [&::-moz-range-track]:rounded-full [&::-moz-range-track]:bg-transparent",
-                    "[&::-moz-range-thumb]:size-2.5 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:bg-white",
                   )}
                   onChange={(e) => onVolumeChange(Number(e.target.value))}
                 />
@@ -348,7 +371,12 @@ export function VideoAssetViewer({
                 type="button"
                 size="icon"
                 variant="ghost"
-                className="size-8 shrink-0 rounded-lg text-zinc-200 hover:bg-white/10 hover:text-white"
+                className={cn(
+                  "size-8 shrink-0 rounded-lg",
+                  controlsBelow
+                    ? "text-zinc-600 hover:bg-zinc-200/80 hover:text-zinc-900"
+                    : "text-zinc-200 hover:bg-white/10 hover:text-white",
+                )}
                 aria-label={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
                 onClick={() => void toggleFullscreen()}
               >
@@ -401,7 +429,11 @@ export function VideoAssetViewer({
             // The bar no longer sits inside the frame, so the frame owns the
             // picture's shape rather than the parent stretching both.
             controlsBelow && "aspect-video w-full",
-            "bg-zinc-950 shadow-[0_4px_24px_rgba(0,0,0,0.12)] ring-1 ring-black/10",
+            // Full viewer gets a soft mat; the panel frame is already bordered,
+            // so keep the video shell plain there.
+            controlsBelow
+              ? "bg-zinc-950"
+              : "bg-zinc-950 shadow-[0_4px_24px_rgba(0,0,0,0.12)] ring-1 ring-black/10",
             !ready && "opacity-0",
             isFullscreen && "rounded-none",
           )}
@@ -479,8 +511,12 @@ export function VideoAssetViewer({
             }}
           />
 
-          {/* Center play affordance when paused */}
-          {ready && !playing ? (
+          {/*
+            Center play only when the bar floats over the picture.
+            In the side panel the play button lives under the frame — putting
+            another one on the video would cover the shot the panel is for.
+          */}
+          {ready && !playing && !controlsBelow ? (
             <button
               type="button"
               className="absolute inset-0 z-[1] flex items-center justify-center bg-black/0 transition-colors hover:bg-black/10"

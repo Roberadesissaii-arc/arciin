@@ -95,39 +95,38 @@ function DocumentPanelPreview({ asset }: { asset: AssetSummary }) {
 /**
  * Music in the side panel drives the same bottom player the cards do.
  *
- * A naked <audio> here would play without the scrubber people already know,
- * and would fight the global bar for the same track. One play control → one
- * MusicPlayerBar in the page center.
+ * Artwork on top, play underneath — same layout as video Overview. No glass
+ * overlay on the art; the panel is already a card.
  */
 function AudioPanelPreview({ asset }: { asset: AssetSummary }) {
   const isPlaying = useIsMusicAssetPlaying(asset.id)
   const isActive = useIsMusicAssetActive(asset.id)
 
   return (
-    <div className="relative w-full">
-      <button
-        type="button"
-        data-testid="asset-panel-audio-play"
-        aria-label={isPlaying ? `Pause ${asset.originalFilename}` : `Play ${asset.originalFilename}`}
-        className="relative w-full cursor-pointer rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
-        onClick={() => toggleMusicAsset(asset)}
-      >
-        <AudioCardArtwork isPlaying={isPlaying} isActive={isActive} className="aspect-[16/10]" />
-        <span
-          className={cn(
-            "pointer-events-none absolute inset-0 flex items-center justify-center",
-          )}
-          aria-hidden
+    <div className="flex w-full flex-col gap-2">
+      <AudioCardArtwork isPlaying={isPlaying} isActive={isActive} className="aspect-[16/10]" />
+      <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/50 px-2.5 py-2">
+        <Button
+          type="button"
+          size="icon"
+          data-testid="asset-panel-audio-play"
+          aria-label={isPlaying ? `Pause ${asset.originalFilename}` : `Play ${asset.originalFilename}`}
+          className="size-7 shrink-0 rounded-xl bg-primary text-white hover:bg-primary/90"
+          onClick={() => toggleMusicAsset(asset)}
         >
-          <span className="flex size-11 items-center justify-center rounded-full bg-black/55 text-white shadow-lg backdrop-blur-sm ring-1 ring-white/20">
-            {isPlaying ? (
-              <Pause className="size-5 fill-current" />
-            ) : (
-              <Play className="size-5 translate-x-px fill-current" />
-            )}
-          </span>
+          {isPlaying ? (
+            <Pause className="size-4" />
+          ) : (
+            <Play className="size-4 translate-x-px fill-current" />
+          )}
+        </Button>
+        <p className="min-w-0 flex-1 truncate text-[12px] font-medium text-zinc-700">
+          {asset.originalFilename}
+        </p>
+        <span className="shrink-0 text-[11px] tabular-nums text-zinc-500">
+          {isActive ? (isPlaying ? "Playing" : "Paused") : "Ready"}
         </span>
-      </button>
+      </div>
     </div>
   )
 }
@@ -282,17 +281,18 @@ export function AssetOverviewContent({
   return (
     <>
       <div className="scrollbar-hide flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-2">
-        {/* The file itself, framed rather than floating on the panel. */}
+        {/*
+          Preview on top — plain border, no glass wash.
+          Video/audio put their play bar under the media inside AssetPreview;
+          stills and docs just sit in the frame.
+        */}
         <div
           className={cn(
-            "flex items-center justify-center overflow-hidden rounded-xl border border-border",
-            "bg-gradient-to-b from-muted/10 to-muted/40 ring-1 ring-black/[0.03]",
-            // The video player now carries its own frame and its controls
-            // beneath it, so this wrapper only has to hold stills and icons.
-            // Audio artwork fills the frame edge-to-edge.
+            "flex w-full items-center justify-center overflow-hidden",
+            // Video/audio own their frame + under-bar; stills get a plain mat.
             asset.mediaType === "VIDEO" || isAudioLikeAsset(asset) || asset.mediaType === "AUDIO"
-              ? "w-full"
-              : "max-h-[240px] min-h-[120px]",
+              ? "bg-transparent"
+              : "max-h-[240px] min-h-[120px] rounded-xl border border-border bg-zinc-50",
           )}
           data-testid="asset-panel-preview"
         >
