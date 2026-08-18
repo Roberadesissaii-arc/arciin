@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
+import { createPortal } from "react-dom"
 import { Pause, Play, X } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -30,6 +31,7 @@ export function MusicPlayerBar() {
   const [duration, setDuration] = useState(0)
   const [seekValue, setSeekValue] = useState(0)
   const [isSeeking, setIsSeeking] = useState(false)
+  const [mounted, setMounted] = useState(false)
 
   const audioSrc = nowPlaying
     ? `/api/assets/${nowPlaying.id}/download${INLINE_DOWNLOAD}`
@@ -89,6 +91,10 @@ export function MusicPlayerBar() {
     if (!trackId) loadedTrackIdRef.current = null
   }, [trackId])
 
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
   function commitSeek(value: number) {
     const el = audioRef.current
     if (!el || !Number.isFinite(duration) || duration <= 0) return
@@ -103,13 +109,18 @@ export function MusicPlayerBar() {
   const progressPct =
     sliderMax > 0 ? Math.min(100, (sliderValue / sliderMax) * 100) : 0
 
-  if (!nowPlaying) return null
+  if (!nowPlaying || !mounted) return null
 
-  return (
+  /**
+   * Portaled to document.body so the bar stays above the side panel Sheet
+   * (z-50) and is never clipped by dashboard overflow / transform ancestors.
+   */
+  return createPortal(
     <div
-      className="pointer-events-none fixed inset-x-0 bottom-6 z-[70] flex justify-center px-4"
+      className="dashboard-main pointer-events-none fixed inset-x-0 bottom-6 z-[120] flex justify-center px-4"
       role="region"
       aria-label="Music player"
+      data-testid="music-player-bar"
     >
       <div
         className={cn(
@@ -223,6 +234,7 @@ export function MusicPlayerBar() {
           <X className="size-4" />
         </Button>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }

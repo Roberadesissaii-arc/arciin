@@ -158,6 +158,45 @@ main.dashboard-main[data-slot="sidebar-inset"] {
   border-color: rgba(255, 255, 255, 0.1);
 }
 
+/* Library card/folder context menus — same dark language as the sidebar. */
+.library-context-menu {
+  --background: #18181b;
+  --foreground: #fafafa;
+  --popover: #18181b;
+  --popover-foreground: #fafafa;
+  --accent: rgba(255, 255, 255, 0.08);
+  --accent-foreground: #ffffff;
+  --border: rgba(255, 255, 255, 0.1);
+  --muted-foreground: #71717a;
+  background-color: #18181b !important;
+  color: #d4d4d8;
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.library-context-menu [data-slot="context-menu-item"]:focus,
+.library-context-menu [data-slot="context-menu-item"][data-highlighted] {
+  background-color: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+}
+
+.library-context-menu [data-slot="context-menu-item"][data-variant="destructive"] {
+  color: #f87171;
+}
+
+.library-context-menu [data-slot="context-menu-item"][data-variant="destructive"]:focus,
+.library-context-menu [data-slot="context-menu-item"][data-variant="destructive"][data-highlighted] {
+  background-color: rgba(239, 68, 68, 0.12);
+  color: #fca5a5;
+}
+
+.library-context-menu [data-slot="context-menu-separator"] {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.library-context-menu [data-slot="context-menu-label"] {
+  color: #71717a;
+}
+
 .sidebar-profile-menu [data-slot="dropdown-menu-item"] {
   color: #a1a1aa;
 }

@@ -1,11 +1,23 @@
 "use client"
 
-import { Calendar, Clock, Download, FileType2, HardDrive, Maximize2, Trash2 } from "lucide-react"
+import { useState } from "react"
+import { useQuery } from "@tanstack/react-query"
+import { Calendar, Clock, Download, FileType2, HardDrive, Maximize2, Pause, Play, Trash2 } from "lucide-react"
+import { assetSupportsDocumentThumbnail, DEFAULT_USER_PREFERENCES } from "@arciin/shared"
 
+import { AudioCardArtwork } from "@/components/libraries/audio-card-artwork"
 import { MediaTypeIcon } from "@/components/libraries/media-type-icon"
 import { VideoAssetViewer } from "@/components/libraries/video-asset-viewer"
 import { Button } from "@/components/ui/button"
+import { getUserPreferences } from "@/lib/api/user-preferences"
+import { queryKeys } from "@/lib/api/query-keys"
+import {
+  toggleMusicAsset,
+  useIsMusicAssetActive,
+  useIsMusicAssetPlaying,
+} from "@/lib/audio/music-player"
 import { formatBytes } from "@/lib/utils/format-bytes"
+import { isAudioLikeAsset } from "@/lib/utils/viewable-asset"
 import type { AssetSummary } from "@/lib/types/models"
 import { cn } from "@/lib/utils"
 
@@ -34,14 +46,108 @@ function formatDuration(seconds: number | null | undefined): string | null {
   return `${m}:${String(s).padStart(2, "0")}`
 }
 
+/** Fallback when there is no previewable bitmap — icon + extension chip. */
+function FileTypeFallback({ asset }: { asset: AssetSummary }) {
+  return (
+    <div className="flex flex-col items-center gap-2 py-10 text-muted-foreground">
+      <MediaTypeIcon
+        mediaType={asset.mediaType}
+        filename={asset.originalFilename}
+        mimeType={asset.mimeType}
+        extension={asset.extension}
+        className="size-10"
+      />
+      <span className="text-[11px] font-medium uppercase tracking-wider">
+        {asset.extension || "file"}
+      </span>
+    </div>
+  )
+}
+
+/**
+ * Document / PDF preview for the side panel.
+ *
+ * Cards already show a generated thumbnail when one exists. The panel used to
+ * always fall through to a plain "PDF" icon — so a file that looked like a
+ * document on the grid looked empty once opened. Try the thumbnail first; only
+ * fall back to the icon when there is nothing to show.
+ */
+function DocumentPanelPreview({ asset }: { asset: AssetSummary }) {
+  const [thumbFailed, setThumbFailed] = useState(false)
+  const thumbSrc = `/api/assets/${asset.id}/thumbnail?v=${encodeURIComponent(asset.updatedAt)}`
+
+  if (thumbFailed) {
+    return <FileTypeFallback asset={asset} />
+  }
+
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={thumbSrc}
+      alt={asset.originalFilename}
+      className="max-h-[240px] w-full bg-white object-contain"
+      onError={() => setThumbFailed(true)}
+      data-testid="asset-panel-document-thumb"
+    />
+  )
+}
+
+/**
+ * Music in the side panel drives the same bottom player the cards do.
+ *
+ * A naked <audio> here would play without the scrubber people already know,
+ * and would fight the global bar for the same track. One play control → one
+ * MusicPlayerBar in the page center.
+ */
+function AudioPanelPreview({ asset }: { asset: AssetSummary }) {
+  const isPlaying = useIsMusicAssetPlaying(asset.id)
+  const isActive = useIsMusicAssetActive(asset.id)
+
+  return (
+    <div className="relative w-full">
+      <button
+        type="button"
+        data-testid="asset-panel-audio-play"
+        aria-label={isPlaying ? `Pause ${asset.originalFilename}` : `Play ${asset.originalFilename}`}
+        className="relative w-full cursor-pointer rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+        onClick={() => toggleMusicAsset(asset)}
+      >
+        <AudioCardArtwork isPlaying={isPlaying} isActive={isActive} className="aspect-[16/10]" />
+        <span
+          className={cn(
+            "pointer-events-none absolute inset-0 flex items-center justify-center",
+          )}
+          aria-hidden
+        >
+          <span className="flex size-11 items-center justify-center rounded-full bg-black/55 text-white shadow-lg backdrop-blur-sm ring-1 ring-white/20">
+            {isPlaying ? (
+              <Pause className="size-5 fill-current" />
+            ) : (
+              <Play className="size-5 translate-x-px fill-current" />
+            )}
+          </span>
+        </span>
+      </button>
+    </div>
+  )
+}
+
 /**
  * Whatever this file is best shown as.
  *
- * A video gets the library's real player, an image its own bytes, and anything
- * else the icon the grid already uses — rather than a broken <img> for a PDF.
+ * A video gets the library's real player, an image its own bytes, audio the
+ * shared music bar, and documents their generated thumbnail when one exists —
+ * rather than a broken <img> for a PDF that never got one.
  */
 function AssetPreview({ asset }: { asset: AssetSummary }) {
   const src = `/api/assets/${asset.id}/download?inline=1&v=${encodeURIComponent(asset.updatedAt)}`
+  const { data: prefs } = useQuery({
+    queryKey: queryKeys.userPreferences,
+    queryFn: ({ signal }) => getUserPreferences(signal),
+    staleTime: 60_000,
+  })
+  const docThumbs =
+    prefs?.media.documentThumbnails ?? DEFAULT_USER_PREFERENCES.media.documentThumbnails
 
   if (asset.mediaType === "VIDEO") {
     return <VideoAssetViewer src={src} compact controlsBelow />
@@ -57,20 +163,21 @@ function AssetPreview({ asset }: { asset: AssetSummary }) {
       />
     )
   }
-  return (
-    <div className="flex flex-col items-center gap-2 py-10 text-muted-foreground">
-      <MediaTypeIcon
-        mediaType={asset.mediaType}
-        filename={asset.originalFilename}
-        mimeType={asset.mimeType}
-        extension={asset.extension}
-        className="size-10"
-      />
-      <span className="text-[11px] font-medium uppercase tracking-wider">
-        {asset.extension || "file"}
-      </span>
-    </div>
-  )
+  if (isAudioLikeAsset(asset) || asset.mediaType === "AUDIO") {
+    return <AudioPanelPreview asset={asset} />
+  }
+  if (
+    docThumbs &&
+    assetSupportsDocumentThumbnail(
+      asset.mediaType,
+      asset.mimeType,
+      asset.extension,
+      asset.originalFilename,
+    )
+  ) {
+    return <DocumentPanelPreview asset={asset} />
+  }
+  return <FileTypeFallback asset={asset} />
 }
 
 /** A table row. Striped, so the eye can follow a long value across. */
@@ -182,7 +289,10 @@ export function AssetOverviewContent({
             "bg-gradient-to-b from-muted/10 to-muted/40 ring-1 ring-black/[0.03]",
             // The video player now carries its own frame and its controls
             // beneath it, so this wrapper only has to hold stills and icons.
-            asset.mediaType === "VIDEO" ? "w-full" : "max-h-[240px] min-h-[120px]",
+            // Audio artwork fills the frame edge-to-edge.
+            asset.mediaType === "VIDEO" || isAudioLikeAsset(asset) || asset.mediaType === "AUDIO"
+              ? "w-full"
+              : "max-h-[240px] min-h-[120px]",
           )}
           data-testid="asset-panel-preview"
         >

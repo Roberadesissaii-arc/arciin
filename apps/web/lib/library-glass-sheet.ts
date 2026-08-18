@@ -18,16 +18,22 @@ export const libraryGlassCommandPaletteSurface =
 
 /**
  * Right-click menus on library cards/folders.
- * Same frosted family as sheets, sized for a compact action list.
+ * Matches the dark sidebar language — compact, not the white glass sheets.
+ * Pair with the `.library-context-menu` CSS token so portaled popovers do not
+ * inherit the light `dashboard-main` variables.
  */
 export const libraryGlassContextMenu =
-  "min-w-[12.75rem] overflow-hidden rounded-xl border border-white/80 " +
-  "bg-white/92 p-1.5 text-zinc-900 " +
-  "shadow-[0_22px_60px_-18px_rgba(0,0,0,0.32),0_0_0_1px_rgba(0,0,0,0.05),inset_0_1px_0_rgba(255,255,255,0.95)] " +
-  "ring-1 ring-black/[0.04] backdrop-blur-xl backdrop-saturate-150"
+  "library-context-menu min-w-[11.5rem] overflow-hidden rounded-xl border border-white/10 " +
+  "bg-[#18181B] p-1 text-zinc-200 " +
+  "shadow-[0_18px_48px_-16px_rgba(0,0,0,0.55),0_0_0_1px_rgba(255,255,255,0.04)] " +
+  "ring-1 ring-white/[0.06]"
 
 /** Menu rows inside `libraryGlassContextMenu`. */
 export const libraryGlassContextMenuItem =
-  "gap-2.5 rounded-lg px-2 py-2 text-[13px] font-medium text-zinc-700 " +
-  "focus:bg-zinc-100 focus:text-zinc-900 data-[variant=destructive]:text-red-600 " +
-  "data-[variant=destructive]:focus:bg-red-50 data-[variant=destructive]:focus:text-red-700"
+  "gap-2 rounded-md px-1.5 py-1.5 text-[12.5px] font-medium text-zinc-300 " +
+  "focus:bg-white/[0.08] focus:text-white data-[variant=destructive]:text-red-400 " +
+  "data-[variant=destructive]:focus:bg-red-500/15 data-[variant=destructive]:focus:text-red-300"
+
+/** Icon chip inside a dark context-menu row. */
+export const libraryContextMenuIcon =
+  "flex size-6 shrink-0 items-center justify-center rounded-md bg-white/[0.08] text-zinc-400"
