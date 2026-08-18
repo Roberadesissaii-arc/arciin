@@ -16,6 +16,45 @@ import type {
   User,
 } from "@prisma/client"
 
+function serializeDocumentInsight(value: unknown) {
+  if (!value || typeof value !== "object") return null
+  const row = value as Record<string, unknown>
+  const summary = typeof row.summary === "string" ? row.summary : ""
+  const keywords = Array.isArray(row.keywords)
+    ? row.keywords.filter((k): k is string => typeof k === "string")
+    : []
+  const links = Array.isArray(row.links)
+    ? row.links.filter((k): k is string => typeof k === "string")
+    : []
+  const topics = Array.isArray(row.topics)
+    ? row.topics.filter((k): k is string => typeof k === "string")
+    : []
+  let about: { kind: string; title: string; note: string | null } | null = null
+  if (row.about && typeof row.about === "object") {
+    const a = row.about as Record<string, unknown>
+    const title = typeof a.title === "string" ? a.title.trim() : ""
+    if (title) {
+      about = {
+        kind: typeof a.kind === "string" ? a.kind : "other",
+        title,
+        note: typeof a.note === "string" && a.note.trim() ? a.note.trim() : null,
+      }
+    }
+  }
+  if (!summary && keywords.length === 0 && links.length === 0 && !about && topics.length === 0) {
+    return null
+  }
+  return {
+    summary,
+    keywords,
+    links,
+    about,
+    topics,
+    model: typeof row.model === "string" ? row.model : null,
+    generatedAt: typeof row.generatedAt === "string" ? row.generatedAt : null,
+  }
+}
+
 export function serializeUser(user: User) {
   return {
     id: user.id,
@@ -121,6 +160,10 @@ export function serializeAsset(asset: Asset) {
     width: asset.width,
     height: asset.height,
     codec: asset.codec,
+    pageCount: asset.pageCount ?? null,
+    documentAuthor: asset.documentAuthor ?? null,
+    documentSubject: asset.documentSubject ?? null,
+    documentInsight: serializeDocumentInsight(asset.documentInsight),
     status: asset.status,
     processingError: asset.processingError,
     importSourceUrl: asset.importSourceUrl,

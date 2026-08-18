@@ -27,7 +27,7 @@ import {
 
 describe("initialUploadSessionState", () => {
   it("leaves completedAt null for media that needs a worker", () => {
-    for (const mediaType of ["IMAGE", "VIDEO", "AUDIO"]) {
+    for (const mediaType of ["IMAGE", "VIDEO", "AUDIO", "DOCUMENT"]) {
       const state = initialUploadSessionState(mediaType)
       expect(state.status).toBe("PROCESSING")
       expect(state.completedAt).toBeNull()
@@ -39,7 +39,7 @@ describe("initialUploadSessionState", () => {
 
   it("completes immediately for files with no worker step", () => {
     const now = new Date("2026-08-04T12:00:00Z")
-    for (const mediaType of ["DOCUMENT", "CODE", "ARCHIVE", "APPLICATION", "OTHER"]) {
+    for (const mediaType of ["CODE", "ARCHIVE", "APPLICATION", "OTHER"]) {
       const state = initialUploadSessionState(mediaType, now)
       expect(state.status).toBe("READY")
       expect(state.progress).toBe(100)
@@ -53,7 +53,7 @@ describe("requiresWorkerProcessing", () => {
     expect(requiresWorkerProcessing("IMAGE")).toBe(true)
     expect(requiresWorkerProcessing("VIDEO")).toBe(true)
     expect(requiresWorkerProcessing("AUDIO")).toBe(true)
-    expect(requiresWorkerProcessing("DOCUMENT")).toBe(false)
+    expect(requiresWorkerProcessing("DOCUMENT")).toBe(true)
     expect(requiresWorkerProcessing("OTHER")).toBe(false)
   })
 })
@@ -63,10 +63,10 @@ describe("apiOwnsCompletionEvent", () => {
     expect(apiOwnsCompletionEvent("IMAGE")).toBe(false)
     expect(apiOwnsCompletionEvent("VIDEO")).toBe(false)
     expect(apiOwnsCompletionEvent("AUDIO")).toBe(false)
+    expect(apiOwnsCompletionEvent("DOCUMENT")).toBe(false)
   })
 
   it("emits from the API for immediately-ready files", () => {
-    expect(apiOwnsCompletionEvent("DOCUMENT")).toBe(true)
     expect(apiOwnsCompletionEvent("OTHER")).toBe(true)
   })
 })

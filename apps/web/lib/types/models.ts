@@ -257,6 +257,22 @@ export type AssetSummary = {
   width?: number | null
   height?: number | null
   codec?: string | null
+  /** PDF page count when extracted. */
+  pageCount?: number | null
+  /** PDF InfoDict author when present. */
+  documentAuthor?: string | null
+  /** PDF InfoDict subject when present. */
+  documentSubject?: string | null
+  /** Assist → Summarize result for documents. */
+  documentInsight?: {
+    summary: string
+    keywords: string[]
+    links: string[]
+    about: { kind: string; title: string; note: string | null } | null
+    topics: string[]
+    model: string | null
+    generatedAt: string | null
+  } | null
   status: AssetStatus
   processingError?: string | null
   importSourceUrl?: string | null

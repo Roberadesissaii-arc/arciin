@@ -503,11 +503,16 @@ export function AssetCard({ asset }: { asset: AssetSummary }) {
           <Info />
           Overview
         </ContextMenuItem>
-        {asset.mediaType === "VIDEO" ? (
+        {asset.mediaType === "VIDEO" ||
+        (asset.mediaType === "DOCUMENT" &&
+          (/\.pdf$/i.test(asset.originalFilename) ||
+            asset.mimeType.toLowerCase() === "application/pdf")) ? (
           <>
             <ContextMenuItem
               className={libraryGlassContextMenuItem}
-              onSelect={openAi}
+              onSelect={
+                asset.mediaType === "VIDEO" ? openAi : () => openAt("ai")
+              }
               data-testid="asset-menu-ai"
             >
               <Sparkles />

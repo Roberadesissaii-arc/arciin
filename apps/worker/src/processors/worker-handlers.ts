@@ -1,4 +1,4 @@
-import { access, lstat, mkdir, readdir, readlink, rm, unlink } from "node:fs/promises"
+import { access, lstat, mkdir, readFile, readdir, readlink, rm, unlink } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 
@@ -14,7 +14,9 @@ import {
   JOB_TYPES,
   VIDEO_THUMBNAIL_PLACEHOLDER_SVG,
   assetSupportsDocumentThumbnail,
+  extractPdfMetadataFromBytes,
   inferMediaType,
+  isPdfFilenameOrMime,
   planTempCleanup,
   isIsoMediaContainerMime,
   refineIsoMediaClassification,
@@ -171,6 +173,10 @@ async function detectMetadata(filePath: string, originalFilename: string) {
   let height: number | undefined
   let durationSeconds: number | undefined
   let codec: string | undefined
+  let pageCount: number | undefined
+  let documentAuthor: string | undefined
+  let documentSubject: string | undefined
+  let documentTitle: string | undefined
 
   if (mimeType?.startsWith("image/")) {
     try {
@@ -211,6 +217,21 @@ async function detectMetadata(filePath: string, originalFilename: string) {
     codec = typeof stream?.codec_name === "string" ? stream.codec_name : undefined
   }
 
+  if (isPdfFilenameOrMime(originalFilename, mimeType)) {
+    try {
+      const bytes = new Uint8Array(await readFile(filePath))
+      const pdf = await extractPdfMetadataFromBytes(bytes)
+      if (pdf.pageCount != null) pageCount = pdf.pageCount
+      if (pdf.author) documentAuthor = pdf.author
+      if (pdf.subject) documentSubject = pdf.subject
+      if (pdf.title) documentTitle = pdf.title
+      if (!mimeType) mimeType = "application/pdf"
+      if (!extension) extension = "pdf"
+    } catch {
+      /* keep classifying even if InfoDict fails */
+    }
+  }
+
   return {
     mimeType,
     extension,
@@ -219,6 +240,10 @@ async function detectMetadata(filePath: string, originalFilename: string) {
     height,
     durationSeconds,
     codec,
+    pageCount,
+    documentAuthor,
+    documentSubject,
+    documentTitle,
   }
 }
 
@@ -406,6 +431,11 @@ export async function handleMediaJob(
         height: metadata.height ?? asset.height,
         durationSeconds: metadata.durationSeconds ?? asset.durationSeconds,
         codec: metadata.codec ?? asset.codec,
+        ...(metadata.pageCount != null ? { pageCount: metadata.pageCount } : {}),
+        ...(metadata.documentAuthor ? { documentAuthor: metadata.documentAuthor } : {}),
+        ...(metadata.documentSubject ? { documentSubject: metadata.documentSubject } : {}),
+        // Fill Asset.title from InfoDict only when the user has not set one.
+        ...(metadata.documentTitle && !asset.title ? { title: metadata.documentTitle } : {}),
       },
     })
 
@@ -431,10 +461,13 @@ export async function handleMediaJob(
       })
     )
 
-    // Audio never gets a thumbnail job, so metadata extraction is the last
-    // required step — finish the upload here. Use the freshly detected type,
-    // not the stale row read before the update above.
-    if (name === JOB_TYPES.extractMetadata && mediaType === "AUDIO") {
+    // Audio never gets a thumbnail job. Documents may get an optional thumbnail
+    // job; when they do not, metadata is the last required step — finish here.
+    // Use the freshly detected type, not the stale row read before the update.
+    if (
+      name === JOB_TYPES.extractMetadata &&
+      (mediaType === "AUDIO" || mediaType === "DOCUMENT")
+    ) {
       await prisma.asset.update({
         where: { id: asset.id },
         data: {

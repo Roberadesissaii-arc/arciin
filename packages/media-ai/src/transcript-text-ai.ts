@@ -409,6 +409,55 @@ export async function suggestVideoSummary(
   return { ...parsed, model }
 }
 
+/* ---------------------------------------------------------- document summary */
+
+export function buildDocumentSummaryPrompt(documentText: string, filename?: string): string {
+  return [
+    "Summarize this document from its extracted text.",
+    filename ? `Filename: ${filename}` : "",
+    "",
+    "Return JSON with:",
+    '- "summary": 2–5 short paragraphs covering what the document is about and key takeaways',
+    '- "keywords": 6–14 concrete keywords (topics, names, products, places)',
+    '- "links": every URL or domain clearly present in the text (empty array if none)',
+    '- "topics": 2–6 short topic labels for browsing',
+    '- "about": when the document is clearly ABOUT a specific titled work or subject, set:',
+    '    { "kind": one of book|movie|tv_show|game|music|person|product|event|topic|other,',
+    '      "title": the best name,',
+    '      "note": optional short extras }',
+    "  If nothing specific is identifiable, omit about.",
+    "",
+    "Rules:",
+    "- Prefer facts grounded in the text; do not invent obscure trivia",
+    "- Keywords and topics should help someone find this file later in a library",
+    "",
+    "Document text:",
+    documentText.slice(0, 24_000),
+  ]
+    .filter(Boolean)
+    .join("\n")
+}
+
+export type SuggestDocumentSummaryInput = {
+  config: GeminiMediaConfig
+  documentText: string
+  filename?: string
+  signal?: AbortSignal
+}
+
+export async function suggestDocumentSummary(
+  input: SuggestDocumentSummaryInput,
+): Promise<VideoSummaryResult> {
+  const { text, model } = await runGeminiText(
+    input.config,
+    buildDocumentSummaryPrompt(input.documentText, input.filename),
+    SUMMARY_RESPONSE_SCHEMA as unknown as Record<string, unknown>,
+    input.signal,
+  )
+  const parsed = parseSummaryPayload(text)
+  return { ...parsed, model }
+}
+
 /**
  * Read titles out of a model reply, and refuse the ones that are not titles.
  *

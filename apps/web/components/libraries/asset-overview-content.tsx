@@ -1,7 +1,7 @@
 "use client"
 
-import { useState } from "react"
-import { useQuery } from "@tanstack/react-query"
+import { useEffect, useRef, useState } from "react"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   Calendar,
   Clock,
@@ -20,6 +20,7 @@ import { AudioCardArtwork } from "@/components/libraries/audio-card-artwork"
 import { MediaTypeIcon } from "@/components/libraries/media-type-icon"
 import { VideoAssetViewer } from "@/components/libraries/video-asset-viewer"
 import { Button } from "@/components/ui/button"
+import { ensureDocumentMetadata } from "@/lib/api/documents"
 import { getUserPreferences } from "@/lib/api/user-preferences"
 import { queryKeys } from "@/lib/api/query-keys"
 import {
@@ -221,11 +222,39 @@ export function AssetOverviewDetails({
   asset: AssetSummary
   className?: string
 }) {
+  const queryClient = useQueryClient()
+  const triedMeta = useRef<string | null>(null)
+
+  // Older PDFs may lack page/author until we ask once.
+  useEffect(() => {
+    if (asset.mediaType !== "DOCUMENT") return
+    if (!/\.pdf$/i.test(asset.originalFilename) && asset.mimeType.toLowerCase() !== "application/pdf") {
+      return
+    }
+    if (asset.pageCount != null) return
+    if (triedMeta.current === asset.id) return
+    triedMeta.current = asset.id
+    void ensureDocumentMetadata(asset.id)
+      .then(() => {
+        void queryClient.invalidateQueries({ queryKey: queryKeys.assetsRoot })
+      })
+      .catch(() => {
+        /* leave Overview with whatever we have */
+      })
+  }, [asset.id, asset.mediaType, asset.originalFilename, asset.mimeType, asset.pageCount, queryClient])
+
   const duration = formatDuration(asset.durationSeconds)
   const resolution = asset.width && asset.height ? `${asset.width}×${asset.height}` : null
+  const isDocument = asset.mediaType === "DOCUMENT"
 
   const rows = [
     { label: "Filename", value: <span className="break-words">{asset.originalFilename}</span> },
+    asset.title
+      ? {
+          label: "Title",
+          value: <span className="break-words">{asset.title}</span>,
+        }
+      : null,
     {
       label: "Format",
       value: (
@@ -235,6 +264,28 @@ export function AssetOverviewDetails({
         </span>
       ),
     },
+    isDocument && asset.pageCount != null
+      ? {
+          label: "Pages",
+          value: (
+            <span className="inline-flex items-center gap-1.5 tabular-nums">
+              {asset.pageCount} {asset.pageCount === 1 ? "page" : "pages"}
+            </span>
+          ),
+        }
+      : null,
+    isDocument && asset.documentAuthor
+      ? {
+          label: "Author",
+          value: <span className="break-words">{asset.documentAuthor}</span>,
+        }
+      : null,
+    isDocument && asset.documentSubject
+      ? {
+          label: "Subject",
+          value: <span className="break-words">{asset.documentSubject}</span>,
+        }
+      : null,
     duration
       ? {
           label: "Length",
@@ -353,7 +404,9 @@ export function AssetOverviewContent({
               <span className="min-w-0">
                 <span className="block text-[13px] font-semibold text-zinc-900">Open Assist</span>
                 <span className="block text-[11.5px] text-zinc-500">
-                  Transcript, title, and summarize
+                  {asset.mediaType === "DOCUMENT"
+                    ? "Summarize this document"
+                    : "Transcript, title, and summarize"}
                 </span>
               </span>
             </span>

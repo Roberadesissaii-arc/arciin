@@ -38,10 +38,16 @@ export const UPLOAD_CLASSIFIED_PROGRESS = 90
  * Media types that need a worker before the upload can be called finished.
  *
  * AUDIO is included: it gets a metadata job (which is what promotes it), just
- * not a thumbnail job.
+ * not a thumbnail job. DOCUMENT is included for PDF page/author extraction
+ * (and optional document thumbnails).
  */
 export function requiresWorkerProcessing(mediaType: string): boolean {
-  return mediaType === "VIDEO" || mediaType === "IMAGE" || mediaType === "AUDIO"
+  return (
+    mediaType === "VIDEO" ||
+    mediaType === "IMAGE" ||
+    mediaType === "AUDIO" ||
+    mediaType === "DOCUMENT"
+  )
 }
 
 export type UploadSessionLifecycleState = {

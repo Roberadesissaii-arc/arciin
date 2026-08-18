@@ -456,6 +456,14 @@ model Asset {
   width                   Int?
   height                  Int?
   codec                   String?
+  /// PDF (and similar) page count from InfoDict / parser — null until extracted.
+  pageCount               Int?
+  /// PDF InfoDict Author when present.
+  documentAuthor          String?
+  /// PDF InfoDict Subject when present.
+  documentSubject         String?
+  /// Assist → Summarize for documents (JSON: summary, keywords, topics, …).
+  documentInsight         Json?
   status                  AssetStatus
   processingError         String?
   /// Original public link this asset was imported from (used to show a source badge).

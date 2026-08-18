@@ -40,16 +40,17 @@ describe("planUploadOutbox", () => {
     expect(jobs.map((j) => j.jobName)).toEqual(["extract_metadata"])
   })
 
-  it("plans nothing for a plain document", () => {
-    expect(planUploadOutbox({ ...base, mediaType: "DOCUMENT" }, JOB_NAMES)).toEqual([])
+  it("plans metadata for a document (PDF page/author extraction)", () => {
+    const jobs = planUploadOutbox({ ...base, mediaType: "DOCUMENT" }, JOB_NAMES)
+    expect(jobs.map((j) => j.jobName)).toEqual(["extract_metadata"])
   })
 
-  it("plans only a thumbnail for a document when the user wants document previews", () => {
+  it("plans metadata then a thumbnail when the user wants document previews", () => {
     const jobs = planUploadOutbox(
       { ...base, mediaType: "DOCUMENT", wantsDocumentThumbnail: true },
       JOB_NAMES,
     )
-    expect(jobs.map((j) => j.jobName)).toEqual(["generate_thumbnail"])
+    expect(jobs.map((j) => j.jobName)).toEqual(["extract_metadata", "generate_thumbnail"])
   })
 
   it("orders metadata before the thumbnail", () => {

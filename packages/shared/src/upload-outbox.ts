@@ -64,7 +64,13 @@ export function outboxJobId(kind: OutboxJobKind, assetId: string): string {
 }
 
 export function requiresMetadataExtraction(mediaType: string): boolean {
-  return mediaType === "VIDEO" || mediaType === "IMAGE" || mediaType === "AUDIO"
+  // Documents (especially PDFs) need page count / author extraction on upload.
+  return (
+    mediaType === "VIDEO" ||
+    mediaType === "IMAGE" ||
+    mediaType === "AUDIO" ||
+    mediaType === "DOCUMENT"
+  )
 }
 
 export function requiresVisualThumbnail(mediaType: string): boolean {

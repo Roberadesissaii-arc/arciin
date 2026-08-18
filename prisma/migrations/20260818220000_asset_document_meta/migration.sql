@@ -1,0 +1,5 @@
+-- AlterTable
+ALTER TABLE "Asset" ADD COLUMN IF NOT EXISTS "pageCount" INTEGER;
+ALTER TABLE "Asset" ADD COLUMN IF NOT EXISTS "documentAuthor" TEXT;
+ALTER TABLE "Asset" ADD COLUMN IF NOT EXISTS "documentSubject" TEXT;
+ALTER TABLE "Asset" ADD COLUMN IF NOT EXISTS "documentInsight" JSONB;

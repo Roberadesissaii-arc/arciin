@@ -7,6 +7,8 @@ import { ChevronLeft, Loader2, X } from "lucide-react"
 import { AssetEditContent } from "@/components/libraries/rename-asset-dialog"
 import { AssetMoveContent } from "@/components/libraries/move-asset-dialog"
 import { AssetShareContent } from "@/components/shares/share-dialog"
+import { DocumentAssistSection } from "@/components/libraries/document-assist-section"
+import { isPdfAsset } from "@/lib/api/documents"
 import { VideoTranscriptSection } from "@/components/libraries/video-edit-drawer"
 import { useAssetPanelIntent } from "@/components/libraries/asset-panel-intent"
 import { AssetOverviewContent } from "@/components/libraries/asset-overview-content"
@@ -62,7 +64,7 @@ const SECTION_LABELS: Record<Section, string> = {
 
 function sectionsFor(asset: AssetSummary): Section[] {
   const base: Section[] = ["overview", "edit"]
-  if (asset.mediaType === "VIDEO") base.push("ai")
+  if (asset.mediaType === "VIDEO" || isPdfAsset(asset)) base.push("ai")
   return [...base, "move", "share"]
 }
 
@@ -336,7 +338,9 @@ function PanelSections({
                   if (videoEditor?.canEdit(asset)) videoEditor.openEditor(asset)
                   else setSection("ai")
                 }
-              : undefined
+              : isPdfAsset(asset)
+                ? () => setSection("ai")
+                : undefined
           }
         />
       ) : null}
@@ -344,11 +348,15 @@ function PanelSections({
         <AssetEditContent asset={asset} onDone={() => setSection("overview")} />
       ) : null}
       {active === "ai" ? (
-        <VideoTranscriptSection
-          asset={asset}
-          showDetails={false}
-          initialTab={aiTab}
-        />
+        asset.mediaType === "VIDEO" ? (
+          <VideoTranscriptSection
+            asset={asset}
+            showDetails={false}
+            initialTab={aiTab}
+          />
+        ) : (
+          <DocumentAssistSection asset={asset} />
+        )
       ) : null}
       {active === "move" ? (
         <AssetMoveContent asset={asset} onDone={() => selection?.clear()} />
