@@ -1,8 +1,8 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useQueryClient } from "@tanstack/react-query"
-import { ArrowRightLeft, Info, Loader2, Pencil, Share2, Sparkles, X } from "lucide-react"
+import { ChevronLeft, Loader2, X } from "lucide-react"
 
 import { AssetEditContent } from "@/components/libraries/rename-asset-dialog"
 import { AssetMoveContent } from "@/components/libraries/move-asset-dialog"
@@ -41,19 +41,10 @@ import { cn } from "@/lib/utils"
 /**
  * One workspace for one selected file.
  *
- * Selecting a single file used to raise a bottom toolbar whose every button
- * opened a different floating dialog — edit here, move there, share somewhere
- * else — so a simple "rename it and put it in the right folder" meant three
- * separate modals with three separate animations.
- *
- * This is the same set of capabilities behind one panel that stays mounted
- * while you move between them. Nothing here reimplements any of it: Edit, Move
- * and Share render the very same form components the standalone sheets do, and
- * the transcript is the one the video drawer already used.
- *
- * The shell is `libraryGlassSheetPanel` — the token Edit File, Move, Share and
- * Create Folder already share — so this belongs to that family by construction
- * rather than by imitation, insets and corner radius included.
+ * Clicking a card always opens Overview — that is what a plain selection means.
+ * Edit, Move, Share and AI live on the card's right-click menu instead of a tab
+ * bar across the top of this panel. Those actions still render here (same forms
+ * as the standalone sheets), just without a permanent tab strip to aim at.
  */
 
 type Section = "overview" | "edit" | "ai" | "move" | "share"
@@ -66,20 +57,6 @@ const SECTION_LABELS: Record<Section, string> = {
   share: "Share",
 }
 
-const SECTION_ICONS: Record<Section, typeof Info> = {
-  overview: Info,
-  edit: Pencil,
-  ai: Sparkles,
-  move: ArrowRightLeft,
-  share: Share2,
-}
-
-/**
- * Which sections this file actually has.
- *
- * A transcript is meaningless for a PNG, and offering it would be a promise the
- * panel cannot keep, so AI appears only where there is something behind it.
- */
 function sectionsFor(asset: AssetSummary): Section[] {
   const base: Section[] = ["overview", "edit"]
   if (asset.mediaType === "VIDEO") base.push("ai")
@@ -198,7 +175,7 @@ export function AssetSidePanel() {
             </Button>
             <SheetTitle
               tabIndex={-1}
-              className="sr-only"
+              className="truncate pr-2 text-[14px] font-semibold leading-snug text-foreground"
               title={asset.originalFilename}
             >
               {asset.originalFilename}
@@ -253,11 +230,10 @@ export function AssetSidePanel() {
 }
 
 /**
- * Navigation plus the active section.
+ * Active section for one file.
  *
- * Separate component so React can reset it by key. The panel shell stays
- * mounted across files — no close/reopen animation when you click the next
- * card — while everything inside starts fresh.
+ * No tab bar — click always lands on Overview. Edit / Move / Share / AI arrive
+ * through the card context menu (or the AI indicator), via panel intent.
  */
 function PanelSections({
   asset,
@@ -271,70 +247,62 @@ function PanelSections({
   const sections = sectionsFor(asset)
 
   /**
-   * Read once, while mounting for this asset.
-   *
-   * This component is keyed by asset id, so the initialiser runs exactly when a
-   * new file is opened — which is the moment an intent is either relevant or
-   * spent. Consuming it here rather than in an effect also means the first paint
-   * is already on the right section, with no flash of Overview.
+   * Read once on mount for this asset so the first paint is already on the
+   * right section when the open came from a menu or AI indicator.
    */
-  const [intent] = useState(() => intentContext?.consume(asset.id) ?? null)
-  const [section, setSection] = useState<Section>(intent?.section ?? "overview")
+  const [seed] = useState(() => intentContext?.consume(asset.id) ?? null)
+  const [section, setSection] = useState<Section>(seed?.section ?? "overview")
+  const [aiTab, setAiTab] = useState<"transcript" | "title" | undefined>(seed?.aiTab)
+  const appliedGeneration = useRef(intentContext?.generation ?? 0)
+
+  /**
+   * Apply a later intent without remounting.
+   *
+   * Right-click → Edit while this file is already selected does not change the
+   * asset key, so the mount initialiser never runs again. Watching generation
+   * is what makes that path land on the requested section.
+   */
+  useEffect(() => {
+    const gen = intentContext?.generation ?? 0
+    if (gen === appliedGeneration.current) return
+    appliedGeneration.current = gen
+    const next = intentContext?.consume(asset.id)
+    if (!next?.section) return
+    if (!sectionsFor(asset).includes(next.section)) return
+    setSection(next.section)
+    if (next.aiTab) setAiTab(next.aiTab)
+  }, [asset, intentContext])
+
   const active = sections.includes(section) ? section : "overview"
 
   return (
     <>
-      <nav
-        aria-label="Asset sections"
-        /**
-         * A grid, not a scrolling row.
-         *
-         * Five items with icon-and-label overflowed the panel and grew arrows,
-         * so reaching Share meant scrolling a five-item menu. Equal columns fit
-         * every section at once at any panel width, and the labels stack under
-         * their icons rather than competing with them for horizontal space.
-         */
-        className="grid shrink-0 gap-0.5 border-b border-border p-1.5"
-        // Columns follow the number of sections, so a file without an AI
-        // section does not leave a gap where its tab would have been.
-        style={{ gridTemplateColumns: `repeat(${sections.length}, minmax(0, 1fr))` }}
-        data-testid="asset-panel-nav"
-      >
-        {sections.map((key) => {
-          const Icon = SECTION_ICONS[key]
-          const current = key === active
-          return (
-            <button
-              key={key}
-              type="button"
-              onClick={() => setSection(key)}
-              aria-current={current ? "page" : undefined}
-              data-testid={`asset-panel-tab-${key}`}
-              title={SECTION_LABELS[key]}
-              className={cn(
-                "group relative flex flex-col items-center gap-1 rounded-lg px-1 pb-1.5 pt-2 transition-colors",
-                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30",
-                current
-                  ? "bg-primary/10 text-primary"
-                  : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
-              )}
-            >
-              <Icon className="size-4 shrink-0" aria-hidden />
-              <span className="text-[10.5px] font-semibold leading-none tracking-tight">
-                {SECTION_LABELS[key]}
-              </span>
-              {/* The active marker, in the accent — a tab bar without the scroll. */}
-              <span
-                aria-hidden
-                className={cn(
-                  "absolute inset-x-2 -bottom-px h-[2px] rounded-full transition-opacity",
-                  current ? "bg-primary opacity-100" : "opacity-0",
-                )}
-              />
-            </button>
-          )
-        })}
-      </nav>
+      {/* When a menu opened a non-overview section, offer a quiet way back.
+          No permanent tabs — just the current destination and Overview. */}
+      {active !== "overview" ? (
+        <div
+          className="flex shrink-0 items-center gap-2 border-b border-border px-2.5 py-2"
+          data-testid="asset-panel-section-bar"
+        >
+          <button
+            type="button"
+            onClick={() => setSection("overview")}
+            data-testid="asset-panel-back-overview"
+            className={cn(
+              "inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[12px] font-medium",
+              "text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30",
+            )}
+          >
+            <ChevronLeft className="size-3.5" aria-hidden />
+            Overview
+          </button>
+          <span className="text-[12px] text-border" aria-hidden>
+            /
+          </span>
+          <span className="text-[12.5px] font-semibold text-foreground">{SECTION_LABELS[active]}</span>
+        </div>
+      ) : null}
 
       {active === "overview" ? (
         <AssetOverviewContent
@@ -350,7 +318,7 @@ function PanelSections({
         <VideoTranscriptSection
           asset={asset}
           showDetails={false}
-          initialTab={intent?.aiTab}
+          initialTab={aiTab}
         />
       ) : null}
       {active === "move" ? (

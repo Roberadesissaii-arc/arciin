@@ -19,9 +19,9 @@ async function openTranscript(page: Page) {
   await page.goto("/videos")
   const card = page.locator(`[data-asset-id="${FIXTURE}"]`)
   await expect(card).toBeVisible({ timeout: 60_000 })
-  await card.click()
+  await card.click({ button: "right" })
+  await page.getByTestId("asset-menu-ai").click()
   await expect(panel(page)).toBeVisible({ timeout: 15_000 })
-  await page.getByTestId("asset-panel-tab-ai").click()
   await panel(page).getByTestId("video-ai-tab-transcript").click()
   await expect(transcript(page).getByTestId("video-transcript-segments")).toBeVisible({
     timeout: 20_000,

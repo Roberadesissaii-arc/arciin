@@ -8,13 +8,13 @@ import type { ReactNode } from "react"
  *
  * Selecting a card opens the panel on Overview, which is right when the card was
  * all someone clicked. It is wrong when they clicked a running-transcript
- * indicator: that is a request to see that job, and making them find AI and then
- * Transcript turns one click into three.
+ * indicator or picked Edit from the right-click menu: that is a request to land
+ * on a specific section, and making them find it turns one click into three.
  *
  * So a caller may state where it wants to land. The intent is consumed once —
- * the panel reads it while mounting for that asset and then forgets it — because
- * it describes a navigation that happened, not a mode the panel is in. Left
- * standing, it would drag the reader back every time they tried to leave.
+ * the panel reads it while mounting for that asset (and again when a new intent
+ * arrives while the panel is already open) and then forgets it — because it
+ * describes a navigation that happened, not a mode the panel is in.
  */
 
 export type AssetPanelIntent = {
@@ -30,6 +30,12 @@ type ContextValue = {
   open: (intent: AssetPanelIntent) => void
   /** Reads and clears the intent, if it is for this asset. */
   consume: (assetId: string) => AssetPanelIntent | null
+  /**
+   * Bumps every time an intent is posted.
+   * The panel watches this so a right-click action still works when the same
+   * file is already selected (no remount → no useState initialiser).
+   */
+  generation: number
 }
 
 const AssetPanelIntentContext = createContext<ContextValue | null>(null)
@@ -43,15 +49,12 @@ export function AssetPanelIntentProvider({
   onOpen: (assetId: string) => void
 }) {
   const pending = useRef<AssetPanelIntent | null>(null)
-  // Only so consumers re-render when an intent is set; the value itself is read
-  // from the ref, which is what makes "consume once" reliable under StrictMode's
-  // double render.
-  const [, setVersion] = useState(0)
+  const [generation, setGeneration] = useState(0)
 
   const open = useCallback(
     (intent: AssetPanelIntent) => {
       pending.current = intent
-      setVersion((v) => v + 1)
+      setGeneration((g) => g + 1)
       onOpen(intent.assetId)
     },
     [onOpen],
@@ -64,7 +67,7 @@ export function AssetPanelIntentProvider({
     return intent
   }, [])
 
-  const value = useMemo(() => ({ open, consume }), [open, consume])
+  const value = useMemo(() => ({ open, consume, generation }), [open, consume, generation])
 
   return (
     <AssetPanelIntentContext.Provider value={value}>{children}</AssetPanelIntentContext.Provider>

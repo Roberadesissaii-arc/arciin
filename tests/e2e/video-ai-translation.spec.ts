@@ -24,9 +24,9 @@ async function openAiSection(page: Page) {
   await page.goto("/videos")
   const card = page.locator(`[data-asset-id="${FIXTURE}"]`)
   await expect(card).toBeVisible({ timeout: 60_000 })
-  await card.click()
+  await card.click({ button: "right" })
+  await page.getByTestId("asset-menu-ai").click()
   await expect(panel(page)).toBeVisible({ timeout: 15_000 })
-  await page.getByTestId("asset-panel-tab-ai").click()
   await expect(panel(page).getByTestId("video-ai-nav")).toBeVisible({ timeout: 20_000 })
 }
 
@@ -330,7 +330,8 @@ test.describe("a real translation", () => {
     console.log(`[ai] applied: ${applied}`)
 
     // ── put the fixture back, so seeding stays stable for every other spec
-    await page.getByTestId("asset-panel-tab-edit").click()
+    await page.locator(`[data-asset-id="${FIXTURE}"]`).click({ button: "right" })
+    await page.getByTestId("asset-menu-edit").click()
     const field = panel(page).locator("input").first()
     await field.fill(ORIGINAL_NAME)
     await panel(page).getByRole("button", { name: /save changes/i }).click()

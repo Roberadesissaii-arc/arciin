@@ -36,6 +36,7 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu"
+
 import { Field, FieldError, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import {
@@ -57,7 +58,11 @@ import {
 import { getPasswordVault } from "@/lib/api/password-vault"
 import type { FolderCredentialInput } from "@/lib/api/libraries"
 import { queryKeys } from "@/lib/api/query-keys"
-import { libraryGlassSheetPanel } from "@/lib/library-glass-sheet"
+import {
+  libraryGlassContextMenu,
+  libraryGlassContextMenuItem,
+  libraryGlassSheetPanel,
+} from "@/lib/library-glass-sheet"
 import type { FolderSummary } from "@/lib/types/models"
 import { cn } from "@/lib/utils"
 
@@ -259,8 +264,9 @@ export function FolderCard({ folder, librarySlug }: { folder: FolderSummary; lib
             </Link>
           </div>
         </ContextMenuTrigger>
-        <ContextMenuContent className="min-w-44">
+        <ContextMenuContent className={cn(libraryGlassContextMenu, "dashboard-main")}>
           <ContextMenuItem
+            className={libraryGlassContextMenuItem}
             onSelect={() => {
               if (needsUnlock) {
                 openAccessDialog("open")
@@ -275,53 +281,78 @@ export function FolderCard({ folder, librarySlug }: { folder: FolderSummary; lib
               <Link href={href}>Open folder</Link>
             )}
           </ContextMenuItem>
-          <ContextMenuSeparator />
+          <ContextMenuSeparator className="mx-1 my-1 bg-zinc-200/80" />
           <ContextMenuItem
+            className={libraryGlassContextMenuItem}
             onSelect={() => {
               setRenameName(folder.name)
               setRenameError(undefined)
               setRenameOpen(true)
             }}
           >
-            <PencilLine className="size-4" />
+            <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-zinc-100 text-zinc-600">
+              <PencilLine className="size-3.5" />
+            </span>
             Rename…
           </ContextMenuItem>
           {locked ? (
             <>
-              <ContextMenuItem onSelect={() => openAccessDialog("open")}>
-                <FolderLock className="size-4" />
+              <ContextMenuItem
+                className={libraryGlassContextMenuItem}
+                onSelect={() => openAccessDialog("open")}
+              >
+                <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-zinc-100 text-zinc-600">
+                  <FolderLock className="size-3.5" />
+                </span>
                 Enter password to open…
               </ContextMenuItem>
-              <ContextMenuItem onSelect={() => openAccessDialog("remove-lock")}>
-                <FolderLock className="size-4" />
+              <ContextMenuItem
+                className={libraryGlassContextMenuItem}
+                onSelect={() => openAccessDialog("remove-lock")}
+              >
+                <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-zinc-100 text-zinc-600">
+                  <FolderLock className="size-3.5" />
+                </span>
                 Remove lock…
               </ContextMenuItem>
             </>
           ) : (
-            <ContextMenuItem onSelect={() => openAccessDialog("lock")}>
-              <FolderLock className="size-4" />
+            <ContextMenuItem
+              className={libraryGlassContextMenuItem}
+              onSelect={() => openAccessDialog("lock")}
+            >
+              <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-zinc-100 text-zinc-600">
+                <FolderLock className="size-3.5" />
+              </span>
               Lock folder…
             </ContextMenuItem>
           )}
-          <ContextMenuSeparator />
+          <ContextMenuSeparator className="mx-1 my-1 bg-zinc-200/80" />
           <ContextMenuItem
+            className={libraryGlassContextMenuItem}
             disabled={needsUnlock}
             onSelect={() => setShareOpen(true)}
           >
-            <Share2 className="size-4" />
+            <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-zinc-100 text-zinc-600">
+              <Share2 className="size-3.5" />
+            </span>
             Share…
           </ContextMenuItem>
           {/* Separate action, not a mode of Share: Share lets someone read this
               folder, Request files lets someone write into it without reading. */}
           <ContextMenuItem
+            className={libraryGlassContextMenuItem}
             disabled={needsUnlock}
             onSelect={() => setRequestOpen(true)}
             data-testid="folder-request-files"
           >
-            <Inbox className="size-4" />
+            <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-zinc-100 text-zinc-600">
+              <Inbox className="size-3.5" />
+            </span>
             Request files…
           </ContextMenuItem>
           <ContextMenuItem
+            className={libraryGlassContextMenuItem}
             disabled={updateMutation.isPending}
             onSelect={async () => {
               const next = !hideFromAllFiles
@@ -341,12 +372,20 @@ export function FolderCard({ folder, librarySlug }: { folder: FolderSummary; lib
               }
             }}
           >
-            {hideFromAllFiles ? <Eye className="size-4" /> : <EyeOff className="size-4" />}
+            <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-zinc-100 text-zinc-600">
+              {hideFromAllFiles ? <Eye className="size-3.5" /> : <EyeOff className="size-3.5" />}
+            </span>
             {hideFromAllFiles ? "Show in All Files" : "Hide from All Files"}
           </ContextMenuItem>
-          <ContextMenuSeparator />
-          <ContextMenuItem variant="destructive" onSelect={() => setDeleteOpen(true)}>
-            <Trash2 className="size-4" />
+          <ContextMenuSeparator className="mx-1 my-1 bg-zinc-200/80" />
+          <ContextMenuItem
+            className={libraryGlassContextMenuItem}
+            variant="destructive"
+            onSelect={() => setDeleteOpen(true)}
+          >
+            <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-red-50 text-red-600">
+              <Trash2 className="size-3.5" />
+            </span>
             Delete…
           </ContextMenuItem>
         </ContextMenuContent>

@@ -27,6 +27,42 @@ function cards(page: Page) {
   return page.locator("[data-asset-selectable][data-asset-id]")
 }
 
+/**
+ * Sections live on the card's right-click menu now — not a tab bar on the panel.
+ * Open the menu and pick a section for the given asset card.
+ */
+async function openSectionFromMenu(
+  page: Page,
+  assetLocator: ReturnType<Page["locator"]>,
+  section: "overview" | "edit" | "ai" | "move" | "share",
+) {
+  await assetLocator.click({ button: "right" })
+  await page.getByTestId(`asset-menu-${section}`).click()
+  await expect(panel(page)).toBeVisible({ timeout: 15_000 })
+}
+
+/** Assert which actions the card context menu offers. */
+async function expectMenuSections(
+  page: Page,
+  assetLocator: ReturnType<Page["locator"]>,
+  sections: Array<"overview" | "edit" | "ai" | "move" | "share">,
+  absent: Array<"overview" | "edit" | "ai" | "move" | "share"> = [],
+) {
+  await assetLocator.click({ button: "right" })
+  const menu = page.getByTestId("asset-card-menu")
+  await expect(menu).toBeVisible()
+  for (const section of sections) {
+    await expect(menu.getByTestId(`asset-menu-${section}`)).toBeVisible()
+  }
+  for (const section of absent) {
+    await expect(menu.getByTestId(`asset-menu-${section}`)).toHaveCount(0)
+  }
+  // Dismiss the menu without Escape — Escape also clears the selection and
+  // closes the side panel, which would wreck the next assertion.
+  await page.mouse.click(8, 8)
+  await expect(menu).toHaveCount(0)
+}
+
 test.describe("the single-asset panel", () => {
   test.setTimeout(180_000)
 
@@ -79,16 +115,14 @@ test.describe("the single-asset panel", () => {
 
   test("carries the same shell as the Edit File family", async ({ page }) => {
     await openVideos(page)
+    const card = page.locator(`[data-asset-id="${VIDEO_FIXTURE}"]`)
 
-    await page.locator(`[data-asset-id="${VIDEO_FIXTURE}"]`).click()
-    await expect(panel(page)).toBeVisible({ timeout: 15_000 })
+    await openSectionFromMenu(page, card, "move")
     const mine = await panel(page).evaluate((el) => {
       const s = getComputedStyle(el)
       return { radius: s.borderTopLeftRadius, border: s.borderTopWidth, shadow: s.boxShadow !== "none" }
     })
 
-    // The reference: the standalone Move sheet, which uses the shared token.
-    await page.getByTestId("asset-panel-tab-move").click()
     await expect(panel(page)).toContainText(/move/i)
 
     expect(mine.shadow, "a shadow, like the other library panels").toBe(true)
@@ -96,35 +130,38 @@ test.describe("the single-asset panel", () => {
     expect(Number.parseFloat(mine.radius), "medium radius").toBeGreaterThanOrEqual(8)
   })
 
-  test("keeps one shell while moving between sections", async ({ page }) => {
+  test("keeps one shell while moving between sections via the card menu", async ({ page }) => {
     await openVideos(page)
-    await page.locator(`[data-asset-id="${VIDEO_FIXTURE}"]`).click()
+    const card = page.locator(`[data-asset-id="${VIDEO_FIXTURE}"]`)
+
+    // Click opens Overview — no tab bar on the panel.
+    await card.click()
     await expect(panel(page)).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByTestId("asset-panel-nav")).toHaveCount(0)
+    await expect(page.getByTestId("asset-panel-download")).toBeVisible()
 
-    // A video gets Overview / Edit / AI / Move / Share.
-    for (const tab of ["overview", "edit", "ai", "move", "share"]) {
-      await expect(page.getByTestId(`asset-panel-tab-${tab}`)).toBeVisible()
-    }
+    // A video's menu offers Overview / Edit / AI / Move / Share.
+    await expectMenuSections(page, card, ["overview", "edit", "ai", "move", "share"])
 
-    // 10-11 — Edit shows the real form.
-    await page.getByTestId("asset-panel-tab-edit").click()
+    // Edit shows the real form.
+    await openSectionFromMenu(page, card, "edit")
     await expect(panel(page)).toContainText(/file name/i)
     await expect(panel(page).getByRole("button", { name: /save changes/i })).toBeVisible()
 
-    // 12-13 — AI shows the transcript, not a stub.
-    await page.getByTestId("asset-panel-tab-ai").click()
+    // AI shows the transcript, not a stub.
+    await openSectionFromMenu(page, card, "ai")
     await expect(panel(page).getByTestId("video-transcript")).toBeVisible({ timeout: 20_000 })
 
-    // 14-16 — Move shows destination pickers, and leaving it moves nothing.
-    await page.getByTestId("asset-panel-tab-move").click()
+    // Move shows destination pickers.
+    await openSectionFromMenu(page, card, "move")
     await expect(panel(page)).toContainText(/library/i)
 
-    // 17-18 — Share shows the link form.
-    await page.getByTestId("asset-panel-tab-share").click()
+    // Share shows the link form.
+    await openSectionFromMenu(page, card, "share")
     await expect(panel(page).getByRole("button", { name: /create share link/i })).toBeVisible()
 
-    // 19 — Download is an immediate action on Overview.
-    await page.getByTestId("asset-panel-tab-overview").click()
+    // Back to Overview from the section chrome.
+    await page.getByTestId("asset-panel-back-overview").click()
     await expect(page.getByTestId("asset-panel-download")).toBeVisible()
 
     // The shell never went away while all that happened.
@@ -140,9 +177,7 @@ test.describe("the single-asset panel", () => {
     const first = (await all.nth(0).getAttribute("data-asset-id"))!
     const second = (await all.nth(1).getAttribute("data-asset-id"))!
 
-    await all.nth(0).click()
-    await expect(panel(page)).toBeVisible({ timeout: 15_000 })
-    await page.getByTestId("asset-panel-tab-edit").click()
+    await openSectionFromMenu(page, all.nth(0), "edit")
 
     await all.nth(1).click()
     // Same shell, new file, and back to Overview rather than the previous
@@ -221,15 +256,14 @@ test.describe("the panel does not steal the old interactions", () => {
     await expect(panel(page), "rows open the same panel").toBeVisible({ timeout: 15_000 })
     await expect(panel(page)).toContainText(`${VIDEO_FIXTURE}.mp4`)
     await expect(bulkBar(page)).toHaveCount(0)
-    await expect(page.getByTestId("asset-panel-tab-ai"), "still a video").toBeVisible()
+    // Rows may not share the card context menu; overview is enough here.
+    await expect(panel(page).getByTestId("asset-panel-preview")).toBeVisible()
   })
 
   test("an edit made in the panel persists", async ({ page }) => {
     await openVideos(page)
     const card = page.locator(`[data-asset-id="${VIDEO_FIXTURE}"]`)
-    await card.click()
-    await expect(panel(page)).toBeVisible({ timeout: 15_000 })
-    await page.getByTestId("asset-panel-tab-edit").click()
+    await openSectionFromMenu(page, card, "edit")
 
     const field = panel(page).locator("input").first()
     await expect(field).toBeVisible()
@@ -247,7 +281,7 @@ test.describe("the panel does not steal the old interactions", () => {
     await expect(panel(page)).toContainText(renamed, { timeout: 15_000 })
 
     // Put it back, so the fixture stays what every other spec expects.
-    await page.getByTestId("asset-panel-tab-edit").click()
+    await openSectionFromMenu(page, page.locator(`[data-asset-id="${VIDEO_FIXTURE}"]`), "edit")
     const again = panel(page).locator("input").first()
     await again.fill(original)
     await panel(page).getByRole("button", { name: /save changes/i }).click()
@@ -305,14 +339,16 @@ test.describe("asset type decides the sections", () => {
     await expect(panel(page)).toContainText("480×270")
     await expect(panel(page), "no duration for a still").not.toContainText("Duration")
 
-    // Every shared section, and none of the video-only ones.
-    for (const tab of ["overview", "edit", "move", "share"]) {
-      await expect(page.getByTestId(`asset-panel-tab-${tab}`)).toBeVisible()
-    }
-    await expect(page.getByTestId("asset-panel-tab-ai"), "images get no video AI").toHaveCount(0)
+    // Menu offers shared actions; AI is video-only.
+    await expectMenuSections(
+      page,
+      card,
+      ["overview", "edit", "move", "share"],
+      ["ai"],
+    )
     await expect(panel(page).getByTestId("video-transcript")).toHaveCount(0)
 
-    // Download and Delete are both offered.
+    // Download and Delete are both offered on Overview.
     await expect(page.getByTestId("asset-panel-download")).toBeVisible()
     await expect(page.getByTestId("asset-panel-delete")).toBeVisible()
 
@@ -324,8 +360,8 @@ test.describe("asset type decides the sections", () => {
 
   test("a video offers AI; other types do not", async ({ page }) => {
     await openVideos(page)
-    await page.locator(`[data-asset-id="${VIDEO_FIXTURE}"]`).click()
-    await expect(page.getByTestId("asset-panel-tab-ai")).toBeVisible({ timeout: 15_000 })
+    const videoCard = page.locator(`[data-asset-id="${VIDEO_FIXTURE}"]`)
+    await expectMenuSections(page, videoCard, ["overview", "edit", "ai", "move", "share"])
 
     // A document must not be offered a transcript it cannot have.
     await page.goto("/documents")
@@ -335,14 +371,12 @@ test.describe("asset type decides the sections", () => {
     })
     await docs.nth(0).click()
     await expect(panel(page)).toBeVisible({ timeout: 15_000 })
-    await expect(
-      page.getByTestId("asset-panel-tab-ai"),
-      "documents get no video AI section",
-    ).toHaveCount(0)
     await expect(panel(page).getByTestId("video-transcript")).toHaveCount(0)
-    // But the shared sections are all still there.
-    for (const tab of ["overview", "edit", "move", "share"]) {
-      await expect(page.getByTestId(`asset-panel-tab-${tab}`)).toBeVisible()
-    }
+    await expectMenuSections(
+      page,
+      docs.nth(0),
+      ["overview", "edit", "move", "share"],
+      ["ai"],
+    )
   })
 })

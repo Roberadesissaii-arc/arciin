@@ -39,9 +39,14 @@ import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
+  ContextMenuLabel,
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu"
+import {
+  libraryGlassContextMenu,
+  libraryGlassContextMenuItem,
+} from "@/lib/library-glass-sheet"
 import { formatCardRelativeTime } from "@/lib/utils/format-card-relative-time"
 import { inferDestinationLabel } from "@/lib/utils/media-type"
 import { cn } from "@/lib/utils"
@@ -505,29 +510,69 @@ export function AssetCard({ asset }: { asset: AssetSummary }) {
     </article>
       </ContextMenuTrigger>
 
-      <ContextMenuContent className="min-w-44" data-testid="asset-card-menu">
-        <ContextMenuItem onSelect={() => openAt("overview")} data-testid="asset-menu-overview">
-          <Info className="size-4" />
+      <ContextMenuContent
+        className={cn(libraryGlassContextMenu, "dashboard-main")}
+        data-testid="asset-card-menu"
+      >
+        <ContextMenuLabel
+          className="truncate px-2.5 pb-1.5 pt-1 text-[11px] font-semibold tracking-wide text-zinc-400"
+          title={asset.originalFilename}
+        >
+          {asset.originalFilename}
+        </ContextMenuLabel>
+        <ContextMenuSeparator className="mx-1 my-1 bg-zinc-200/80" />
+        <ContextMenuItem
+          className={libraryGlassContextMenuItem}
+          onSelect={() => openAt("overview")}
+          data-testid="asset-menu-overview"
+        >
+          <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-zinc-100 text-zinc-600">
+            <Info className="size-3.5" />
+          </span>
           Overview
         </ContextMenuItem>
-        <ContextMenuItem onSelect={() => openAt("edit")} data-testid="asset-menu-edit">
-          <Pencil className="size-4" />
+        <ContextMenuItem
+          className={libraryGlassContextMenuItem}
+          onSelect={() => openAt("edit")}
+          data-testid="asset-menu-edit"
+        >
+          <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-zinc-100 text-zinc-600">
+            <Pencil className="size-3.5" />
+          </span>
           Edit
         </ContextMenuItem>
         {/* Only where there is something behind it — a PNG has no transcript. */}
         {asset.mediaType === "VIDEO" ? (
-          <ContextMenuItem onSelect={() => openAt("ai")} data-testid="asset-menu-ai">
-            <Sparkles className="size-4" />
+          <ContextMenuItem
+            className={libraryGlassContextMenuItem}
+            onSelect={() => openAt("ai")}
+            data-testid="asset-menu-ai"
+          >
+            <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-zinc-100 text-zinc-600">
+              <Sparkles className="size-3.5" />
+            </span>
             AI
           </ContextMenuItem>
         ) : null}
-        <ContextMenuSeparator />
-        <ContextMenuItem onSelect={() => openAt("move")} data-testid="asset-menu-move">
-          <ArrowRightLeft className="size-4" />
+        <ContextMenuSeparator className="mx-1 my-1 bg-zinc-200/80" />
+        <ContextMenuItem
+          className={libraryGlassContextMenuItem}
+          onSelect={() => openAt("move")}
+          data-testid="asset-menu-move"
+        >
+          <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-zinc-100 text-zinc-600">
+            <ArrowRightLeft className="size-3.5" />
+          </span>
           Move
         </ContextMenuItem>
-        <ContextMenuItem onSelect={() => openAt("share")} data-testid="asset-menu-share">
-          <Share2 className="size-4" />
+        <ContextMenuItem
+          className={libraryGlassContextMenuItem}
+          onSelect={() => openAt("share")}
+          data-testid="asset-menu-share"
+        >
+          <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-zinc-100 text-zinc-600">
+            <Share2 className="size-3.5" />
+          </span>
           Share
         </ContextMenuItem>
       </ContextMenuContent>
