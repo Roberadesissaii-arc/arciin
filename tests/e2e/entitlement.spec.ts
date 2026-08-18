@@ -89,6 +89,28 @@ async function expectChatPageRendered(page: Page) {
   ).toBeVisible({ timeout: 15_000 })
 }
 
+/**
+ * Start this page with no remembered entitlement.
+ *
+ * `useLicense` keeps the last answer in `localStorage` and applies it on mount,
+ * deliberately — it is what lets a Pro user keep their interface when the
+ * network drops, which the offline test above asserts. The saved sign-in state
+ * these tests share was captured *after* that cache was written, so every test
+ * begins as a returning Pro user.
+ *
+ * For the Free cases that is the wrong starting point: they are about what a
+ * browser does when the server says Free and nothing contradicts it. Cleared
+ * before any app code runs, so the assertion measures the response rather than
+ * racing a remembered plan.
+ */
+async function forgetCachedEntitlement(page: Page) {
+  await page.addInitScript(() => {
+    for (const key of Object.keys(window.localStorage)) {
+      if (key.startsWith("arciin-license-status")) window.localStorage.removeItem(key)
+    }
+  })
+}
+
 /** Fail the test if any paywall wording is present. */
 async function expectNoPaywall(page: Page, context: string) {
   for (const text of PAYWALL_TEXT) {
@@ -194,6 +216,7 @@ test.describe("Pro entitlement", () => {
 
 test.describe("Free entitlement", () => {
   test("still gates Pro features once Free is authoritative", async ({ page }) => {
+    await forgetCachedEntitlement(page)
     await stubLicense(page, "free")
 
     await page.goto("/chat", { waitUntil: "domcontentloaded" })
@@ -213,6 +236,9 @@ test.describe("Free entitlement", () => {
   })
 
   test("does not paywall a Free user before the answer is authoritative", async ({ page }) => {
+    // Without this the assertion is vacuous: a remembered Pro plan would also
+    // produce no paywall, and the test would pass without testing anything.
+    await forgetCachedEntitlement(page)
     await stubLicense(page, "free", { delayMs: 1_500 })
 
     await page.goto("/chat", { waitUntil: "domcontentloaded" })
