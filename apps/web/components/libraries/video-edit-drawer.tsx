@@ -95,11 +95,11 @@ const TRANSCRIPT_PREVIEW_COUNT = 8
 
 /** Stable palette so Speaker 1 / Speaker 2 stay visually distinct. */
 const SPEAKER_COLORS = [
-  { text: "text-[#FF4F12]", bg: "bg-[#FF4F12]/12", ring: "ring-[#FF4F12]/25" },
-  { text: "text-sky-600", bg: "bg-sky-500/12", ring: "ring-sky-500/25" },
-  { text: "text-violet-600", bg: "bg-violet-500/12", ring: "ring-violet-500/25" },
-  { text: "text-emerald-600", bg: "bg-emerald-500/12", ring: "ring-emerald-500/25" },
-  { text: "text-amber-600", bg: "bg-amber-500/12", ring: "ring-amber-500/25" },
+  { text: "text-[#FF4F12]" },
+  { text: "text-sky-600" },
+  { text: "text-violet-600" },
+  { text: "text-emerald-600" },
+  { text: "text-amber-600" },
 ] as const
 
 function speakerColorIndex(speaker: string, order: string[]): number {
@@ -186,23 +186,15 @@ function TranscriptSegments({
                   )}
                   data-testid="transcript-speaker-label"
                 >
-                  <span
-                    className={cn(
-                      "inline-flex size-5 items-center justify-center rounded-full ring-1",
-                      color?.bg ?? "bg-muted",
-                      color?.ring ?? "ring-border",
-                    )}
-                    aria-hidden
-                  >
-                    <UserRound className="size-3" />
-                  </span>
+                  <UserRound className="size-3.5 shrink-0" aria-hidden />
                   {s.speaker}
                 </p>
               ) : null}
               <div
                 className={cn(
-                  "flex gap-2.5 rounded-md border-l-2 py-0.5 pl-2 transition-colors",
-                  active ? "border-primary/70 bg-primary/[0.06]" : "border-transparent",
+                  "flex gap-2.5 rounded-md py-0.5 transition-colors",
+                  // Soft wash only — no left accent bar (that read as a colored stripe).
+                  active ? "bg-primary/[0.06]" : "bg-transparent",
                 )}
                 data-testid={active ? "transcript-active-segment" : undefined}
               >
@@ -494,7 +486,13 @@ export function VideoTranscriptSection({
   if (!asset) return null
 
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-8">
+    <div
+      className={cn(
+        "min-h-0 flex-1 overflow-y-auto px-5 pb-8",
+        // Mouse-wheel scroll stays; hide the permanent scrollbar gutter.
+        "[scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden",
+      )}
+    >
             {/* The library's own player, lent a ref so the transcript can seek it. */}
             <div className="mt-4 w-full" data-testid="video-edit-player">
               <VideoAssetViewer
@@ -509,7 +507,7 @@ export function VideoTranscriptSection({
             {/*
               Same Details table as Overview — one source of truth for both
               surfaces. Hidden inside the asset panel, where Overview already
-              shows it above the AI tools.
+              shows it above Assist.
             */}
             {showDetails ? (
               <AssetOverviewDetails asset={asset} className="mt-4" />
@@ -517,12 +515,9 @@ export function VideoTranscriptSection({
 
             {/* Transcript / Title / Summarize — three jobs on the same text. */}
             <div className="mt-5">
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
-                AI tools
-              </p>
               <nav
-                className="mt-2 flex gap-1 rounded-xl border border-zinc-200 bg-zinc-50 p-1"
-                aria-label="Video AI sections"
+                className="flex gap-1 rounded-xl border border-zinc-200 bg-zinc-50 p-1"
+                aria-label="Assist sections"
                 data-testid="video-ai-nav"
               >
                 {(
@@ -552,7 +547,12 @@ export function VideoTranscriptSection({
               </nav>
             </div>
 
-            {aiTab === "title" ? (
+            {/*
+              Keep Title + Summarize mounted while Assist is open so a running
+              summarize request is not torn down when the reader switches tabs.
+              Visibility only — same pattern as Transcript below.
+            */}
+            <div className={cn(aiTab !== "title" && "hidden")}>
               <VideoAiTitle
                 asset={asset}
                 hasTranscript={Boolean(transcript && transcript.status === "READY")}
@@ -562,9 +562,9 @@ export function VideoTranscriptSection({
                 }}
                 transcriptRunning={running || generate.isPending}
               />
-            ) : null}
+            </div>
 
-            {aiTab === "summary" ? (
+            <div className={cn(aiTab !== "summary" && "hidden")}>
               <VideoAiSummarize
                 asset={asset}
                 hasTranscript={Boolean(transcript && transcript.status === "READY")}
@@ -584,9 +584,10 @@ export function VideoTranscriptSection({
                       transcript: { ...current.transcript, aiInsight: insight },
                     }
                   })
+                  void queryClient.invalidateQueries({ queryKey: transcriptKey(assetId) })
                 }}
               />
-            ) : null}
+            </div>
 
             <div
               className={cn("mt-1", aiTab !== "transcript" && "hidden")}

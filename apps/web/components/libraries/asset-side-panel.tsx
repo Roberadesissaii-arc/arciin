@@ -54,7 +54,8 @@ type Section = "overview" | "edit" | "ai" | "move" | "share"
 const SECTION_LABELS: Record<Section, string> = {
   overview: "Overview",
   edit: "Edit",
-  ai: "AI",
+  // Same label as the card right-click menu.
+  ai: "Assist",
   move: "Move",
   share: "Share",
 }
@@ -182,10 +183,9 @@ export function AssetSidePanel() {
             >
               {asset.originalFilename}
             </SheetTitle>
-            {/* Kind only — size already lives in Overview details. Showing MB
-                again in the Assist header is redundant noise. */}
-            <SheetDescription className="text-[13px] leading-snug text-muted-foreground">
-              {assetKindLabel(asset)}
+            {/* Filename only — kind/size already live in Overview details. */}
+            <SheetDescription className="sr-only">
+              {assetKindLabel(asset)} details
             </SheetDescription>
           </SheetHeader>
 

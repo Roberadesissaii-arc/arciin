@@ -20,9 +20,9 @@ import { cn } from "@/lib/utils"
 /**
  * Which language of a transcript you are reading, and how to add another.
  *
- * The language switcher uses a portaled DropdownMenu so it overlays content
- * without stretching the Assist panel. The “translate another” picker is also
- * portaled (fixed to the viewport under the bar).
+ * Menus are portaled so they overlay without stretching the panel. Surfaces are
+ * forced light (`dashboard-main` + white) so they match Assist cards — not the
+ * dark app chrome / black context menus.
  */
 export function TranscriptLanguageBar({
   sourceLanguage,
@@ -77,7 +77,7 @@ export function TranscriptLanguageBar({
         position: "fixed",
         top: rect.bottom + 4,
         left: rect.left,
-        width: Math.max(rect.width, 240),
+        width: Math.max(rect.width, 280),
         zIndex: 240,
       })
     }
@@ -103,35 +103,46 @@ export function TranscriptLanguageBar({
   }, [pickerOpen])
 
   return (
-    <div ref={barRef} className="mt-3 space-y-2" data-testid="transcript-language-bar">
-      <div className="flex items-center gap-2">
+    <div ref={barRef} className="mt-3 w-full space-y-2" data-testid="transcript-language-bar">
+      <div className="flex w-full items-center gap-2">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
               type="button"
               variant="outline"
-              size="sm"
-              className="h-8 min-w-0 flex-1 justify-between gap-2 border-border bg-card text-[12.5px]"
+              className={cn(
+                "h-11 min-w-0 flex-1 justify-between gap-2 rounded-xl px-3.5",
+                "border-zinc-200 bg-white text-[13px] font-medium text-zinc-800 shadow-sm",
+                "hover:bg-zinc-50",
+              )}
               data-testid="transcript-language-switcher"
             >
-              <span className="flex min-w-0 items-center gap-1.5">
-                <Languages className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+              <span className="flex min-w-0 items-center gap-2">
+                <Languages className="size-4 shrink-0 text-zinc-400" aria-hidden />
                 <span className="truncate">{activeLabel}</span>
               </span>
-              <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+              <ChevronDown className="size-4 shrink-0 text-zinc-400" aria-hidden />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent
             align="start"
-            className="z-[240] w-[var(--radix-dropdown-menu-trigger-width)] max-h-56"
+            className={cn(
+              "dashboard-main z-[240] w-[var(--radix-dropdown-menu-trigger-width)] max-h-64 p-1.5",
+              "rounded-xl border-zinc-200 bg-white text-zinc-900 shadow-lg ring-1 ring-black/5",
+            )}
           >
             <DropdownMenuItem
               onSelect={() => onSelect(null)}
               data-testid="transcript-language-option-original"
-              className={cn("justify-between text-[12.5px]", activeLanguage === null && "text-primary")}
+              className={cn(
+                "rounded-lg px-3 py-2.5 text-[13px] focus:bg-zinc-50 focus:text-zinc-900",
+                activeLanguage === null && "text-primary",
+              )}
             >
-              <span>Original{sourceLanguage ? ` — ${languageName(sourceLanguage)}` : ""}</span>
-              {activeLanguage === null ? <Check className="size-3.5" /> : null}
+              <span className="flex w-full items-center justify-between gap-2">
+                <span>Original{sourceLanguage ? ` — ${languageName(sourceLanguage)}` : ""}</span>
+                {activeLanguage === null ? <Check className="size-3.5 text-primary" /> : null}
+              </span>
             </DropdownMenuItem>
 
             {translations.map((translation) => (
@@ -140,21 +151,25 @@ export function TranscriptLanguageBar({
                 onSelect={() => onSelect(translation.language)}
                 data-testid={`transcript-language-option-${translation.language}`}
                 className={cn(
-                  "justify-between text-[12.5px]",
+                  "rounded-lg px-3 py-2.5 text-[13px] focus:bg-zinc-50 focus:text-zinc-900",
                   activeLanguage === translation.language && "text-primary",
                 )}
               >
-                <span className="flex items-center gap-1.5">
-                  {languageName(translation.language)}
-                  {translation.stale ? (
-                    <TriangleAlert className="size-3 text-amber-500" aria-label="May be outdated" />
+                <span className="flex w-full items-center justify-between gap-2">
+                  <span className="flex items-center gap-1.5">
+                    {languageName(translation.language)}
+                    {translation.stale ? (
+                      <TriangleAlert className="size-3 text-amber-500" aria-label="May be outdated" />
+                    ) : null}
+                  </span>
+                  {activeLanguage === translation.language ? (
+                    <Check className="size-3.5 text-primary" />
                   ) : null}
                 </span>
-                {activeLanguage === translation.language ? <Check className="size-3.5" /> : null}
               </DropdownMenuItem>
             ))}
 
-            <DropdownMenuSeparator />
+            <DropdownMenuSeparator className="bg-zinc-100" />
 
             <DropdownMenuItem
               onSelect={() => {
@@ -162,7 +177,7 @@ export function TranscriptLanguageBar({
                 setPickerOpen(true)
               }}
               data-testid="transcript-translate-another"
-              className="text-[12.5px] font-medium text-primary focus:text-primary"
+              className="rounded-lg px-3 py-2.5 text-[13px] font-medium text-primary focus:bg-primary/10 focus:text-primary"
             >
               + Translate another language
             </DropdownMenuItem>
@@ -173,8 +188,7 @@ export function TranscriptLanguageBar({
           <Button
             type="button"
             variant="outline"
-            size="sm"
-            className="h-8 shrink-0 gap-1.5 border-border bg-card text-[12px]"
+            className="h-11 shrink-0 gap-1.5 rounded-xl border-zinc-200 bg-white px-3 text-[12.5px] shadow-sm"
             disabled={translating}
             onClick={() => onTranslate(active.language)}
             data-testid="transcript-regenerate-translation"
@@ -205,25 +219,26 @@ export function TranscriptLanguageBar({
               <div
                 style={pickerStyle}
                 className={cn(
-                  "overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-lg ring-1 ring-black/5",
+                  "dashboard-main overflow-hidden rounded-xl border border-zinc-200",
+                  "bg-white text-zinc-900 shadow-lg ring-1 ring-black/5",
                 )}
                 data-testid="transcript-language-picker"
                 role="dialog"
                 aria-label="Choose a language to translate into"
               >
-                <div className="flex items-center gap-2 border-b border-zinc-100 p-2">
+                <div className="flex items-center gap-2 border-b border-zinc-100 p-2.5">
                   <Input
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
                     placeholder="Search languages…"
-                    className="h-8 flex-1 text-[13px]"
+                    className="h-10 flex-1 rounded-xl border-zinc-200 bg-zinc-50 text-[13px]"
                     autoFocus
                   />
                   <Button
                     type="button"
                     size="icon"
                     variant="ghost"
-                    className="size-8 shrink-0"
+                    className="size-10 shrink-0 rounded-xl"
                     aria-label="Close"
                     onClick={() => {
                       setPickerOpen(false)
@@ -233,11 +248,9 @@ export function TranscriptLanguageBar({
                     <X className="size-3.5" />
                   </Button>
                 </div>
-                <div className="max-h-48 overflow-y-auto p-1">
+                <div className="max-h-56 overflow-y-auto p-1.5 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
                   {options.length === 0 ? (
-                    <p className="px-2 py-3 text-center text-[12px] text-muted-foreground">
-                      No matches
-                    </p>
+                    <p className="px-2 py-3 text-center text-[12px] text-zinc-500">No matches</p>
                   ) : (
                     options.map((option) => (
                       <button
@@ -250,7 +263,7 @@ export function TranscriptLanguageBar({
                           setPickerOpen(false)
                           setQuery("")
                         }}
-                        className="flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left text-[12.5px] hover:bg-zinc-50 disabled:opacity-50"
+                        className="flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-left text-[13px] text-zinc-800 hover:bg-zinc-50 disabled:opacity-50"
                       >
                         <span>{option.name}</span>
                         <span className="text-[11px] text-zinc-400">{option.tag}</span>

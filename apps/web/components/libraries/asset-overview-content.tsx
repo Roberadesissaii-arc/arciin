@@ -351,7 +351,7 @@ export function AssetOverviewContent({
                 <Sparkles className="size-3.5" />
               </span>
               <span className="min-w-0">
-                <span className="block text-[13px] font-semibold text-zinc-900">Open AI tools</span>
+                <span className="block text-[13px] font-semibold text-zinc-900">Open Assist</span>
                 <span className="block text-[11.5px] text-zinc-500">
                   Transcript, title, and summarize
                 </span>

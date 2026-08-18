@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { useMutation } from "@tanstack/react-query"
+import { useMutation, useQueryClient } from "@tanstack/react-query"
 import {
   Clapperboard,
   ExternalLink,
@@ -18,6 +18,9 @@ import { toast } from "@/lib/notifications/arciin-toast"
 import type { AssetSummary } from "@/lib/types/models"
 import type { TranscriptAiAbout, TranscriptAiInsight } from "@arciin/types"
 import { cn } from "@/lib/utils"
+
+/** In-flight summarize runs — survives tab switches and remounts. */
+const pendingSummaries = new Set<string>()
 
 function normalizeHref(raw: string): string | null {
   const trimmed = raw.trim()
@@ -71,6 +74,7 @@ export function VideoAiSummarize({
   /** After a successful generate — parent can merge into its transcript cache. */
   onInsightSaved?: (insight: TranscriptAiInsight) => void
 }) {
+  const queryClient = useQueryClient()
   const [summary, setSummary] = useState<string | null>(savedInsight?.summary ?? null)
   const [keywords, setKeywords] = useState<string[]>(savedInsight?.keywords ?? [])
   const [links, setLinks] = useState<string[]>(savedInsight?.links ?? [])
@@ -78,6 +82,7 @@ export function VideoAiSummarize({
   const [topics, setTopics] = useState<string[]>(savedInsight?.topics ?? [])
   /** True only when Summarize itself asked for a transcript — not when Transcript tab is busy. */
   const [awaitingTranscript, setAwaitingTranscript] = useState(false)
+  const [pendingElsewhere, setPendingElsewhere] = useState(() => pendingSummaries.has(asset.id))
   const kickedOff = useRef(false)
 
   // Hydrate when the saved insight arrives (or changes after regenerate).
@@ -88,11 +93,20 @@ export function VideoAiSummarize({
     setLinks(savedInsight.links ?? [])
     setAbout(savedInsight.about ?? null)
     setTopics(savedInsight.topics ?? [])
-  }, [savedInsight])
+    pendingSummaries.delete(asset.id)
+    setPendingElsewhere(false)
+  }, [savedInsight, asset.id])
 
   const summarize = useMutation({
+    mutationKey: ["transcript-summary", asset.id],
     mutationFn: () => requestTranscriptSummary(asset.id),
+    onMutate: () => {
+      pendingSummaries.add(asset.id)
+      setPendingElsewhere(true)
+    },
     onSuccess: (data) => {
+      pendingSummaries.delete(asset.id)
+      setPendingElsewhere(false)
       setAwaitingTranscript(false)
       kickedOff.current = false
       setSummary(data.summary || null)
@@ -112,6 +126,8 @@ export function VideoAiSummarize({
       }
     },
     onError: (error) => {
+      pendingSummaries.delete(asset.id)
+      setPendingElsewhere(false)
       setAwaitingTranscript(false)
       kickedOff.current = false
       toast.error("Could not summarize", {
@@ -127,6 +143,18 @@ export function VideoAiSummarize({
     kickedOff.current = true
     summarize.mutate()
   }, [awaitingTranscript, hasTranscript, transcriptStatus, summarize])
+
+  // If the reader left Assist while summarize was running, poll until the
+  // persisted insight shows up — no second button press required.
+  useEffect(() => {
+    if (!pendingSummaries.has(asset.id)) return
+    if (savedInsight) return
+    setPendingElsewhere(true)
+    const timer = window.setInterval(() => {
+      void queryClient.invalidateQueries({ queryKey: ["asset-transcript", asset.id] })
+    }, 2000)
+    return () => window.clearInterval(timer)
+  }, [asset.id, savedInsight, queryClient])
 
   function startSummarize() {
     if (hasTranscript && transcriptStatus === "READY") {
@@ -145,7 +173,7 @@ export function VideoAiSummarize({
       transcriptStatus === "RUNNING" ||
       transcriptStatus === "PROCESSING" ||
       !hasTranscript)
-  const busy = summarize.isPending || waitingForTranscript
+  const busy = summarize.isPending || waitingForTranscript || pendingElsewhere
   const hasResult =
     Boolean(summary) ||
     keywords.length > 0 ||
@@ -220,7 +248,7 @@ export function VideoAiSummarize({
         </div>
       ) : null}
 
-      {summarize.isPending && !waitingForTranscript ? (
+      {(summarize.isPending || pendingElsewhere) && !waitingForTranscript && !hasResult ? (
         <div className="flex items-center gap-2.5 rounded-lg border border-dashed border-border px-4 py-4 text-[12.5px] text-muted-foreground">
           <Loader2 className="size-4 shrink-0 animate-spin text-primary" />
           <span>Summarizing…</span>
