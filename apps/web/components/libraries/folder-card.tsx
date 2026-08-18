@@ -59,7 +59,6 @@ import { getPasswordVault } from "@/lib/api/password-vault"
 import type { FolderCredentialInput } from "@/lib/api/libraries"
 import { queryKeys } from "@/lib/api/query-keys"
 import {
-  libraryContextMenuIcon,
   libraryGlassContextMenu,
   libraryGlassContextMenuItem,
   libraryGlassSheetPanel,
@@ -282,7 +281,7 @@ export function FolderCard({ folder, librarySlug }: { folder: FolderSummary; lib
               <Link href={href}>Open folder</Link>
             )}
           </ContextMenuItem>
-          <ContextMenuSeparator className="mx-0.5 my-0.5" />
+          <ContextMenuSeparator className="-mx-0.5 my-1" />
           <ContextMenuItem
             className={libraryGlassContextMenuItem}
             onSelect={() => {
@@ -291,9 +290,7 @@ export function FolderCard({ folder, librarySlug }: { folder: FolderSummary; lib
               setRenameOpen(true)
             }}
           >
-            <span className={libraryContextMenuIcon}>
-              <PencilLine className="size-3.5" />
-            </span>
+            <PencilLine />
             Rename…
           </ContextMenuItem>
           {locked ? (
@@ -302,18 +299,14 @@ export function FolderCard({ folder, librarySlug }: { folder: FolderSummary; lib
                 className={libraryGlassContextMenuItem}
                 onSelect={() => openAccessDialog("open")}
               >
-                <span className={libraryContextMenuIcon}>
-                  <FolderLock className="size-3.5" />
-                </span>
+                <FolderLock />
                 Enter password to open…
               </ContextMenuItem>
               <ContextMenuItem
                 className={libraryGlassContextMenuItem}
                 onSelect={() => openAccessDialog("remove-lock")}
               >
-                <span className={libraryContextMenuIcon}>
-                  <FolderLock className="size-3.5" />
-                </span>
+                <FolderLock />
                 Remove lock…
               </ContextMenuItem>
             </>
@@ -322,21 +315,17 @@ export function FolderCard({ folder, librarySlug }: { folder: FolderSummary; lib
               className={libraryGlassContextMenuItem}
               onSelect={() => openAccessDialog("lock")}
             >
-              <span className={libraryContextMenuIcon}>
-                <FolderLock className="size-3.5" />
-              </span>
+              <FolderLock />
               Lock folder…
             </ContextMenuItem>
           )}
-          <ContextMenuSeparator className="mx-0.5 my-0.5" />
+          <ContextMenuSeparator className="-mx-0.5 my-1" />
           <ContextMenuItem
             className={libraryGlassContextMenuItem}
             disabled={needsUnlock}
             onSelect={() => setShareOpen(true)}
           >
-            <span className={libraryContextMenuIcon}>
-              <Share2 className="size-3.5" />
-            </span>
+            <Share2 />
             Share…
           </ContextMenuItem>
           {/* Separate action, not a mode of Share: Share lets someone read this
@@ -347,9 +336,7 @@ export function FolderCard({ folder, librarySlug }: { folder: FolderSummary; lib
             onSelect={() => setRequestOpen(true)}
             data-testid="folder-request-files"
           >
-            <span className={libraryContextMenuIcon}>
-              <Inbox className="size-3.5" />
-            </span>
+            <Inbox />
             Request files…
           </ContextMenuItem>
           <ContextMenuItem
@@ -373,20 +360,16 @@ export function FolderCard({ folder, librarySlug }: { folder: FolderSummary; lib
               }
             }}
           >
-            <span className={libraryContextMenuIcon}>
-              {hideFromAllFiles ? <Eye className="size-3.5" /> : <EyeOff className="size-3.5" />}
-            </span>
+            {hideFromAllFiles ? <Eye /> : <EyeOff />}
             {hideFromAllFiles ? "Show in All Files" : "Hide from All Files"}
           </ContextMenuItem>
-          <ContextMenuSeparator className="mx-0.5 my-0.5" />
+          <ContextMenuSeparator className="-mx-0.5 my-1" />
           <ContextMenuItem
             className={libraryGlassContextMenuItem}
             variant="destructive"
             onSelect={() => setDeleteOpen(true)}
           >
-            <span className={cn(libraryContextMenuIcon, "bg-red-500/15 text-red-400")}>
-              <Trash2 className="size-3.5" />
-            </span>
+            <Trash2 />
             Delete…
           </ContextMenuItem>
         </ContextMenuContent>

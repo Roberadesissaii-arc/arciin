@@ -158,19 +158,22 @@ main.dashboard-main[data-slot="sidebar-inset"] {
   border-color: rgba(255, 255, 255, 0.1);
 }
 
-/* Library card/folder context menus — same dark language as the sidebar. */
+/* Library card/folder context menus — AI Chat tooltip surface (zinc-950). */
 .library-context-menu {
-  --background: #18181b;
-  --foreground: #fafafa;
-  --popover: #18181b;
-  --popover-foreground: #fafafa;
+  --background: #09090b;
+  --foreground: #f4f4f5;
+  --popover: #09090b;
+  --popover-foreground: #f4f4f5;
   --accent: rgba(255, 255, 255, 0.08);
   --accent-foreground: #ffffff;
-  --border: rgba(255, 255, 255, 0.1);
-  --muted-foreground: #71717a;
-  background-color: #18181b !important;
-  color: #d4d4d8;
-  border-color: rgba(255, 255, 255, 0.1);
+  --border: rgba(63, 63, 70, 0.9);
+  --muted-foreground: #a1a1aa;
+  background-color: #09090b !important;
+  color: #f4f4f5;
+  border-color: rgba(63, 63, 70, 0.9);
+  width: 13.5rem !important;
+  min-width: 13.5rem !important;
+  max-width: 13.5rem !important;
 }
 
 .library-context-menu [data-slot="context-menu-item"]:focus,
@@ -190,11 +193,14 @@ main.dashboard-main[data-slot="sidebar-inset"] {
 }
 
 .library-context-menu [data-slot="context-menu-separator"] {
-  background-color: rgba(255, 255, 255, 0.1);
+  background-color: rgba(63, 63, 70, 0.7);
 }
 
 .library-context-menu [data-slot="context-menu-label"] {
-  color: #71717a;
+  color: #a1a1aa;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .sidebar-profile-menu [data-slot="dropdown-menu-item"] {

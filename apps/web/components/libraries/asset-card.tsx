@@ -44,7 +44,7 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu"
 import {
-  libraryContextMenuIcon,
+  libraryContextMenuLabel,
   libraryGlassContextMenu,
   libraryGlassContextMenuItem,
 } from "@/lib/library-glass-sheet"
@@ -512,21 +512,16 @@ export function AssetCard({ asset }: { asset: AssetSummary }) {
       </ContextMenuTrigger>
 
       <ContextMenuContent className={libraryGlassContextMenu} data-testid="asset-card-menu">
-        <ContextMenuLabel
-          className="truncate px-2 pb-1 pt-0.5 text-[10.5px] font-semibold tracking-wide"
-          title={asset.originalFilename}
-        >
+        <ContextMenuLabel className={libraryContextMenuLabel} title={asset.originalFilename}>
           {asset.originalFilename}
         </ContextMenuLabel>
-        <ContextMenuSeparator className="mx-0.5 my-0.5" />
+        <ContextMenuSeparator className="-mx-0.5 my-1" />
         <ContextMenuItem
           className={libraryGlassContextMenuItem}
           onSelect={() => openAt("overview")}
           data-testid="asset-menu-overview"
         >
-          <span className={libraryContextMenuIcon}>
-            <Info className="size-3.5" />
-          </span>
+          <Info />
           Overview
         </ContextMenuItem>
         <ContextMenuItem
@@ -534,9 +529,7 @@ export function AssetCard({ asset }: { asset: AssetSummary }) {
           onSelect={() => openAt("edit")}
           data-testid="asset-menu-edit"
         >
-          <span className={libraryContextMenuIcon}>
-            <Pencil className="size-3.5" />
-          </span>
+          <Pencil />
           Edit
         </ContextMenuItem>
         {/* Only where there is something behind it — a PNG has no transcript. */}
@@ -546,21 +539,17 @@ export function AssetCard({ asset }: { asset: AssetSummary }) {
             onSelect={() => openAt("ai")}
             data-testid="asset-menu-ai"
           >
-            <span className={libraryContextMenuIcon}>
-              <Sparkles className="size-3.5" />
-            </span>
+            <Sparkles />
             AI
           </ContextMenuItem>
         ) : null}
-        <ContextMenuSeparator className="mx-0.5 my-0.5" />
+        <ContextMenuSeparator className="-mx-0.5 my-1" />
         <ContextMenuItem
           className={libraryGlassContextMenuItem}
           onSelect={() => openAt("move")}
           data-testid="asset-menu-move"
         >
-          <span className={libraryContextMenuIcon}>
-            <ArrowRightLeft className="size-3.5" />
-          </span>
+          <ArrowRightLeft />
           Move
         </ContextMenuItem>
         <ContextMenuItem
@@ -568,9 +557,7 @@ export function AssetCard({ asset }: { asset: AssetSummary }) {
           onSelect={() => openAt("share")}
           data-testid="asset-menu-share"
         >
-          <span className={libraryContextMenuIcon}>
-            <Share2 className="size-3.5" />
-          </span>
+          <Share2 />
           Share
         </ContextMenuItem>
       </ContextMenuContent>
