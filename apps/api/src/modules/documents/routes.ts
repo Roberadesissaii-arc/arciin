@@ -14,6 +14,7 @@ import {
   suggestTitles,
 } from "@arciin/media-ai"
 
+import { friendlyGeminiErrorMessage } from "@/services/ai/friendly-gemini-error"
 import { readPdfAssetContent } from "@/services/chat/read-pdf-asset"
 import { assertAssetFolderAccess } from "@/services/folders/folder-lock"
 import { AI_RATE_LIMITS, checkAiRateLimit } from "@/services/security/endpoint-rate-limit"
@@ -193,10 +194,11 @@ export async function registerDocumentRoutes(fastify: FastifyInstance) {
         })
         reply.send({ data: { titles: result.titles, model: result.model } })
       } catch (error) {
+        const friendly = friendlyGeminiErrorMessage(error, "The model did not return titles.")
         reply.status(502).send({
           error: {
-            code: "TITLE_FAILED",
-            message: error instanceof Error ? error.message : "The model did not return titles.",
+            code: friendly.code === "AI_FAILED" ? "TITLE_FAILED" : friendly.code,
+            message: friendly.message,
           },
         })
       }
@@ -305,10 +307,11 @@ export async function registerDocumentRoutes(fastify: FastifyInstance) {
         })
         reply.send({ data: documentInsight })
       } catch (error) {
+        const friendly = friendlyGeminiErrorMessage(error, "The model did not return a summary.")
         reply.status(502).send({
           error: {
-            code: "SUMMARY_FAILED",
-            message: error instanceof Error ? error.message : "The model did not return a summary.",
+            code: friendly.code === "AI_FAILED" ? "SUMMARY_FAILED" : friendly.code,
+            message: friendly.message,
           },
         })
       }

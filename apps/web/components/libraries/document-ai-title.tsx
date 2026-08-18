@@ -7,6 +7,7 @@ import { Check, Loader2, Wand2 } from "lucide-react"
 import { titleToFilename } from "@/components/libraries/video-ai-title"
 import { Button } from "@/components/ui/button"
 import { useUpdateAsset } from "@/hooks/use-assets"
+import { friendlyAiError } from "@/lib/ai/friendly-ai-error"
 import { isPdfAsset, requestDocumentTitleSuggestions } from "@/lib/api/documents"
 import { notifyFileUpdated } from "@/lib/notifications/toast-actions"
 import { toast } from "@/lib/notifications/arciin-toast"
@@ -32,9 +33,11 @@ export function DocumentAiTitle({ asset }: { asset: AssetSummary }) {
       setSelected(data.titles[0] ?? null)
     },
     onError: (error) => {
-      toast.error("Could not suggest a title", {
-        description: error instanceof Error ? error.message : "Try again in a moment.",
+      const friendly = friendlyAiError(error, {
+        title: "Could not suggest a title",
+        description: "Try again in a moment.",
       })
+      toast.error(friendly.title, { description: friendly.description })
     },
   })
 
@@ -46,9 +49,11 @@ export function DocumentAiTitle({ asset }: { asset: AssetSummary }) {
       await updateAsset.mutateAsync({ assetId: asset.id, originalFilename: filename })
       notifyFileUpdated()
     } catch (error) {
-      toast.error("Could not apply the title", {
-        description: error instanceof Error ? error.message : "Try again in a moment.",
+      const friendly = friendlyAiError(error, {
+        title: "Could not apply the title",
+        description: "Try again in a moment.",
       })
+      toast.error(friendly.title, { description: friendly.description })
     }
   }
 

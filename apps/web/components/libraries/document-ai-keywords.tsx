@@ -5,6 +5,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { Hash, Loader2, Sparkles, Tag } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
+import { friendlyAiError } from "@/lib/ai/friendly-ai-error"
 import { isPdfAsset, requestDocumentSummary, type DocumentInsight } from "@/lib/api/documents"
 import { queryKeys } from "@/lib/api/query-keys"
 import { toast } from "@/lib/notifications/arciin-toast"
@@ -46,9 +47,11 @@ export function DocumentAiKeywords({
       }
     },
     onError: (error) => {
-      toast.error("Could not extract keywords", {
-        description: error instanceof Error ? error.message : "Try again in a moment.",
+      const friendly = friendlyAiError(error, {
+        title: "Could not extract keywords",
+        description: "Try again in a moment.",
       })
+      toast.error(friendly.title, { description: friendly.description })
     },
   })
 

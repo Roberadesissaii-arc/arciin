@@ -48,6 +48,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet"
+import { friendlyAiError } from "@/lib/ai/friendly-ai-error"
 import { toast } from "@/lib/notifications/arciin-toast"
 import {
   getAssetTranscript,
@@ -366,9 +367,11 @@ export function VideoTranscriptSection({
       })
     },
     onError: (error) => {
-      toast.error("Could not translate", {
-        description: error instanceof Error ? error.message : "Try again in a moment.",
+      const friendly = friendlyAiError(error, {
+        title: "Could not translate",
+        description: "Try again in a moment.",
       })
+      toast.error(friendly.title, { description: friendly.description })
     },
   })
 
@@ -382,9 +385,11 @@ export function VideoTranscriptSection({
       void queryClient.invalidateQueries({ queryKey: transcriptKey(assetId!) })
     },
     onError: (error) => {
-      toast.error("Could not start the transcript", {
-        description: error instanceof Error ? error.message : "Try again in a moment.",
+      const friendly = friendlyAiError(error, {
+        title: "Could not start the transcript",
+        description: "Try again in a moment.",
       })
+      toast.error(friendly.title, { description: friendly.description })
     },
   })
 
@@ -556,10 +561,10 @@ export function VideoTranscriptSection({
               <VideoAiTitle
                 asset={asset}
                 hasTranscript={Boolean(transcript && transcript.status === "READY")}
-                onGenerateTranscript={() => {
-                  startGenerate()
-                  setAiTab("transcript")
-                }}
+                transcriptStatus={transcript?.status ?? null}
+                // Stay on Title — Summarize already does this. Switching tabs
+                // made Generate feel like it abandoned the title request.
+                onGenerateTranscript={startGenerate}
                 transcriptRunning={running || generate.isPending}
               />
             </div>

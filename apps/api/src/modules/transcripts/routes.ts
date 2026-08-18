@@ -16,6 +16,7 @@ import { z } from "zod"
 import { JOB_TYPES, normalizeTranscriptSegments } from "@arciin/shared"
 import { isSameLanguage, languageName } from "@arciin/types"
 
+import { friendlyGeminiErrorMessage } from "@/services/ai/friendly-gemini-error"
 import { assertAssetFolderAccess } from "@/services/folders/folder-lock"
 import {
   AI_RATE_LIMITS,
@@ -435,11 +436,14 @@ export async function transcriptRoutes(fastify: FastifyInstance) {
 
         reply.send({ data: { translation: serializeTranslation(row, transcript.updatedAt) } })
       } catch (error) {
+        const friendly = friendlyGeminiErrorMessage(
+          error,
+          "The model did not return a translation.",
+        )
         reply.status(502).send({
           error: {
-            code: "TRANSLATION_FAILED",
-            message:
-              error instanceof Error ? error.message : "The model did not return a translation.",
+            code: friendly.code === "AI_FAILED" ? "TRANSLATION_FAILED" : friendly.code,
+            message: friendly.message,
           },
         })
       }
@@ -505,10 +509,11 @@ export async function transcriptRoutes(fastify: FastifyInstance) {
         })
         reply.send({ data: { titles: result.titles, model: result.model } })
       } catch (error) {
+        const friendly = friendlyGeminiErrorMessage(error, "The model did not return titles.")
         reply.status(502).send({
           error: {
-            code: "TITLE_FAILED",
-            message: error instanceof Error ? error.message : "The model did not return titles.",
+            code: friendly.code === "AI_FAILED" ? "TITLE_FAILED" : friendly.code,
+            message: friendly.message,
           },
         })
       }
@@ -583,10 +588,14 @@ export async function transcriptRoutes(fastify: FastifyInstance) {
         })
         reply.send({ data: aiInsight })
       } catch (error) {
+        const friendly = friendlyGeminiErrorMessage(
+          error,
+          "The model did not return a summary.",
+        )
         reply.status(502).send({
           error: {
-            code: "SUMMARY_FAILED",
-            message: error instanceof Error ? error.message : "The model did not return a summary.",
+            code: friendly.code === "AI_FAILED" ? "SUMMARY_FAILED" : friendly.code,
+            message: friendly.message,
           },
         })
       }

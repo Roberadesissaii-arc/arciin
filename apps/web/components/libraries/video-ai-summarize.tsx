@@ -13,6 +13,7 @@ import {
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
+import { friendlyAiError } from "@/lib/ai/friendly-ai-error"
 import { requestTranscriptSummary } from "@/lib/api/transcripts"
 import { toast } from "@/lib/notifications/arciin-toast"
 import type { AssetSummary } from "@/lib/types/models"
@@ -130,9 +131,11 @@ export function VideoAiSummarize({
       setPendingElsewhere(false)
       setAwaitingTranscript(false)
       kickedOff.current = false
-      toast.error("Could not summarize", {
-        description: error instanceof Error ? error.message : "Try again in a moment.",
+      const friendly = friendlyAiError(error, {
+        title: "Could not summarize",
+        description: "Try again in a moment.",
       })
+      toast.error(friendly.title, { description: friendly.description })
     },
   })
 

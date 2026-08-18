@@ -13,6 +13,7 @@ import {
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
+import { friendlyAiError } from "@/lib/ai/friendly-ai-error"
 import { isPdfAsset, requestDocumentSummary, type DocumentInsight } from "@/lib/api/documents"
 import { queryKeys } from "@/lib/api/query-keys"
 import { toast } from "@/lib/notifications/arciin-toast"
@@ -97,9 +98,11 @@ export function DocumentAiSummarize({
       }
     },
     onError: (error) => {
-      toast.error("Could not summarize", {
-        description: error instanceof Error ? error.message : "Try again in a moment.",
+      const friendly = friendlyAiError(error, {
+        title: "Could not summarize",
+        description: "Try again in a moment.",
       })
+      toast.error(friendly.title, { description: friendly.description })
     },
   })
 

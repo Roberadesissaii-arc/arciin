@@ -1,11 +1,12 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useMutation } from "@tanstack/react-query"
-import { Check, Loader2, Sparkles, Wand2 } from "lucide-react"
+import { Check, Loader2, Wand2 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { useUpdateAsset } from "@/hooks/use-assets"
+import { friendlyAiError } from "@/lib/ai/friendly-ai-error"
 import { requestTitleSuggestions } from "@/lib/api/transcripts"
 import { notifyFileUpdated } from "@/lib/notifications/toast-actions"
 import { toast } from "@/lib/notifications/arciin-toast"
@@ -15,14 +16,11 @@ import { cn } from "@/lib/utils"
 /**
  * A name for a video, from what the video actually says.
  *
- * The problem this solves is `7492908407147073536.mp4` — a file that is
- * impossible to find again because its name records where it came from rather
- * than what it is. The transcript already exists, so a good title is a text
- * question, not a reason to re-read the media.
- *
  * Suggestions never rename anything. The model proposes; applying is a separate
- * act, and it goes through the same asset update the Edit form uses so the
- * sanitising and collision rules are the ones already in place.
+ * act through the same asset update the Edit form uses.
+ *
+ * If there is no transcript yet, Generate stays on this tab: it starts a
+ * transcript in the background (like Summarize) and suggests titles when ready.
  */
 
 /** `.mp4` from `clip.mp4` — the model is never allowed to choose this. */
@@ -33,10 +31,6 @@ function extensionOf(filename: string): string {
 
 /**
  * A title turned into a filename, keeping the original extension.
- *
- * Characters that are illegal in a filename are replaced rather than dropped,
- * so words do not silently run together, and the whole thing is capped well
- * inside the 255 the API accepts.
  */
 export function titleToFilename(title: string, originalFilename: string): string {
   const extension = extensionOf(originalFilename)
@@ -56,29 +50,29 @@ export function titleToFilename(title: string, originalFilename: string): string
 export function VideoAiTitle({
   asset,
   hasTranscript,
+  transcriptStatus,
   onGenerateTranscript,
   transcriptRunning = false,
 }: {
   asset: AssetSummary
   hasTranscript: boolean
-  /**
-   * Actually starts the transcript.
-   *
-   * It used to only switch tabs, which made a button labelled "Generate
-   * transcript" navigate instead of generate — the reader pressed it, landed on
-   * another placeholder, and nothing had happened.
-   */
+  transcriptStatus: string | null
+  /** Starts a transcript without leaving this tab. */
   onGenerateTranscript: () => void
-  /** A transcript is already being produced, so don't offer to start another. */
   transcriptRunning?: boolean
 }) {
   const [titles, setTitles] = useState<string[]>([])
   const [selected, setSelected] = useState<string | null>(null)
+  /** True only when Title itself asked for a transcript — stay on this tab. */
+  const [awaitingTranscript, setAwaitingTranscript] = useState(false)
+  const kickedOff = useRef(false)
   const updateAsset = useUpdateAsset()
 
   const suggest = useMutation({
     mutationFn: () => requestTitleSuggestions(asset.id, { count: 3 }),
     onSuccess: (data) => {
+      setAwaitingTranscript(false)
+      kickedOff.current = false
       if (data.titles.length === 0) {
         toast.error("No titles came back", { description: "Try generating again." })
         return
@@ -87,43 +81,72 @@ export function VideoAiTitle({
       setSelected(data.titles[0] ?? null)
     },
     onError: (error) => {
-      toast.error("Could not suggest a title", {
-        description: error instanceof Error ? error.message : "Try again in a moment.",
+      setAwaitingTranscript(false)
+      kickedOff.current = false
+      const friendly = friendlyAiError(error, {
+        title: "Could not suggest a title",
+        description: "Try again in a moment.",
       })
+      toast.error(friendly.title, { description: friendly.description })
     },
   })
+
+  // After Title kicked off a transcript, suggest once it is READY.
+  useEffect(() => {
+    if (!awaitingTranscript) return
+    if (transcriptStatus !== "READY" || !hasTranscript) return
+    if (suggest.isPending || kickedOff.current) return
+    kickedOff.current = true
+    suggest.mutate()
+  }, [awaitingTranscript, hasTranscript, transcriptStatus, suggest])
+
+  function startTitles() {
+    if (hasTranscript && transcriptStatus === "READY") {
+      suggest.mutate()
+      return
+    }
+    // Stay on Title — same pattern as Summarize.
+    setAwaitingTranscript(true)
+    kickedOff.current = false
+    onGenerateTranscript()
+  }
 
   async function applyTitle() {
     if (!selected) return
     const filename = titleToFilename(selected, asset.originalFilename)
     if (filename === asset.originalFilename) return
     try {
-      // The same update the Edit form performs — one rename path, one set of
-      // rules about what a name may be.
       await updateAsset.mutateAsync({ assetId: asset.id, originalFilename: filename })
       notifyFileUpdated()
     } catch (error) {
-      toast.error("Could not apply the title", {
-        description: error instanceof Error ? error.message : "Try again in a moment.",
+      const friendly = friendlyAiError(error, {
+        title: "Could not apply the title",
+        description: "Try again in a moment.",
       })
+      toast.error(friendly.title, { description: friendly.description })
     }
   }
 
-  if (!hasTranscript) {
-    // Title / Transcript / Summarize are separate tools. If a transcript is
-    // already running from another tab, Title stays idle — it must not look
-    // like title generation itself is processing.
+  const waitingForTranscript =
+    awaitingTranscript &&
+    (transcriptRunning ||
+      transcriptStatus === "PENDING" ||
+      transcriptStatus === "PROCESSING" ||
+      !hasTranscript)
+
+  // Idle empty state: no transcript yet, and Title did not start one.
+  if (!hasTranscript && !waitingForTranscript && titles.length === 0) {
     return (
       <div
         className="mt-3 rounded-lg border border-dashed border-border px-4 py-5 text-center"
         data-testid="ai-title-needs-transcript"
       >
-        <Sparkles className="mx-auto size-5 text-primary" />
+        <Wand2 className="mx-auto size-5 text-primary" />
         <p className="mt-2 text-[13px] font-medium text-foreground">AI title</p>
         <p className="mx-auto mt-1 max-w-[38ch] text-[12.5px] text-muted-foreground">
           {transcriptRunning
-            ? "A transcript is already running. Titles unlock when it finishes — this tab is separate from transcription."
-            : "A title comes from what the video says, so it needs a transcript first. Generating one here starts it and shows the progress."}
+            ? "A transcript is already running. Titles unlock when it finishes — you stay on this tab."
+            : "Suggest a short name from what this video says. If there is no transcript yet, Generate prepares one here and stays on Title."}
         </p>
         {transcriptRunning ? (
           <p
@@ -138,23 +161,37 @@ export function VideoAiTitle({
             type="button"
             size="sm"
             className="mt-3"
-            onClick={onGenerateTranscript}
-            data-testid="ai-title-generate-transcript"
+            onClick={startTitles}
+            data-testid="generate-ai-title"
           >
-            <Sparkles className="size-3.5" />
-            Generate transcript
+            <Wand2 className="size-3.5" />
+            Generate titles
           </Button>
         )}
       </div>
     )
   }
 
-  const busy = suggest.isPending
+  const busy = suggest.isPending || waitingForTranscript
   const preview = selected ? titleToFilename(selected, asset.originalFilename) : null
 
   return (
     <div className="mt-3 space-y-3" data-testid="ai-title-section">
-      {titles.length === 0 ? (
+      {waitingForTranscript ? (
+        <div className="flex items-center gap-2.5 rounded-lg border border-dashed border-border px-4 py-4 text-[12.5px] text-muted-foreground">
+          <Loader2 className="size-4 shrink-0 animate-spin text-primary" />
+          <span>Preparing a transcript, then suggesting titles…</span>
+        </div>
+      ) : null}
+
+      {suggest.isPending && !waitingForTranscript && titles.length === 0 ? (
+        <div className="flex items-center gap-2.5 rounded-lg border border-dashed border-border px-4 py-4 text-[12.5px] text-muted-foreground">
+          <Loader2 className="size-4 shrink-0 animate-spin text-primary" />
+          <span>Thinking…</span>
+        </div>
+      ) : null}
+
+      {!waitingForTranscript && !suggest.isPending && titles.length === 0 && hasTranscript ? (
         <div className="rounded-lg border border-dashed border-border px-4 py-5 text-center">
           <Wand2 className="mx-auto size-5 text-primary" />
           <p className="mt-2 text-[13px] font-medium text-foreground">AI title</p>
@@ -174,7 +211,9 @@ export function VideoAiTitle({
             {busy ? "Thinking…" : "Generate titles"}
           </Button>
         </div>
-      ) : (
+      ) : null}
+
+      {titles.length > 0 ? (
         <>
           <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
             AI title suggestions
@@ -212,7 +251,6 @@ export function VideoAiTitle({
             })}
           </div>
 
-          {/* What the file will actually be called, extension included. */}
           {preview ? (
             <p className="truncate text-[11.5px] text-muted-foreground" data-testid="ai-title-preview">
               Renames to <span className="text-foreground">{preview}</span>
@@ -240,8 +278,6 @@ export function VideoAiTitle({
               size="sm"
               variant="outline"
               className="h-8 gap-1.5 border-border bg-card text-[12px]"
-              // One provider call at a time: a second click while the first is
-              // in flight is a second charge for the same question.
               disabled={busy}
               onClick={() => suggest.mutate()}
               data-testid="generate-more-ai-titles"
@@ -251,7 +287,7 @@ export function VideoAiTitle({
             </Button>
           </div>
         </>
-      )}
+      ) : null}
     </div>
   )
 }
