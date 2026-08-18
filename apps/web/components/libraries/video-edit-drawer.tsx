@@ -781,32 +781,8 @@ function TranscriptBody(props: {
 
   // Ready, with words in it.
   if (transcript?.status === "READY" && segments.length > 0) {
-    const language = languageLabel(transcript.language)
     return (
       <div>
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-muted-foreground">
-          {language ? <span className="text-foreground">{language}</span> : null}
-          {language ? <span aria-hidden>·</span> : null}
-          <span>Gemini</span>
-          {transcript.generatedAt ? (
-            <>
-              <span aria-hidden>·</span>
-              <span>
-                {new Date(transcript.generatedAt).toLocaleDateString(undefined, {
-                  month: "short",
-                  day: "numeric",
-                  year: "numeric",
-                })}
-              </span>
-            </>
-          ) : null}
-          {transcript.edited ? (
-            <span className="rounded border border-border px-1.5 py-0.5 text-[10.5px] font-medium text-foreground">
-              Edited
-            </span>
-          ) : null}
-        </div>
-
         {/*
           Two actions and a menu, instead of six equal buttons.
 
@@ -825,6 +801,7 @@ function TranscriptBody(props: {
               placeholder="Search…"
               className="h-9 rounded-xl border-zinc-200 bg-zinc-50 pl-8 pr-16 text-[13px]"
               data-testid="transcript-search"
+              aria-label="Search transcript"
             />
             {props.search.trim() ? (
               <span
