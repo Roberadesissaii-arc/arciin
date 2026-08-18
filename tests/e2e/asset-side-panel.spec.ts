@@ -40,6 +40,19 @@ test.describe("the single-asset panel", () => {
     // 3 — the single-selection bottom toolbar is gone.
     await expect(bulkBar(page), "one file must not raise the bulk bar").toHaveCount(0)
 
+    /**
+     * Measured once it has arrived, not on the way in.
+     *
+     * The panel slides in from the right, and `toBeVisible()` resolves at the
+     * *start* of that — so a geometry check taken immediately measures an
+     * element still a few pixels off-screen and reads its inset as negative.
+     * Waiting on the element's own animations is the product's actual "settled"
+     * signal; a fixed delay would be both slower and a guess.
+     */
+    await panel(page).evaluate((el) =>
+      Promise.all(el.getAnimations({ subtree: true }).map((a) => a.finished.catch(() => {}))),
+    )
+
     // 5-8 — it floats: a gap on all of top, bottom and right, and rounded corners.
     const box = (await panel(page).boundingBox())!
     const viewport = page.viewportSize()!
