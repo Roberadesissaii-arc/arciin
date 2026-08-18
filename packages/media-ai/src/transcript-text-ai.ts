@@ -228,6 +228,98 @@ export async function suggestTitles(
   return { titles: parseTitles(text), model }
 }
 
+/* ------------------------------------------------------------------ summarize */
+
+export const SUMMARY_RESPONSE_SCHEMA = {
+  type: "object",
+  properties: {
+    summary: { type: "string" },
+    keywords: { type: "array", items: { type: "string" } },
+    links: { type: "array", items: { type: "string" } },
+  },
+  required: ["summary", "keywords", "links"],
+} as const
+
+export type VideoSummaryResult = {
+  summary: string
+  keywords: string[]
+  links: string[]
+  model: string
+}
+
+export type SuggestVideoSummaryInput = {
+  config: GeminiMediaConfig
+  transcriptText: string
+  signal?: AbortSignal
+}
+
+export function buildSummaryPrompt(transcriptText: string): string {
+  return [
+    "Summarize this video from its transcript only.",
+    "",
+    "Return JSON with:",
+    '- "summary": 2–5 short paragraphs (or bullet-like sentences) covering what the video is about',
+    '- "keywords": 5–12 concrete keywords or short phrases (topics, names, products)',
+    '- "links": every URL, domain, or clear “go to …” web address spoken or spelled in the transcript (empty array if none)',
+    "",
+    "Rules:",
+    "- Do not invent facts that are not in the transcript",
+    "- Prefer real spoken URLs / domains; normalize obvious spoken URLs (e.g. \"example dot com\" → https://example.com) when clear",
+    "- Keywords should help someone find this video later",
+    "",
+    "Transcript:",
+    transcriptText.slice(0, 24_000),
+  ].join("\n")
+}
+
+function parseSummaryPayload(modelText: string): {
+  summary: string
+  keywords: string[]
+  links: string[]
+} {
+  let summary = ""
+  let keywords: string[] = []
+  let links: string[] = []
+  try {
+    const parsed = JSON.parse(modelText) as {
+      summary?: unknown
+      keywords?: unknown
+      links?: unknown
+    }
+    if (typeof parsed.summary === "string") summary = parsed.summary.trim()
+    if (Array.isArray(parsed.keywords)) {
+      keywords = parsed.keywords
+        .filter((k): k is string => typeof k === "string")
+        .map((k) => k.trim())
+        .filter(Boolean)
+        .slice(0, 20)
+    }
+    if (Array.isArray(parsed.links)) {
+      links = parsed.links
+        .filter((k): k is string => typeof k === "string")
+        .map((k) => k.trim())
+        .filter(Boolean)
+        .slice(0, 30)
+    }
+  } catch {
+    summary = modelText.trim().slice(0, 4000)
+  }
+  return { summary, keywords, links }
+}
+
+export async function suggestVideoSummary(
+  input: SuggestVideoSummaryInput,
+): Promise<VideoSummaryResult> {
+  const { text, model } = await runGeminiText(
+    input.config,
+    buildSummaryPrompt(input.transcriptText),
+    SUMMARY_RESPONSE_SCHEMA as unknown as Record<string, unknown>,
+    input.signal,
+  )
+  const parsed = parseSummaryPayload(text)
+  return { ...parsed, model }
+}
+
 /**
  * Read titles out of a model reply, and refuse the ones that are not titles.
  *

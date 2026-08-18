@@ -2,7 +2,18 @@
 
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { Calendar, Clock, Download, FileType2, HardDrive, Maximize2, Pause, Play, Trash2 } from "lucide-react"
+import {
+  Calendar,
+  Clock,
+  Download,
+  FileType2,
+  HardDrive,
+  Maximize2,
+  Pause,
+  Play,
+  Sparkles,
+  Trash2,
+} from "lucide-react"
 import { assetSupportsDocumentThumbnail, DEFAULT_USER_PREFERENCES } from "@arciin/shared"
 
 import { AudioCardArtwork } from "@/components/libraries/audio-card-artwork"
@@ -290,10 +301,15 @@ export function AssetOverviewContent({
   asset,
   onDownload,
   onDelete,
+  onOpen,
+  openLabel = "Open",
 }: {
   asset: AssetSummary
   onDownload: () => void
   onDelete: () => void
+  /** Primary action — for videos, opens the AI workspace. */
+  onOpen?: () => void
+  openLabel?: string
 }) {
   return (
     <>
@@ -317,26 +333,68 @@ export function AssetOverviewContent({
         </div>
 
         <AssetOverviewDetails asset={asset} />
+
+        {onOpen && asset.mediaType === "VIDEO" ? (
+          <button
+            type="button"
+            onClick={onOpen}
+            data-testid="asset-panel-goto-ai"
+            className={cn(
+              "flex w-full items-center justify-between gap-2 rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-left",
+              "transition-colors hover:border-primary/35 hover:bg-primary/[0.03]",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30",
+            )}
+          >
+            <span className="flex min-w-0 items-center gap-2.5">
+              <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                <Sparkles className="size-3.5" />
+              </span>
+              <span className="min-w-0">
+                <span className="block text-[13px] font-semibold text-zinc-900">Open AI tools</span>
+                <span className="block text-[11.5px] text-zinc-500">
+                  Transcript, title, and summarize
+                </span>
+              </span>
+            </span>
+            <span className="shrink-0 text-[12px] font-semibold text-primary">Open</span>
+          </button>
+        ) : null}
       </div>
 
-      {/* Download acts immediately; Delete asks first. */}
+      {/* Long Open + icon Download / Delete */}
       <div className="flex shrink-0 items-center gap-2 border-t border-border p-2">
+        {onOpen ? (
+          <Button
+            type="button"
+            className="h-10 min-w-0 flex-1 bg-primary text-white hover:bg-primary/90"
+            onClick={onOpen}
+            data-testid="asset-panel-open"
+          >
+            {asset.mediaType === "VIDEO" ? <Sparkles className="size-4" /> : null}
+            {openLabel}
+          </Button>
+        ) : null}
         <Button
           type="button"
-          className="h-10 flex-1 bg-primary text-white hover:bg-primary/90"
+          variant="outline"
+          size="icon"
+          className="size-10 shrink-0 border-border"
           onClick={onDownload}
           data-testid="asset-panel-download"
+          aria-label="Download file"
+          title="Download"
         >
           <Download className="size-4" />
-          Download
         </Button>
         <Button
           type="button"
           variant="outline"
-          className="h-10 border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
+          size="icon"
+          className="size-10 shrink-0 border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
           onClick={onDelete}
           data-testid="asset-panel-delete"
           aria-label="Delete file"
+          title="Delete"
         >
           <Trash2 className="size-4" />
         </Button>

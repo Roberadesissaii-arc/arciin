@@ -94,3 +94,19 @@ export function requestTitleSuggestions(assetId: string, input?: { count?: numbe
     body: input ?? {},
   })
 }
+
+/**
+ * Summary, keywords, and spoken links from the saved transcript.
+ * Text only — the video is not uploaded again.
+ */
+export function requestTranscriptSummary(assetId: string, input?: { profileId?: string }) {
+  return fetchApi<{
+    summary: string
+    keywords: string[]
+    links: string[]
+    model: string
+  }>(`/assets/${assetId}/transcript-summary`, {
+    method: "POST",
+    body: input ?? {},
+  })
+}

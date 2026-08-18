@@ -109,6 +109,7 @@ export const AI_RATE_LIMITS = {
     windowSec: 3600,
   },
   title: { key: "title", limit: envLimit("ARCIIN_AI_LIMIT_TITLE", 60), windowSec: 3600 },
+  summary: { key: "summary", limit: envLimit("ARCIIN_AI_LIMIT_SUMMARY", 60), windowSec: 3600 },
   // Book generation drives one /chat call per chapter (plus retries), so this
   // ceiling has to clear a long book comfortably. It is set to stop a runaway
   // retry loop, not to ration ordinary use.

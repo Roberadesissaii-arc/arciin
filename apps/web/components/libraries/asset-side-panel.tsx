@@ -11,6 +11,9 @@ import { VideoTranscriptSection } from "@/components/libraries/video-edit-drawer
 import { useAssetPanelIntent } from "@/components/libraries/asset-panel-intent"
 import { AssetOverviewContent } from "@/components/libraries/asset-overview-content"
 import { useAssetSelection } from "@/components/libraries/asset-selection"
+import { useAssetViewerOptional } from "@/components/libraries/asset-viewer-context"
+import { useVideoEditor } from "@/components/libraries/video-edit-context"
+import { isViewableAsset } from "@/lib/utils/viewable-asset"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -244,6 +247,8 @@ function PanelSections({
 }) {
   const selection = useAssetSelection()
   const intentContext = useAssetPanelIntent()
+  const videoEditor = useVideoEditor()
+  const viewer = useAssetViewerOptional()
   const sections = sectionsFor(asset)
 
   /**
@@ -319,6 +324,14 @@ function PanelSections({
           asset={asset}
           onDownload={() => downloadAsset(asset.id)}
           onDelete={onDeleteRequest}
+          openLabel={asset.mediaType === "VIDEO" ? "Open AI" : "Open"}
+          onOpen={
+            asset.mediaType === "VIDEO" && videoEditor?.canEdit(asset)
+              ? () => videoEditor.openEditor(asset)
+              : viewer?.canOpen(asset) && isViewableAsset(asset)
+                ? () => viewer.openViewer(asset.id)
+                : undefined
+          }
         />
       ) : null}
       {active === "edit" ? (

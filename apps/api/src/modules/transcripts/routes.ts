@@ -26,6 +26,7 @@ import {
   GeminiNotConfiguredError,
   resolveGeminiMediaConfig,
   suggestTitles,
+  suggestVideoSummary,
   translateTranscript,
 } from "@arciin/media-ai"
 import { requireRole } from "@/services/security/auth"
@@ -468,6 +469,76 @@ export async function transcriptRoutes(fastify: FastifyInstance) {
           error: {
             code: "TITLE_FAILED",
             message: error instanceof Error ? error.message : "The model did not return titles.",
+          },
+        })
+      }
+    },
+  )
+
+  /**
+   * Summary / keywords / spoken links from the saved transcript.
+   * Text only — never re-uploads the media.
+   */
+  fastify.post(
+    "/assets/:assetId/transcript-summary",
+    { preHandler: guard },
+    async (request, reply) => {
+      if (await checkAiRateLimit(request, reply, AI_RATE_LIMITS.summary)) return
+
+      const { assetId } = z.object({ assetId: z.string() }).parse(request.params)
+      const body = z
+        .object({ profileId: z.string().optional() })
+        .safeParse(request.body ?? {})
+
+      const asset = await loadAccessibleAsset(request, reply, assetId)
+      if (!asset) return
+
+      const transcript = await fastify.prisma.mediaTranscript.findUnique({ where: { assetId } })
+      const text = transcript?.fullText?.trim()
+      if (!transcript || transcript.status !== "READY" || !text) {
+        reply.status(409).send({
+          error: {
+            code: "NO_TRANSCRIPT",
+            message: "Generate a transcript first to summarize this video.",
+          },
+        })
+        return
+      }
+
+      let config
+      try {
+        config = await resolveGeminiMediaConfig(
+          fastify.prisma,
+          body.success ? body.data.profileId : undefined,
+        )
+      } catch (error) {
+        if (error instanceof GeminiNotConfiguredError) {
+          reply.status(409).send({
+            error: {
+              code: "GEMINI_NOT_CONFIGURED",
+              message: "Add a Gemini model profile under Models to summarize videos.",
+            },
+          })
+          return
+        }
+        throw error
+      }
+
+      try {
+        const result = await suggestVideoSummary({ config, transcriptText: text })
+        reply.send({
+          data: {
+            summary: result.summary,
+            keywords: result.keywords,
+            links: result.links,
+            model: result.model,
+          },
+        })
+      } catch (error) {
+        reply.status(502).send({
+          error: {
+            code: "SUMMARY_FAILED",
+            message: error instanceof Error ? error.message : "The model did not return a summary.",
           },
         })
       }

@@ -56,6 +56,7 @@ import {
   type TranscriptTranslation,
 } from "@/lib/api/transcripts"
 import { AssetOverviewDetails } from "@/components/libraries/asset-overview-content"
+import { VideoAiSummarize } from "@/components/libraries/video-ai-summarize"
 import { VideoAiTitle } from "@/components/libraries/video-ai-title"
 import { TranscriptLanguageBar } from "@/components/libraries/transcript-language-bar"
 import { VideoAssetViewer } from "@/components/libraries/video-asset-viewer"
@@ -84,17 +85,6 @@ function languageLabel(tag: string | null): string | null {
     /* unknown tag — show it as given */
   }
   return tag
-}
-
-function SectionHeading({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="mt-6 first:mt-0">
-      <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-        {children}
-      </h3>
-      <div className="mt-2 border-t border-border" />
-    </div>
-  )
 }
 
 /* ------------------------------------------------------------- transcript */
@@ -250,7 +240,7 @@ export function VideoTranscriptSection({
    * Where to land, when the reader asked for somewhere specific — clicking a
    * card's running-transcript indicator, rather than merely selecting the card.
    */
-  initialTab?: "transcript" | "title"
+  initialTab?: "transcript" | "title" | "summary"
 }) {
   const queryClient = useQueryClient()
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -289,7 +279,9 @@ export function VideoTranscriptSection({
    * second copy of any of them.
    */
   const [activeLanguage, setActiveLanguage] = useState<string | null>(null)
-  const [aiTab, setAiTab] = useState<"transcript" | "title">(initialTab ?? "transcript")
+  const [aiTab, setAiTab] = useState<"transcript" | "title" | "summary">(
+    initialTab ?? "transcript",
+  )
   const activeTranslation = activeLanguage
     ? (translations.find((t) => t.language === activeLanguage) ?? null)
     : null
@@ -456,51 +448,59 @@ export function VideoTranscriptSection({
               <AssetOverviewDetails asset={asset} className="mt-4" />
             ) : null}
 
-            {/* Transcript and Title are two jobs on the same text, so they sit
-                side by side here rather than becoming top-level asset tabs. */}
-            <SectionHeading>AI</SectionHeading>
-            <nav
-              className="mt-2 flex items-center gap-1"
-              aria-label="Video AI sections"
-              data-testid="video-ai-nav"
-            >
-              {(
-                [
-                  ["transcript", "Transcript"],
-                  ["title", "AI Title"],
-                ] as const
-              ).map(([key, label]) => (
-                <button
-                  key={key}
-                  type="button"
-                  onClick={() => setAiTab(key)}
-                  aria-current={aiTab === key ? "page" : undefined}
-                  data-testid={`video-ai-tab-${key}`}
-                  className={cn(
-                    "rounded-lg px-2.5 py-1.5 text-[12.5px] font-medium transition-colors",
-                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30",
-                    aiTab === key
-                      ? "bg-primary/10 text-primary"
-                      : "text-muted-foreground hover:bg-muted/50 hover:text-foreground",
-                  )}
-                >
-                  {label}
-                </button>
-              ))}
-            </nav>
+            {/* Transcript / Title / Summarize — three jobs on the same text. */}
+            <div className="mt-5">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
+                AI tools
+              </p>
+              <nav
+                className="mt-2 flex gap-1 rounded-xl border border-zinc-200 bg-zinc-50 p-1"
+                aria-label="Video AI sections"
+                data-testid="video-ai-nav"
+              >
+                {(
+                  [
+                    ["transcript", "Transcript"],
+                    ["title", "Title"],
+                    ["summary", "Summarize"],
+                  ] as const
+                ).map(([key, label]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setAiTab(key)}
+                    aria-current={aiTab === key ? "page" : undefined}
+                    data-testid={`video-ai-tab-${key}`}
+                    className={cn(
+                      "flex-1 rounded-lg px-2 py-2 text-center text-[12px] font-semibold transition-colors",
+                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30",
+                      aiTab === key
+                        ? "bg-white text-zinc-900 shadow-sm ring-1 ring-zinc-200/80"
+                        : "text-zinc-500 hover:text-zinc-800",
+                    )}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </nav>
+            </div>
 
             {aiTab === "title" ? (
               <VideoAiTitle
                 asset={asset}
                 hasTranscript={Boolean(transcript && transcript.status === "READY")}
-                /**
-                 * Start it, then show it.
-                 *
-                 * The button says "Generate transcript", so it queues the job
-                 * through the same path the transcript panel uses and moves the
-                 * reader there to watch it — rather than switching tabs and
-                 * leaving them to press a second, identical button.
-                 */
+                onGenerateTranscript={() => {
+                  startGenerate()
+                  setAiTab("transcript")
+                }}
+                transcriptRunning={running || generate.isPending}
+              />
+            ) : null}
+
+            {aiTab === "summary" ? (
+              <VideoAiSummarize
+                asset={asset}
+                hasTranscript={Boolean(transcript && transcript.status === "READY")}
                 onGenerateTranscript={() => {
                   startGenerate()
                   setAiTab("transcript")
@@ -588,13 +588,19 @@ export function VideoEditDrawer({
           "dashboard-main text-foreground sm:max-w-[480px]",
         )}
       >
-        <SheetHeader className="shrink-0 border-b border-border px-5 py-4">
-          <SheetTitle className="truncate text-[15px]" title={asset?.originalFilename}>
-            {asset?.originalFilename ?? "AI"}
-          </SheetTitle>
-          <SheetDescription className="sr-only">
-            Preview this video, review its details, and work with transcripts and AI titles.
-          </SheetDescription>
+        <SheetHeader className="relative shrink-0 space-y-1 border-b border-border px-4 py-3 pr-11">
+          <div className="min-w-0">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">AI</p>
+            <SheetTitle
+              className="truncate text-[15px] font-semibold tracking-tight text-zinc-900"
+              title={asset?.originalFilename}
+            >
+              {asset?.originalFilename ?? "Video"}
+            </SheetTitle>
+            <SheetDescription className="text-[12px] text-zinc-500">
+              Transcript, title suggestions, and summarize.
+            </SheetDescription>
+          </div>
         </SheetHeader>
         {open ? <VideoTranscriptSection asset={asset} /> : null}
       </SheetContent>
