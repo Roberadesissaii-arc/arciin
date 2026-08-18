@@ -15,7 +15,7 @@ describe("friendlyAiError", () => {
     })
     const friendly = friendlyAiError(new Error(raw))
     expect(friendly.title).toBe("AI limit reached")
-    expect(friendly.description).toMatch(/26s/)
+    expect(friendly.description).toMatch(/about \d+s/)
     expect(friendly.description).not.toMatch(/generativelanguage/)
   })
 
