@@ -331,7 +331,7 @@ test.describe("a real translation", () => {
 
     // ── put the fixture back, so seeding stays stable for every other spec
     await page.locator(`[data-asset-id="${FIXTURE}"]`).click({ button: "right" })
-    await page.getByTestId("asset-menu-edit").click()
+    await page.getByTestId("asset-menu-rename").click()
     const field = panel(page).locator("input").first()
     await field.fill(ORIGINAL_NAME)
     await panel(page).getByRole("button", { name: /save changes/i }).click()

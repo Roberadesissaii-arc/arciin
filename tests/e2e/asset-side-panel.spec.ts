@@ -143,8 +143,16 @@ test.describe("the single-asset panel", () => {
     // A video's menu offers Overview / Edit / AI / Move / Share.
     await expectMenuSections(page, card, ["overview", "edit", "ai", "move", "share"])
 
-    // Edit shows the real form.
-    await openSectionFromMenu(page, card, "edit")
+    // Edit on a video opens the video editor drawer (not the rename form).
+    await card.click({ button: "right" })
+    await page.getByTestId("asset-menu-edit").click()
+    await expect(page.getByTestId("video-edit-drawer")).toBeVisible({ timeout: 15_000 })
+    await page.keyboard.press("Escape")
+    await expect(page.getByTestId("video-edit-drawer")).toHaveCount(0)
+
+    // Rename shows the side-panel form.
+    await card.click({ button: "right" })
+    await page.getByTestId("asset-menu-rename").click()
     await expect(panel(page)).toContainText(/file name/i)
     await expect(panel(page).getByRole("button", { name: /save changes/i })).toBeVisible()
 
@@ -177,11 +185,13 @@ test.describe("the single-asset panel", () => {
     const first = (await all.nth(0).getAttribute("data-asset-id"))!
     const second = (await all.nth(1).getAttribute("data-asset-id"))!
 
-    await openSectionFromMenu(page, all.nth(0), "edit")
+    await all.nth(0).click({ button: "right" })
+    await page.getByTestId("asset-menu-rename").click()
+    await expect(panel(page).getByRole("button", { name: /save changes/i })).toBeVisible()
 
     await all.nth(1).click()
     // Same shell, new file, and back to Overview rather than the previous
-    // file's half-filled Edit form.
+    // file's half-filled Rename form.
     await expect(panel(page)).toHaveCount(1)
     await expect(panel(page).getByTestId("asset-panel-preview")).toBeVisible({ timeout: 15_000 })
     expect(first).not.toBe(second)
@@ -219,6 +229,7 @@ test.describe("the single-asset panel", () => {
     for (const label of ["Download", "Move", "Share", "Delete"]) {
       await expect(bulkBar(page).getByRole("button", { name: label })).toBeVisible()
     }
+    await expect(bulkBar(page).getByRole("button", { name: "Edit" })).toHaveCount(0)
   })
 })
 
@@ -260,10 +271,11 @@ test.describe("the panel does not steal the old interactions", () => {
     await expect(panel(page).getByTestId("asset-panel-preview")).toBeVisible()
   })
 
-  test("an edit made in the panel persists", async ({ page }) => {
+  test("a rename made in the panel persists", async ({ page }) => {
     await openVideos(page)
     const card = page.locator(`[data-asset-id="${VIDEO_FIXTURE}"]`)
-    await openSectionFromMenu(page, card, "edit")
+    await card.click({ button: "right" })
+    await page.getByTestId("asset-menu-rename").click()
 
     const field = panel(page).locator("input").first()
     await expect(field).toBeVisible()
@@ -281,7 +293,8 @@ test.describe("the panel does not steal the old interactions", () => {
     await expect(panel(page)).toContainText(renamed, { timeout: 15_000 })
 
     // Put it back, so the fixture stays what every other spec expects.
-    await openSectionFromMenu(page, page.locator(`[data-asset-id="${VIDEO_FIXTURE}"]`), "edit")
+    await page.locator(`[data-asset-id="${VIDEO_FIXTURE}"]`).click({ button: "right" })
+    await page.getByTestId("asset-menu-rename").click()
     const again = panel(page).locator("input").first()
     await again.fill(original)
     await panel(page).getByRole("button", { name: /save changes/i }).click()

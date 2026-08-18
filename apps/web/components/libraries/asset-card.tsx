@@ -14,6 +14,7 @@ import {
   MinusCircle,
   Music,
   Pencil,
+  PencilLine,
   Play,
   Video,
   Info,
@@ -25,7 +26,7 @@ import { assetSupportsDocumentThumbnail, DEFAULT_USER_PREFERENCES } from "@arcii
 
 import { useAssetSelection } from "@/components/libraries/asset-selection"
 import { useAssetViewerOptional } from "@/components/libraries/asset-viewer-context"
-import { useVideoEditor } from "@/components/libraries/video-edit-context"
+
 import { getUserPreferences } from "@/lib/api/user-preferences"
 import { queryKeys } from "@/lib/api/query-keys"
 import { resolveAssetBadge } from "@/lib/utils/asset-badge"
@@ -35,6 +36,7 @@ import {
   AssetAiMetadata,
 } from "@/components/libraries/asset-ai-activity"
 import { useAssetPanelIntent } from "@/components/libraries/asset-panel-intent"
+import { useVideoEditor } from "@/components/libraries/video-edit-context"
 import {
   ContextMenu,
   ContextMenuContent,
@@ -344,8 +346,8 @@ function AiStatusPill({ asset }: { asset: AssetSummary }) {
 export function AssetCard({ asset }: { asset: AssetSummary }) {
   const selection = useAssetSelection()
   const viewer = useAssetViewerOptional()
-  const videoEditor = useVideoEditor()
   const panelIntent = useAssetPanelIntent()
+  const videoEditor = useVideoEditor()
   const selected = selection?.isSelected(asset.id) ?? false
   const canOpen = isViewableAsset(asset) && Boolean(viewer?.canOpen(asset))
   const source = sourceChipLabel(asset)
@@ -387,15 +389,22 @@ export function AssetCard({ asset }: { asset: AssetSummary }) {
   /**
    * Right-click goes straight to a section.
    *
-   * Clicking a card always lands on Overview, which is right: it is what you
-   * asked for by clicking. But reaching Edit or AI then costs a second aim at a
-   * small tab, and the thing people actually want when they right-click a file
-   * is the list of things they can do to it. So the sections are offered here,
-   * and each opens the panel already on that section rather than on Overview
-   * with a tab still to press.
+   * Clicking a card always lands on Overview. Actions live on this menu so the
+   * card does not need a hover Edit button.
+   *
+   * For videos, Edit opens the video editor drawer. Rename (videos) and Edit
+   * (everything else) open the side-panel rename form.
    */
   const openAt = (section: "overview" | "edit" | "ai" | "move" | "share") => {
     panelIntent?.open({ assetId: asset.id, section })
+  }
+
+  const openEdit = () => {
+    if (videoEditor?.canEdit(asset)) {
+      videoEditor.openEditor(asset)
+      return
+    }
+    openAt("edit")
   }
 
   return (
@@ -435,36 +444,6 @@ export function AssetCard({ asset }: { asset: AssetSummary }) {
             })
           }
         />
-        {/*
-          Edit, on the card, for media that has an editor.
-          Revealed on hover so a grid of a hundred videos stays calm, but always
-          in the accessibility tree so it is reachable by keyboard and by tests.
-        */}
-        {videoEditor?.canEdit(asset) ? (
-          <button
-            type="button"
-            data-no-marquee
-            data-testid="video-card-edit"
-            aria-label={`Edit ${asset.originalFilename}`}
-            onClick={(event) => {
-              event.preventDefault()
-              event.stopPropagation()
-              videoEditor.openEditor(asset)
-            }}
-            className={cn(
-              "absolute top-1.5 z-10 flex items-center gap-1 rounded-md px-2 py-1",
-              // Out of the AI indicator's corner when there is one to avoid.
-              asset.ai?.activity ? "right-9" : "right-1.5",
-              "bg-black/65 text-[11px] font-medium text-white backdrop-blur-sm",
-              "transition-opacity duration-150 hover:bg-black/80",
-              "focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70",
-              hover ? "opacity-100" : "opacity-0",
-            )}
-          >
-            <Pencil className="size-3" />
-            Edit
-          </button>
-        ) : null}
       </div>
 
       {/*
@@ -526,12 +505,23 @@ export function AssetCard({ asset }: { asset: AssetSummary }) {
         </ContextMenuItem>
         <ContextMenuItem
           className={libraryGlassContextMenuItem}
-          onSelect={() => openAt("edit")}
+          onSelect={openEdit}
           data-testid="asset-menu-edit"
         >
           <Pencil />
           Edit
         </ContextMenuItem>
+        {/* Videos already use Edit for the editor — offer rename separately. */}
+        {asset.mediaType === "VIDEO" ? (
+          <ContextMenuItem
+            className={libraryGlassContextMenuItem}
+            onSelect={() => openAt("edit")}
+            data-testid="asset-menu-rename"
+          >
+            <PencilLine />
+            Rename
+          </ContextMenuItem>
+        ) : null}
         {/* Only where there is something behind it — a PNG has no transcript. */}
         {asset.mediaType === "VIDEO" ? (
           <ContextMenuItem

@@ -2,13 +2,12 @@
 
 import { useState } from "react"
 import { useQueryClient } from "@tanstack/react-query"
-import { ArrowRightLeft, Download, Loader2, Pencil, Share2, Trash2, X } from "lucide-react"
+import { ArrowRightLeft, Download, Loader2, Share2, Trash2, X } from "lucide-react"
 import { toast } from "@/lib/notifications/arciin-toast"
 
 import { useAssetSelectionRequired } from "@/components/libraries/asset-selection"
 import { notifyDeleted } from "@/lib/notifications/toast-actions"
 import { BulkMoveAssetsDialog } from "@/components/libraries/bulk-move-assets-dialog"
-import { RenameAssetDialog } from "@/components/libraries/rename-asset-dialog"
 import { ShareDialog } from "@/components/shares/share-dialog"
 import {
   AlertDialog,
@@ -44,7 +43,6 @@ export function AssetBulkActionsBar({ defaultLibraryId }: { defaultLibraryId?: s
   const [moveOpen, setMoveOpen] = useState(false)
   const [shareOpen, setShareOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
-  const [editOpen, setEditOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [deleting, setDeleting] = useState(false)
 
@@ -56,10 +54,11 @@ export function AssetBulkActionsBar({ defaultLibraryId }: { defaultLibraryId?: s
    * the same actions with the file in front of you rather than a toolbar
    * floating over a grid. Showing both at once would put two different Delete
    * buttons on screen for the same file.
+   *
+   * Edit is intentionally omitted here — rename / AI live on the single-file
+   * panel and the card context menu, not on a multi-select toolbar.
    */
   if (count < 2) return null
-
-  const editAsset = count === 1 ? selectedAssets[0] : undefined
 
   const handleDownload = async () => {
     setBusy(true)
@@ -126,18 +125,6 @@ export function AssetBulkActionsBar({ defaultLibraryId }: { defaultLibraryId?: s
             size="sm"
             variant="outline"
             className={dashboardTableActionOutline}
-            disabled={busy || count !== 1}
-            title={count !== 1 ? "Select one file to edit" : "Edit file"}
-            onClick={() => setEditOpen(true)}
-          >
-            <Pencil className="size-4" />
-            Edit
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            className={dashboardTableActionOutline}
             disabled={busy}
             onClick={() => void handleDownload()}
           >
@@ -189,14 +176,6 @@ export function AssetBulkActionsBar({ defaultLibraryId }: { defaultLibraryId?: s
           </Button>
         </div>
       </div>
-
-      {editAsset ? (
-        <RenameAssetDialog
-          asset={editAsset}
-          open={editOpen}
-          onOpenChange={setEditOpen}
-        />
-      ) : null}
 
       <ShareDialog
         open={shareOpen}

@@ -83,8 +83,9 @@ async function openVideosAndEdit(page: Page) {
   await page.goto("/videos")
   const card = page.locator(`[data-asset-id="${FIXTURE_ASSET_ID}"]`)
   await expect(card).toBeVisible({ timeout: 60_000 })
-  await card.hover()
-  await card.getByTestId("video-card-edit").click()
+  // Hover Edit on the card was removed — open the video editor from the menu.
+  await card.click({ button: "right" })
+  await page.getByTestId("asset-menu-edit").click()
   const drawer = page.getByTestId("video-edit-drawer")
   await expect(drawer).toBeVisible({ timeout: 15_000 })
   return drawer
