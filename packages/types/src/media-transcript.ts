@@ -30,11 +30,30 @@ export type TranscriptSegment = {
   text: string
 }
 
+/**
+ * What the video is mainly about, when the transcript makes that clear.
+ *
+ * Examples: a movie recap → kind "movie" + title "Inception"; a podcast about a
+ * product → kind "product" + title. Absent when nothing identifiable.
+ */
+export type TranscriptAiAbout = {
+  /** Broad category — movie, tv_show, book, game, music, person, product, event, topic, other */
+  kind: string
+  /** Best name (movie title, show name, person, product…). */
+  title: string
+  /** Short extra context from the transcript / clear knowledge (year, director…). */
+  note: string | null
+}
+
 /** Saved Assist → Summarize payload (lives on the transcript row). */
 export type TranscriptAiInsight = {
   summary: string
   keywords: string[]
   links: string[]
+  /** Identified subject when detectable (movie, show, book, …). */
+  about: TranscriptAiAbout | null
+  /** Broad topic labels (e.g. "movie explanation", "trailer reaction"). */
+  topics: string[]
   model: string | null
   generatedAt: string | null
 }

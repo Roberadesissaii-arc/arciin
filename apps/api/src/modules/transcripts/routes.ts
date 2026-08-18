@@ -37,6 +37,16 @@ function isTranscribableAsset(mediaType: string): boolean {
   return mediaType === "VIDEO" || mediaType === "AUDIO"
 }
 
+function serializeAiAbout(value: unknown) {
+  if (!value || typeof value !== "object") return null
+  const row = value as Record<string, unknown>
+  const title = typeof row.title === "string" ? row.title.trim() : ""
+  if (!title) return null
+  const kind = typeof row.kind === "string" ? row.kind.trim() : "other"
+  const note = typeof row.note === "string" ? row.note.trim() : ""
+  return { kind: kind || "other", title, note: note || null }
+}
+
 function serializeAiInsight(value: unknown) {
   if (!value || typeof value !== "object") return null
   const row = value as Record<string, unknown>
@@ -47,11 +57,19 @@ function serializeAiInsight(value: unknown) {
   const links = Array.isArray(row.links)
     ? row.links.filter((k): k is string => typeof k === "string")
     : []
-  if (!summary && keywords.length === 0 && links.length === 0) return null
+  const topics = Array.isArray(row.topics)
+    ? row.topics.filter((k): k is string => typeof k === "string")
+    : []
+  const about = serializeAiAbout(row.about)
+  if (!summary && keywords.length === 0 && links.length === 0 && !about && topics.length === 0) {
+    return null
+  }
   return {
     summary,
     keywords,
     links,
+    about,
+    topics,
     model: typeof row.model === "string" ? row.model : null,
     generatedAt: typeof row.generatedAt === "string" ? row.generatedAt : null,
   }
@@ -553,6 +571,8 @@ export async function transcriptRoutes(fastify: FastifyInstance) {
           summary: result.summary,
           keywords: result.keywords,
           links: result.links,
+          about: result.about,
+          topics: result.topics,
           model: result.model,
           generatedAt,
         }

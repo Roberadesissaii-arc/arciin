@@ -19,6 +19,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   AlertTriangle,
   Check,
+  ChevronDown,
   Copy,
   Download,
   Loader2,
@@ -26,8 +27,8 @@ import {
   RefreshCw,
   Search,
   Sparkles,
+  UserRound,
   VolumeX,
-  ChevronDown,
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -89,6 +90,23 @@ function languageLabel(tag: string | null): string | null {
 
 /* ------------------------------------------------------------- transcript */
 
+/** Initial segments shown before “View more” — long transcripts stay scannable. */
+const TRANSCRIPT_PREVIEW_COUNT = 8
+
+/** Stable palette so Speaker 1 / Speaker 2 stay visually distinct. */
+const SPEAKER_COLORS = [
+  { text: "text-[#FF4F12]", bg: "bg-[#FF4F12]/12", ring: "ring-[#FF4F12]/25" },
+  { text: "text-sky-600", bg: "bg-sky-500/12", ring: "ring-sky-500/25" },
+  { text: "text-violet-600", bg: "bg-violet-500/12", ring: "ring-violet-500/25" },
+  { text: "text-emerald-600", bg: "bg-emerald-500/12", ring: "ring-emerald-500/25" },
+  { text: "text-amber-600", bg: "bg-amber-500/12", ring: "ring-amber-500/25" },
+] as const
+
+function speakerColorIndex(speaker: string, order: string[]): number {
+  const found = order.indexOf(speaker)
+  return found >= 0 ? found % SPEAKER_COLORS.length : 0
+}
+
 function TranscriptSegments({
   segments,
   query,
@@ -100,17 +118,32 @@ function TranscriptSegments({
   activeIndex: number
   onSeek: (ms: number) => void
 }) {
+  const [expanded, setExpanded] = useState(false)
   const needle = query.trim().toLowerCase()
-  const shown = needle
+  const matching = needle
     ? segments
         .map((s, i) => ({ s, i }))
         .filter(({ s }) => s.text.toLowerCase().includes(needle))
     : segments.map((s, i) => ({ s, i }))
 
+  // Searching always shows every match; otherwise collapse long transcripts.
+  const canCollapse = !needle && matching.length > TRANSCRIPT_PREVIEW_COUNT
+  const shown =
+    canCollapse && !expanded ? matching.slice(0, TRANSCRIPT_PREVIEW_COUNT) : matching
+  const hiddenCount = canCollapse && !expanded ? matching.length - TRANSCRIPT_PREVIEW_COUNT : 0
+
   // One decision for the whole transcript, so timecodes line up in a column.
   const long = segments.some((s) => s.startMs >= 3_600_000)
 
-  if (shown.length === 0) {
+  const speakerOrder = useMemo(() => {
+    const order: string[] = []
+    for (const s of segments) {
+      if (s.speaker && !order.includes(s.speaker)) order.push(s.speaker)
+    }
+    return order
+  }, [segments])
+
+  if (matching.length === 0) {
     return (
       <p className="py-6 text-center text-[13px] text-muted-foreground">
         No segments match “{query}”.
@@ -127,66 +160,96 @@ function TranscriptSegments({
   }))
 
   return (
-    /**
-     * Meant to be read, not scanned like a log.
-     *
-     * A speaker's name appears once at the top of their run rather than on every
-     * line, consecutive lines from one person sit closer together than the gap
-     * between speakers, and nothing is boxed — turning each sentence into a card
-     * is what made the old version feel like debug output. The timestamp keeps
-     * its own column so the eye can ignore it while reading and find it
-     * instantly when seeking.
-     */
-    <ol className="mt-3" data-testid="video-transcript-segments">
-      {rows.map(({ s, i, newSpeaker }) => {
-        const active = i === activeIndex
-        return (
-          <li key={`${s.startMs}-${i}`} className={cn(newSpeaker ? "mt-4 first:mt-0" : "mt-1.5")}>
-            {newSpeaker ? (
-              <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                {s.speaker}
-              </p>
-            ) : null}
-            <div
-              className={cn(
-                "flex gap-2.5 rounded-md border-l-2 py-0.5 pl-2 transition-colors",
-                // The playing line, marked without shouting: an accent edge and
-                // the faintest wash, so following along does not turn the page
-                // into a flashing list.
-                active ? "border-primary/70 bg-primary/[0.06]" : "border-transparent",
-              )}
-              data-testid={active ? "transcript-active-segment" : undefined}
-            >
-              <button
-                type="button"
-                onClick={() => onSeek(s.startMs)}
+    <div>
+      {/*
+        Meant to be read, not scanned like a log.
+
+        A speaker's name appears once at the top of their run rather than on every
+        line, consecutive lines from one person sit closer together than the gap
+        between speakers, and nothing is boxed. Colored speaker chips mark turns
+        when more than one voice is present.
+      */}
+      <ol className="mt-3" data-testid="video-transcript-segments">
+        {rows.map(({ s, i, newSpeaker }) => {
+          const active = i === activeIndex
+          const color =
+            s.speaker && speakerOrder.length > 1
+              ? SPEAKER_COLORS[speakerColorIndex(s.speaker, speakerOrder)]!
+              : null
+          return (
+            <li key={`${s.startMs}-${i}`} className={cn(newSpeaker ? "mt-4 first:mt-0" : "mt-1.5")}>
+              {newSpeaker && s.speaker ? (
+                <p
+                  className={cn(
+                    "mb-1.5 inline-flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide",
+                    color?.text ?? "text-muted-foreground",
+                  )}
+                  data-testid="transcript-speaker-label"
+                >
+                  <span
+                    className={cn(
+                      "inline-flex size-5 items-center justify-center rounded-full ring-1",
+                      color?.bg ?? "bg-muted",
+                      color?.ring ?? "ring-border",
+                    )}
+                    aria-hidden
+                  >
+                    <UserRound className="size-3" />
+                  </span>
+                  {s.speaker}
+                </p>
+              ) : null}
+              <div
                 className={cn(
-                  "mt-[3px] h-fit shrink-0 rounded px-1.5 py-0.5 font-mono text-[10.5px] tabular-nums",
-                  // A quiet pill rather than orange text: it has to read as
-                  // interactive without reading as a warning.
-                  "bg-muted text-muted-foreground transition-colors",
-                  "hover:bg-primary/10 hover:text-primary",
-                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30",
+                  "flex gap-2.5 rounded-md border-l-2 py-0.5 pl-2 transition-colors",
+                  active ? "border-primary/70 bg-primary/[0.06]" : "border-transparent",
                 )}
-                aria-label={`Jump to ${formatTimecode(s.startMs, { forceHours: long })}`}
-                data-testid="transcript-timestamp"
-                data-start-ms={s.startMs}
+                data-testid={active ? "transcript-active-segment" : undefined}
               >
-                {formatTimecode(s.startMs, { forceHours: long })}
-              </button>
-              <p
-                className={cn(
-                  "min-w-0 flex-1 text-[13.5px] leading-[1.65]",
-                  active ? "text-foreground" : "text-foreground/85",
-                )}
-              >
-                {needle ? highlight(s.text, needle) : s.text}
-              </p>
-            </div>
-          </li>
-        )
-      })}
-    </ol>
+                <button
+                  type="button"
+                  onClick={() => onSeek(s.startMs)}
+                  className={cn(
+                    "mt-[3px] h-fit shrink-0 rounded px-1.5 py-0.5 font-mono text-[10.5px] tabular-nums",
+                    "bg-muted text-muted-foreground transition-colors",
+                    "hover:bg-primary/10 hover:text-primary",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30",
+                  )}
+                  aria-label={`Jump to ${formatTimecode(s.startMs, { forceHours: long })}`}
+                  data-testid="transcript-timestamp"
+                  data-start-ms={s.startMs}
+                >
+                  {formatTimecode(s.startMs, { forceHours: long })}
+                </button>
+                <p
+                  className={cn(
+                    "min-w-0 flex-1 text-[13.5px] leading-[1.65]",
+                    active ? "text-foreground" : "text-foreground/85",
+                  )}
+                >
+                  {needle ? highlight(s.text, needle) : s.text}
+                </p>
+              </div>
+            </li>
+          )
+        })}
+      </ol>
+
+      {canCollapse ? (
+        <div className="mt-3 flex justify-center">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="h-8 border-border bg-card text-[12px]"
+            onClick={() => setExpanded((v) => !v)}
+            data-testid="transcript-view-more"
+          >
+            {expanded ? "Show less" : `View more (${hiddenCount} more)`}
+          </Button>
+        </div>
+      ) : null}
+    </div>
   )
 }
 

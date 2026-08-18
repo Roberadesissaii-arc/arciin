@@ -110,9 +110,10 @@ export function VideoAiTitle({
   }
 
   if (!hasTranscript) {
+    // Title / Transcript / Summarize are separate tools. If a transcript is
+    // already running from another tab, Title stays idle — it must not look
+    // like title generation itself is processing.
     return (
-      // Same placeholder as the transcript's own empty state: two panels of the
-      // same section should not look like two different products.
       <div
         className="mt-3 rounded-lg border border-dashed border-border px-4 py-5 text-center"
         data-testid="ai-title-needs-transcript"
@@ -120,24 +121,30 @@ export function VideoAiTitle({
         <Sparkles className="mx-auto size-5 text-primary" />
         <p className="mt-2 text-[13px] font-medium text-foreground">AI title</p>
         <p className="mx-auto mt-1 max-w-[38ch] text-[12.5px] text-muted-foreground">
-          A title comes from what the video says, so it needs a transcript first.
-          Generating one here starts it and shows the progress.
+          {transcriptRunning
+            ? "A transcript is already running. Titles unlock when it finishes — this tab is separate from transcription."
+            : "A title comes from what the video says, so it needs a transcript first. Generating one here starts it and shows the progress."}
         </p>
-        <Button
-          type="button"
-          size="sm"
-          className="mt-3"
-          onClick={onGenerateTranscript}
-          disabled={transcriptRunning}
-          data-testid="ai-title-generate-transcript"
-        >
-          {transcriptRunning ? (
-            <Loader2 className="size-3.5 animate-spin" />
-          ) : (
+        {transcriptRunning ? (
+          <p
+            className="mt-3 inline-flex items-center gap-1.5 text-[12px] text-muted-foreground"
+            data-testid="ai-title-waiting-transcript"
+          >
+            <Loader2 className="size-3.5 animate-spin text-primary" />
+            Waiting for transcript…
+          </p>
+        ) : (
+          <Button
+            type="button"
+            size="sm"
+            className="mt-3"
+            onClick={onGenerateTranscript}
+            data-testid="ai-title-generate-transcript"
+          >
             <Sparkles className="size-3.5" />
-          )}
-          {transcriptRunning ? "Transcribing…" : "Generate transcript"}
-        </Button>
+            Generate transcript
+          </Button>
+        )}
       </div>
     )
   }

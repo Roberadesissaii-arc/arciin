@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest"
 
 import {
   applyTranslation,
+  buildSummaryPrompt,
   buildTitlePrompt,
   buildTranslationPrompt,
+  parseSummaryPayload,
   parseTitles,
 } from "../packages/media-ai/src/transcript-text-ai"
 import { isSameLanguage, languageName, translationLanguageOptions } from "../packages/types/src/languages"
@@ -138,6 +140,47 @@ describe("title suggestions", () => {
     expect(prompt).toContain("Today we're discussing Arciin.")
     expect(prompt).toMatch(/ONE or TWO words/i)
     expect(prompt).toMatch(/quotation marks/i)
+  })
+})
+
+describe("video summary metadata", () => {
+  it("asks for about / topics so movie explainers surface the film", () => {
+    const prompt = buildSummaryPrompt("Today we break down the ending of Inception.")
+    expect(prompt).toMatch(/about/i)
+    expect(prompt).toMatch(/movie/i)
+    expect(prompt).toMatch(/topics/i)
+  })
+
+  it("parses a movie about block and lifts title into keywords", () => {
+    const parsed = parseSummaryPayload(
+      JSON.stringify({
+        summary: "A recap of the heist layers in Inception.",
+        keywords: ["dream", "heist"],
+        links: [],
+        topics: ["movie explanation"],
+        about: { kind: "movie", title: "Inception", note: "2010 · Christopher Nolan" },
+      }),
+    )
+    expect(parsed.about).toEqual({
+      kind: "movie",
+      title: "Inception",
+      note: "2010 · Christopher Nolan",
+    })
+    expect(parsed.topics).toEqual(["movie explanation"])
+    expect(parsed.keywords[0]).toBe("Inception")
+    expect(parsed.keywords).toContain("movie")
+  })
+
+  it("returns null about when the model is unsure", () => {
+    const parsed = parseSummaryPayload(
+      JSON.stringify({
+        summary: "Casual chat.",
+        keywords: ["chat"],
+        links: [],
+        topics: ["conversation"],
+      }),
+    )
+    expect(parsed.about).toBeNull()
   })
 })
 

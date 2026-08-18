@@ -242,14 +242,32 @@ export const SUMMARY_RESPONSE_SCHEMA = {
     summary: { type: "string" },
     keywords: { type: "array", items: { type: "string" } },
     links: { type: "array", items: { type: "string" } },
+    about: {
+      type: "object",
+      properties: {
+        kind: { type: "string" },
+        title: { type: "string" },
+        note: { type: "string" },
+      },
+      required: ["kind", "title"],
+    },
+    topics: { type: "array", items: { type: "string" } },
   },
-  required: ["summary", "keywords", "links"],
+  required: ["summary", "keywords", "links", "topics"],
 } as const
+
+export type VideoSummaryAbout = {
+  kind: string
+  title: string
+  note: string | null
+}
 
 export type VideoSummaryResult = {
   summary: string
   keywords: string[]
   links: string[]
+  about: VideoSummaryAbout | null
+  topics: string[]
   model: string
 }
 
@@ -261,36 +279,81 @@ export type SuggestVideoSummaryInput = {
 
 export function buildSummaryPrompt(transcriptText: string): string {
   return [
-    "Summarize this video from its transcript only.",
+    "Summarize this video from its transcript. Extract the richest useful metadata you can.",
     "",
     "Return JSON with:",
-    '- "summary": 2–5 short paragraphs (or bullet-like sentences) covering what the video is about',
-    '- "keywords": 5–12 concrete keywords or short phrases (topics, names, products)',
-    '- "links": every URL, domain, or clear “go to …” web address spoken or spelled in the transcript (empty array if none)',
+    '- "summary": 2–5 short paragraphs covering what the video is about and any key takeaways',
+    '- "keywords": 6–14 concrete keywords (topics, names, products, places). Include the content type when clear (e.g. "movie", "trailer", "review")',
+    '- "links": every URL, domain, or clear “go to …” web address spoken or spelled (empty array if none)',
+    '- "topics": 2–6 short topic labels for browsing (e.g. "movie explanation", "tech review", "cooking tutorial")',
+    '- "about": when the video is clearly ABOUT a specific titled work or subject, set:',
+    '    { "kind": one of movie|tv_show|book|game|music|person|product|event|topic|other,',
+    '      "title": the best name (movie/show/book/person/product…),',
+    '      "note": optional short extras you are confident about (year, director, cast, platform) }',
+    '  If nothing specific is identifiable, omit "about" or use null.',
+    "",
+    "Examples:",
+    '- Movie explainer / recap / review → about.kind "movie", about.title = film name, keywords include "movie", topics include "movie explanation"',
+    '- Podcast interview → about.kind "person" when a guest is the focus',
+    '- Product unboxing → about.kind "product"',
     "",
     "Rules:",
-    "- Do not invent facts that are not in the transcript",
-    "- Prefer real spoken URLs / domains; normalize obvious spoken URLs (e.g. \"example dot com\" → https://example.com) when clear",
-    "- Keywords should help someone find this video later",
+    "- Prefer facts grounded in the transcript; add well-known identifiers (official title, year) only when clearly the same work",
+    "- Do not invent obscure trivia; leave about null when unsure",
+    "- Prefer real spoken URLs / domains; normalize obvious spoken URLs (e.g. \"example dot com\" → https://example.com)",
+    "- Keywords and topics should help someone find this video later in a library",
     "",
     "Transcript:",
     transcriptText.slice(0, 24_000),
   ].join("\n")
 }
 
-function parseSummaryPayload(modelText: string): {
+const ABOUT_KINDS = new Set([
+  "movie",
+  "tv_show",
+  "book",
+  "game",
+  "music",
+  "person",
+  "product",
+  "event",
+  "topic",
+  "other",
+])
+
+function parseAbout(raw: unknown): VideoSummaryAbout | null {
+  if (!raw || typeof raw !== "object") return null
+  const row = raw as Record<string, unknown>
+  const title = typeof row.title === "string" ? row.title.trim() : ""
+  if (!title) return null
+  let kind = typeof row.kind === "string" ? row.kind.trim().toLowerCase().replace(/\s+/g, "_") : "other"
+  if (kind === "tv" || kind === "show" || kind === "series") kind = "tv_show"
+  if (kind === "film" || kind === "films") kind = "movie"
+  if (!ABOUT_KINDS.has(kind)) kind = "other"
+  const note = typeof row.note === "string" ? row.note.trim() : ""
+  return { kind, title, note: note || null }
+}
+
+/** Exported for unit tests — same parser the API path uses. */
+export function parseSummaryPayload(modelText: string): {
   summary: string
   keywords: string[]
   links: string[]
+  about: VideoSummaryAbout | null
+  topics: string[]
 } {
   let summary = ""
   let keywords: string[] = []
   let links: string[] = []
+  let about: VideoSummaryAbout | null = null
+  let topics: string[] = []
   try {
     const parsed = JSON.parse(modelText) as {
       summary?: unknown
       keywords?: unknown
       links?: unknown
+      about?: unknown
+      topics?: unknown
     }
     if (typeof parsed.summary === "string") summary = parsed.summary.trim()
     if (Array.isArray(parsed.keywords)) {
@@ -307,10 +370,30 @@ function parseSummaryPayload(modelText: string): {
         .filter(Boolean)
         .slice(0, 30)
     }
+    if (Array.isArray(parsed.topics)) {
+      topics = parsed.topics
+        .filter((k): k is string => typeof k === "string")
+        .map((k) => k.trim())
+        .filter(Boolean)
+        .slice(0, 10)
+    }
+    about = parseAbout(parsed.about)
   } catch {
     summary = modelText.trim().slice(0, 4000)
   }
-  return { summary, keywords, links }
+
+  // Ensure the content type surfaces in keywords when we know it.
+  if (about?.kind && about.kind !== "other" && about.kind !== "topic") {
+    const label = about.kind === "tv_show" ? "TV show" : about.kind
+    if (!keywords.some((k) => k.toLowerCase() === label.toLowerCase())) {
+      keywords = [label, ...keywords].slice(0, 20)
+    }
+    if (about.title && !keywords.some((k) => k.toLowerCase() === about!.title.toLowerCase())) {
+      keywords = [about.title, ...keywords].slice(0, 20)
+    }
+  }
+
+  return { summary, keywords, links, about, topics }
 }
 
 export async function suggestVideoSummary(
