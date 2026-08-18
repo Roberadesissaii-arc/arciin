@@ -107,21 +107,18 @@ describe("the translation prompt", () => {
 })
 
 describe("title suggestions", () => {
-  it("reads titles out of a structured reply", () => {
+  it("caps long model replies to one or two words", () => {
     const titles = parseTitles(
       JSON.stringify({ titles: ["Teacher Clarifies Her Role During Class", "A Quick Role Mix-Up"] }),
     )
-    expect(titles).toEqual([
-      "Teacher Clarifies Her Role During Class",
-      "A Quick Role Mix-Up",
-    ])
+    expect(titles).toEqual(["Teacher Clarifies", "A Quick"])
   })
 
   it("strips the quotes and extensions models add anyway", () => {
     const titles = parseTitles(
-      JSON.stringify({ titles: ['"A Classroom Conversation"', "Something Useful.mp4", "“Curly”"] }),
+      JSON.stringify({ titles: ['"Classroom chat"', "Budget tips.mp4", "“Curly”"] }),
     )
-    expect(titles).toEqual(["A Classroom Conversation", "Something Useful", "Curly"])
+    expect(titles).toEqual(["Classroom chat", "Budget tips", "Curly"])
   })
 
   it("drops blanks and duplicates", () => {
@@ -136,20 +133,18 @@ describe("title suggestions", () => {
     expect(parseTitles(JSON.stringify({ titles: "not an array" }))).toEqual([])
   })
 
-  it("prompts for the transcript, not the file", () => {
+  it("prompts for short library-style titles from the transcript", () => {
     const prompt = buildTitlePrompt("Hello everyone. Today we're discussing Arciin.")
     expect(prompt).toContain("Today we're discussing Arciin.")
-    expect(prompt).toMatch(/never/i)
+    expect(prompt).toMatch(/ONE or TWO words/i)
     expect(prompt).toMatch(/quotation marks/i)
   })
 })
 
 describe("applying a title to a filename", () => {
   it("keeps the original extension", () => {
-    expect(titleToFilename("Teacher Clarifies Her Role During Class", "7492908407147073536.mp4")).toBe(
-      "Teacher Clarifies Her Role During Class.mp4",
-    )
-    expect(titleToFilename("A Quiet Morning", "IMG_9274920381.mov")).toBe("A Quiet Morning.mov")
+    expect(titleToFilename("Classroom chat", "7492908407147073536.mp4")).toBe("Classroom chat.mp4")
+    expect(titleToFilename("Quiet morning", "IMG_9274920381.mov")).toBe("Quiet morning.mov")
   })
 
   it("never lets a title change the extension", () => {

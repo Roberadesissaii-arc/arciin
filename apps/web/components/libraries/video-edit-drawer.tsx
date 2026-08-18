@@ -336,8 +336,12 @@ export function VideoTranscriptSection({
   const saveEdit = useMutation({
     mutationFn: (text: string) => {
       // The PATCH keeps the existing timings and replaces the words, so a
-      // correction cannot accidentally scramble the timeline.
-      const lines = text.split("\n")
+      // correction cannot accidentally scramble the timeline. Blank lines are
+      // visual spacing in the editor only — split on runs of newlines.
+      const lines = text
+        .split(/\n+/)
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0)
       const next = segments.map((s, i) => ({ ...s, text: (lines[i] ?? s.text).trim() }))
       return saveAssetTranscript(assetId!, {
         segments: next,
@@ -557,7 +561,9 @@ export function VideoTranscriptSection({
                 onEditStart={
                   activeLanguage === null
                     ? () => {
-                        setDraft(segments.map((s) => s.text).join("\n"))
+                        // Blank line between segments so edit mode is readable —
+                        // save splits on runs of newlines so spacing is not data.
+                        setDraft(segments.map((s) => s.text).join("\n\n"))
                         setEditing(true)
                       }
                     : undefined
@@ -850,14 +856,15 @@ function TranscriptBody(props: {
         {props.editing ? (
           <div className="mt-3 space-y-3">
             <p className="text-[12px] leading-snug text-zinc-500">
-              One line per segment — leave a blank line between speakers if you like. Timings stay as
-              they are.
+              One paragraph per segment, with a blank line between them so edits stay readable.
+              Timings are unchanged.
             </p>
             <Textarea
               value={props.draft}
               onChange={(e) => props.onDraftChange(e.target.value)}
-              rows={14}
-              className="min-h-[16rem] rounded-xl border-zinc-200 bg-zinc-50/80 px-3 py-3 font-sans text-[13.5px] leading-7 tracking-normal"
+              rows={16}
+              className="min-h-[18rem] rounded-xl border-zinc-200 bg-zinc-50/80 px-3.5 py-3.5 font-sans text-[13.5px] leading-8 tracking-normal"
+              data-testid="transcript-edit-textarea"
             />
             <div className="flex gap-2">
               <Button type="button" size="sm" className="h-9" onClick={props.onEditSave} disabled={props.saving}>

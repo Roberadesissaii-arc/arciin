@@ -37,7 +37,6 @@ import { queryKeys } from "@/lib/api/query-keys"
 import { libraryGlassSheetPanel } from "@/lib/library-glass-sheet"
 import { notifyDeleted } from "@/lib/notifications/toast-actions"
 import { toast } from "@/lib/notifications/arciin-toast"
-import { formatBytes } from "@/lib/utils/format-bytes"
 import type { AssetSummary } from "@/lib/types/models"
 import { cn } from "@/lib/utils"
 
@@ -183,8 +182,10 @@ export function AssetSidePanel() {
             >
               {asset.originalFilename}
             </SheetTitle>
+            {/* Kind only — size already lives in Overview details. Showing MB
+                again in the Assist header is redundant noise. */}
             <SheetDescription className="text-[13px] leading-snug text-muted-foreground">
-              {[assetKindLabel(asset), formatBytes(asset.sizeBytes)].filter(Boolean).join(" · ")}
+              {assetKindLabel(asset)}
             </SheetDescription>
           </SheetHeader>
 
