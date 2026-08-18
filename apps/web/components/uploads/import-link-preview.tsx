@@ -75,7 +75,7 @@ export function ImportLinkInspectSlot({ url, className }: ImportLinkInspectSlotP
           </span>
           <p className="mt-2 text-[13px] font-medium text-foreground">Paste a link to inspect it</p>
           <p className="mt-0.5 max-w-[15rem] truncate text-[11px] text-muted-foreground">
-            YouTube, Facebook, Amazon, Vimeo, TikTok, PDFs, images…
+            YouTube, SoundCloud, Vimeo, TikTok, PDFs, images…
           </p>
         </div>
       ) : (
@@ -94,9 +94,12 @@ export function ImportLinkInspectSlot({ url, className }: ImportLinkInspectSlotP
                 </span>
                 <Badge
                   variant="secondary"
-                  className="h-5 shrink-0 px-1.5 text-[10px] font-semibold uppercase"
+                  className={cn(
+                    "h-5 shrink-0 px-1.5 text-[10px] font-semibold uppercase",
+                    preview.importBlocked && "bg-amber-100 text-amber-800",
+                  )}
                 >
-                  {preview.categoryLabel}
+                  {preview.importBlocked ? "DRM" : preview.categoryLabel}
                 </Badge>
               </div>
               <p className="truncate text-[11px] text-muted-foreground">{preview.hostname}</p>
@@ -106,8 +109,14 @@ export function ImportLinkInspectSlot({ url, className }: ImportLinkInspectSlotP
           <div className="grid grid-cols-[1rem_1fr] items-center gap-x-2 gap-y-1 text-[11px]">
             <CategoryIcon className="size-3.5 text-primary" />
             <p className="truncate text-muted-foreground">
-              Files into{" "}
-              <span className="font-semibold text-foreground">{preview.destinationLibrary}</span>
+              {preview.importBlocked ? (
+                <span className="font-semibold text-amber-800">Cannot import</span>
+              ) : (
+                <>
+                  Files into{" "}
+                  <span className="font-semibold text-foreground">{preview.destinationLibrary}</span>
+                </>
+              )}
             </p>
             <ArrowRight className="size-3.5 text-muted-foreground" />
             <p className="truncate text-muted-foreground">{preview.importMethod}</p>

@@ -165,6 +165,12 @@ export function ImportLinkDialog() {
       return
     }
 
+    const resolved = looksLikeUrl(trimmed) ? analyzeImportLink(trimmed) : null
+    if (resolved?.importBlocked) {
+      setError(resolved.blockReason ?? "This link cannot be imported.")
+      return
+    }
+
     const format = selectedFormat ?? preview?.formats[0]
     const importOptions = format ? formatToImportOptions(format) : { audioOnly: false }
 
@@ -197,11 +203,13 @@ export function ImportLinkDialog() {
 
   const downloadHint = !preview
     ? "Format options activate for video links."
-    : formatOptionsEnabled
-      ? audioOnlyEnabled
-        ? "Audio-only — pick MP3 or M4A."
-        : "Video download — pick MP4 or best quality, or switch to audio only."
-      : "This link downloads as-is. Format options are for video links only."
+    : preview.importBlocked
+      ? (preview.blockReason ?? "This link cannot be imported.")
+      : formatOptionsEnabled
+        ? audioOnlyEnabled
+          ? "Audio-only — pick MP3 or M4A."
+          : "Video download — pick MP4 or best quality, or switch to audio only."
+        : "This link downloads as-is. Format options are for video links only."
 
   return (
     <Sheet
@@ -250,8 +258,8 @@ export function ImportLinkDialog() {
             Import from link
           </SheetTitle>
           <SheetDescription className="text-[13px] leading-snug text-muted-foreground">
-            Paste a public link — YouTube, Facebook, Amazon, Vimeo, TikTok, images, PDFs, or direct file URLs.
-            Arciin detects the source and downloads it on your server.
+            Paste a public link — YouTube, SoundCloud, Vimeo, TikTok, images, PDFs, or direct file URLs.
+            DRM apps (Spotify, Audible, Netflix, …) cannot be imported.
           </SheetDescription>
         </SheetHeader>
 
@@ -383,7 +391,12 @@ export function ImportLinkDialog() {
             </div>
 
             <div className="mt-auto shrink-0 pt-3">
-              <p className="min-h-[2rem] text-[11px] leading-relaxed text-muted-foreground">
+              <p
+                className={cn(
+                  "min-h-[2rem] text-[11px] leading-relaxed",
+                  preview?.importBlocked ? "text-amber-700" : "text-muted-foreground",
+                )}
+              >
                 {downloadHint}
               </p>
             </div>
@@ -409,10 +422,16 @@ export function ImportLinkDialog() {
         <SheetFooter className="shrink-0 border-t border-border p-2">
           <Button
             className="h-10 w-full bg-primary text-white hover:bg-primary/90"
-            disabled={submitting || !looksLikeUrl(url)}
+            disabled={submitting || !looksLikeUrl(url) || Boolean(preview?.importBlocked)}
             onClick={() => void submit()}
           >
-            {submitting ? "Starting…" : preview ? `Import from ${preview.source.label}` : "Import link"}
+            {submitting
+              ? "Starting…"
+              : preview?.importBlocked
+                ? "Cannot import (DRM)"
+                : preview
+                  ? `Import from ${preview.source.label}`
+                  : "Import link"}
           </Button>
         </SheetFooter>
       </SheetContent>

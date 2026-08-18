@@ -46,7 +46,17 @@ export type LinkImportPreview = {
   defaultFormatId: LinkImportFormatId
   tools: LinkImportTool[]
   hints: string[]
+  /**
+   * True when the host is known DRM / closed and Import must not run.
+   * The dialog disables the button and shows the hint instead of starting a job that will fail.
+   */
+  importBlocked: boolean
+  /** Short reason when importBlocked — also used as the submit error if someone forces it. */
+  blockReason: string | null
 }
+
+/** Streaming apps whose media is encrypted end-to-end — yt-dlp will never return a file. */
+const DRM_BLOCKED_SOURCES = new Set(["spotify", "audible"])
 
 const VIDEO_SOURCES = new Set([
   "youtube",
@@ -60,7 +70,7 @@ const VIDEO_SOURCES = new Set([
   "reddit",
 ])
 
-const AUDIO_SOURCES = new Set(["soundcloud", "spotify"])
+const AUDIO_SOURCES = new Set(["soundcloud", "spotify", "audible"])
 
 const IMAGE_SOURCES = new Set([
   "unsplash",
@@ -214,7 +224,7 @@ function inferCategory(
 }
 
 function importMethodFor(category: LinkContentCategory, sourceKey: string): string {
-  if (sourceKey === "spotify") {
+  if (DRM_BLOCKED_SOURCES.has(sourceKey)) {
     return "Not available (DRM)"
   }
   if (sourceKey === "instagram") {
@@ -238,6 +248,25 @@ function importMethodFor(category: LinkContentCategory, sourceKey: string): stri
   return "Smart fetch (direct, yt-dlp, or page meta)"
 }
 
+function drmBlockReason(sourceKey: string): string | null {
+  if (sourceKey === "spotify") {
+    return (
+      "Spotify is DRM-protected and cannot be downloaded. " +
+      "For podcasts, use a public RSS / episode .mp3 if the publisher offers one, or YouTube / SoundCloud. Music tracks cannot be imported."
+    )
+  }
+  if (sourceKey === "audible") {
+    return (
+      "Audible audiobooks and podcasts are DRM-protected and cannot be downloaded. " +
+      "Import only works for files you already own (direct .mp3/.m4a) or public hosts like YouTube / SoundCloud."
+    )
+  }
+  if (DRM_BLOCKED_SOURCES.has(sourceKey)) {
+    return "This service uses DRM protection, so Arciin cannot download the media."
+  }
+  return null
+}
+
 /** Rich preview for the import-from-link dialog. */
 export function analyzeImportLink(rawUrl: string): LinkImportPreview | null {
   const trimmed = rawUrl.trim()
@@ -256,16 +285,18 @@ export function analyzeImportLink(rawUrl: string): LinkImportPreview | null {
   const ext = extensionFromPath(parsed.pathname)
   const { category, library } = inferCategory(source.key, ext)
 
-  // Spotify (and similar DRM audio) must not offer fake extract options.
-  const formats: LinkImportFormat[] =
-    source.key === "spotify"
-      ? [ORIGINAL_FORMAT]
-      : category === "video" || VIDEO_SOURCES.has(source.key)
-        ? VIDEO_FORMATS
-        : [ORIGINAL_FORMAT]
+  const blockReason = drmBlockReason(source.key)
+  const importBlocked = Boolean(blockReason)
+
+  // DRM hosts must not offer fake extract options.
+  const formats: LinkImportFormat[] = importBlocked
+    ? [ORIGINAL_FORMAT]
+    : category === "video" || VIDEO_SOURCES.has(source.key)
+      ? VIDEO_FORMATS
+      : [ORIGINAL_FORMAT]
 
   const defaultFormatId: LinkImportFormatId =
-    source.key !== "spotify" && (category === "video" || VIDEO_SOURCES.has(source.key))
+    !importBlocked && (category === "video" || VIDEO_SOURCES.has(source.key))
       ? "video-mp4"
       : "original"
 
@@ -279,10 +310,8 @@ export function analyzeImportLink(rawUrl: string): LinkImportPreview | null {
   }
 
   const hints: string[] = []
-  if (source.key === "spotify") {
-    hints.push(
-      "Spotify is DRM-protected and cannot be downloaded. Use YouTube, SoundCloud, or a direct .mp3 / podcast RSS episode URL instead.",
-    )
+  if (blockReason) {
+    hints.push(blockReason)
   } else if (category === "video" || VIDEO_SOURCES.has(source.key)) {
     hints.push("Choose MP4 for the full video or MP3/M4A for audio-only.")
     hints.push("Playlists are skipped — only the linked item is imported.")
@@ -306,7 +335,7 @@ export function analyzeImportLink(rawUrl: string): LinkImportPreview | null {
       "Arciin tries direct download, yt-dlp, gallery-dl, page embeds (YouTube/Vimeo/m3u8), and Open Graph media.",
     )
     hints.push(
-      "DRM apps (Spotify, Netflix, Disney+, …) and many pirate movie hosts cannot provide a real file — use YouTube or a direct .mp4 link when possible.",
+      "DRM apps (Spotify, Audible, Netflix, Disney+, …) cannot provide a real file — use YouTube, SoundCloud, or a direct .mp3/.mp4 link when possible.",
     )
   }
 
@@ -325,6 +354,8 @@ export function analyzeImportLink(rawUrl: string): LinkImportPreview | null {
     defaultFormatId,
     tools,
     hints,
+    importBlocked,
+    blockReason,
   }
 }
 
@@ -338,7 +369,7 @@ export function formatToImportOptions(format: LinkImportFormat) {
 
 /** Whether this link supports MP4 / audio extraction options (video platforms). */
 export function linkSupportsFormatOptions(preview: LinkImportPreview | null): boolean {
-  if (!preview) return false
+  if (!preview || preview.importBlocked) return false
   return preview.formats.length > 1 && preview.formats.some((f) => f.id !== "original")
 }
 

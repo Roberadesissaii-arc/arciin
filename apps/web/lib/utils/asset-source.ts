@@ -192,6 +192,22 @@ const BRANDS: BrandRule[] = [
     domains: ["spotify.com", "scdn.co", "spotifycdn.com"],
   },
   {
+    key: "audible",
+    label: "Audible",
+    color: "#F8991C",
+    domains: [
+      "audible.com",
+      "audible.co.uk",
+      "audible.ca",
+      "audible.de",
+      "audible.fr",
+      "audible.com.au",
+      "audible.it",
+      "audible.es",
+      "audible.co.jp",
+    ],
+  },
+  {
     key: "dailymotion",
     label: "Dailymotion",
     color: "#0066DC",

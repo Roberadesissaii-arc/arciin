@@ -55,6 +55,7 @@ export function brandMarkForSource(key: string): string {
     etsy: "E",
     ebay: "EB",
     spotify: "SP",
+    audible: "AU",
     soundcloud: "SC",
     github: "GH",
     reddit: "R",

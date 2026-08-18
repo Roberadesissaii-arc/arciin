@@ -49,7 +49,7 @@ const VIDEO_PLATFORM_HINT =
  * "could not find a downloadable file".
  */
 const DRM_HOST_HINT =
-  /(^|\.)(spotify\.com|scdn\.co|spotifycdn\.com|netflix\.com|disneyplus\.com|hulu\.com|max\.com|hbomax\.com|primevideo\.com|amazon\.com\/gp\/video|music\.apple\.com|tv\.apple\.com|tidal\.com|deezer\.com|pandora\.com|crunchyroll\.com|peacocktv\.com|paramountplus\.com)/i
+  /(^|\.)(spotify\.com|scdn\.co|spotifycdn\.com|audible\.com|audible\.co\.uk|audible\.ca|audible\.de|audible\.fr|audible\.com\.au|netflix\.com|disneyplus\.com|hulu\.com|max\.com|hbomax\.com|primevideo\.com|amazon\.com\/gp\/video|music\.apple\.com|tv\.apple\.com|tidal\.com|deezer\.com|pandora\.com|crunchyroll\.com|peacocktv\.com|paramountplus\.com)/i
 
 /** Instagram embed works with crawler UAs; the default Chrome UA often gets a login wall. */
 const INSTAGRAM_EMBED_USER_AGENT = "facebookexternalhit/1.1"
@@ -798,7 +798,14 @@ function drmBlockedMessage(rawUrl: string): string | null {
   if (/spotify/i.test(host) || /spotify/i.test(rawUrl)) {
     return (
       "Spotify is DRM-protected and cannot be downloaded. " +
-      "Use a YouTube / SoundCloud link, a direct .mp3 URL, or an open podcast RSS episode file instead."
+      "For podcasts, use the show’s public RSS / episode .mp3 if the publisher offers one, " +
+      "or a YouTube / SoundCloud link. Music tracks cannot be imported."
+    )
+  }
+  if (/audible/i.test(host) || /audible/i.test(rawUrl)) {
+    return (
+      "Audible audiobooks and podcasts are DRM-protected and cannot be downloaded. " +
+      "Arciin only imports files you already own as a direct file, or public hosts like YouTube / SoundCloud."
     )
   }
   if (/netflix|disney|hulu|hbo|max\.com|primevideo|peacock|paramount|crunchyroll/i.test(host)) {
