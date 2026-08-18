@@ -501,10 +501,8 @@ export function VideoTranscriptSection({
               <VideoAiSummarize
                 asset={asset}
                 hasTranscript={Boolean(transcript && transcript.status === "READY")}
-                onGenerateTranscript={() => {
-                  startGenerate()
-                  setAiTab("transcript")
-                }}
+                transcriptStatus={transcript?.status ?? null}
+                onGenerateTranscript={startGenerate}
                 transcriptRunning={running || generate.isPending}
               />
             ) : null}
@@ -736,43 +734,73 @@ function TranscriptBody(props: {
           Copy as though they were peers. Copy and Edit are what people reach for
           while reading; the rest are occasional and live behind More.
         */}
-        <div className="mt-3 flex flex-wrap items-center gap-1.5">
+        <div className="mt-3 flex items-center gap-2">
+          <div className="relative min-w-0 flex-1">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-zinc-400" />
+            <Input
+              value={props.search}
+              onChange={(e) => props.onSearch(e.target.value)}
+              placeholder="Search…"
+              className="h-9 rounded-xl border-zinc-200 bg-zinc-50 pl-8 pr-16 text-[13px]"
+              data-testid="transcript-search"
+            />
+            {props.search.trim() ? (
+              <span
+                className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[11px] tabular-nums text-zinc-400"
+                data-testid="transcript-match-count"
+              >
+                {countMatches(segments, props.search)}
+              </span>
+            ) : null}
+          </div>
+
           <Button
             type="button"
-            size="sm"
+            size="icon"
             variant="outline"
+            className="size-9 shrink-0 rounded-xl border-zinc-200"
             onClick={() => props.onCopy(false)}
             data-testid="transcript-copy"
+            aria-label="Copy transcript"
+            title="Copy"
           >
-            <Copy className="size-3.5" /> Copy
+            <Copy className="size-3.5" />
           </Button>
-          {/* Hidden while a translation is on screen: an edit there would be
-              overwritten by the next regenerate, so offering it would be a lie. */}
+
           {!props.editing && props.onEditStart ? (
             <Button
               type="button"
-              size="sm"
+              size="icon"
               variant="outline"
+              className="size-9 shrink-0 rounded-xl border-zinc-200"
               onClick={props.onEditStart}
               data-testid="transcript-edit"
+              aria-label="Edit transcript"
+              title="Edit"
             >
-              <Pencil className="size-3.5" /> Edit
+              <Pencil className="size-3.5" />
             </Button>
           ) : null}
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button type="button" size="sm" variant="outline" data-testid="transcript-more">
-                More
+              <Button
+                type="button"
+                size="icon"
+                variant="outline"
+                className="size-9 shrink-0 rounded-xl border-zinc-200"
+                data-testid="transcript-more"
+                aria-label="More transcript actions"
+              >
                 <ChevronDown className="size-3.5" />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="z-[220] w-56">
+            <DropdownMenuContent align="end" className="z-[220] w-52">
               <DropdownMenuItem
                 onSelect={() => props.onCopy(true)}
                 data-testid="transcript-copy-times"
               >
-                <Copy className="size-3.5" /> Copy with timestamps
+                <Copy className="size-3.5" /> Copy with times
               </DropdownMenuItem>
               <DropdownMenuItem
                 onSelect={() => props.onDownload("txt")}
@@ -787,11 +815,6 @@ function TranscriptBody(props: {
                 <Download className="size-3.5" /> Download SRT
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              {/*
-                Below the line and last: it spends money and replaces whatever
-                anyone has corrected by hand. It confirms first when there are
-                edits to lose.
-              */}
               <DropdownMenuItem
                 onSelect={() => {
                   if (
@@ -806,7 +829,7 @@ function TranscriptBody(props: {
                 }}
                 data-testid="regenerate-transcript"
               >
-                <RefreshCw className="size-3.5" /> Regenerate transcript
+                <RefreshCw className="size-3.5" /> Regenerate
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -814,14 +837,14 @@ function TranscriptBody(props: {
 
         {props.editing ? (
           <div className="mt-3">
-            <p className="mb-2 text-[12px] text-muted-foreground">
-              One line per segment. Timings are kept as they are.
+            <p className="mb-2 text-[12px] text-zinc-500">
+              One line per segment. Timings stay as they are.
             </p>
             <Textarea
               value={props.draft}
               onChange={(e) => props.onDraftChange(e.target.value)}
               rows={12}
-              className="font-mono text-[12.5px]"
+              className="rounded-xl font-mono text-[12.5px]"
             />
             <div className="mt-2 flex gap-1.5">
               <Button type="button" size="sm" onClick={props.onEditSave} disabled={props.saving}>
@@ -834,40 +857,14 @@ function TranscriptBody(props: {
             </div>
           </div>
         ) : (
-          <>
-            {/* Full width, because it is used while reading rather than as one
-                action among several. Sticky so a long transcript can be searched
-                without scrolling back to the top for the box. */}
-            <div className="sticky top-0 z-10 -mx-1 mt-3 bg-card/95 px-1 py-1 backdrop-blur">
-              <div className="relative">
-                <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  value={props.search}
-                  onChange={(e) => props.onSearch(e.target.value)}
-                  placeholder="Search transcript…"
-                  className="h-8 pl-8 pr-20 text-[13px]"
-                  data-testid="transcript-search"
-                />
-                {/* Counted locally from the segments already on screen. Search
-                    is a filter, never another model call. */}
-                {props.search.trim() ? (
-                  <span
-                    className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[11px] tabular-nums text-muted-foreground"
-                    data-testid="transcript-match-count"
-                  >
-                    {countMatches(segments, props.search)}{" "}
-                    {countMatches(segments, props.search) === 1 ? "match" : "matches"}
-                  </span>
-                ) : null}
-              </div>
-            </div>
+          <div className="mt-3">
             <TranscriptSegments
               segments={segments}
               query={props.search}
               activeIndex={props.activeIndex}
               onSeek={props.onSeek}
             />
-          </>
+          </div>
         )}
       </div>
     )

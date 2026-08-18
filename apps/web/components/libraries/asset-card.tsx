@@ -511,7 +511,7 @@ export function AssetCard({ asset }: { asset: AssetSummary }) {
               data-testid="asset-menu-ai"
             >
               <Sparkles />
-              AI
+              Assist
             </ContextMenuItem>
             <ContextMenuItem
               className={libraryGlassContextMenuItem}

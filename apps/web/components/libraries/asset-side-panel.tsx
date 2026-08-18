@@ -324,13 +324,18 @@ function PanelSections({
           asset={asset}
           onDownload={() => downloadAsset(asset.id)}
           onDelete={onDeleteRequest}
-          openLabel={asset.mediaType === "VIDEO" ? "Open AI" : "Open"}
           onOpen={
-            asset.mediaType === "VIDEO" && videoEditor?.canEdit(asset)
-              ? () => videoEditor.openEditor(asset)
-              : viewer?.canOpen(asset) && isViewableAsset(asset)
-                ? () => viewer.openViewer(asset.id)
-                : undefined
+            viewer?.canOpen(asset) && isViewableAsset(asset)
+              ? () => viewer.openViewer(asset.id)
+              : undefined
+          }
+          onOpenAi={
+            asset.mediaType === "VIDEO"
+              ? () => {
+                  if (videoEditor?.canEdit(asset)) videoEditor.openEditor(asset)
+                  else setSection("ai")
+                }
+              : undefined
           }
         />
       ) : null}

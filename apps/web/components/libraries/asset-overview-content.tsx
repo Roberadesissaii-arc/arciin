@@ -302,14 +302,15 @@ export function AssetOverviewContent({
   onDownload,
   onDelete,
   onOpen,
-  openLabel = "Open",
+  onOpenAi,
 }: {
   asset: AssetSummary
   onDownload: () => void
   onDelete: () => void
-  /** Primary action — for videos, opens the AI workspace. */
+  /** Play / preview the file itself. */
   onOpen?: () => void
-  openLabel?: string
+  /** Jump to the Assist / AI workspace (videos). */
+  onOpenAi?: () => void
 }) {
   return (
     <>
@@ -334,10 +335,10 @@ export function AssetOverviewContent({
 
         <AssetOverviewDetails asset={asset} />
 
-        {onOpen && asset.mediaType === "VIDEO" ? (
+        {onOpenAi ? (
           <button
             type="button"
-            onClick={onOpen}
+            onClick={onOpenAi}
             data-testid="asset-panel-goto-ai"
             className={cn(
               "flex w-full items-center justify-between gap-2 rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-left",
@@ -361,7 +362,7 @@ export function AssetOverviewContent({
         ) : null}
       </div>
 
-      {/* Long Open + icon Download / Delete */}
+      {/* Long Open (the file) + icon Download / Delete */}
       <div className="flex shrink-0 items-center gap-2 border-t border-border p-2">
         {onOpen ? (
           <Button
@@ -370,8 +371,7 @@ export function AssetOverviewContent({
             onClick={onOpen}
             data-testid="asset-panel-open"
           >
-            {asset.mediaType === "VIDEO" ? <Sparkles className="size-4" /> : null}
-            {openLabel}
+            Open
           </Button>
         ) : null}
         <Button

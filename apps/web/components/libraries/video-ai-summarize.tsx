@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useMutation } from "@tanstack/react-query"
 import { ExternalLink, Hash, Loader2, Sparkles, TextQuote } from "lucide-react"
 
@@ -21,21 +21,29 @@ function normalizeHref(raw: string): string | null {
 export function VideoAiSummarize({
   asset,
   hasTranscript,
+  transcriptStatus,
   onGenerateTranscript,
   transcriptRunning = false,
 }: {
   asset: AssetSummary
   hasTranscript: boolean
+  /** Live transcript status so we can wait for READY without leaving this tab. */
+  transcriptStatus: string | null
   onGenerateTranscript: () => void
   transcriptRunning?: boolean
 }) {
   const [summary, setSummary] = useState<string | null>(null)
   const [keywords, setKeywords] = useState<string[]>([])
   const [links, setLinks] = useState<string[]>([])
+  /** User asked for a summary before a transcript existed — finish it here. */
+  const [awaitingTranscript, setAwaitingTranscript] = useState(false)
+  const kickedOff = useRef(false)
 
   const summarize = useMutation({
     mutationFn: () => requestTranscriptSummary(asset.id),
     onSuccess: (data) => {
+      setAwaitingTranscript(false)
+      kickedOff.current = false
       setSummary(data.summary || null)
       setKeywords(data.keywords)
       setLinks(data.links)
@@ -44,63 +52,62 @@ export function VideoAiSummarize({
       }
     },
     onError: (error) => {
+      setAwaitingTranscript(false)
+      kickedOff.current = false
       toast.error("Could not summarize", {
         description: error instanceof Error ? error.message : "Try again in a moment.",
       })
     },
   })
 
-  if (!hasTranscript) {
-    return (
-      <div
-        className="mt-3 rounded-xl border border-dashed border-zinc-200 bg-zinc-50/80 px-4 py-5 text-center"
-        data-testid="ai-summary-needs-transcript"
-      >
-        <Sparkles className="mx-auto size-5 text-primary" />
-        <p className="mt-2 text-[13px] font-medium text-zinc-900">Transcript needed</p>
-        <p className="mt-1 text-[12px] leading-snug text-zinc-500">
-          Summarize, keywords, and spoken links are built from the transcript.
-        </p>
-        <Button
-          type="button"
-          className="mt-3 h-9 bg-primary text-white hover:bg-primary/90"
-          disabled={transcriptRunning}
-          onClick={onGenerateTranscript}
-          data-testid="ai-summary-generate-transcript"
-        >
-          {transcriptRunning ? (
-            <>
-              <Loader2 className="size-3.5 animate-spin" />
-              Generating…
-            </>
-          ) : (
-            "Generate transcript"
-          )}
-        </Button>
-      </div>
-    )
+  // When we kicked off a transcript just for summarize, run summarize once READY.
+  useEffect(() => {
+    if (!awaitingTranscript) return
+    if (transcriptStatus !== "READY" || !hasTranscript) return
+    if (summarize.isPending || kickedOff.current) return
+    kickedOff.current = true
+    summarize.mutate()
+  }, [awaitingTranscript, hasTranscript, transcriptStatus, summarize])
+
+  function startSummarize() {
+    if (hasTranscript && transcriptStatus === "READY") {
+      summarize.mutate()
+      return
+    }
+    // Stay on Summarize — do not bounce to the Transcript tab.
+    setAwaitingTranscript(true)
+    kickedOff.current = false
+    onGenerateTranscript()
   }
 
+  const waitingForTranscript =
+    awaitingTranscript &&
+    (transcriptRunning ||
+      transcriptStatus === "PENDING" ||
+      transcriptStatus === "RUNNING" ||
+      transcriptStatus === "PROCESSING" ||
+      !hasTranscript)
+  const busy = summarize.isPending || waitingForTranscript
   const hasResult = Boolean(summary) || keywords.length > 0 || links.length > 0
 
   return (
     <div className="mt-3 space-y-3" data-testid="ai-summary-section">
       <div className="flex items-center justify-between gap-2">
-        <p className="text-[12px] text-zinc-500">
-          Summary, keywords, and any links spoken in the video.
+        <p className="min-w-0 text-[12px] leading-snug text-zinc-500">
+          Synopsis, keywords, and links spoken in the video.
         </p>
         <Button
           type="button"
           size="sm"
           className="h-8 shrink-0 bg-primary text-white hover:bg-primary/90"
-          disabled={summarize.isPending}
-          onClick={() => summarize.mutate()}
+          disabled={busy}
+          onClick={startSummarize}
           data-testid="generate-ai-summary"
         >
-          {summarize.isPending ? (
+          {busy ? (
             <>
               <Loader2 className="size-3.5 animate-spin" />
-              Summarizing…
+              {waitingForTranscript ? "Preparing…" : "Summarizing…"}
             </>
           ) : hasResult ? (
             "Run again"
@@ -113,9 +120,16 @@ export function VideoAiSummarize({
         </Button>
       </div>
 
-      {!hasResult && !summarize.isPending ? (
+      {waitingForTranscript ? (
+        <div className="flex items-center gap-2.5 rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-3 text-[12.5px] text-zinc-600">
+          <Loader2 className="size-4 shrink-0 animate-spin text-primary" />
+          <span>Building a transcript first, then summarizing — you can stay on this tab.</span>
+        </div>
+      ) : null}
+
+      {!hasResult && !busy ? (
         <div className="rounded-xl border border-zinc-200 bg-white px-4 py-6 text-center text-[12.5px] text-zinc-500">
-          Press Summarize to extract a synopsis, keywords, and links from the transcript.
+          Press Summarize. If there is no transcript yet, Arciin prepares one in the background.
         </div>
       ) : null}
 
