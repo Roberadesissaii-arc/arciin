@@ -351,7 +351,6 @@ function PanelSections({
           asset={asset}
           showDetails={false}
           initialTab={intent?.aiTab}
-          initialDubLanguage={intent?.language}
         />
       ) : null}
       {active === "move" ? (

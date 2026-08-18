@@ -84,47 +84,21 @@ export const E2E_IMAGE_METADATA = {
 }
 
 /**
- * A finished dub, seeded rather than generated.
+ * The translations the transcript suite works with.
  *
- * The playback suite tests the *player*: that switching to a dubbed track keeps
- * the picture where it was, that play, pause and seek stay in step, and that
- * pressing play never causes a paid request. None of that needs the audio to
- * have come from a voice model, and making it come from one would mean every
- * run waited on source separation at 13x realtime and spent money to re-derive
- * bytes that were identical last time.
- *
- * So the audio is a committed file, and it is a tone that steps in pitch once a
- * second — ten distinguishable seconds, so a person opening it can hear where
- * in the timeline they are rather than taking a number's word for it.
- *
- * Real synthesised speech is verified separately, by running the pipeline for
- * real against the provider. That is a different question from this one.
+ * Two, in different scripts, because the panel's language switching and the
+ * card's language count are both about there being more than one — and because
+ * a right-to-left script catches layout assumptions a second Latin one would
+ * not. Together with the original that is the "3 languages" the card reports.
  */
-export const E2E_DUB_LANGUAGE = "es"
-
-/**
- * A second language, left mid-separation on purpose.
- *
- * The progress and card-indicator tests need a job that is genuinely running
- * with genuinely persisted numbers, and they must not need a worker or ninety
- * minutes of CPU to get one. 39 of 122 is the exact point the real 11:51 video
- * reached before the old wall-clock timeout killed it, which is the failure the
- * progress work exists to make visible.
- */
-export const E2E_RUNNING_DUB_LANGUAGE = "ar"
-export const E2E_RUNNING_DUB_PROGRESS = { current: 39, total: 122, percent: 32 }
-export const E2E_DUB_AUDIO_SOURCE = path.join(
-  path.resolve(import.meta.dirname, ".."),
-  "tests/fixtures/e2e-dub-audio-fixture.m4a",
-)
-/** Matches the video's 10.005s closely enough to test drift honestly. */
-export const E2E_DUB_DURATION_MS = 10_000
+export const E2E_TRANSLATION_LANGUAGE = "es"
+export const E2E_SECOND_TRANSLATION_LANGUAGE = "ar"
 
 /**
  * Lines whose timings are the video's, one per second.
  *
- * Two speakers, because the voice settings UI renders a card per speaker and a
- * single-speaker fixture would let a bug that only appears with two through.
+ * Two speakers, because the transcript groups consecutive lines by speaker and a
+ * single-speaker fixture would let a grouping bug through unnoticed.
  */
 export const E2E_TRANSCRIPT_SEGMENTS = Array.from({ length: 10 }, (_, i) => ({
   startMs: i * 1000,
@@ -139,46 +113,12 @@ export const E2E_TRANSLATION_SEGMENTS = E2E_TRANSCRIPT_SEGMENTS.map((segment, i)
 }))
 
 /**
- * A transcript, a Spanish translation and a ready dub, all idempotent.
+ * A transcript and its saved translations, idempotent.
  *
- * Seeded together because they are meaningless apart: a dub row without its
- * translation cannot be served, and a translation without a transcript is not
- * reachable through the API at all.
+ * Seeded together because they are meaningless apart: a translation without a
+ * transcript is not reachable through the API at all.
  */
-async function seedDubFixture(prisma, storageRoot, assetId) {
-  if (!existsSync(E2E_DUB_AUDIO_SOURCE)) {
-    throw new Error(
-      `missing fixture ${E2E_DUB_AUDIO_SOURCE}. It is committed to the repository; ` +
-        "a clean checkout should have it.",
-    )
-  }
-
-  const bytes = readFileSync(E2E_DUB_AUDIO_SOURCE)
-  const checksumSha256 = createHash("sha256").update(bytes).digest("hex")
-  const sizeBytes = statSync(E2E_DUB_AUDIO_SOURCE).size
-  const objectKey = fixtureObjectKey(checksumSha256, ".m4a")
-  const physicalPath = path.join(storageRoot, objectKey)
-
-  if (!existsSync(physicalPath)) {
-    mkdirSync(path.dirname(physicalPath), { recursive: true })
-    copyFileSync(E2E_DUB_AUDIO_SOURCE, physicalPath)
-  }
-
-  const storageLocation = await prisma.storageLocation.findFirst({ where: { isDefault: true } })
-  const existingObject = await prisma.storageObject.findUnique({ where: { objectKey } })
-  const audioObject =
-    existingObject ??
-    (await prisma.storageObject.create({
-      data: {
-        storageLocationId: storageLocation.id,
-        objectKey,
-        physicalPath,
-        sizeBytes: BigInt(sizeBytes),
-        checksumSha256,
-        mimeType: "audio/mp4",
-      },
-    }))
-
+async function seedTranscriptFixture(prisma, assetId) {
   const transcriptData = {
     status: "READY",
     provider: "seed",
@@ -197,132 +137,41 @@ async function seedDubFixture(prisma, storageRoot, assetId) {
     select: { id: true, updatedAt: true },
   })
 
-  const translationData = {
-    status: "READY",
-    provider: "seed",
-    model: "fixture",
-    fullText: E2E_TRANSLATION_SEGMENTS.map((s) => s.text).join("\n"),
-    segments: E2E_TRANSLATION_SEGMENTS,
-    error: null,
-    // Current as of this transcript, so the panel does not mark it outdated.
-    sourceUpdatedAt: transcript.updatedAt,
-    generatedAt: new Date(),
+  const saveTranslation = async (language, segments, fullText) => {
+    const data = {
+      status: "READY",
+      provider: "seed",
+      model: "fixture",
+      fullText,
+      segments,
+      error: null,
+      // Current as of this transcript, so the panel does not mark it outdated.
+      sourceUpdatedAt: transcript.updatedAt,
+      generatedAt: new Date(),
+    }
+    await prisma.mediaTranslation.upsert({
+      where: { transcriptId_language: { transcriptId: transcript.id, language } },
+      create: { transcriptId: transcript.id, language, ...data },
+      update: data,
+    })
   }
-  const translation = await prisma.mediaTranslation.upsert({
-    where: { transcriptId_language: { transcriptId: transcript.id, language: E2E_DUB_LANGUAGE } },
-    create: { transcriptId: transcript.id, language: E2E_DUB_LANGUAGE, ...translationData },
-    update: translationData,
-    select: { id: true, updatedAt: true },
-  })
 
-  const dubData = {
-    transcriptId: transcript.id,
-    translationId: translation.id,
-    status: "READY",
-    stage: null,
-    error: null,
-    provider: "seed",
-    model: "fixture",
-    voiceProfiles: [],
-    backgroundStrategy: "separated",
-    reviewSegments: [],
-    audioStorageObjectId: audioObject.id,
-    durationMs: E2E_DUB_DURATION_MS,
-    // Matching the sources, so the dub is served as current rather than stale.
-    translationUpdatedAt: translation.updatedAt,
-    transcriptUpdatedAt: transcript.updatedAt,
-    settingsFingerprint: "e2e-fixture",
-    generatedAt: new Date(),
-  }
-  await prisma.mediaDub.upsert({
-    where: { assetId_language: { assetId, language: E2E_DUB_LANGUAGE } },
-    create: { assetId, language: E2E_DUB_LANGUAGE, ...dubData },
-    update: dubData,
-  })
-
-  /**
-   * A running dub, and a translation for it to be running against.
-   *
-   * Separate language from the ready one so both states are visible at once —
-   * which is also the product requirement: a card must show existing language
-   * metadata while another language is still generating.
-   */
-  const runningTranslationData = {
-    status: "READY",
-    provider: "seed",
-    model: "fixture",
-    fullText: "شكرا",
-    segments: E2E_TRANSCRIPT_SEGMENTS.map((segment, i) => ({
+  await saveTranslation(
+    E2E_TRANSLATION_LANGUAGE,
+    E2E_TRANSLATION_SEGMENTS,
+    E2E_TRANSLATION_SEGMENTS.map((s) => s.text).join("\n"),
+  )
+  await saveTranslation(
+    E2E_SECOND_TRANSLATION_LANGUAGE,
+    E2E_TRANSCRIPT_SEGMENTS.map((segment, i) => ({
       ...segment,
       text: `هذا هو السطر ${i + 1}`,
     })),
-    error: null,
-    sourceUpdatedAt: transcript.updatedAt,
-    generatedAt: new Date(),
-  }
-  const runningTranslation = await prisma.mediaTranslation.upsert({
-    where: {
-      transcriptId_language: {
-        transcriptId: transcript.id,
-        language: E2E_RUNNING_DUB_LANGUAGE,
-      },
-    },
-    create: {
-      transcriptId: transcript.id,
-      language: E2E_RUNNING_DUB_LANGUAGE,
-      ...runningTranslationData,
-    },
-    update: runningTranslationData,
-    select: { id: true, updatedAt: true },
-  })
-
-  const runningDubData = {
-    transcriptId: transcript.id,
-    translationId: runningTranslation.id,
-    status: "SEPARATING",
-    stage: "Separating dialogue from background",
-    error: null,
-    errorDetail: null,
-    provider: "gemini",
-    model: "fixture",
-    voiceProfiles: [],
-    progressCurrent: E2E_RUNNING_DUB_PROGRESS.current,
-    progressTotal: E2E_RUNNING_DUB_PROGRESS.total,
-    progressPercent: E2E_RUNNING_DUB_PROGRESS.percent,
-    /**
-     * Eight readings at the real cadence, ending at the current count.
-     *
-     * The estimate is arithmetic over these, so a fixture without them can only
-     * ever show "Estimating time…" — which would leave the one thing worth
-     * asserting untestable. 45 seconds a chunk is what the 11:51 video actually
-     * averaged, and 83 chunks remaining at that rate is a little over an hour.
-     */
-    progressSamples: Array.from({ length: 8 }, (_, i) => ({
-      at: Date.now() - (8 - i) * 45_000,
-      completed: E2E_RUNNING_DUB_PROGRESS.current - (7 - i),
-      total: E2E_RUNNING_DUB_PROGRESS.total,
-    })),
-    // Recent, so the "still processing" stall notice is not triggered. A test
-    // that wants the stall notice moves this back itself.
-    progressUpdatedAt: new Date(),
-    audioStorageObjectId: null,
-    durationMs: null,
-    translationUpdatedAt: runningTranslation.updatedAt,
-    transcriptUpdatedAt: transcript.updatedAt,
-    settingsFingerprint: "e2e-fixture-running",
-    generatedAt: null,
-  }
-  await prisma.mediaDub.upsert({
-    where: { assetId_language: { assetId, language: E2E_RUNNING_DUB_LANGUAGE } },
-    create: { assetId, language: E2E_RUNNING_DUB_LANGUAGE, ...runningDubData },
-    update: runningDubData,
-  })
+    "شكرا",
+  )
 
   return {
-    language: E2E_DUB_LANGUAGE,
-    sizeBytes,
-    durationMs: E2E_DUB_DURATION_MS,
-    running: E2E_RUNNING_DUB_LANGUAGE,
+    languages: [E2E_TRANSLATION_LANGUAGE, E2E_SECOND_TRANSLATION_LANGUAGE],
   }
 }
 
@@ -564,9 +413,9 @@ export async function seedE2EUser() {
     const storageRoot =
       process.env.ARCIIN_DATA_DIR ?? instance.storageRoot ?? "/srv/arce-projects/arciin-dev-storage"
     const video = await seedVideoFixture(prisma, user.id, storageRoot)
-    const dub = await seedDubFixture(prisma, storageRoot, video.assetId)
+    const transcript = await seedTranscriptFixture(prisma, video.assetId)
 
-    return { databaseName, email: user.email, instanceId: instance.id, video, dub }
+    return { databaseName, email: user.email, instanceId: instance.id, video, transcript }
   } finally {
     await prisma.$disconnect()
   }
@@ -583,10 +432,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(import.met
         `video fixture ${result.video.assetId} ready (${Math.round(result.video.sizeBytes / 1024)} KB)`,
       )
       console.log(
-        `dub fixture ${result.dub.language} ready (${Math.round(result.dub.sizeBytes / 1024)} KB, ${result.dub.durationMs} ms)`,
-      )
-      console.log(
-        `dub fixture ${result.dub.running} left running at ${E2E_RUNNING_DUB_PROGRESS.current}/${E2E_RUNNING_DUB_PROGRESS.total}`,
+        `translations seeded: ${result.transcript.languages.join(", ")}`,
       )
     })
     .catch((error) => {

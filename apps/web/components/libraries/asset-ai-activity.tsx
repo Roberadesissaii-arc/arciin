@@ -2,8 +2,6 @@
 
 import { AlertTriangle, Globe, Loader2 } from "lucide-react"
 
-import { estimateRemaining } from "@arciin/types"
-
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import type { AssetAiSummary } from "@/lib/types/models"
 import { cn } from "@/lib/utils"
@@ -42,19 +40,6 @@ export function AssetAiIndicator({
   if (!activity) return null
 
   const running = activity.status === "running"
-  /**
-   * Counted work done, stage still going.
-   *
-   * Same window the panel handles: the separator's chunk loop has ended but
-   * Demucs is still reconstructing stems, silently. Without this the tooltip
-   * showed "122 / 122 · 100%" beside a spinner, which reads as stuck.
-   */
-  const finalising =
-    running &&
-    activity.current !== null &&
-    activity.total !== null &&
-    activity.current >= activity.total
-  const eta = !finalising && activity.samples?.length ? estimateRemaining(activity.samples) : null
   const label = running
     ? `${activity.label} — ${activity.stage ?? "working"}`
     : `${activity.label} failed`
@@ -104,31 +89,9 @@ export function AssetAiIndicator({
         */}
         <div className="flex flex-col gap-0.5 whitespace-nowrap">
           <p className="text-[12px] font-medium">{activity.label}</p>
-          {running ? (
-            <>
-              <p className="text-[11.5px] opacity-90" data-testid="asset-ai-indicator-stage">
-                {finalising ? "Finalising separated audio" : (activity.stage ?? "Working…")}
-              </p>
-              {!finalising && activity.current !== null && activity.total !== null ? (
-                <p
-                  className="text-[11.5px] tabular-nums opacity-90"
-                  data-testid="asset-ai-indicator-progress"
-                >
-                  {activity.current} / {activity.total}
-                  {activity.percent !== null ? ` · ${activity.percent}%` : ""}
-                </p>
-              ) : null}
-              {/* Only where it is defensible: the same samples the panel uses,
-                  and nothing at all until enough of them exist. */}
-              {eta ? (
-                <p className="text-[11.5px] opacity-90" data-testid="asset-ai-indicator-eta">
-                  {eta.label}
-                </p>
-              ) : null}
-            </>
-          ) : (
-            <p className="text-[11.5px] opacity-90">Open AI for details</p>
-          )}
+          <p className="text-[11.5px] opacity-90" data-testid="asset-ai-indicator-stage">
+            {running ? (activity.stage ?? "Working…") : "Open AI for details"}
+          </p>
         </div>
       </TooltipContent>
     </Tooltip>
@@ -144,9 +107,8 @@ export function AssetAiIndicator({
  * that reads as misalignment rather than as absence. "1 language" is also true
  * and mildly useful, which is a better trade than a hole.
  *
- * Dubs are deliberately not counted here. The thumbnail already carries the
- * transient state and the panel carries the detail; adding a second figure to a
- * row this narrow made it noisy without answering a question anyone had.
+ * The count is about what has been written down — the transcript's own language
+ * plus its saved translations — and nothing else has ever needed to affect it.
  */
 export function AssetAiMetadata({
   ai,

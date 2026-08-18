@@ -7,23 +7,22 @@ import type { ReactNode } from "react"
  * Opening the asset panel *somewhere in particular*.
  *
  * Selecting a card opens the panel on Overview, which is right when the card was
- * all someone clicked. It is wrong when they clicked a running-dub indicator:
- * that is a request to see that dub's progress, and making them find AI, then
- * Dubbing, then the right language turns one click into four.
+ * all someone clicked. It is wrong when they clicked a running-transcript
+ * indicator: that is a request to see that job, and making them find AI and then
+ * Transcript turns one click into three.
  *
  * So a caller may state where it wants to land. The intent is consumed once —
  * the panel reads it while mounting for that asset and then forgets it — because
  * it describes a navigation that happened, not a mode the panel is in. Left
- * standing, it would drag the reader back to Dubbing every time they tried to
- * leave it.
+ * standing, it would drag the reader back every time they tried to leave.
  */
 
 export type AssetPanelIntent = {
   assetId: string
   section?: "overview" | "edit" | "ai" | "move" | "share"
   /** Sub-tab within the AI section. */
-  aiTab?: "transcript" | "dubbing" | "title"
-  /** Which dub language to select once there. */
+  aiTab?: "transcript" | "title"
+  /** Which transcript language to select once there. */
   language?: string
 }
 

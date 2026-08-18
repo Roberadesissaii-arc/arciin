@@ -196,14 +196,6 @@ model InstanceConfig {
   /// channel — so it is stored as ciphertext and never returned by the API.
   discordConfig      Json?
   aiConfig           Json?
-  /**
-   * Dubbing defaults and the cloud separation provider, if one is set up.
-   * `{ separationMode, cloudSeparation: { provider, label, ... } }`. On the
-   * instance rather than per user because the separator is a property of this
-   * server: whether a local one is installed, and which external service it is
-   * allowed to send audio to, are decisions about the machine.
-   */
-  dubbingConfig      Json?
   /// { enabled, hour (0-23 local, preferred stage time), stagedVersion, stagedAt,
   /// lastCheckedAt, lastError } — staged updates are never applied without a
   /// user clicking "Apply now"; this only controls the unattended stage step.
@@ -482,7 +474,6 @@ model Asset {
   fileRequestId           String?
   fileRequestSubmissionId String?
   transcript              MediaTranscript?
-  dubs                    MediaDub[]
   createdAt               DateTime               @default(now())
   updatedAt               DateTime               @updatedAt
   deletedAt               DateTime?
@@ -630,160 +621,9 @@ model MediaTranslation {
   updatedAt       DateTime              @updatedAt
 
   transcript MediaTranscript @relation(fields: [transcriptId], references: [id], onDelete: Cascade)
-  dubs       MediaDub[]
 
   @@unique([transcriptId, language])
   @@index([transcriptId])
-}
-
-/// Generated translated speech, mixed over the original background.
-///
-/// A third thing, deliberately separate from Transcript (what was said) and
-/// Translation (what it says in another language). Reading a translation must
-/// never spend money on speech, and speech must never be re-generated just
-/// because someone pressed play.
-model MediaDub {
-  id            String @id @default(cuid())
-  assetId       String
-  transcriptId  String
-  translationId String
-  /// BCP-47 tag of the spoken language, matching its translation.
-  language      String
-
-  status      MediaDubStatus @default(PENDING)
-  /// Which stage a running job is in, for honest progress text.
-  stage       String?
-  /**
-   * What a person should be told when this failed.
-   * A summary only. The raw process output used to land here and be rendered
-   * straight into the panel: four kilobytes of Python logging, tqdm redraws and
-   * absolute server paths, from which nobody could tell what went wrong. The
-   * bounded technical text lives in `errorDetail`, behind a disclosure, and the
-   * complete log stays on disk.
-   */
-  error       String?
-  /// Bounded, sanitised tool output for a collapsed "technical details" view.
-  errorDetail String?
-  jobId       String?
-
-  /**
-   * How far the current stage has actually got.
-   * Real numbers from the tool doing the work — the separator counts audio
-   * chunks, synthesis counts segments — never a client-side timer. Null while a
-   * stage cannot say, which the UI shows as an indeterminate state rather than
-   * inventing a percentage.
-   * `progressUpdatedAt` is what makes a stall visible: forty minutes of
-   * separation looks identical to a dead worker unless you can see when the
-   * number last moved.
-   */
-  progressPercent   Int?
-  progressCurrent   Int?
-  progressTotal     Int?
-  progressUpdatedAt DateTime?
-  /**
-   * A short rolling history of readings: [{ at, completed, total }].
-   * Persisted rather than held in the worker because the estimate has to
-   * survive a reload and a second browser — and because the worker that
-   * observed the samples is not the process that renders them. Bounded to a
-   * dozen entries: older readings describe a rate that has since changed.
-   */
-  progressSamples   Json?
-
-  /**
-   * Where the separation actually ran, and what was asked for.
-   * Both, because they differ: Auto records what it chose. A dub is a claim
-   * about where someone's audio went, so the answer is stored with the result
-   * rather than recomputed later from settings that may since have changed.
-   */
-  separationMode    String?
-  separationBackend String?
-
-  /**
-   * The paid external execution, so it is never bought twice.
-   * BullMQ is at-least-once: a crash, a stall or a restart re-enters the
-   * processor, and without a durable id the obvious thing to do on re-entry is
-   * submit again — a second GPU job for work already running or already done.
-   * The id is written the instant the provider returns it, before any other
-   * fallible step, and every entry checks for it before considering submission.
-   * The correlation key is derived from the cache key, so a retry addresses the
-   * same remote objects instead of uploading a second copy of the audio.
-   */
-  providerName           String?
-  providerJobId          String?
-  providerCorrelationKey String?
-  providerStatus         String?
-  providerSubmittedAt    DateTime?
-  providerLastPolledAt   DateTime?
-  providerCompletedAt    DateTime?
-  /**
-   * Remote files that still need deleting.
-   * A failed cleanup must not turn a finished dub into a failed one, but it
-   * also must not leave someone's audio on a third party's storage — so it is
-   * recorded and retried separately.
-   */
-  providerCleanupPrefix  String?
-
-  provider String?
-  model    String?
-
-  /**
-   * Per-speaker synthesis settings, as chosen or overridden.
-   * Vocal character for the purpose of picking a voice — never a claim about
-   * anyone's real age, gender or nationality. See `dub-voice.ts`.
-   */
-  voiceProfiles      Json?
-  /// "separated" | "replaced" — how the original non-dialogue audio was handled.
-  backgroundStrategy String?
-  /// Segments the timeline could not fit without unnatural speed.
-  reviewSegments     Json?
-  /**
-   * What was actually spoken, line by line.
-   * A dub sometimes has to say a tighter version of a line to fit the time
-   * available. The saved translation is never altered for that — a reader's
-   * transcript stays complete and faithful — so the spoken wording lives here
-   * beside it, with a flag for the lines that differ.
-   */
-  dubScript          Json?
-
-  /// The mixed dub audio, and optionally a remuxed video.
-  audioStorageObjectId String?
-  videoStorageObjectId String?
-  durationMs           Int?
-
-  /**
-   * What this dub was made from.
-   * A dub describes specific words spoken in a specific way; if the
-   * translation is re-translated, the transcript edited, or the voice settings
-   * changed, the audio no longer matches and is reported as outdated rather
-   * than played as current.
-   */
-  translationUpdatedAt DateTime?
-  transcriptUpdatedAt  DateTime?
-  settingsFingerprint  String?
-
-  generatedAt DateTime?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-
-  asset       Asset            @relation(fields: [assetId], references: [id], onDelete: Cascade)
-  translation MediaTranslation @relation(fields: [translationId], references: [id], onDelete: Cascade)
-
-  @@unique([assetId, language])
-  @@index([assetId])
-  @@index([status])
-}
-
-enum MediaDubStatus {
-  PENDING
-  /// Extracting the soundtrack, before any model has been asked for anything.
-  PREPARING
-  SEPARATING
-  SYNTHESIZING
-  MIXING
-  READY
-  FAILED
-  /// Generated, but some segments could not be fitted naturally.
-  NEEDS_REVIEW
 }
 
 enum MediaTranscriptStatus {

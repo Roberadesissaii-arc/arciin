@@ -218,31 +218,23 @@ export type FolderSummary = {
 /**
  * Compact AI state, sent with the listing so a card needs no request of its own.
  *
- * Deliberately about activity rather than about dubbing: transcription and
- * translation will want the same indicator, and a card should not be redesigned
- * each time another operation learns to run in the background.
+ * Deliberately about activity rather than about any one operation: whatever
+ * learns to run in the background next will want the same indicator, and a card
+ * should not be redesigned each time.
  */
 export type AssetAiActivity = {
   active: boolean
-  kind: "dub" | "transcript"
-  /** Human, for a tooltip: "Arabic dub". Never an internal id. */
+  kind: "transcript"
+  /** Human, for a tooltip. Never an internal id. */
   label: string
   stage: string | null
-  percent: number | null
-  current: number | null
-  total: number | null
   updatedAt: string | null
-  /** Rolling progress history, so a card can estimate without its own request. */
-  samples: { at: number; completed: number; total: number }[] | null
   status: "running" | "failed"
-  /** Which language to open, so a click lands on the job that is running. */
-  language: string | null
 }
 
 export type AssetAiSummary = {
   /** Original plus translated. A Hindi video with two translations is 3. */
   languageCount: number
-  dubLanguages: string[]
   activity: AssetAiActivity | null
 }
 

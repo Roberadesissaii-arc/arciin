@@ -197,7 +197,7 @@ function SelectableAssetsContainerInner({
   )
 }
 
-/** Turns "open this asset at Dubbing" into the selection that opens the panel. */
+/** Turns "open this asset at its AI work" into the selection that opens the panel. */
 function PanelIntentBridge({ children }: { children: ReactNode }) {
   const { selectOnly } = useAssetSelectionRequired()
   return (

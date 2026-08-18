@@ -398,8 +398,7 @@ export function AssetCard({ asset }: { asset: AssetSummary }) {
             panelIntent?.open({
               assetId: asset.id,
               section: "ai",
-              aiTab: asset.ai?.activity?.kind === "transcript" ? "transcript" : "dubbing",
-              language: asset.ai?.activity?.language ?? undefined,
+              aiTab: "transcript",
             })
           }
         />

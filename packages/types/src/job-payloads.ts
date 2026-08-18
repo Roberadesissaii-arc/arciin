@@ -78,22 +78,3 @@ export type TranscribeMediaPayload = {
   profileId?: string
   jobRecordId?: string
 }
-
-/**
- * Generate a dub: separate, synthesise, fit, mix, store.
- *
- * Queued rather than awaited because every stage is unbounded — separation
- * alone runs at roughly 13x realtime on a CPU without AVX — and because the
- * work must outlive the panel that asked for it. The `MediaDub` row exists
- * before the job is enqueued, so the UI has a status to watch immediately and
- * a reopened panel picks the run up where it is.
- */
-export type DubMediaPayload = {
-  assetId: string
-  dubId: string
-  translationId: string
-  userId: string
-  /** Gemini model profile to bill against. Omit to use the default. */
-  profileId?: string
-  jobRecordId?: string
-}

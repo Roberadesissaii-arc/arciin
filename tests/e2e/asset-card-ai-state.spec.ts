@@ -1,13 +1,19 @@
 import { expect, test, type Page } from "@playwright/test"
 
 /**
- * What a card knows about AI work when the panel is closed.
+ * What a card says about AI work and about languages, with nothing open.
  *
- * The requirement behind this suite is a sequence, not a screenshot: start a
- * dub, close the panel, walk away, come back, reload, and the card still knows.
- * That can only be true if the state is the server's, so every test here either
- * navigates or reloads before asserting — a component holding the answer in
- * memory would pass a static check and fail all of these.
+ * Two separate things, deliberately kept apart.
+ *
+ * The **transient** state — something is running, or something failed — lives on
+ * the thumbnail, is the server's, and is asserted through a rewritten listing
+ * rather than by starting a real job: what matters here is that a card renders
+ * what the server reports, not that a worker can be made to report it.
+ *
+ * The **permanent** state — how many languages this file has — lives under the
+ * title beside the size and the date, because it is a property of the file
+ * rather than an event. It is counted from the transcript and its saved
+ * translations and from nothing else.
  *
  * The other requirement is that knowing costs nothing per card. A grid of two
  * hundred videos must not become two hundred status requests, so the request
@@ -15,8 +21,6 @@ import { expect, test, type Page } from "@playwright/test"
  */
 
 const FIXTURE = "e2e-video-transcript-fixture"
-/** The seeded dub left mid-separation at 39 of 122. */
-const RUNNING = "ar"
 
 const card = (page: Page, assetId = FIXTURE) => page.locator(`[data-asset-id="${assetId}"]`)
 const indicator = (page: Page) => card(page).getByTestId("asset-ai-indicator")
@@ -26,19 +30,58 @@ async function openVideos(page: Page) {
   await expect(card(page)).toBeVisible({ timeout: 60_000 })
 }
 
+/**
+ * Rewrite the listing so the fixture reads as mid-transcription.
+ *
+ * The seeded transcript is finished, and generating a real one costs a provider
+ * call on every run. The card's contract is with the listing payload, so the
+ * payload is what is varied.
+ */
+async function withActivity(
+  page: Page,
+  activity: Record<string, unknown> | null,
+) {
+  await page.route(/\/api\/assets\/page(\?|$)/, async (route) => {
+    if (route.request().method() !== "GET") return route.fallback()
+    const response = await route.fetch()
+    const body = (await response.json()) as {
+      data: { items: { id: string; ai?: Record<string, unknown> }[] }
+    }
+    for (const item of body.data.items) {
+      if (item.id === FIXTURE && item.ai) item.ai.activity = activity
+    }
+    return route.fulfill({
+      status: response.status(),
+      contentType: "application/json",
+      body: JSON.stringify(body),
+    })
+  })
+}
+
+const RUNNING_TRANSCRIPT = {
+  active: true,
+  kind: "transcript",
+  label: "Transcript",
+  stage: "Generating transcript",
+  updatedAt: new Date().toISOString(),
+  status: "running",
+}
+
 test.describe("card AI indicator", () => {
-  test.setTimeout(180_000)
+  test.setTimeout(120_000)
 
   test("shows running work on the thumbnail without opening anything", async ({ page }) => {
+    await withActivity(page, RUNNING_TRANSCRIPT)
     await openVideos(page)
+
     const spinner = indicator(page)
     await expect(spinner).toBeVisible({ timeout: 20_000 })
     await expect(spinner).toHaveAttribute("data-ai-status", "running")
-    await expect(spinner).toHaveAttribute("data-ai-kind", "dub")
+    await expect(spinner).toHaveAttribute("data-ai-kind", "transcript")
 
     // Named for a person, never an internal id.
     const label = await spinner.getAttribute("aria-label")
-    expect(label).toContain("Arabic dub")
+    expect(label).toContain("Transcript")
     expect(label).not.toMatch(/[0-9a-f]{20,}/)
 
     // It sits on the picture, not over the title.
@@ -47,7 +90,8 @@ test.describe("card AI indicator", () => {
     expect(spinnerBox!.y + spinnerBox!.height).toBeLessThan(titleBox!.y)
   })
 
-  test("hovering says which operation, which stage and how far", async ({ page }) => {
+  test("hovering says which operation and what it is doing", async ({ page }) => {
+    await withActivity(page, RUNNING_TRANSCRIPT)
     await openVideos(page)
     await indicator(page).hover()
 
@@ -58,68 +102,20 @@ test.describe("card AI indicator", () => {
      */
     const tip = page.getByRole("tooltip").first()
     await expect(tip).toBeVisible()
-    // The compact status the requirement asks for: operation, stage, counter.
-    await expect(tip).toContainText("Arabic dub")
+    await expect(tip).toContainText("Transcript")
     await expect(tip.getByTestId("asset-ai-indicator-stage").first()).toHaveText(
-      "Separating dialogue from background",
+      "Generating transcript",
     )
-    await expect(tip.getByTestId("asset-ai-indicator-progress").first()).toHaveText(
-      "39 / 122 · 32%",
-    )
-  })
-
-  test("survives a reload, because the state is the server's", async ({ page }) => {
-    await openVideos(page)
-    await expect(indicator(page)).toBeVisible()
-
-    await page.reload()
-    await expect(card(page)).toBeVisible({ timeout: 60_000 })
-    await expect(indicator(page)).toBeVisible({ timeout: 20_000 })
-    await expect(indicator(page)).toHaveAttribute("data-ai-status", "running")
-  })
-
-  test("survives leaving the page and coming back", async ({ page }) => {
-    await openVideos(page)
-    await expect(indicator(page)).toBeVisible()
-
-    // Away, properly — a different route with its own data.
-    await page.goto("/documents")
-    await page.waitForLoadState("networkidle").catch(() => {})
-    await openVideos(page)
-
-    await expect(indicator(page)).toBeVisible({ timeout: 20_000 })
-  })
-
-  test("clicking it opens the panel on that dub, and starts nothing", async ({ page }) => {
-    const generated: string[] = []
-    page.on("request", (request) => {
-      if (request.method() === "POST" && /\/api\/assets\/[^/]+\/dubs$/.test(request.url())) {
-        generated.push(request.url())
-      }
-    })
-
-    await openVideos(page)
-    await indicator(page).click()
-
-    const panel = page.getByTestId("asset-side-panel")
-    await expect(panel).toBeVisible({ timeout: 15_000 })
-    // Straight to the running dub: AI, Dubbing, and the right language — not
-    // Overview, and not whichever language happened to be first.
-    await expect(panel.getByTestId("dubbing-section")).toBeVisible({ timeout: 20_000 })
-    await expect(panel.getByTestId("dub-progress-counter")).toHaveText("39 of 122 audio chunks")
-
-    // Looking at a running job must never queue a second one.
-    await page.waitForTimeout(2000)
-    expect(generated, "opening progress must not start a dub").toHaveLength(0)
   })
 
   test("each card carries its own state, not one shared flag", async ({ page }) => {
     /**
-     * Two videos, one with a running dub and one without. A single global
-     * `isDubbing` would light both up, and would be indistinguishable from
-     * correct behaviour on a page with only one video — which is exactly why
-     * this asserts on the second card rather than only the first.
+     * Two videos, one working and one not. A single global `isBusy` would light
+     * both up, and would be indistinguishable from correct behaviour on a page
+     * with only one video — which is why this asserts on the second card rather
+     * than only the first.
      */
+    await withActivity(page, RUNNING_TRANSCRIPT)
     await openVideos(page)
     await expect(indicator(page)).toBeVisible({ timeout: 20_000 })
 
@@ -127,19 +123,31 @@ test.describe("card AI indicator", () => {
     await expect(quiet).toBeVisible()
     await expect(quiet.getByTestId("asset-ai-indicator")).toHaveCount(0)
 
-    // And exactly one indicator on the page, belonging to the right asset.
     await expect(page.getByTestId("asset-ai-indicator")).toHaveCount(1)
+  })
+
+  test("clicking it opens the panel on the AI section", async ({ page }) => {
+    await withActivity(page, RUNNING_TRANSCRIPT)
+    await openVideos(page)
+    await indicator(page).click()
+
+    const panel = page.getByTestId("asset-side-panel")
+    await expect(panel).toBeVisible({ timeout: 15_000 })
+    // Straight to the work, not Overview.
+    await expect(panel.getByTestId("video-ai-nav")).toBeVisible({ timeout: 20_000 })
   })
 
   test("does not ask the server once per card", async ({ page }) => {
     /**
      * The scalability requirement, measured rather than argued. A per-card
-     * request would show up here as one dubs call per asset on the page; the
+     * request would show up here as one AI call per asset on the page; the
      * summary rides along with the listing instead, so the count is zero.
      */
     const perCard: string[] = []
     page.on("request", (request) => {
-      if (/\/api\/assets\/[^/]+\/dubs(\?|$)/.test(request.url())) perCard.push(request.url())
+      if (/\/api\/assets\/[^/]+\/(transcript|title-suggestions)(\?|$)/.test(request.url())) {
+        perCard.push(request.url())
+      }
     })
 
     await openVideos(page)
@@ -197,7 +205,8 @@ test.describe("card language metadata", () => {
     expect(languages!.y).toBeGreaterThan(title!.y + title!.height - 2)
   })
 
-  test("keeps permanent metadata visible while another language generates", async ({ page }) => {
+  test("keeps permanent metadata visible while something is running", async ({ page }) => {
+    await withActivity(page, RUNNING_TRANSCRIPT)
     await openVideos(page)
     // Both at once: the transient spinner must not displace what already exists.
     await expect(indicator(page)).toBeVisible()
@@ -219,39 +228,17 @@ test.describe("card language metadata", () => {
 test.describe("card failure state", () => {
   test.setTimeout(120_000)
 
-  /** Rewrites the listing so the seeded dub reads as failed. */
-  async function failTheDub(page: Page) {
-    await page.route(/\/api\/assets\/page(\?|$)/, async (route) => {
-      if (route.request().method() !== "GET") return route.fallback()
-      const response = await route.fetch()
-      const body = (await response.json()) as {
-        data: { items: { id: string; ai?: Record<string, unknown> }[] }
-      }
-      for (const item of body.data.items) {
-        if (item.id !== FIXTURE || !item.ai) continue
-        item.ai.activity = {
-          active: false,
-          kind: "dub",
-          label: "Arabic dub",
-          stage: null,
-          percent: null,
-          current: null,
-          total: null,
-          updatedAt: new Date().toISOString(),
-          status: "failed",
-          language: RUNNING,
-        }
-      }
-      return route.fulfill({
-        status: response.status(),
-        contentType: "application/json",
-        body: JSON.stringify(body),
-      })
-    })
+  const FAILED_TRANSCRIPT = {
+    active: false,
+    kind: "transcript",
+    label: "Transcript",
+    stage: null,
+    updatedAt: new Date().toISOString(),
+    status: "failed",
   }
 
   test("stops spinning and shows a failed state instead", async ({ page }) => {
-    await failTheDub(page)
+    await withActivity(page, FAILED_TRANSCRIPT)
     await openVideos(page)
 
     const failed = indicator(page)
@@ -263,7 +250,7 @@ test.describe("card failure state", () => {
   })
 
   test("hovering a failure explains it, and clicking opens where Retry is", async ({ page }) => {
-    await failTheDub(page)
+    await withActivity(page, FAILED_TRANSCRIPT)
     await openVideos(page)
 
     await indicator(page).hover()
@@ -271,6 +258,6 @@ test.describe("card failure state", () => {
 
     await indicator(page).click()
     const panel = page.getByTestId("asset-side-panel")
-    await expect(panel.getByTestId("dubbing-section")).toBeVisible({ timeout: 20_000 })
+    await expect(panel.getByTestId("video-ai-nav")).toBeVisible({ timeout: 20_000 })
   })
 })

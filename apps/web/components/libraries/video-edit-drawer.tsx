@@ -51,13 +51,11 @@ import { toast } from "@/lib/notifications/arciin-toast"
 import {
   getAssetTranscript,
   requestAssetTranscript,
-  dubAudioUrl,
   requestTranscriptTranslation,
   saveAssetTranscript,
   type TranscriptTranslation,
 } from "@/lib/api/transcripts"
 import { VideoAiTitle } from "@/components/libraries/video-ai-title"
-import { VideoDubbing } from "@/components/libraries/video-dubbing"
 import { TranscriptLanguageBar } from "@/components/libraries/transcript-language-bar"
 import { VideoAssetViewer } from "@/components/libraries/video-asset-viewer"
 import { formatBytes } from "@/lib/utils/format-bytes"
@@ -250,18 +248,15 @@ export function VideoTranscriptSection({
   asset,
   showDetails = true,
   initialTab,
-  initialDubLanguage,
 }: {
   asset: AssetSummary | null
   /** False inside the asset panel, where Overview already shows all of this. */
   showDetails?: boolean
   /**
    * Where to land, when the reader asked for somewhere specific — clicking a
-   * card's running-dub indicator, rather than merely selecting the card.
+   * card's running-transcript indicator, rather than merely selecting the card.
    */
-  initialTab?: "transcript" | "dubbing" | "title"
-  /** Which dub language to select on arrival. */
-  initialDubLanguage?: string
+  initialTab?: "transcript" | "title"
 }) {
   const queryClient = useQueryClient()
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -300,16 +295,7 @@ export function VideoTranscriptSection({
    * second copy of any of them.
    */
   const [activeLanguage, setActiveLanguage] = useState<string | null>(null)
-  const [aiTab, setAiTab] = useState<"transcript" | "dubbing" | "title">(
-    initialTab ?? "transcript",
-  )
-  /**
-   * Which audio track is playing. `null` is the original.
-   *
-   * Lives here because the player is here: switching tracks must not disturb
-   * the video element, so the dub is a separate audio source kept in step.
-   */
-  const [audioLanguage, setAudioLanguage] = useState<string | null>(null)
+  const [aiTab, setAiTab] = useState<"transcript" | "title">(initialTab ?? "transcript")
   const activeTranslation = activeLanguage
     ? (translations.find((t) => t.language === activeLanguage) ?? null)
     : null
@@ -473,14 +459,6 @@ export function VideoTranscriptSection({
                 mediaRef={videoRef}
                 onTimeChange={(seconds) => setCurrentMs(seconds * 1000)}
                 compact
-                /**
-                 * The dub plays as a second audio source over the untouched
-                 * video, so switching language never re-encodes anything and
-                 * never disturbs the playhead.
-                 */
-                dubAudioSrc={
-                  audioLanguage ? dubAudioUrl(asset.id, audioLanguage) : null
-                }
               />
             </div>
 
@@ -542,7 +520,6 @@ export function VideoTranscriptSection({
               {(
                 [
                   ["transcript", "Transcript"],
-                  ["dubbing", "Dubbing"],
                   ["title", "AI Title"],
                 ] as const
               ).map(([key, label]) => (
@@ -564,17 +541,6 @@ export function VideoTranscriptSection({
                 </button>
               ))}
             </nav>
-
-            {aiTab === "dubbing" ? (
-              <VideoDubbing
-                asset={asset}
-                translations={translations}
-                sourceLanguage={transcript?.language ?? null}
-                activeAudioLanguage={audioLanguage}
-                onUseAudio={setAudioLanguage}
-                initialLanguage={initialDubLanguage}
-              />
-            ) : null}
 
             {aiTab === "title" ? (
               <VideoAiTitle

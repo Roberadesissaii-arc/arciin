@@ -63,7 +63,7 @@ test.describe("translation and titles never reach for the media", () => {
 
     // Every endpoint that spends money or reads private speech re-checks the
     // asset rather than trusting a caller who knows an id.
-    for (const path of ["transcript/translations", "title-suggestions", "dubs"]) {
+    for (const path of ["transcript/translations", "title-suggestions"]) {
       const status = await page.evaluate(async (p) => {
         const res = await fetch(`/api/assets/not-my-asset/${p}`, {
           method: "POST",
@@ -76,36 +76,13 @@ test.describe("translation and titles never reach for the media", () => {
       expect(status, `${path} must not serve an unknown asset`).toBe(404)
     }
 
-    // Reading someone else's dubs is the same answer as reading a file that
-    // does not exist — the endpoint is not an existence oracle either.
+    // Reading someone else's transcript is the same answer as reading a file
+    // that does not exist — the endpoint is not an existence oracle either.
     const readStatus = await page.evaluate(async () => {
-      const res = await fetch("/api/assets/not-my-asset/dubs", { credentials: "include" })
+      const res = await fetch("/api/assets/not-my-asset/transcript", { credentials: "include" })
       return res.status
     })
-    expect(readStatus, "listing dubs must not serve an unknown asset").toBe(404)
-  })
-
-  test("dubbing is not offered for a language the voice model cannot speak", async ({ page }) => {
-    await page.goto("/videos")
-    await expect(page.locator(`[data-asset-id="${FIXTURE}"]`)).toBeVisible({ timeout: 60_000 })
-
-    /**
-     * Translation reaches far more languages than speech synthesis does.
-     * Offering a dub the provider cannot voice would charge for a job that
-     * could only fail, so the refusal happens before any work is queued.
-     */
-    const status = await page.evaluate(async (id) => {
-      const res = await fetch(`/api/assets/${id}/dubs`, {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ language: "yi" }),
-      })
-      return { code: res.status, body: await res.json().catch(() => null) }
-    }, FIXTURE)
-
-    expect(status.code).toBe(409)
-    expect(JSON.stringify(status.body)).toMatch(/not currently supported/i)
+    expect(readStatus, "reading a transcript must not serve an unknown asset").toBe(404)
   })
 
   test("the language selector is searchable and refuses the source language", async ({ page }) => {

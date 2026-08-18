@@ -8,7 +8,6 @@ import { DashboardPageIntro } from "@/components/app-shell/dashboard-page-intro"
 import { IntroCornerIcon } from "@/components/app-shell/intro-corner-icon"
 import { AccessibilityPanel } from "@/components/settings/accessibility-panel"
 import { AiPanel } from "@/components/settings/ai-panel"
-import { AudioSeparationPanel } from "@/components/settings/audio-separation-panel"
 import { AiSecurityPanel } from "@/components/settings/ai-security-panel"
 import { AccessControlPanel } from "@/components/settings/access-control-panel"
 import { ApiProtectionPanel } from "@/components/settings/api-protection-panel"
@@ -88,7 +87,6 @@ export function SettingsPage() {
     session: <SessionSecurityPanel />,
     "api-protection": <ApiProtectionPanel />,
     ai: <AiPanel />,
-    "audio-separation": <AudioSeparationPanel />,
     "ai-security": <AiSecurityPanel />,
     notifications: <NotificationsSettingsPanel />,
     appearance: <AppearancePanel />,
