@@ -354,14 +354,19 @@ export function AssetOverviewContent({
   onDelete,
   onOpen,
   onOpenAi,
+  assistLocked = false,
+  assistPlanLabel = "Pro",
 }: {
   asset: AssetSummary
   onDownload: () => void
   onDelete: () => void
   /** Play / preview the file itself. */
   onOpen?: () => void
-  /** Jump to the Assist / AI workspace (videos). */
+  /** Jump to the Assist / AI workspace (videos / PDFs). */
   onOpenAi?: () => void
+  /** Same Pro gate as AI Chat — shows a Pro pill on Open Assist. */
+  assistLocked?: boolean
+  assistPlanLabel?: string
 }) {
   return (
     <>
@@ -402,15 +407,35 @@ export function AssetOverviewContent({
                 <Sparkles className="size-3.5" />
               </span>
               <span className="min-w-0">
-                <span className="block text-[13px] font-semibold text-zinc-900">Open Assist</span>
+                <span className="flex items-center gap-2">
+                  <span className="block text-[13px] font-semibold text-zinc-900">Open Assist</span>
+                  {assistLocked ? (
+                    <span
+                      className="rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide"
+                      style={{
+                        color: "var(--arciin-accent, #ff4f12)",
+                        background:
+                          "color-mix(in srgb, var(--arciin-accent, #ff4f12) 12%, transparent)",
+                        border:
+                          "1px solid color-mix(in srgb, var(--arciin-accent, #ff4f12) 28%, transparent)",
+                      }}
+                    >
+                      {assistPlanLabel}
+                    </span>
+                  ) : null}
+                </span>
                 <span className="block text-[11.5px] text-zinc-500">
-                  {asset.mediaType === "DOCUMENT"
-                    ? "Summarize, title, and keywords"
-                    : "Transcript, title, and summarize"}
+                  {assistLocked
+                    ? "Available on Pro — same plan as AI Chat"
+                    : asset.mediaType === "DOCUMENT"
+                      ? "Summarize, title, and keywords"
+                      : "Transcript, title, and summarize"}
                 </span>
               </span>
             </span>
-            <span className="shrink-0 text-[12px] font-semibold text-primary">Open</span>
+            <span className="shrink-0 text-[12px] font-semibold text-primary">
+              {assistLocked ? "View" : "Open"}
+            </span>
           </button>
         ) : null}
       </div>

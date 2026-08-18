@@ -18,7 +18,7 @@ import { friendlyGeminiErrorMessage } from "@/services/ai/friendly-gemini-error"
 import { readPdfAssetContent } from "@/services/chat/read-pdf-asset"
 import { assertAssetFolderAccess } from "@/services/folders/folder-lock"
 import { AI_RATE_LIMITS, checkAiRateLimit } from "@/services/security/endpoint-rate-limit"
-import { requireRole } from "@/services/security/auth"
+import { requireFeature, requireRole } from "@/services/security/auth"
 import { serializeAsset } from "@/services/serializers"
 
 /**
@@ -30,6 +30,11 @@ import { serializeAsset } from "@/services/serializers"
  */
 export async function registerDocumentRoutes(fastify: FastifyInstance) {
   const guard = [requireRole(["OWNER", "ADMIN", "MEMBER"])]
+  /** Document Assist tools share the AI Chat Pro gate. */
+  const assistGuard = [
+    requireRole(["OWNER", "ADMIN", "MEMBER"]),
+    requireFeature("ai.chat"),
+  ]
 
   async function loadAccessibleAsset(
     request: FastifyRequest,
@@ -120,7 +125,7 @@ export async function registerDocumentRoutes(fastify: FastifyInstance) {
    */
   fastify.post(
     "/assets/:assetId/document-title-suggestions",
-    { preHandler: guard },
+    { preHandler: assistGuard },
     async (request, reply) => {
       if (await checkAiRateLimit(request, reply, AI_RATE_LIMITS.title)) return
 
@@ -207,7 +212,7 @@ export async function registerDocumentRoutes(fastify: FastifyInstance) {
 
   fastify.post(
     "/assets/:assetId/document-summary",
-    { preHandler: guard },
+    { preHandler: assistGuard },
     async (request, reply) => {
       if (await checkAiRateLimit(request, reply, AI_RATE_LIMITS.summary)) return
 

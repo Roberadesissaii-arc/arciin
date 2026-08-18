@@ -7,6 +7,10 @@ import { ChevronLeft, Loader2, X } from "lucide-react"
 import { AssetEditContent } from "@/components/libraries/rename-asset-dialog"
 import { AssetMoveContent } from "@/components/libraries/move-asset-dialog"
 import { AssetShareContent } from "@/components/shares/share-dialog"
+import {
+  AssistLockedPanel,
+  useAssistLicense,
+} from "@/components/libraries/assist-license-gate"
 import { DocumentAssistSection } from "@/components/libraries/document-assist-section"
 import { isPdfAsset } from "@/lib/api/documents"
 import { VideoTranscriptSection } from "@/components/libraries/video-edit-drawer"
@@ -252,6 +256,7 @@ function PanelSections({
   const intentContext = useAssetPanelIntent()
   const videoEditor = useVideoEditor()
   const viewer = useAssetViewerOptional()
+  const { locked: assistLocked, planLabel: assistPlanLabel } = useAssistLicense()
   const sections = sectionsFor(asset)
 
   /**
@@ -333,22 +338,31 @@ function PanelSections({
               : undefined
           }
           onOpenAi={
-            asset.mediaType === "VIDEO"
+            asset.mediaType === "VIDEO" || isPdfAsset(asset)
               ? () => {
-                  if (videoEditor?.canEdit(asset)) videoEditor.openEditor(asset)
-                  else setSection("ai")
+                  if (assistLocked) {
+                    setSection("ai")
+                    return
+                  }
+                  if (asset.mediaType === "VIDEO" && videoEditor?.canEdit(asset)) {
+                    videoEditor.openEditor(asset)
+                    return
+                  }
+                  setSection("ai")
                 }
-              : isPdfAsset(asset)
-                ? () => setSection("ai")
-                : undefined
+              : undefined
           }
+          assistLocked={assistLocked}
+          assistPlanLabel={assistPlanLabel}
         />
       ) : null}
       {active === "edit" ? (
         <AssetEditContent asset={asset} onDone={() => setSection("overview")} />
       ) : null}
       {active === "ai" ? (
-        asset.mediaType === "VIDEO" ? (
+        assistLocked ? (
+          <AssistLockedPanel />
+        ) : asset.mediaType === "VIDEO" ? (
           <VideoTranscriptSection
             asset={asset}
             showDetails={false}

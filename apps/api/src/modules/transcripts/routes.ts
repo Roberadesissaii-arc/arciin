@@ -30,7 +30,7 @@ import {
   suggestVideoSummary,
   translateTranscript,
 } from "@arciin/media-ai"
-import { requireRole } from "@/services/security/auth"
+import { requireFeature, requireRole } from "@/services/security/auth"
 import { recordAndBroadcastActivity } from "@/services/activity/record-and-broadcast-activity"
 
 /** Media we will try to transcribe. Audio is included for future reuse. */
@@ -151,6 +151,11 @@ function serializeTranslation(
 
 export async function transcriptRoutes(fastify: FastifyInstance) {
   const guard = [requireRole(["OWNER", "ADMIN", "MEMBER"])]
+  /** Assist tools share the AI Chat Pro gate. */
+  const assistGuard = [
+    requireRole(["OWNER", "ADMIN", "MEMBER"]),
+    requireFeature("ai.chat"),
+  ]
 
   /**
    * The asset, if this caller may see it.
@@ -214,7 +219,7 @@ export async function transcriptRoutes(fastify: FastifyInstance) {
   // ── generate / regenerate ────────────────────────────────────────────────
   fastify.post(
     "/assets/:assetId/transcript",
-    { preHandler: guard },
+    { preHandler: assistGuard },
     async (request, reply) => {
       if (await checkAiRateLimit(request, reply, AI_RATE_LIMITS.transcribe)) return
 
@@ -337,7 +342,7 @@ export async function transcriptRoutes(fastify: FastifyInstance) {
    */
   fastify.post(
     "/assets/:assetId/transcript/translations",
-    { preHandler: guard },
+    { preHandler: assistGuard },
     async (request, reply) => {
       if (await checkAiRateLimit(request, reply, AI_RATE_LIMITS.translate)) return
 
@@ -458,7 +463,7 @@ export async function transcriptRoutes(fastify: FastifyInstance) {
    */
   fastify.post(
     "/assets/:assetId/title-suggestions",
-    { preHandler: guard },
+    { preHandler: assistGuard },
     async (request, reply) => {
       if (await checkAiRateLimit(request, reply, AI_RATE_LIMITS.title)) return
 
@@ -526,7 +531,7 @@ export async function transcriptRoutes(fastify: FastifyInstance) {
    */
   fastify.post(
     "/assets/:assetId/transcript-summary",
-    { preHandler: guard },
+    { preHandler: assistGuard },
     async (request, reply) => {
       if (await checkAiRateLimit(request, reply, AI_RATE_LIMITS.summary)) return
 
@@ -604,7 +609,7 @@ export async function transcriptRoutes(fastify: FastifyInstance) {
 
   fastify.patch(
     "/assets/:assetId/transcript",
-    { preHandler: guard },
+    { preHandler: assistGuard },
     async (request, reply) => {
       const { assetId } = z.object({ assetId: z.string() }).parse(request.params)
       const parsed = z

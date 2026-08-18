@@ -48,6 +48,10 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet"
+import {
+  AssistLockedPanel,
+  useAssistLicense,
+} from "@/components/libraries/assist-license-gate"
 import { friendlyAiError } from "@/lib/ai/friendly-ai-error"
 import { toast } from "@/lib/notifications/arciin-toast"
 import {
@@ -665,6 +669,7 @@ export function VideoEditDrawer({
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
+  const { locked: assistLocked } = useAssistLicense()
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
@@ -687,7 +692,13 @@ export function VideoEditDrawer({
             Transcript, title suggestions, and summarize for this video.
           </SheetDescription>
         </SheetHeader>
-        {open ? <VideoTranscriptSection asset={asset} /> : null}
+        {open ? (
+          assistLocked ? (
+            <AssistLockedPanel />
+          ) : (
+            <VideoTranscriptSection asset={asset} />
+          )
+        ) : null}
       </SheetContent>
     </Sheet>
   )

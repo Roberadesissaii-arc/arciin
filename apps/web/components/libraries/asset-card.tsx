@@ -36,6 +36,7 @@ import {
   AssetAiMetadata,
 } from "@/components/libraries/asset-ai-activity"
 import { useAssetPanelIntent } from "@/components/libraries/asset-panel-intent"
+import { useAssistLicense } from "@/components/libraries/assist-license-gate"
 import { useVideoEditor } from "@/components/libraries/video-edit-context"
 import {
   ContextMenu,
@@ -348,6 +349,7 @@ export function AssetCard({ asset }: { asset: AssetSummary }) {
   const viewer = useAssetViewerOptional()
   const panelIntent = useAssetPanelIntent()
   const videoEditor = useVideoEditor()
+  const { locked: assistLocked, planLabel: assistPlanLabel } = useAssistLicense()
   const selected = selection?.isSelected(asset.id) ?? false
   const canOpen = isViewableAsset(asset) && Boolean(viewer?.canOpen(asset))
   const source = sourceChipLabel(asset)
@@ -398,6 +400,12 @@ export function AssetCard({ asset }: { asset: AssetSummary }) {
   }
 
   const openAi = () => {
+    // Free plan: open the Assist section so they see the same Pro lock card
+    // as AI Chat — never the real tools or the video drawer.
+    if (assistLocked) {
+      openAt("ai")
+      return
+    }
     if (videoEditor?.canEdit(asset)) {
       videoEditor.openEditor(asset)
       return
@@ -435,6 +443,10 @@ export function AssetCard({ asset }: { asset: AssetSummary }) {
           ai={asset.ai}
           filename={asset.originalFilename}
           onOpen={() => {
+            if (assistLocked) {
+              openAt("ai")
+              return
+            }
             if (videoEditor?.canEdit(asset)) videoEditor.openEditor(asset)
             else
               panelIntent?.open({
@@ -516,7 +528,23 @@ export function AssetCard({ asset }: { asset: AssetSummary }) {
               data-testid="asset-menu-ai"
             >
               <Sparkles />
-              Assist
+              <span className="flex min-w-0 flex-1 items-center justify-between gap-2">
+                <span>Assist</span>
+                {assistLocked ? (
+                  <span
+                    className="shrink-0 rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide"
+                    style={{
+                      color: "var(--arciin-accent, #ff4f12)",
+                      background:
+                        "color-mix(in srgb, var(--arciin-accent, #ff4f12) 12%, transparent)",
+                      border:
+                        "1px solid color-mix(in srgb, var(--arciin-accent, #ff4f12) 28%, transparent)",
+                    }}
+                  >
+                    {assistPlanLabel}
+                  </span>
+                ) : null}
+              </span>
             </ContextMenuItem>
             <ContextMenuItem
               className={libraryGlassContextMenuItem}
