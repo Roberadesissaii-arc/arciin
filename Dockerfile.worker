@@ -6,9 +6,33 @@
 # build input.
 
 # ---------- deps ----------
-FROM node:20-alpine AS deps
+# Node 24, matching the runtime this release was certified on.
+#
+# The images pinned node:20-alpine while every other gate ran on Node 24, and
+# the dependency tree had moved past it: undici 8 calls
+# webidl.util.markAsUncloneable, which does not exist before Node 22, so the
+# API container built cleanly, applied its migrations, and then died on its
+# first import. package.json now declares engines.node >= 22 so the two cannot
+# drift apart again.
+# Debian slim, not Alpine.
+#
+# pdfjs-dist pulls @napi-rs/canvas, and its musl build dies with SIGILL —
+# "Illegal instruction (core dumped)" — the moment pdfjs is imported. That is a
+# native crash no try/catch can see, so it took the worker process down with it:
+# a PDF upload left its metadata job stalled, the asset stuck on PROCESSING, and
+# the container restarting. The glibc build is what the host this release was
+# verified on actually runs, so the image now matches it.
+FROM node:24-slim AS deps
 WORKDIR /app
-RUN corepack enable
+# Bake the pinned pnpm into the image.
+#
+# `corepack enable` alone only installs the shim: the first pnpm invocation
+# downloads the version pinned in package.json. That turned every container
+# start into a call to the npm registry, which a production host is entitled to
+# block — and on this one it printed "Corepack is about to download pnpm" and
+# the worker restarted twice, abandoning a job mid-flight. Preparing it at build
+# time means the running container never reaches for the network to start.
+RUN corepack enable && corepack prepare pnpm@10.32.1 --activate
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/api/package.json apps/api/package.json
@@ -30,14 +54,16 @@ COPY . .
 RUN pnpm db:generate
 
 # ---------- runtime ----------
-FROM node:20-alpine AS runtime
+FROM node:24-slim AS runtime
 WORKDIR /app
 
 # Media pipeline tools: ffmpeg (video/audio probe + transcode), poppler-utils
 # (pdftoppm for document thumbnails), yt-dlp + gallery-dl (URL imports).
-RUN apk add --no-cache ffmpeg poppler-utils yt-dlp gallery-dl
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      ffmpeg poppler-utils yt-dlp gallery-dl util-linux ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 
-RUN corepack enable
+RUN corepack enable && corepack prepare pnpm@10.32.1 --activate
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/api/package.json apps/api/package.json
@@ -59,19 +85,26 @@ COPY prisma ./prisma
 COPY scripts ./scripts
 COPY tsconfig.base.json tsconfig.json ./
 
-COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
-COPY --from=builder /app/node_modules/@prisma/client ./node_modules/@prisma/client
+# Generate the Prisma client here rather than copying it from the builder.
+# pnpm keeps the generated client inside its virtual store
+# (node_modules/.pnpm/@prisma+client@…/node_modules/.prisma), so there is no
+# node_modules/.prisma to copy — the COPY that tried failed the build outright.
+# The CLI and the schema are both present in this stage, so generating is both
+# simpler and correct wherever pnpm decides to put it.
+RUN pnpm db:generate
 
 ENV NODE_ENV=production
 
-# The worker shells out to media tools (ffmpeg/yt-dlp) on remote input — never
-# as root. Pin a matching host uid via `user:` in compose for bind-mount writes.
-# Base images sometimes already ship a uid/gid 1000 user (e.g. node:alpine's
-# built-in "node") — reuse it instead of failing on a duplicate id.
+# Run as a non-root user (uid/gid 1000 by default). Pin a matching host uid via
+# `user:` in compose so the bind-mounted data dir stays writable.
+# node:*-slim already ships a "node" user at uid 1000 — reuse it rather than
+# failing on a duplicate id.
 RUN set -eu; \
-    getent group 1000 >/dev/null 2>&1 || addgroup -S -g 1000 arciin; \
-    getent passwd 1000 >/dev/null 2>&1 || adduser -S -u 1000 -G "$(getent group 1000 | cut -d: -f1)" arciin; \
+    getent group 1000 >/dev/null 2>&1 || groupadd -g 1000 arciin; \
+    getent passwd 1000 >/dev/null 2>&1 || useradd -u 1000 -g 1000 -M -s /usr/sbin/nologin arciin; \
     chown -R 1000:1000 /app
 USER 1000:1000
 
-CMD ["pnpm", "tsx", "--tsconfig", "apps/worker/tsconfig.json", "apps/worker/src/index.ts"]
+# Run tsx directly rather than through pnpm: one less process, and nothing
+# that could try to resolve a package manager at start.
+CMD ["node_modules/.bin/tsx", "--tsconfig", "apps/worker/tsconfig.json", "apps/worker/src/index.ts"]

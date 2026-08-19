@@ -4,6 +4,9 @@
   "private": true,
   "license": "SEE LICENSE IN LICENSE",
   "packageManager": "pnpm@10.32.1",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "cross-env ARCIIN_ENV_NAMESPACE=dev concurrently -n web,api,worker -c cyan,magenta,yellow \"pnpm dev:web\" \"pnpm dev:api\" \"pnpm dev:worker\"",
     "dev:all": "cross-env ARCIIN_ENV_NAMESPACE=dev concurrently -n web,api,worker,lic,acct -c cyan,magenta,yellow,green,blue \"pnpm dev:web\" \"pnpm dev:api\" \"pnpm dev:worker\" \"pnpm license-server\" \"pnpm account\"",

@@ -37,7 +37,14 @@ arciin_docker_warn_repo_media() {
 }
 
 arciin_docker_stash_repo_media() {
-  local root="$1" stash="${root}/.arciin-docker-build-stash-$$" moved=() path mb
+  # `root` is declared on its own line on purpose. Bash expands every word of a
+  # `local` before applying any of its assignments, so a second variable on the
+  # same line that referenced ${root} read it as unset — and under `set -u` that
+  # aborted the build. `pnpm docker:build` failed on its first line with
+  # "root: unbound variable" and never reached a docker command.
+  local root="$1"
+  local stash="${root}/.arciin-docker-build-stash-$$"
+  local moved=() path mb
 
   mkdir -p "$stash"
   for dir in "${_ARCIIN_DOCKER_STASH_DIRS[@]}"; do

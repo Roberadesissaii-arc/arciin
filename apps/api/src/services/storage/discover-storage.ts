@@ -417,11 +417,28 @@ function lsblkNodeSizeBytes(node: LsblkJsonNode): number | null {
 }
 
 async function readLsblkInventory(): Promise<LsblkInventoryRow[]> {
-  const { stdout } = await execFileAsync(
-    "lsblk",
-    ["-J", "-o", "NAME,SIZE,TYPE,MOUNTPOINT,FSTYPE,PKNAME,MODEL,TRAN"],
-    { timeout: 8000, maxBuffer: 512 * 1024 },
-  )
+  /**
+   * No lsblk is a fact about the host, not a server fault.
+   *
+   * Storage discovery is a convenience: it lists drives so the setup screen can
+   * offer them. Where the binary is absent — a slim container, a platform that
+   * does not ship util-linux — the call threw ENOENT out of the route, which
+   * answered 500 and logged "Unhandled server error" on every poll of the setup
+   * page. An empty inventory is the honest answer: the caller shows no
+   * detected drives and the operator types a path, which is the same experience
+   * as a machine with nothing to detect.
+   */
+  let stdout: string
+  try {
+    ;({ stdout } = await execFileAsync(
+      "lsblk",
+      ["-J", "-o", "NAME,SIZE,TYPE,MOUNTPOINT,FSTYPE,PKNAME,MODEL,TRAN"],
+      { timeout: 8000, maxBuffer: 512 * 1024 },
+    ))
+  } catch {
+    return []
+  }
+
   const parsed = JSON.parse(stdout) as { blockdevices?: LsblkJsonNode[] }
   const nodes = flattenLsblkNodes(parsed.blockdevices ?? [])
   const rows: LsblkInventoryRow[] = []
