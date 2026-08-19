@@ -113,16 +113,31 @@ describe("upload session lifecycle in PostgreSQL", () => {
   })
 
   it("creates immediately-ready uploads READY with completedAt set", async () => {
+    // DOCUMENT/IMAGE/VIDEO/AUDIO need worker jobs; ARCHIVE/OTHER finish at store time.
     const asset = await createAsset(fixtures, {
       librarySlug: "documents",
-      mediaType: "DOCUMENT",
+      mediaType: "OTHER",
     })
-    const session = await createSession(asset.id, "DOCUMENT")
+    const session = await createSession(asset.id, "OTHER")
 
     const stored = await prisma.uploadSession.findUniqueOrThrow({ where: { id: session.id } })
     expect(stored.status).toBe("READY")
     expect(stored.progress).toBe(100)
     expect(stored.completedAt).not.toBeNull()
+  })
+
+  it("creates DOCUMENT uploads PROCESSING until the worker finishes metadata", async () => {
+    const asset = await createAsset(fixtures, {
+      librarySlug: "documents",
+      mediaType: "DOCUMENT",
+      status: "PROCESSING",
+    })
+    const session = await createSession(asset.id, "DOCUMENT")
+
+    const stored = await prisma.uploadSession.findUniqueOrThrow({ where: { id: session.id } })
+    expect(stored.status).toBe("PROCESSING")
+    expect(stored.completedAt).toBeNull()
+    expect(stored.progress).toBeLessThan(100)
   })
 
   it("promotes PROCESSING to READY and stamps completedAt", async () => {

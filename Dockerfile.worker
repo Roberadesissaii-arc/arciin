@@ -27,7 +27,13 @@ RUN pnpm install --frozen-lockfile --ignore-scripts
 FROM deps AS builder
 WORKDIR /app
 COPY . .
-RUN pnpm db:generate
+# pnpm nests the generated client under .pnpm/; materialize the classic
+# node_modules/.prisma path so the runtime stage can COPY it by a stable name.
+RUN pnpm db:generate \
+  && PRISMA_SRC="$(find node_modules -type d -path '*/node_modules/.prisma' | head -n 1)" \
+  && test -n "$PRISMA_SRC" \
+  && mkdir -p node_modules/.prisma \
+  && cp -a "$PRISMA_SRC"/. node_modules/.prisma/
 
 # ---------- runtime ----------
 FROM node:20-alpine AS runtime

@@ -37,10 +37,16 @@ export function DocumentAssistSection({
   const [insight, setInsight] = useState<DocumentInsight | null>(
     asset?.documentInsight ?? null,
   )
+  const [hydratedAssetId, setHydratedAssetId] = useState(asset?.id)
+  const [hydratedInsight, setHydratedInsight] = useState(asset?.documentInsight)
 
-  useEffect(() => {
+  // Keep local Assist state aligned with the selected asset without an effect
+  // (avoids react-hooks/set-state-in-effect cascading-render errors).
+  if (asset?.id !== hydratedAssetId || asset?.documentInsight !== hydratedInsight) {
+    setHydratedAssetId(asset?.id)
+    setHydratedInsight(asset?.documentInsight)
     setInsight(asset?.documentInsight ?? null)
-  }, [asset?.id, asset?.documentInsight])
+  }
 
   const meta = useMutation({
     mutationFn: (assetId: string) => ensureDocumentMetadata(assetId),

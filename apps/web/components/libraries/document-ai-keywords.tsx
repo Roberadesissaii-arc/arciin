@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { Hash, Loader2, Sparkles, Tag } from "lucide-react"
 
@@ -27,12 +27,17 @@ export function DocumentAiKeywords({
   const queryClient = useQueryClient()
   const [keywords, setKeywords] = useState<string[]>(savedInsight?.keywords ?? [])
   const [topics, setTopics] = useState<string[]>(savedInsight?.topics ?? [])
+  const [hydratedFrom, setHydratedFrom] = useState(savedInsight)
 
-  useEffect(() => {
-    if (!savedInsight) return
-    setKeywords(savedInsight.keywords ?? [])
-    setTopics(savedInsight.topics ?? [])
-  }, [savedInsight])
+  // Adjust state during render when the parent passes a new saved insight
+  // (avoids react-hooks/set-state-in-effect cascading-render errors).
+  if (savedInsight !== hydratedFrom) {
+    setHydratedFrom(savedInsight)
+    if (savedInsight) {
+      setKeywords(savedInsight.keywords ?? [])
+      setTopics(savedInsight.topics ?? [])
+    }
+  }
 
   const generate = useMutation({
     mutationKey: ["document-keywords", asset.id],

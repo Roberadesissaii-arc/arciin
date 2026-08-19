@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import {
   Clapperboard,
@@ -57,15 +57,20 @@ export function DocumentAiSummarize({
   const [links, setLinks] = useState<string[]>(savedInsight?.links ?? [])
   const [about, setAbout] = useState<DocumentInsight["about"]>(savedInsight?.about ?? null)
   const [topics, setTopics] = useState<string[]>(savedInsight?.topics ?? [])
+  const [hydratedFrom, setHydratedFrom] = useState(savedInsight)
 
-  useEffect(() => {
-    if (!savedInsight) return
-    setSummary(savedInsight.summary || null)
-    setKeywords(savedInsight.keywords ?? [])
-    setLinks(savedInsight.links ?? [])
-    setAbout(savedInsight.about ?? null)
-    setTopics(savedInsight.topics ?? [])
-  }, [savedInsight])
+  // Adjust state during render when the parent passes a new saved insight
+  // (avoids react-hooks/set-state-in-effect cascading-render errors).
+  if (savedInsight !== hydratedFrom) {
+    setHydratedFrom(savedInsight)
+    if (savedInsight) {
+      setSummary(savedInsight.summary || null)
+      setKeywords(savedInsight.keywords ?? [])
+      setLinks(savedInsight.links ?? [])
+      setAbout(savedInsight.about ?? null)
+      setTopics(savedInsight.topics ?? [])
+    }
+  }
 
   const summarize = useMutation({
     mutationKey: ["document-summary", asset.id],

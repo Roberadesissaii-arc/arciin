@@ -74,31 +74,34 @@ export function VideoAiSummarize({
   const [topics, setTopics] = useState<string[]>(savedInsight?.topics ?? [])
   /** True only when Summarize itself asked for a transcript — not when Transcript tab is busy. */
   const [awaitingTranscript, setAwaitingTranscript] = useState(false)
-  const [pendingElsewhere, setPendingElsewhere] = useState(() => pendingSummaries.has(asset.id))
+  const [hydratedFrom, setHydratedFrom] = useState(savedInsight)
   const kickedOff = useRef(false)
 
   // Hydrate when the saved insight arrives (or changes after regenerate).
-  useEffect(() => {
-    if (!savedInsight) return
-    setSummary(savedInsight.summary || null)
-    setKeywords(savedInsight.keywords ?? [])
-    setLinks(savedInsight.links ?? [])
-    setAbout(savedInsight.about ?? null)
-    setTopics(savedInsight.topics ?? [])
-    pendingSummaries.delete(asset.id)
-    setPendingElsewhere(false)
-  }, [savedInsight, asset.id])
+  // Adjust during render — avoids react-hooks/set-state-in-effect errors.
+  if (savedInsight !== hydratedFrom) {
+    setHydratedFrom(savedInsight)
+    if (savedInsight) {
+      setSummary(savedInsight.summary || null)
+      setKeywords(savedInsight.keywords ?? [])
+      setLinks(savedInsight.links ?? [])
+      setAbout(savedInsight.about ?? null)
+      setTopics(savedInsight.topics ?? [])
+      pendingSummaries.delete(asset.id)
+    }
+  }
+
+  /** Survives tab switches / remounts while a summarize job is still in flight. */
+  const pendingElsewhere = pendingSummaries.has(asset.id) && !savedInsight
 
   const summarize = useMutation({
     mutationKey: ["transcript-summary", asset.id],
     mutationFn: () => requestTranscriptSummary(asset.id),
     onMutate: () => {
       pendingSummaries.add(asset.id)
-      setPendingElsewhere(true)
     },
     onSuccess: (data) => {
       pendingSummaries.delete(asset.id)
-      setPendingElsewhere(false)
       setAwaitingTranscript(false)
       kickedOff.current = false
       setSummary(data.summary || null)
@@ -119,7 +122,6 @@ export function VideoAiSummarize({
     },
     onError: (error) => {
       pendingSummaries.delete(asset.id)
-      setPendingElsewhere(false)
       setAwaitingTranscript(false)
       kickedOff.current = false
       const friendly = friendlyAiError(error, {
@@ -143,7 +145,6 @@ export function VideoAiSummarize({
   useEffect(() => {
     if (!pendingSummaries.has(asset.id)) return
     if (savedInsight) return
-    setPendingElsewhere(true)
     const timer = window.setInterval(() => {
       void queryClient.invalidateQueries({ queryKey: ["asset-transcript", asset.id] })
     }, 2000)
