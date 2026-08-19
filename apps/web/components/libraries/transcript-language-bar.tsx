@@ -44,6 +44,7 @@ export function TranscriptLanguageBar({
   const barRef = useRef<HTMLDivElement>(null)
   const [pickerOpen, setPickerOpen] = useState(false)
   const [query, setQuery] = useState("")
+  const searchRef = useRef<HTMLInputElement | null>(null)
   const [pickerStyle, setPickerStyle] = useState<CSSProperties>({})
 
   const active = activeLanguage
@@ -93,6 +94,28 @@ export function TranscriptLanguageBar({
     }
   }, [pickerOpen])
 
+  /**
+   * Put the caret in the search box, and keep it there.
+   *
+   * `autoFocus` alone lost a race: this picker opens as the dropdown that
+   * launched it is closing, and Radix moves focus back to that dropdown's
+   * trigger on the way out. The input mounted focused and was silently
+   * blurred a moment later, so anything typed after a short pause went to the
+   * trigger button instead — the search box stayed empty and the list stayed
+   * unfiltered. Two animation frames put this after Radix's own focus work.
+   */
+  useEffect(() => {
+    if (!pickerOpen) return
+    let raf2 = 0
+    const raf1 = window.requestAnimationFrame(() => {
+      raf2 = window.requestAnimationFrame(() => searchRef.current?.focus())
+    })
+    return () => {
+      window.cancelAnimationFrame(raf1)
+      if (raf2) window.cancelAnimationFrame(raf2)
+    }
+  }, [pickerOpen])
+
   useEffect(() => {
     if (!pickerOpen) return
     const onKey = (event: KeyboardEvent) => {
@@ -129,6 +152,21 @@ export function TranscriptLanguageBar({
           </DropdownMenuTrigger>
           <DropdownMenuContent
             align="start"
+            /**
+             * Do not pull focus back to the trigger on close.
+             *
+             * "Translate another language" closes this menu and opens the
+             * search picker, which focuses its own input. Radix's default
+             * close behaviour then returned focus to the trigger button a
+             * moment later and took it straight back off that input — so
+             * typing immediately worked, and typing after even a short pause
+             * went to the button instead and the search box stayed empty.
+             *
+             * The menu is handing over to another surface here rather than
+             * returning the reader to where they were, which is exactly the
+             * case this escape hatch exists for.
+             */
+            onCloseAutoFocus={(event) => event.preventDefault()}
             className={cn(
               "dashboard-main z-[240] w-[var(--radix-dropdown-menu-trigger-width)] max-h-64 p-1.5",
               "rounded-xl border-zinc-200 bg-white text-zinc-900 shadow-lg ring-1 ring-black/5",
@@ -235,7 +273,7 @@ export function TranscriptLanguageBar({
                     onChange={(e) => setQuery(e.target.value)}
                     placeholder="Search languages…"
                     className="h-10 flex-1 rounded-xl border-zinc-200 bg-zinc-50 text-[13px]"
-                    autoFocus
+                    ref={searchRef}
                     data-testid="transcript-language-search"
                   />
                   <Button

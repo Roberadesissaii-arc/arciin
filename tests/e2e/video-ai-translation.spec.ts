@@ -148,6 +148,45 @@ test.describe("translation and titles never reach for the media", () => {
     await expect(picker.getByTestId("transcript-target-fr")).toHaveCount(0)
   })
 
+  test("the language search still accepts typing after the menu has closed", async ({ page }) => {
+    /**
+     * Regression: keystrokes went to the wrong element.
+     *
+     * "Translate another language" closes the dropdown and opens the search
+     * picker. Radix then returned focus to the dropdown's trigger button a
+     * beat later, taking it off the freshly focused search box — so typing
+     * straight away filtered, and typing after any pause went to the button
+     * and left the box empty with all ninety-odd languages still listed.
+     *
+     * The pause is the whole point of the test: without it, the old bug
+     * passes.
+     */
+    await openAiSection(page)
+    await expect(panel(page).getByTestId("transcript-language-bar")).toBeVisible({
+      timeout: 20_000,
+    })
+
+    await panel(page).getByTestId("transcript-language-switcher").click()
+    await page.getByTestId("transcript-translate-another").click()
+    const picker = page.getByTestId("transcript-language-picker")
+    await expect(picker).toBeVisible()
+
+    // Long enough for the menu's close-focus to have fired.
+    await page.waitForTimeout(2000)
+
+    // Focus belongs to the search box, not to the button that opened it.
+    await expect(picker.getByTestId("transcript-language-search")).toBeFocused()
+
+    const search = picker.getByTestId("transcript-language-search")
+    await search.fill("amhar")
+
+    // The typing landed…
+    await expect(search).toHaveValue("amhar")
+    // …and it filtered, rather than leaving the full list in place.
+    await expect(picker.getByTestId("transcript-target-am")).toHaveCount(1)
+    await expect(picker.getByTestId("transcript-target-fr")).toHaveCount(0)
+  })
+
   test("the AI Title placeholder actually generates a transcript", async ({ page }) => {
     /**
      * The button used to only switch tabs.
