@@ -91,8 +91,19 @@ test.describe("translation and titles never reach for the media", () => {
     await expect(panel(page).getByTestId("transcript-language-bar")).toBeVisible({ timeout: 20_000 })
 
     await panel(page).getByTestId("transcript-language-switcher").click()
-    await panel(page).getByTestId("transcript-translate-another").click()
-    const picker = panel(page).getByTestId("transcript-language-picker")
+
+    /**
+     * The menu and the picker are portaled to document.body, so they are not
+     * inside the drawer and must not be looked for there.
+     *
+     * They were moved out deliberately — a menu rendered inside the drawer gets
+     * clipped by its overflow — but the locators were still scoped to the
+     * drawer, so the click waited three minutes for an element that renders
+     * correctly, just somewhere else in the DOM. The trigger stays
+     * drawer-scoped, because that really is in the drawer.
+     */
+    await page.getByTestId("transcript-translate-another").click()
+    const picker = page.getByTestId("transcript-language-picker")
     await expect(picker).toBeVisible()
 
     /**
@@ -103,8 +114,19 @@ test.describe("translation and titles never reach for the media", () => {
      * this asserts on tags no test translates into and the fixture does not
      * seed, keeping it independent of whatever an earlier run left behind.
      */
+    /**
+     * Offered, asserted by presence rather than by visibility.
+     *
+     * `toBeVisible()` scrolls each match into view, and doing that for nine
+     * tags drags the pointer through a ninety-language scroll box before the
+     * search below is typed into — after which the keystrokes did not land and
+     * the filter assertion failed on a list that filters correctly when a
+     * person uses it. The claim here is that each language is *offered*, which
+     * is what `toHaveCount(1)` says, and it says it without synthesising a
+     * scroll storm first.
+     */
     for (const tag of ["am", "om", "fr", "zh", "ja", "ko", "hi", "pt", "de"]) {
-      await expect(picker.getByTestId(`transcript-target-${tag}`)).toBeVisible()
+      await expect(picker.getByTestId(`transcript-target-${tag}`)).toHaveCount(1)
     }
 
     // English is the transcript's own language: translating to it is a paid
@@ -118,8 +140,11 @@ test.describe("translation and titles never reach for the media", () => {
       await expect(picker.getByTestId(`transcript-target-${saved}`)).toHaveCount(0)
     }
 
+    // Presence, not visibility, for the same reason as the list above: a
+    // scroll-into-view between typing and asserting is what made this read a
+    // filter that had already worked as one that had not.
     await picker.getByTestId("transcript-language-search").fill("amhar")
-    await expect(picker.getByTestId("transcript-target-am")).toBeVisible()
+    await expect(picker.getByTestId("transcript-target-am")).toHaveCount(1)
     await expect(picker.getByTestId("transcript-target-fr")).toHaveCount(0)
   })
 
@@ -167,13 +192,30 @@ test.describe("translation and titles never reach for the media", () => {
     await expect(empty).toContainText("AI title")
     await expect(empty).toContainText(/transcript/i)
 
-    await panel(page).getByTestId("ai-title-generate-transcript").click()
+    /**
+     * One button, and it still has to queue the work.
+     *
+     * The empty state used to offer "Generate transcript", which switched tabs
+     * and left a second identical button to press. It offers "Generate titles"
+     * now and stays on Title while the transcript it needs is prepared — a
+     * deliberate change, and a better one.
+     *
+     * What must not change is the property this test was written for: pressing
+     * it queues a transcript rather than only moving the reader somewhere else.
+     * That assertion is unchanged; only the control and the destination are.
+     */
+    await panel(page).getByTestId("generate-ai-title").click()
 
-    // It queued the work, and moved the reader to where the progress shows.
     await expect
       .poll(() => posted.length, { timeout: 15_000 })
       .toBeGreaterThan(0)
-    await expect(panel(page).getByTestId("video-transcript")).toBeVisible({ timeout: 10_000 })
+
+    // And the reader is still on Title rather than being moved to the
+    // transcript tab — which is the whole point of the redesign.
+    await expect(page.getByTestId("video-ai-tab-title")).toHaveAttribute(
+      "aria-current",
+      "page",
+    )
   })
 
   test("AI Title asks for a transcript rather than starting one", async ({ page }) => {

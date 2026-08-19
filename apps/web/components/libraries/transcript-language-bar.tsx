@@ -44,6 +44,7 @@ export function TranscriptLanguageBar({
   const barRef = useRef<HTMLDivElement>(null)
   const [pickerOpen, setPickerOpen] = useState(false)
   const [query, setQuery] = useState("")
+  const pickerRef = useRef<HTMLDivElement | null>(null)
   const [pickerStyle, setPickerStyle] = useState<CSSProperties>({})
 
   const active = activeLanguage
@@ -70,6 +71,7 @@ export function TranscriptLanguageBar({
 
   useEffect(() => {
     if (!pickerOpen) return
+
     const update = () => {
       const rect = barRef.current?.getBoundingClientRect()
       if (!rect) return
@@ -81,12 +83,33 @@ export function TranscriptLanguageBar({
         zIndex: 240,
       })
     }
+
+    /**
+     * Reposition when the *anchor* moves, not when the picker's own list does.
+     *
+     * The listener is capture-phase so it sees scrolling anywhere, which is
+     * what keeps the picker pinned to its bar inside a scrolling drawer. It
+     * also saw the options list itself — ninety-odd languages in a short
+     * scroll box — and re-pinned the picker mid-scroll. The panel shifted out
+     * from under the pointer, so the next click landed on the full-screen
+     * close overlay behind it, which clears the search box: scroll the list,
+     * type, and the keystrokes vanished.
+     *
+     * Scrolls that originate inside the picker cannot move its anchor, so they
+     * are ignored.
+     */
+    const onScroll = (event: Event) => {
+      const target = event.target
+      if (target instanceof Node && pickerRef.current?.contains(target)) return
+      update()
+    }
+
     update()
     window.addEventListener("resize", update)
-    window.addEventListener("scroll", update, true)
+    window.addEventListener("scroll", onScroll, true)
     return () => {
       window.removeEventListener("resize", update)
-      window.removeEventListener("scroll", update, true)
+      window.removeEventListener("scroll", onScroll, true)
     }
   }, [pickerOpen])
 
@@ -217,6 +240,7 @@ export function TranscriptLanguageBar({
                 }}
               />
               <div
+                ref={pickerRef}
                 style={pickerStyle}
                 className={cn(
                   "dashboard-main overflow-hidden rounded-xl border border-zinc-200",
@@ -233,6 +257,7 @@ export function TranscriptLanguageBar({
                     placeholder="Search languages…"
                     className="h-10 flex-1 rounded-xl border-zinc-200 bg-zinc-50 text-[13px]"
                     autoFocus
+                    data-testid="transcript-language-search"
                   />
                   <Button
                     type="button"
