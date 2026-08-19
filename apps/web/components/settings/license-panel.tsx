@@ -23,6 +23,7 @@ import {
   refreshLicense,
 } from "@/lib/api/license"
 import { queryKeys } from "@/lib/api/query-keys"
+import { pricingUrl } from "@/lib/license/upgrade-url"
 import { ApiError } from "@/lib/api/errors"
 import { cn } from "@/lib/utils"
 
@@ -304,17 +305,16 @@ export function LicensePanel() {
           </p>
         </div>
         <p className="mt-1 text-[13px] text-muted-foreground">
-          Paste a key from your{" "}
+          Paste the key emailed to you after checkout, or{" "}
           <a
-            href={process.env.NEXT_PUBLIC_ARCIIN_ACCOUNT_URL || "http://localhost:3010/account"}
+            href={pricingUrl()}
             target="_blank"
             rel="noreferrer"
             className="font-medium text-[color:var(--arciin-accent,#FF4F12)] underline decoration-[color-mix(in_srgb,var(--arciin-accent,#FF4F12)_40%,transparent)] underline-offset-2 hover:decoration-[color:var(--arciin-accent,#FF4F12)]"
           >
-            Arciin account
-          </a>{" "}
-          (license portal prototype). Example{" "}
-          <span className="font-mono text-foreground/80">arc_demo_pro_…</span>
+            get a license
+          </a>
+          . Example <span className="font-mono text-foreground/80">arc_pro_…</span>
         </p>
         <div className="mt-3 flex items-start gap-2 rounded-lg border border-border bg-muted/20 px-3 py-2">
           <span

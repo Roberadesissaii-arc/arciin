@@ -52,30 +52,38 @@ export function isWeakProductionSecret(
 }
 
 /**
- * Resolve the license verification secret for a given environment.
+ * Resolve the *legacy* v2 HMAC verification secret, if one is configured.
  *
- * Returns the secret, or throws with an actionable message. Pure: the caller
- * supplies the environment so this can be exercised for production without
- * setting NODE_ENV globally.
+ * Entitlement tokens are Ed25519-signed (v3) and verified with a public key
+ * that ships in the source — so a normal install needs no secret at all, and
+ * `install.sh` no longer mints one. This exists only for the transition: an
+ * instance that activated before the migration still holds a v2 token, and
+ * keeps verifying it until its next refresh swaps it for v3.
+ *
+ * Returns null when nothing is configured, which is the expected state for
+ * every new install. The bundled development value is still refused outright —
+ * accepting it would reintroduce exactly the forgeable setup v3 replaced.
  */
-export function resolveLicenseVerifySecretFrom(input: {
+export function resolveLegacyLicenseSecretFrom(input: {
   configured: string | undefined | null
   fallback: string | undefined | null
   isProduction: boolean
-}): string {
+}): string | null {
   const configured = (input.configured || input.fallback || "").trim()
+  if (!configured) return null
 
-  if (!input.isProduction) {
-    return configured || DEV_LICENSE_SIGNING_SECRET
+  if (configured === DEV_LICENSE_SIGNING_SECRET) {
+    if (input.isProduction) {
+      throw new Error(
+        "ARCIIN_LICENSE_VERIFY_SECRET is set to the bundled development value. Remove it — entitlement tokens are verified with the public key that ships with Arciin.",
+      )
+    }
+    return configured
   }
 
-  if (
-    !configured ||
-    configured === DEV_LICENSE_SIGNING_SECRET ||
-    isWeakProductionSecret(configured, { minLen: 32 })
-  ) {
+  if (input.isProduction && isWeakProductionSecret(configured, { minLen: 32 })) {
     throw new Error(
-      "ARCIIN_LICENSE_VERIFY_SECRET must be a strong random value in production (min 32 chars, and not the bundled development secret). Generate one with: openssl rand -hex 32 — it must match LICENSE_SIGNING_SECRET on the license server.",
+      "ARCIIN_LICENSE_VERIFY_SECRET is set but too weak to be a legacy verification secret. Remove it unless this instance is mid-migration from a v2 token.",
     )
   }
 

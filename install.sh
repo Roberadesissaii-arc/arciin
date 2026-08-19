@@ -527,15 +527,16 @@ ensure_production_secrets() {
     ok "ARCIIN_SETUP_TOKEN secured (random)"
   fi
 
-  # Signing secret for license verification. The API refuses to start in
-  # production with the development value shipped in .env.example, so this has
-  # to be minted here or a fresh install would fail its first boot. Replace the
-  # bundled dev value or anything shorter than 32 chars.
-  if ! grep -qE '^ARCIIN_LICENSE_VERIFY_SECRET=.{32,}$' "$env_file" 2>/dev/null \
-    || grep -q '^ARCIIN_LICENSE_VERIFY_SECRET=arciin-dev-license' "$env_file" 2>/dev/null; then
-    _set_env_kv "$env_file" "ARCIIN_LICENSE_VERIFY_SECRET" \
-      "$(openssl rand -hex 32 2>/dev/null || _gen_secret)"
-    ok "ARCIIN_LICENSE_VERIFY_SECRET secured (random)"
+  # Entitlement tokens are Ed25519-signed by the licensing authority and
+  # verified with a public key that ships in the Arciin source, so there is
+  # nothing to mint here. This used to generate a random
+  # ARCIIN_LICENSE_VERIFY_SECRET, which was worse than useless: the old format
+  # signed with a *shared* secret, so a per-install random value could never
+  # match the vendor's and hosted activation always failed. Strip the stale
+  # value out of upgraded installs rather than leaving it to be puzzled over.
+  if grep -q '^ARCIIN_LICENSE_VERIFY_SECRET=' "$env_file" 2>/dev/null; then
+    sed -i '/^ARCIIN_LICENSE_VERIFY_SECRET=/d' "$env_file" 2>/dev/null \
+      && ok "Removed obsolete ARCIIN_LICENSE_VERIFY_SECRET (licensing now uses public-key verification)"
   fi
 
   # Dedicated key for encrypting the credential vault / webhooks / integrations

@@ -3,6 +3,7 @@ import { Lock, Sparkles } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { PlanBadge } from "@/components/license/plan-badge"
+import { pricingUrl } from "@/lib/license/upgrade-url"
 
 export function PlanRequiredMessage({
   plan,
@@ -51,7 +52,7 @@ export function PlanRequiredMessage({
         </Button>
         <Button asChild variant="outline">
           <a
-            href={process.env.NEXT_PUBLIC_ARCIIN_ACCOUNT_URL || "http://localhost:3010/account"}
+            href={pricingUrl()}
             target="_blank"
             rel="noreferrer"
           >

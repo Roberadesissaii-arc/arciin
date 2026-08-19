@@ -27,8 +27,13 @@ model License {
   keyPrefix   String
   /// SHA-256 hex of normalized full key.
   keyHash     String       @unique
-  /// DEMO ONLY: full key for account portal copy. Never use in production billing.
+  /// DEMO ONLY: full key for the local prototype portal. Never set by
+  /// production issuance — purchased licenses store the hash and nothing else.
   demoPlainKey String?
+  /// Commerce-side order id (arciin-web). The idempotency anchor: a retried
+  /// checkout, webhook, or network failure resolves to the same license
+  /// instead of minting a second one.
+  externalOrderId String?  @unique
   /// free | pro | team | business
   plan        String
   /// active | inactive | expired | revoked

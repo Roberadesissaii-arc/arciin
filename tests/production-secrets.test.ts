@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest"
 import {
   DEV_LICENSE_SIGNING_SECRET,
   isWeakProductionSecret,
-  resolveLicenseVerifySecretFrom,
+  resolveLegacyLicenseSecretFrom,
 } from "../apps/api/src/services/security/production-secrets"
 
 /**
@@ -54,75 +54,83 @@ describe("isWeakProductionSecret", () => {
   })
 })
 
-describe("resolveLicenseVerifySecretFrom — production", () => {
+describe("resolveLegacyLicenseSecretFrom", () => {
   const prod = { isProduction: true }
+  const dev = { isProduction: false }
 
-  it("throws when nothing is configured", () => {
-    expect(() =>
-      resolveLicenseVerifySecretFrom({ configured: undefined, fallback: undefined, ...prod }),
-    ).toThrow(/ARCIIN_LICENSE_VERIFY_SECRET/)
+  /**
+   * Entitlement tokens are Ed25519-signed and verified with a public key that
+   * ships in the source, so a normal install configures no licensing secret at
+   * all. What remains is a transition path: an instance that activated before
+   * the migration still holds a v2 token and needs the old HMAC secret until
+   * its next refresh swaps it for v3.
+   *
+   * So "nothing configured" is now the healthy state, not a boot failure — but
+   * the bundled development value must still be refused, because accepting it
+   * would restore exactly the forgeable setup v3 replaced.
+   */
+
+  it("returns null when nothing is configured — the normal case", () => {
+    expect(
+      resolveLegacyLicenseSecretFrom({ configured: undefined, fallback: undefined, ...prod }),
+    ).toBeNull()
+    expect(
+      resolveLegacyLicenseSecretFrom({ configured: undefined, fallback: undefined, ...dev }),
+    ).toBeNull()
   })
 
-  it("throws on an empty or whitespace value", () => {
-    expect(() =>
-      resolveLicenseVerifySecretFrom({ configured: "   ", fallback: null, ...prod }),
-    ).toThrow(/ARCIIN_LICENSE_VERIFY_SECRET/)
+  it("treats an empty or whitespace value as unset", () => {
+    expect(resolveLegacyLicenseSecretFrom({ configured: "   ", fallback: null, ...prod })).toBeNull()
   })
 
-  it("throws on the bundled development secret", () => {
-    // The exact regression: this value is in the repository.
+  it("refuses the bundled development secret in production", () => {
+    // The exact regression this guard exists for: this value is in the repository.
     expect(() =>
-      resolveLicenseVerifySecretFrom({
+      resolveLegacyLicenseSecretFrom({
         configured: DEV_LICENSE_SIGNING_SECRET,
         fallback: undefined,
         ...prod,
       }),
-    ).toThrow(/not the bundled development secret/)
+    ).toThrow(/public key/)
   })
 
-  it("throws on a weak or too-short value", () => {
+  it("refuses a weak legacy value in production rather than half-trusting it", () => {
     expect(() =>
-      resolveLicenseVerifySecretFrom({ configured: "change-me", fallback: undefined, ...prod }),
+      resolveLegacyLicenseSecretFrom({ configured: "change-me", fallback: undefined, ...prod }),
     ).toThrow()
     expect(() =>
-      resolveLicenseVerifySecretFrom({ configured: "a".repeat(31), fallback: undefined, ...prod }),
+      resolveLegacyLicenseSecretFrom({ configured: "a".repeat(31), fallback: undefined, ...prod }),
     ).toThrow()
   })
 
-  it("accepts a strong value", () => {
+  it("accepts a strong legacy secret during the migration window", () => {
     expect(
-      resolveLicenseVerifySecretFrom({ configured: STRONG, fallback: undefined, ...prod }),
+      resolveLegacyLicenseSecretFrom({ configured: STRONG, fallback: undefined, ...prod }),
     ).toBe(STRONG)
   })
 
-  it("accepts a strong value supplied via the LICENSE_SIGNING_SECRET fallback", () => {
+  it("accepts one supplied through the LICENSE_SIGNING_SECRET fallback", () => {
     expect(
-      resolveLicenseVerifySecretFrom({ configured: undefined, fallback: STRONG, ...prod }),
+      resolveLegacyLicenseSecretFrom({ configured: undefined, fallback: STRONG, ...prod }),
     ).toBe(STRONG)
+  })
+
+  it("tolerates the development secret outside production", () => {
+    expect(
+      resolveLegacyLicenseSecretFrom({
+        configured: DEV_LICENSE_SIGNING_SECRET,
+        fallback: undefined,
+        ...dev,
+      }),
+    ).toBe(DEV_LICENSE_SIGNING_SECRET)
   })
 
   it("never reports the secret in the error message", () => {
     const leaky = "supersecretvalue-that-must-not-appear"
     try {
-      resolveLicenseVerifySecretFrom({ configured: leaky, fallback: undefined, ...prod })
+      resolveLegacyLicenseSecretFrom({ configured: leaky, fallback: undefined, ...prod })
     } catch (error) {
       expect(String(error)).not.toContain(leaky)
     }
-  })
-})
-
-describe("resolveLicenseVerifySecretFrom — development", () => {
-  const dev = { isProduction: false }
-
-  it("falls back to the bundled dev secret so local work needs no setup", () => {
-    expect(
-      resolveLicenseVerifySecretFrom({ configured: undefined, fallback: undefined, ...dev }),
-    ).toBe(DEV_LICENSE_SIGNING_SECRET)
-  })
-
-  it("still prefers a configured value when there is one", () => {
-    expect(
-      resolveLicenseVerifySecretFrom({ configured: STRONG, fallback: undefined, ...dev }),
-    ).toBe(STRONG)
   })
 })

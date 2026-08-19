@@ -18,6 +18,30 @@ import {
 import { licenseServerConfig } from "../config.js"
 import { prisma } from "../db.js"
 
+/**
+ * Sign with the vendor's Ed25519 private key. Self-hosted instances hold only
+ * the matching public key, so a token they can read is one they cannot mint.
+ */
+function signToken(payload: HostedLicenseTokenPayload): string {
+  return signHostedLicenseToken(
+    payload,
+    licenseServerConfig.signingPrivateKey,
+    licenseServerConfig.signingKid,
+  )
+}
+
+/**
+ * Verify a token this server issued. Accepts v3 always, and v2 only while a
+ * legacy HMAC secret is still configured for the migration window.
+ */
+function verifyToken(token: string, expectedInstanceId?: string) {
+  return verifyHostedLicenseToken(token, {
+    publicKeys: licenseServerConfig.publicKeyRegistry,
+    legacyHmacSecret: licenseServerConfig.legacyHmacSecret,
+    ...(expectedInstanceId ? { expectedInstanceId } : {}),
+  })
+}
+
 function toIso(d: Date | null | undefined): string | null {
   return d ? d.toISOString() : null
 }
@@ -108,6 +132,212 @@ export async function createDemoLicense(input: {
       id: customer.id,
       name: customer.name,
       email: customer.email,
+    },
+  }
+}
+
+/** Term length per billing interval. Derived here, never supplied by a caller. */
+const BILLING_INTERVAL_DAYS = { monthly: 31, yearly: 372 } as const
+export type BillingInterval = keyof typeof BILLING_INTERVAL_DAYS
+
+export type IssueLicenseInput = {
+  /** Commerce-side order id. Unique — this is the idempotency anchor. */
+  externalOrderId: string
+  plan: LicensePlanId
+  billingInterval: BillingInterval
+  customerEmail: string
+  customerName: string
+}
+
+export type IssueLicenseResult = {
+  /** Returned exactly once, at issuance. Never persisted, never retrievable. */
+  licenseKey: string | null
+  /** True when this call created the license; false when it replayed an order. */
+  created: boolean
+  license: {
+    id: string
+    plan: LicensePlanId
+    status: string
+    serverLimit: number
+    expiresAt: string | null
+    graceDays: number
+    keyPrefix: string
+    createdAt: string
+  }
+  customer: { id: string; name: string; email: string }
+}
+
+/**
+ * Issue a real, purchased license.
+ *
+ * This is the only production issuance path — `createDemoLicense` is a
+ * development tool and is not reachable from the website. Two rules make it
+ * safe to expose to a vendor backend:
+ *
+ *   - Entitlements are derived from the plan, never from the request. A caller
+ *     cannot ask for 999 servers, a custom feature list, or a decade of grace.
+ *   - `externalOrderId` is unique in the database. A retried checkout, a
+ *     duplicated webhook, or a client that fires twice all resolve to the same
+ *     license; the uniqueness constraint decides, not application state.
+ *
+ * The raw key is returned once and never stored. If the caller loses it before
+ * delivering it, the recovery path is a new license — not a lookup.
+ */
+export async function issueLicense(
+  input: IssueLicenseInput,
+): Promise<OpsResult<IssueLicenseResult>> {
+  const orderId = input.externalOrderId.trim()
+  if (!orderId) {
+    return {
+      ok: false,
+      code: "ORDER_ID_REQUIRED",
+      message: "externalOrderId is required.",
+      status: 400,
+    }
+  }
+
+  const email = input.customerEmail.trim().toLowerCase()
+  const name = input.customerName.trim() || email.split("@")[0] || "Customer"
+  const plan = input.plan
+  const serverLimit = serverLimitNumber(plan)
+  const graceDays = 7
+
+  // Replay: the order already produced a license. Return it without the key —
+  // the key existed only in the original response.
+  const existing = await prisma.license.findUnique({
+    where: { externalOrderId: orderId },
+    include: { customer: true },
+  })
+  if (existing) {
+    if (!isLicensePlanId(existing.plan)) {
+      return { ok: false, code: "INVALID_PLAN", message: "Stored plan is invalid.", status: 500 }
+    }
+    return {
+      ok: true,
+      data: {
+        licenseKey: null,
+        created: false,
+        license: {
+          id: existing.id,
+          plan: existing.plan,
+          status: existing.status,
+          serverLimit: existing.serverLimit,
+          expiresAt: toIso(existing.expiresAt),
+          graceDays: existing.graceDays,
+          keyPrefix: existing.keyPrefix,
+          createdAt: existing.createdAt.toISOString(),
+        },
+        customer: existing.customer
+          ? { id: existing.customer.id, name: existing.customer.name, email: existing.customer.email }
+          : { id: "", name, email },
+      },
+    }
+  }
+
+  const customer = await prisma.customer.upsert({
+    where: { email },
+    create: { name, email },
+    update: { name },
+  })
+
+  const licenseKey = generateHostedLicenseKey(plan)
+  const now = new Date()
+  const expiresAt =
+    plan === "free"
+      ? null
+      : new Date(now.getTime() + BILLING_INTERVAL_DAYS[input.billingInterval] * 86_400_000)
+
+  try {
+    const license = await prisma.license.create({
+      data: {
+        customerId: customer.id,
+        externalOrderId: orderId,
+        keyPrefix: keyDisplayPrefix(licenseKey),
+        keyHash: hashLicenseKey(licenseKey),
+        // Deliberately absent: production never persists the raw key.
+        plan,
+        status: "active",
+        serverLimit,
+        expiresAt,
+        graceDays,
+      },
+    })
+
+    return {
+      ok: true,
+      data: {
+        licenseKey,
+        created: true,
+        license: {
+          id: license.id,
+          plan,
+          status: license.status,
+          serverLimit: license.serverLimit,
+          expiresAt: toIso(license.expiresAt),
+          graceDays: license.graceDays,
+          keyPrefix: license.keyPrefix,
+          createdAt: license.createdAt.toISOString(),
+        },
+        customer: { id: customer.id, name: customer.name, email: customer.email },
+      },
+    }
+  } catch (err) {
+    // Lost a race against a concurrent identical order — the unique constraint
+    // did its job. Re-read rather than surfacing a database error.
+    const raced = await prisma.license.findUnique({
+      where: { externalOrderId: orderId },
+      include: { customer: true },
+    })
+    if (raced && isLicensePlanId(raced.plan)) {
+      return {
+        ok: true,
+        data: {
+          licenseKey: null,
+          created: false,
+          license: {
+            id: raced.id,
+            plan: raced.plan,
+            status: raced.status,
+            serverLimit: raced.serverLimit,
+            expiresAt: toIso(raced.expiresAt),
+            graceDays: raced.graceDays,
+            keyPrefix: raced.keyPrefix,
+            createdAt: raced.createdAt.toISOString(),
+          },
+          customer: raced.customer
+            ? { id: raced.customer.id, name: raced.customer.name, email: raced.customer.email }
+            : { id: customer.id, name: customer.name, email: customer.email },
+        },
+      }
+    }
+    throw err
+  }
+}
+
+/** Service tier: look a license up by the commerce order that paid for it. */
+export async function findLicenseByOrder(
+  externalOrderId: string,
+): Promise<OpsResult<{ found: boolean; license: IssueLicenseResult["license"] | null }>> {
+  const license = await prisma.license.findUnique({
+    where: { externalOrderId: externalOrderId.trim() },
+  })
+  if (!license || !isLicensePlanId(license.plan)) {
+    return { ok: true, data: { found: false, license: null } }
+  }
+  return {
+    ok: true,
+    data: {
+      found: true,
+      license: {
+        id: license.id,
+        plan: license.plan,
+        status: license.status,
+        serverLimit: license.serverLimit,
+        expiresAt: toIso(license.expiresAt),
+        graceDays: license.graceDays,
+        keyPrefix: license.keyPrefix,
+        createdAt: license.createdAt.toISOString(),
+      },
     },
   }
 }
@@ -247,7 +477,7 @@ export async function activateLicense(
     graceUntil,
     activationId: activation.id,
   })
-  const token = signHostedLicenseToken(payload, licenseServerConfig.LICENSE_SIGNING_SECRET)
+  const token = signToken(payload)
   const activated = await countActiveActivations(license.id)
 
   return {
@@ -289,11 +519,7 @@ export async function refreshLicense(input: {
   let keyPrefix = ""
 
   if (input.token) {
-    const payload = verifyHostedLicenseToken(
-      input.token,
-      licenseServerConfig.LICENSE_SIGNING_SECRET,
-      instanceId ? { expectedInstanceId: instanceId } : undefined,
-    )
+    const payload = verifyToken(input.token, instanceId ?? undefined)
     if (!payload) {
       return {
         ok: false,
@@ -387,10 +613,7 @@ export async function refreshLicense(input: {
       activationId: activation.id,
     })
     // For revoked: features should be free on client — still return token with revoked status
-    const token = signHostedLicenseToken(
-      { ...payload, features: [...payload.features] },
-      licenseServerConfig.LICENSE_SIGNING_SECRET,
-    )
+    const token = signToken({ ...payload, features: [...payload.features] })
     return {
       ok: true,
       data: {
@@ -446,7 +669,7 @@ export async function refreshLicense(input: {
     graceUntil,
     activationId: activation.id,
   })
-  const token = signHostedLicenseToken(payload, licenseServerConfig.LICENSE_SIGNING_SECRET)
+  const token = signToken(payload)
 
   return {
     ok: true,
@@ -490,9 +713,7 @@ export async function deactivateLicense(input: {
   let licenseId: string | null = null
 
   if (input.token) {
-    const payload = verifyHostedLicenseToken(input.token, licenseServerConfig.LICENSE_SIGNING_SECRET, {
-      expectedInstanceId: instanceId,
-    })
+    const payload = verifyToken(input.token, instanceId)
     if (!payload) {
       return { ok: false, code: "INVALID_TOKEN", message: "Invalid signed token.", status: 400 }
     }
@@ -538,6 +759,11 @@ export async function deactivateLicense(input: {
   }
 }
 
+/**
+ * Service tier: full detail including customer identity.
+ *
+ * Never expose this to instances or browsers — it is the vendor-side view.
+ */
 export async function getLicenseStatus(input: {
   licenseKey?: string
   activationId?: string
@@ -617,6 +843,83 @@ export async function getLicenseStatus(input: {
       servers: {
         activated,
         limit: license.serverLimit,
+      },
+    },
+  }
+}
+
+/**
+ * Instance-facing status.
+ *
+ * Deliberately narrow. The old `/licenses/status` was unauthenticated and
+ * returned the customer's name and email plus every activation's hostname and
+ * instance id — so anyone holding a license id could enumerate a customer and
+ * see their whole fleet. An instance is entitled to know about its own
+ * activation and the shape of its own license; nothing more.
+ */
+export async function getInstanceLicenseStatus(input: {
+  licenseKey: string
+  instanceId: string
+}): Promise<
+  OpsResult<{
+    license: {
+      plan: LicensePlanId
+      status: HostedLicenseTokenPayload["status"]
+      serverLimit: number
+      expiresAt: string | null
+      graceDays: number
+      keyPrefix: string
+    }
+    servers: { activated: number; limit: number }
+    thisInstance: {
+      activated: boolean
+      activatedAt: string | null
+      lastCheckInAt: string | null
+    }
+  }>
+> {
+  const instanceId = input.instanceId.trim()
+  if (!instanceId) {
+    return {
+      ok: false,
+      code: "INSTANCE_ID_REQUIRED",
+      message: "instanceId is required.",
+      status: 400,
+    }
+  }
+
+  const license = await prisma.license.findUnique({
+    where: { keyHash: hashLicenseKey(input.licenseKey) },
+  })
+  if (!license || !isLicensePlanId(license.plan)) {
+    // Same answer for "no such key" and "malformed plan": a status probe must
+    // not become an oracle for which keys exist.
+    return { ok: false, code: "LICENSE_NOT_FOUND", message: "License not found.", status: 404 }
+  }
+
+  const activation = await prisma.activation.findUnique({
+    where: { licenseId_instanceId: { licenseId: license.id, instanceId } },
+  })
+
+  return {
+    ok: true,
+    data: {
+      license: {
+        plan: license.plan,
+        status: effectiveLicenseStatus(license.status, license.expiresAt, license.graceDays),
+        serverLimit: license.serverLimit,
+        expiresAt: toIso(license.expiresAt),
+        graceDays: license.graceDays,
+        keyPrefix: license.keyPrefix,
+      },
+      servers: {
+        activated: await countActiveActivations(license.id),
+        limit: license.serverLimit,
+      },
+      thisInstance: {
+        activated: Boolean(activation && !activation.deactivatedAt),
+        activatedAt: activation ? activation.activatedAt.toISOString() : null,
+        lastCheckInAt: toIso(activation?.lastCheckInAt ?? null),
       },
     },
   }

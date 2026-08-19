@@ -5,8 +5,10 @@ import {
   defaultLicenseSnapshot,
   evaluateLicenseState,
   keyDisplayPrefix,
+  looksLikeHostedLicenseKey,
   normalizeLicenseKey,
   resolveMockPlanFromKey,
+  licenseTokenVersion,
   verifyHostedLicenseToken,
   type LicensePlanId,
   type LicenseStateSnapshot,
@@ -20,7 +22,7 @@ import {
   hostedRefresh,
   licenseDevFallbackEnabled,
   licenseServerBaseUrl,
-  licenseVerifySecret,
+  licenseVerifyOptions,
 } from "@/services/license/hosted-client"
 
 type InstanceLicenseRow = {
@@ -217,7 +219,7 @@ export async function activateLicense(
   const isMockKey = Boolean(resolveMockPlanFromKey(key) || /^DEV-(FREE|PRO|TEAM|BUSINESS)/i.test(key))
 
   // Prefer hosted server for non-mock keys, or always when server configured and key looks hosted
-  const looksHosted = /^ARC_(LIC|DEMO)_/i.test(key)
+  const looksHosted = looksLikeHostedLicenseKey(key)
   const tryHosted = Boolean(serverUrl) && (looksHosted || !isMockKey || !licenseDevFallbackEnabled())
 
   if (tryHosted && serverUrl) {
@@ -229,17 +231,17 @@ export async function activateLicense(
     })
 
     if (remote.ok) {
-      const p = remote.data.payload
-      // Verify token with our verify secret before trusting
-      const verified = verifyHostedLicenseToken(remote.data.token, licenseVerifySecret(), {
-        expectedInstanceId: instance.id,
-      })
+      // Never trust the response body — only what the signature covers.
+      const verified = verifyHostedLicenseToken(
+        remote.data.token,
+        licenseVerifyOptions(instance.id),
+      )
       if (!verified) {
         return {
           ok: false,
           code: "TOKEN_VERIFY_FAILED",
           message:
-            "License server returned a token that failed local verification. Check ARCIIN_LICENSE_VERIFY_SECRET matches LICENSE_SIGNING_SECRET.",
+            "The license server returned a token this build cannot verify. Its signing key may be newer than this Arciin version — update Arciin and try again.",
         }
       }
 
@@ -416,9 +418,10 @@ export async function refreshLicense(prisma: PrismaClient): Promise<LicenseState
     })
 
     if (remote.ok) {
-      const verified = verifyHostedLicenseToken(remote.data.token, licenseVerifySecret(), {
-        expectedInstanceId: instance.id,
-      })
+      const verified = verifyHostedLicenseToken(
+        remote.data.token,
+        licenseVerifyOptions(instance.id),
+      )
       if (!verified) {
         // Tampered response — keep offline token evaluation
         return evaluateLocalToken(prisma, instance)
@@ -468,10 +471,14 @@ async function evaluateLocalToken(
   instance: InstanceLicenseRow,
 ): Promise<LicenseStateSnapshot> {
   if (instance.licenseSignedToken) {
-    if (instance.licenseSource === "hosted" || instance.licenseSignedToken.startsWith("arclic.v2.")) {
-      const payload = verifyHostedLicenseToken(instance.licenseSignedToken, licenseVerifySecret(), {
-        expectedInstanceId: instance.id,
-      })
+    if (
+      instance.licenseSource === "hosted" ||
+      licenseTokenVersion(instance.licenseSignedToken) !== null
+    ) {
+      const payload = verifyHostedLicenseToken(
+        instance.licenseSignedToken,
+        licenseVerifyOptions(instance.id),
+      )
       if (!payload) {
         await prisma.instanceConfig.update({
           where: { id: instance.id },

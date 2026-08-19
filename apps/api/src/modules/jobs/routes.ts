@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify"
 import { z } from "zod"
 
-import { requireRole } from "@/services/security/auth"
+import { requireFeature, requireRole } from "@/services/security/auth"
 import { serializeJob } from "@/services/serializers"
 
 export async function registerJobRoutes(fastify: FastifyInstance) {
@@ -24,9 +24,14 @@ export async function registerJobRoutes(fastify: FastifyInstance) {
     }
   )
 
+  /**
+   * Clearing the queue is a job *control*, which Pro sells. Reading jobs stays
+   * free — the pricing page promises Free "basic logs, jobs, events & activity",
+   * and locking someone out of seeing their own queue would break that.
+   */
   fastify.delete(
     "/jobs",
-    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    { preHandler: [requireRole(["OWNER", "ADMIN"]), requireFeature("ops.job_controls")] },
     async (_request, reply) => {
       const { count } = await fastify.prisma.job.deleteMany({
         where: { status: { in: ["COMPLETED", "FAILED"] } },

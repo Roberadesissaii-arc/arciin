@@ -8,12 +8,20 @@ function baseUrl() {
   return (process.env.LICENSE_SERVER_URL || "http://127.0.0.1:4100").replace(/\/$/, "")
 }
 
-function demoHeaders(): HeadersInit {
-  const secret = process.env.LICENSE_DEMO_SECRET
+/**
+ * Service credential for the licensing authority.
+ *
+ * Server-only: this module is imported exclusively from server components and
+ * server actions, so the value never reaches a browser bundle. The authority
+ * now fails closed, so an unset credential means privileged calls 401 rather
+ * than silently succeeding the way the old optional demo header did.
+ */
+function serviceHeaders(): HeadersInit {
+  const token = process.env.LICENSE_SERVICE_TOKEN
   return {
     "content-type": "application/json",
     accept: "application/json",
-    ...(secret ? { "x-arciin-demo-secret": secret } : {}),
+    ...(token ? { authorization: `Bearer ${token}` } : {}),
   }
 }
 
@@ -21,7 +29,7 @@ async function lsFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${baseUrl()}${path}`, {
     ...init,
     headers: {
-      ...demoHeaders(),
+      ...serviceHeaders(),
       ...(init?.headers ?? {}),
     },
     cache: "no-store",
@@ -104,6 +112,15 @@ export async function fetchAccountOverview(email = DEMO_CUSTOMER.email) {
   return lsFetch<AccountOverview>(`/account/overview?${q}`)
 }
 
+function adminHeaders(): HeadersInit {
+  const adminToken = process.env.LICENSE_ADMIN_TOKEN
+  return {
+    "content-type": "application/json",
+    accept: "application/json",
+    ...(adminToken ? { authorization: `Bearer ${adminToken}` } : {}),
+  }
+}
+
 export async function createDemoLicense(plan: string) {
   return lsFetch<{
     licenseKey: string
@@ -118,6 +135,7 @@ export async function createDemoLicense(plan: string) {
     customer: { id: string; name: string; email: string }
   }>("/licenses/demo", {
     method: "POST",
+    headers: adminHeaders(),
     body: JSON.stringify({
       plan,
       customerName: DEMO_CUSTOMER.name,
@@ -156,6 +174,7 @@ export async function licenseServerHealth(): Promise<boolean> {
 export async function deleteLicense(input: { licenseId: string }) {
   return lsFetch<{ id: string }>("/licenses/delete", {
     method: "POST",
+    headers: adminHeaders(),
     body: JSON.stringify(input),
   })
 }

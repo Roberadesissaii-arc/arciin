@@ -38,6 +38,11 @@ export default defineConfig({
       // Its own project: the worker needs `@/` pointing at apps/worker/src, and
       // a real database. See vitest.worker.config.ts (`pnpm test:worker`).
       "tests/worker/**",
+      // Its own project: the licensing authority resolves signing keys and
+      // service credentials at import time, so its environment has to exist
+      // before the modules load. See vitest.license.config.ts
+      // (`pnpm test:license`).
+      "tests/license-server/**",
     ],
     // Never let a stray import reach the live instance.
     env: {

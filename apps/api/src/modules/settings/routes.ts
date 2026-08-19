@@ -20,7 +20,7 @@ import { apiConfig } from "@/config"
 import { getUploadLimits, setUploadLimits } from "@/services/config/upload-limits"
 import { invalidateAccessControlCache } from "@/services/security/access-control-settings"
 import { invalidateApiProtectionCache } from "@/services/security/instance-security"
-import { hashToken, requireRole } from "@/services/security/auth"
+import { hashToken, requireFeature, requireRole } from "@/services/security/auth"
 import { clientIpFromRequest, normalizeClientIp } from "@/services/security/client-ip"
 import { checkEndpointRateLimit } from "@/services/security/endpoint-rate-limit"
 import { enrichSecurityLogDeviceLabels } from "@/services/security/device-for-ip"
@@ -735,7 +735,15 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
 
   fastify.post(
     "/settings/cloudflare-tunnel/start",
-    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    {
+      preHandler: [
+        requireRole(["OWNER", "ADMIN"]),
+        // The remote-access helper is a Pro capability. Stopping a tunnel is
+        // deliberately left ungated: an entitlement lapse must never leave a
+        // customer unable to close their own front door.
+        requireFeature("ops.remote_access_helper"),
+      ],
+    },
     async (request, reply) => {
       const instance = await fastify.prisma.instanceConfig.findFirst()
       if (!instance) {
@@ -786,7 +794,15 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
 
   fastify.post(
     "/settings/cloudflare-tunnel/start-mobile",
-    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    {
+      preHandler: [
+        requireRole(["OWNER", "ADMIN"]),
+        // The remote-access helper is a Pro capability. Stopping a tunnel is
+        // deliberately left ungated: an entitlement lapse must never leave a
+        // customer unable to close their own front door.
+        requireFeature("ops.remote_access_helper"),
+      ],
+    },
     async (request, reply) => {
       const instance = await fastify.prisma.instanceConfig.findFirst()
       if (!instance) {

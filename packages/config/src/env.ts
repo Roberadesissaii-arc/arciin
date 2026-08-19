@@ -65,8 +65,22 @@ export const apiEnvSchema = coreEnvSchema.extend({
     z.string().url().optional(),
   ),
   /**
-   * HMAC secret shared with the license server for verifying signed tokens.
-   * Must match LICENSE_SIGNING_SECRET on the license server.
+   * Extra entitlement-token verification keys, as `kid:publicKey` pairs.
+   *
+   * Arciin ships the vendor's public keys in source — nothing needs to be
+   * configured for normal use. This exists so a self-hoster running their own
+   * licensing authority, or a test, can verify tokens without patching a build.
+   */
+  ARCIIN_LICENSE_PUBLIC_KEYS: z.preprocess(
+    (v) => (typeof v === "string" && v.trim() === "" ? undefined : v),
+    z.string().optional(),
+  ),
+  /**
+   * LEGACY. The pre-Ed25519 shared HMAC secret.
+   *
+   * Only read to verify a v2 token an instance activated before the migration;
+   * a refresh replaces it with a v3 token and this becomes unnecessary. New
+   * installs never set it.
    */
   ARCIIN_LICENSE_VERIFY_SECRET: z.preprocess(
     (v) => (typeof v === "string" && v.trim() === "" ? undefined : v),

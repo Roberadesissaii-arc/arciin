@@ -5,6 +5,7 @@ import { Lock } from "lucide-react"
 import { PlanBadge } from "@/components/license/plan-badge"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
+import { pricingUrl } from "@/lib/license/upgrade-url"
 
 /**
  * Floating empty-state lock copy with real buttons (not underlined HTML links).
@@ -53,7 +54,7 @@ export function SoftLockBanner({
             </Button>
             <Button asChild size="sm" variant="outline">
               <a
-                href={process.env.NEXT_PUBLIC_ARCIIN_ACCOUNT_URL || "http://localhost:3010/account"}
+                href={pricingUrl()}
                 target="_blank"
                 rel="noreferrer"
               >

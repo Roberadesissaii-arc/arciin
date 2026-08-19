@@ -2,11 +2,7 @@
  * HTTP client for the hosted license server prototype (future license.arciin.com).
  */
 
-import type {
-  LicenseServerActivateResponse,
-  LicenseServerDemoResponse,
-  LicenseServerStatusResponse,
-} from "@arciin/config"
+import type { LicenseServerActivateResponse } from "@arciin/config"
 
 import { apiConfig } from "@/config"
 
@@ -16,14 +12,19 @@ export function licenseServerBaseUrl(): string | null {
 }
 
 /**
- * Resolved and validated once at startup (apps/api/src/config.ts).
+ * Verification material for entitlement tokens.
  *
- * There is deliberately no fallback here: in production a missing or bundled
- * secret fails the boot rather than silently verifying signatures with a value
- * anyone can read out of this repository.
+ * Public keys only. This instance can check that the licensing authority signed
+ * a token; it cannot produce one. That asymmetry is the whole point — under the
+ * previous HMAC scheme the value needed to verify was also the value needed to
+ * forge, so every customer holding it could mint themselves any plan.
  */
-export function licenseVerifySecret(): string {
-  return apiConfig.licenseVerifySecret
+export function licenseVerifyOptions(expectedInstanceId?: string) {
+  return {
+    publicKeys: apiConfig.licensePublicKeyRegistry,
+    legacyHmacSecret: apiConfig.legacyLicenseSecret,
+    ...(expectedInstanceId ? { expectedInstanceId } : {}),
+  }
 }
 
 export function licenseDevFallbackEnabled(): boolean {
@@ -111,20 +112,6 @@ async function licenseFetch<T>(
   }
 }
 
-export async function hostedCreateDemo(body: {
-  plan: string
-  customerName?: string
-  customerEmail?: string
-  durationDays?: number
-  serverLimit?: number
-  graceDays?: number
-}) {
-  return licenseFetch<LicenseServerDemoResponse>("/licenses/demo", {
-    method: "POST",
-    body: JSON.stringify(body),
-  })
-}
-
 export async function hostedActivate(body: {
   licenseKey: string
   instanceId: string
@@ -161,19 +148,4 @@ export async function hostedDeactivate(body: {
       body: JSON.stringify(body),
     },
   )
-}
-
-export async function hostedStatus(query: {
-  licenseKey?: string
-  activationId?: string
-  licenseId?: string
-}) {
-  const params = new URLSearchParams()
-  if (query.licenseKey) params.set("licenseKey", query.licenseKey)
-  if (query.activationId) params.set("activationId", query.activationId)
-  if (query.licenseId) params.set("licenseId", query.licenseId)
-  const qs = params.toString()
-  return licenseFetch<LicenseServerStatusResponse>(`/licenses/status${qs ? `?${qs}` : ""}`, {
-    method: "GET",
-  })
 }

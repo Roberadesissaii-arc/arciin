@@ -11,13 +11,14 @@ import {
   loadArciinEnv,
   resolveEnvNamespace,
   resolveNamespacedKey,
+  defaultPublicKeyRegistry,
   resolveQueuePrefix,
   resolveSocketChannel,
 } from "@arciin/config"
 
 import {
   isWeakProductionSecret,
-  resolveLicenseVerifySecretFrom,
+  resolveLegacyLicenseSecretFrom,
 } from "@/services/security/production-secrets"
 
 // Loads .env, then layers .env.development for non-production namespaces.
@@ -67,11 +68,18 @@ if (parsed.NODE_ENV === "production" && isWeakProductionSecret(parsed.SESSION_SE
   )
 }
 
-const licenseVerifySecretValue = resolveLicenseVerifySecretFrom({
+/**
+ * Entitlement tokens are verified with a public key, so there is no secret to
+ * resolve and nothing to fail the boot over. The legacy HMAC secret is read
+ * only if an operator still has one set from before the migration.
+ */
+const legacyLicenseSecretValue = resolveLegacyLicenseSecretFrom({
   configured: parsed.ARCIIN_LICENSE_VERIFY_SECRET,
   fallback: process.env.LICENSE_SIGNING_SECRET,
   isProduction: parsed.NODE_ENV === "production",
 })
+
+const licensePublicKeyRegistry = defaultPublicKeyRegistry(parsed.ARCIIN_LICENSE_PUBLIC_KEYS)
 
 /**
  * Which upstream hops to trust for X-Forwarded-For. Default trusts only
@@ -93,8 +101,9 @@ function resolveTrustProxy(): string | number {
 export const apiConfig = {
   ...parsed,
   setupToken,
-  /** Validated at startup — never falls back to the bundled dev secret in production. */
-  licenseVerifySecret: licenseVerifySecretValue,
+  /** Null on any install that did not predate the Ed25519 migration. */
+  legacyLicenseSecret: legacyLicenseSecretValue,
+  licensePublicKeyRegistry,
   appVersion: APP_VERSION,
   updateManifestUrl: parsed.ARCIIN_UPDATE_MANIFEST_URL,
   isProduction: parsed.NODE_ENV === "production",
