@@ -305,16 +305,16 @@ export function LicensePanel() {
           </p>
         </div>
         <p className="mt-1 text-[13px] text-muted-foreground">
-          Paste the key emailed to you after checkout, or{" "}
+          Paste the license key from your Arciin order, or{" "}
           <a
             href={pricingUrl()}
             target="_blank"
             rel="noreferrer"
             className="font-medium text-[color:var(--arciin-accent,#FF4F12)] underline decoration-[color-mix(in_srgb,var(--arciin-accent,#FF4F12)_40%,transparent)] underline-offset-2 hover:decoration-[color:var(--arciin-accent,#FF4F12)]"
           >
-            get a license
+            view plans on arciin.com
           </a>
-          . Example <span className="font-mono text-foreground/80">arc_pro_…</span>
+          .
         </p>
         <div className="mt-3 flex items-start gap-2 rounded-lg border border-border bg-muted/20 px-3 py-2">
           <span
@@ -327,13 +327,14 @@ export function LicensePanel() {
           <p className="text-[12px] leading-relaxed text-muted-foreground">
             {s.licenseServerConfigured ? (
               <>
-                <span className="font-semibold text-foreground">License server configured.</span>{" "}
-                Activation validates online and stores a signed token.
+                <span className="font-semibold text-foreground">License server connected.</span>{" "}
+                Activation validates online and stores a signed token on this instance.
               </>
             ) : (
               <>
                 <span className="font-semibold text-foreground">License server not configured.</span>{" "}
-                Local dev keys (ARCIIN-DEV-PRO) still work when fallback is on.
+                Set <span className="font-mono text-foreground/80">ARCIIN_LICENSE_SERVER_URL</span>{" "}
+                so this instance can validate keys from arciin.com.
               </>
             )}
           </p>
@@ -349,7 +350,7 @@ export function LicensePanel() {
           <Input
             value={key}
             onChange={(e) => setKey(e.target.value)}
-            placeholder="arc_demo_pro_… or ARCIIN-DEV-PRO"
+            placeholder="Paste your Arciin license key"
             className="font-mono text-[13px] sm:flex-1"
             autoComplete="off"
             spellCheck={false}
@@ -362,12 +363,6 @@ export function LicensePanel() {
             )}
           </Button>
         </form>
-        <p className="mt-3 text-[12px] text-muted-foreground">
-          Also accepts:{" "}
-          <span className="font-mono text-foreground/80">
-            {s.mockKeysHint.join(" · ")}
-          </span>
-        </p>
       </SettingsCard>
 
       <SettingsCard className="bg-muted/15">

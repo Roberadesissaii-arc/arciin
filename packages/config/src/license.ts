@@ -245,11 +245,7 @@ export function publicLicenseView(snapshot: LicenseStateSnapshot) {
       limit: maxServers,
       lastCheckIn: snapshot.activatedAt ?? snapshot.expiresAt ?? null,
     },
-    mockKeysHint: [
-      "arc_demo_pro_… (hosted demo portal)",
-      "arc_demo_team_…",
-      "arc_demo_business_…",
-      "ARCIIN-DEV-PRO (local fallback)",
-    ],
+    // Never advertise demo / DEV keys in the product UI.
+    mockKeysHint: [],
   }
 }

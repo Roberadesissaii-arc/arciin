@@ -328,8 +328,8 @@ export async function activateMockLicense(
       ok: false,
       code: "INVALID_LICENSE_KEY",
       message: licenseServerBaseUrl()
-        ? "Unrecognized key. Generate a key from the demo portal (hosted) or use ARCIIN-DEV-PRO when dev fallback is on."
-        : "Unrecognized key. Use a demo portal key (arc_demo_pro_…) or ARCIIN-DEV-PRO / TEAM / BUSINESS / FREE.",
+        ? "Unrecognized license key. Get a key from arciin.com after checkout, then paste it here."
+        : "Unrecognized license key. Check the key and try again, or open arciin.com/pricing to get a license.",
     }
   }
 

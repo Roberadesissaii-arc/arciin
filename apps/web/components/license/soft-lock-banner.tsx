@@ -53,12 +53,8 @@ export function SoftLockBanner({
               <Link href="/settings?tab=license">Activate license</Link>
             </Button>
             <Button asChild size="sm" variant="outline">
-              <a
-                href={pricingUrl()}
-                target="_blank"
-                rel="noreferrer"
-              >
-                Manage license
+              <a href={pricingUrl()} target="_blank" rel="noreferrer">
+                View plans
               </a>
             </Button>
           </>
