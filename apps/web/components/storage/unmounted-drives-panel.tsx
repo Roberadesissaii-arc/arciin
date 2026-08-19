@@ -387,9 +387,11 @@ export function UnmountedDrivesPanel({
             />
           </CollapsibleTrigger>
           <CollapsibleContent className="pt-2">
+            {/* Settings sits on the light dashboard — use light instructions so
+                titles/body copy are not white-on-white. Command blocks stay dark. */}
             <UnmountedMountInstructions
               devices={showSshHelp && selected ? [selected] : devices}
-              theme="dark"
+              theme="light"
             />
           </CollapsibleContent>
         </Collapsible>
