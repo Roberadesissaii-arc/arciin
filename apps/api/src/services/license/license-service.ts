@@ -460,7 +460,29 @@ export async function refreshLicense(prisma: PrismaClient): Promise<LicenseState
       return evaluateLocalToken(prisma, instance)
     }
 
-    // Hard error (not activated, etc.) — fall through to local eval
+    // Hard authority answers (revoked / not activated / unknown license) must
+    // clear local premium state. Falling through to the stored token here was
+    // keeping Pro open after deactivate/revoke until the JWT happened to say so.
+    const hardClear = new Set([
+      "NOT_ACTIVATED",
+      "LICENSE_REVOKED",
+      "LICENSE_NOT_FOUND",
+      "LICENSE_INACTIVE",
+      "UNAUTHORIZED_INSTANCE",
+    ])
+    if (remote.code && hardClear.has(remote.code)) {
+      await prisma.instanceConfig.update({
+        where: { id: instance.id },
+        data: {
+          licensePlan: "free",
+          licenseStatus: remote.code === "LICENSE_REVOKED" ? "expired" : "none",
+          licenseSignedToken: null,
+          licenseSource: "hosted",
+          licenseKeyPrefix: instance.licenseKeyPrefix,
+        },
+      })
+      return loadLicenseSnapshot(prisma)
+    }
   }
 
   return evaluateLocalToken(prisma, instance)
