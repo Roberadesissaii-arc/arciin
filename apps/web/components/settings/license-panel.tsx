@@ -23,7 +23,7 @@ import {
   refreshLicense,
 } from "@/lib/api/license"
 import { queryKeys } from "@/lib/api/query-keys"
-import { pricingUrl, websiteHostLabel } from "@/lib/license/upgrade-url"
+import { accountUrl, pricingUrl, websiteHostLabel } from "@/lib/license/upgrade-url"
 import { ApiError } from "@/lib/api/errors"
 import { cn } from "@/lib/utils"
 
@@ -305,7 +305,7 @@ export function LicensePanel() {
           </p>
         </div>
         <p className="mt-1 text-[13px] text-muted-foreground">
-          Paste the license key from your Arciin order, or{" "}
+          Paste the license key from your Arciin order,{" "}
           <a
             href={pricingUrl()}
             target="_blank"
@@ -313,6 +313,15 @@ export function LicensePanel() {
             className="font-medium text-[color:var(--arciin-accent,#FF4F12)] underline decoration-[color-mix(in_srgb,var(--arciin-accent,#FF4F12)_40%,transparent)] underline-offset-2 hover:decoration-[color:var(--arciin-accent,#FF4F12)]"
           >
             view plans on {websiteHostLabel()}
+          </a>
+          , or{" "}
+          <a
+            href={accountUrl()}
+            target="_blank"
+            rel="noreferrer"
+            className="font-medium text-[color:var(--arciin-accent,#FF4F12)] underline decoration-[color-mix(in_srgb,var(--arciin-accent,#FF4F12)_40%,transparent)] underline-offset-2 hover:decoration-[color:var(--arciin-accent,#FF4F12)]"
+          >
+            open your Arciin account
           </a>
           .
         </p>

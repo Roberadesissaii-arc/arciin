@@ -3,7 +3,7 @@ import { Lock, Sparkles } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { PlanBadge } from "@/components/license/plan-badge"
-import { checkoutUrl, pricingUrl, websiteHostLabel } from "@/lib/license/upgrade-url"
+import { accountUrl, checkoutUrl, pricingUrl, websiteHostLabel } from "@/lib/license/upgrade-url"
 
 export function PlanRequiredMessage({
   plan,
@@ -60,6 +60,11 @@ export function PlanRequiredMessage({
         <Button asChild variant="outline">
           <a href={checkout} target="_blank" rel="noreferrer">
             View {plan} on {websiteHostLabel()}
+          </a>
+        </Button>
+        <Button asChild variant="ghost">
+          <a href={accountUrl()} target="_blank" rel="noreferrer">
+            Open Arciin account
           </a>
         </Button>
         <Button asChild variant="ghost">
