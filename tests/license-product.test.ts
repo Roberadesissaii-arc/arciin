@@ -154,7 +154,9 @@ describe("in-app upgrade links point at the public website", () => {
 
   it("defaults to the public site rather than a developer machine", () => {
     const helper = read("apps/web/lib/license/upgrade-url.ts")
-    expect(helper).toContain("https://arciin.com")
+    // Dev marketing site until arciin.com DNS is live.
+    expect(helper).toContain("https://arciin.vercel.app")
+    expect(helper).not.toContain("localhost:3010")
   })
 })
 

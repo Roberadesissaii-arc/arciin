@@ -23,7 +23,7 @@ import {
   refreshLicense,
 } from "@/lib/api/license"
 import { queryKeys } from "@/lib/api/query-keys"
-import { pricingUrl } from "@/lib/license/upgrade-url"
+import { pricingUrl, websiteHostLabel } from "@/lib/license/upgrade-url"
 import { ApiError } from "@/lib/api/errors"
 import { cn } from "@/lib/utils"
 
@@ -312,7 +312,7 @@ export function LicensePanel() {
             rel="noreferrer"
             className="font-medium text-[color:var(--arciin-accent,#FF4F12)] underline decoration-[color-mix(in_srgb,var(--arciin-accent,#FF4F12)_40%,transparent)] underline-offset-2 hover:decoration-[color:var(--arciin-accent,#FF4F12)]"
           >
-            view plans on arciin.com
+            view plans on {websiteHostLabel()}
           </a>
           .
         </p>
@@ -334,7 +334,7 @@ export function LicensePanel() {
               <>
                 <span className="font-semibold text-foreground">License server not configured.</span>{" "}
                 Set <span className="font-mono text-foreground/80">ARCIIN_LICENSE_SERVER_URL</span>{" "}
-                so this instance can validate keys from arciin.com.
+                so this instance can validate keys from {websiteHostLabel()}.
               </>
             )}
           </p>

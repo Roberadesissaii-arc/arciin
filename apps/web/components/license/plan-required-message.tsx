@@ -3,7 +3,7 @@ import { Lock, Sparkles } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { PlanBadge } from "@/components/license/plan-badge"
-import { checkoutUrl, pricingUrl } from "@/lib/license/upgrade-url"
+import { checkoutUrl, pricingUrl, websiteHostLabel } from "@/lib/license/upgrade-url"
 
 export function PlanRequiredMessage({
   plan,
@@ -48,7 +48,8 @@ export function PlanRequiredMessage({
         </li>
         <li className="flex gap-2">
           <Sparkles className="mt-0.5 size-3.5 shrink-0 text-[color:var(--arciin-accent,#FF4F12)]" />
-          Get a license on arciin.com, then paste the key under Settings → License.
+          Get a license on {websiteHostLabel()}, then paste the key under Settings →
+          License.
         </li>
       </ul>
 
@@ -58,7 +59,7 @@ export function PlanRequiredMessage({
         </Button>
         <Button asChild variant="outline">
           <a href={checkout} target="_blank" rel="noreferrer">
-            View {plan} on arciin.com
+            View {plan} on {websiteHostLabel()}
           </a>
         </Button>
         <Button asChild variant="ghost">
