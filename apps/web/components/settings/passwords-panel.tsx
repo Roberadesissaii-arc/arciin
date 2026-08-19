@@ -40,7 +40,10 @@ import {
   setPasswordVaultPin,
   updatePasswordVaultDisplay,
 } from "@/lib/api/password-vault"
+import { LockedFeatureCard } from "@/components/license/locked-feature-card"
 import { queryKeys } from "@/lib/api/query-keys"
+import { ApiError } from "@/lib/api/errors"
+import { useLicense } from "@/lib/license/use-license"
 import type { PasswordVaultDisplaySettings } from "@/lib/types/models"
 import type { PasswordVaultList } from "@/lib/api/password-vault"
 import { SettingsPanelError } from "@/components/settings/settings-panel-error"
@@ -107,6 +110,7 @@ const EMPTY_MANUAL_ENTRY = {
 export function PasswordsPanel() {
   const inputRef = useRef<HTMLInputElement>(null)
   const queryClient = useQueryClient()
+  const license = useLicense()
   const [tab, setTab] = useState<VaultTab>("import")
   const [replaceOnImport, setReplaceOnImport] = useState(false)
   const [pasteText, setPasteText] = useState("")
@@ -118,9 +122,15 @@ export function PasswordsPanel() {
   const [pinAccountPassword, setPinAccountPassword] = useState("")
   const [removePinPassword, setRemovePinPassword] = useState("")
 
+  const vaultLocked = license.shouldPaywall("vault.password")
+  const vaultPlan = license.requiredPlanFor("vault.password")
+  const vaultPlanLabel = vaultPlan ? license.planLabel(vaultPlan) : "Pro"
+
   const vaultQuery = useQuery({
     queryKey: queryKeys.passwordVault,
     queryFn: ({ signal }) => getPasswordVault(signal),
+    // Don't spam LICENSE_REQUIRED while Free — show the Pro lock card instead.
+    enabled: !vaultLocked,
   })
 
   const display = vaultQuery.data?.display ?? DEFAULT_DISPLAY
@@ -241,6 +251,19 @@ export function PasswordsPanel() {
   const entries = vaultQuery.data?.entries ?? []
   const busy = importMutation.isPending || clearMutation.isPending || displayMutation.isPending
 
+  // Same Pro lock treatment as Assist / sidebar — not a red error banner.
+  if (vaultLocked) {
+    return (
+      <div className="p-1" data-testid="passwords-settings-locked">
+        <LockedFeatureCard
+          plan={vaultPlanLabel}
+          title="Password vault is a Pro feature"
+          description="Encrypted credentials, import, and PIN unlock are part of Pro — the same plan that unlocks AI Chat and Assist. Free still keeps your files on this server."
+        />
+      </div>
+    )
+  }
+
   if (vaultQuery.isLoading) {
     return (
       <div className="space-y-4">
@@ -250,14 +273,24 @@ export function PasswordsPanel() {
   }
 
   if (vaultQuery.isError) {
+    const err = vaultQuery.error
+    if (err instanceof ApiError && err.code === "LICENSE_REQUIRED") {
+      return (
+        <div className="p-1" data-testid="passwords-settings-locked">
+          <LockedFeatureCard
+            plan={vaultPlanLabel}
+            title="Password vault is a Pro feature"
+            description="Encrypted credentials, import, and PIN unlock are part of Pro — the same plan that unlocks AI Chat and Assist. Free still keeps your files on this server."
+          />
+        </div>
+      )
+    }
     return (
       <SettingsPanelError
         message={
-          vaultQuery.error instanceof Error
-            ? vaultQuery.error.message
-            : "Could not load password vault settings."
+          err instanceof Error ? err.message : "Could not load password vault settings."
         }
-        hint="Password vault requires OWNER or ADMIN role on this instance."
+        hint="Password vault settings require OWNER or ADMIN on this instance."
       />
     )
   }
