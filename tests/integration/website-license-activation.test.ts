@@ -48,7 +48,27 @@ function readHandoff(): Handoff | null {
 }
 
 const handoff = readHandoff()
-const describeE2E = handoff ? describe : describe.skip
+
+/**
+ * Skip unless the isolated authority from the purchase phase is actually up.
+ *
+ * A stale handoff.json is worse than none: the suite would fail with connection
+ * errors that look like a licensing bug rather than a harness that was not
+ * started. Probed once, at load, so the whole file skips as a unit.
+ */
+async function authorityReachable(): Promise<boolean> {
+  if (!handoff) return false
+  try {
+    const res = await fetch(`${handoff.licenseServerUrl}/health`, {
+      signal: AbortSignal.timeout(2_000),
+    })
+    return res.ok
+  } catch {
+    return false
+  }
+}
+
+const describeE2E = (await authorityReachable()) ? describe : describe.skip
 
 /**
  * The response body is genuinely dynamic — each route returns a different
