@@ -28,11 +28,17 @@ const planSchema = z.enum(LICENSE_PLANS)
  *
  * Instance-facing routes are used by real servers checking in, so the limits
  * have to clear normal operation comfortably — a locked-out paying customer is
- * a worse outcome than a slow brute force. Activation is tighter than refresh
- * because it is the one that takes a guessable secret.
+ * a worse outcome than a slow brute force.
+ *
+ * Activation is the one route that takes a secret, but that secret is 128 bits
+ * of CSPRNG: guessing is not the threat these numbers address, volume abuse is.
+ * They are set high enough that a whole office or hosting tenancy behind one
+ * egress IP can activate their fleet without tripping — a NAT gateway looks
+ * exactly like an attacker to a per-IP counter, and the wrong call there locks
+ * out paying customers.
  */
 const RATE_LIMITS = {
-  activate: { key: "activate", limit: 10, windowSec: 60 },
+  activate: { key: "activate", limit: 30, windowSec: 60 },
   refresh: { key: "refresh", limit: 60, windowSec: 60 },
   deactivate: { key: "deactivate", limit: 20, windowSec: 60 },
   status: { key: "status", limit: 30, windowSec: 60 },
