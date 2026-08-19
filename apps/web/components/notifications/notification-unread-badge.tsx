@@ -51,8 +51,10 @@ export function NotificationUnreadBadge({
   return (
     <span
       className={cn(
-        "ml-auto flex h-5 min-w-5 shrink-0 items-center justify-center rounded px-1.5",
-        "text-[10px] font-semibold uppercase tracking-wide tabular-nums leading-none",
+        "ml-auto flex size-5 shrink-0 items-center justify-center rounded-full",
+        "text-[10px] font-semibold tabular-nums leading-none",
+        // Wider counts (99+) still stay circular via min size + slight horizontal padding.
+        unread > 9 && "min-w-5 px-1",
         className,
       )}
       style={pillStyle}
