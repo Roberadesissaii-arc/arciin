@@ -97,6 +97,53 @@ export async function registerModelRoutes(fastify: FastifyInstance) {
     },
   )
 
+  /**
+   * Free gets one Ollama profile; more, or another provider, is Pro.
+   *
+   * That is exactly what the pricing page sells — "Connect and test one Ollama
+   * model" against "Multiple AI providers & model profiles (BYOK)" — and it was
+   * enforced only by a disabled button. `POST /models` took anything, so the
+   * paid boundary was decoration on a screen the API does not require.
+   *
+   * Profiles that already exist are left alone: an instance that added a second
+   * one before this check keeps it. Only *creating* past the free allowance is
+   * refused, so nobody loses configuration to an upgrade rule.
+   */
+  async function assertProfileAllowed(
+    reply: import("fastify").FastifyReply,
+    provider: string,
+  ): Promise<boolean> {
+    const [{ hasFeature, plansWithFeature }, licenseService] = await Promise.all([
+      import("@arciin/shared"),
+      import("@/services/license/license-service"),
+    ])
+    const snapshot = await licenseService.loadLicenseSnapshot(fastify.prisma)
+    if (hasFeature(snapshot, "ai.multi_provider")) return true
+
+    const existing = await fastify.prisma.modelProfile.count({ where: { isEnabled: true } })
+    const isLocalOllama = provider === "ollama" || provider === "ollama-local"
+
+    if (existing === 0 && isLocalOllama) return true
+
+    const needed = plansWithFeature("ai.multi_provider")
+    reply.status(403).send({
+      error: {
+        code: "LICENSE_REQUIRED",
+        message:
+          existing === 0
+            ? `Free connects one local Ollama model. Other providers need ${needed.join(" or ")}.`
+            : `Free connects one model. Additional profiles need ${needed.join(" or ")}.`,
+        details: {
+          feature: "ai.multi_provider",
+          plan: snapshot.plan,
+          requiredPlans: needed,
+          existingProfiles: existing,
+        },
+      },
+    })
+    return false
+  }
+
   fastify.post(
     "/models",
     { preHandler: requireSessionRole(["OWNER", "ADMIN"]) },
@@ -108,6 +155,8 @@ export async function registerModelRoutes(fastify: FastifyInstance) {
       }
       const { isDefault, ...rest } = parsed.data
       const normalized = normalizeGeminiProfileDefaults(rest)
+
+      if (!(await assertProfileAllowed(reply, normalized.provider))) return
 
       const cloudKeyError = assertOllamaCloudApiKey(normalized.provider, normalized.apiKey)
       if (cloudKeyError) {
