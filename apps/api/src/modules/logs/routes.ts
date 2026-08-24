@@ -1,7 +1,6 @@
 import type { FastifyInstance } from "fastify"
 import { z } from "zod"
 
-import { WORKER_HEARTBEAT_KEY } from "@arciin/shared"
 
 import { apiConfig } from "@/config"
 import { requireSessionRole } from "@/services/security/auth"
@@ -31,7 +30,7 @@ async function collectHealth(fastify: FastifyInstance) {
   try {
     await fastify.redis.ping()
     realtime = "online"
-    const heartbeat = await fastify.redis.get(WORKER_HEARTBEAT_KEY)
+    const heartbeat = await fastify.redis.get(apiConfig.workerHeartbeatKey)
     if (heartbeat) {
       const seenMs = Number(heartbeat)
       workerLastSeenAt = new Date(seenMs).toISOString()

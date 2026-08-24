@@ -116,6 +116,17 @@ export async function registerInstanceRoutes(fastify: FastifyInstance) {
         ? discovery.hostDataDir
         : discovery.recommendedArciinPath
 
+    /**
+     * Storage paths belong to the setup window only.
+     *
+     * This route is unauthenticated by necessity — the login page asks it
+     * whether the instance still needs claiming. It also answered with the
+     * server's absolute storage paths, to anyone who could reach the port,
+     * forever. Setup genuinely needs a path to suggest; a claimed instance
+     * does not, and its own settings screens are authenticated.
+     */
+    const inSetupWindow = !claimed
+
     reply.send({
       data: {
         // Must match setup/login routing: only "claimed" when an owner user exists.
@@ -123,11 +134,17 @@ export async function registerInstanceRoutes(fastify: FastifyInstance) {
         setupRequired,
         instanceName: instance?.instanceName,
         version: apiConfig.appVersion,
-        suggestedStorageRoot: suggested,
-        runtimeStorageRoot: discovery.runtimeDataDir,
-        hostStorageRoot: discovery.hostDataDir,
+        ...(inSetupWindow
+          ? {
+              suggestedStorageRoot: suggested,
+              runtimeStorageRoot: discovery.runtimeDataDir,
+              hostStorageRoot: discovery.hostDataDir,
+            }
+          : {}),
         isDockerRuntime: discovery.isDockerRuntime,
-        storageRootHint: discovery.isDockerRuntime
+        storageRootHint: !inSetupWindow
+          ? undefined
+          : discovery.isDockerRuntime
           ? discovery.hostDataDir
             ? `Docker: container path /data/arciin is bind-mounted from ${discovery.hostDataDir} on the host. Re-run ./scripts/docker-setup.sh to change the host folder.`
             : "Docker: set ARCIIN_HOST_DATA_DIR in .env (default /srv/arciin-storage/arciin) and run ./scripts/docker-setup.sh before claim."
