@@ -288,7 +288,22 @@ export async function registerFolderRoutes(fastify: FastifyInstance) {
       return
     }
 
-    await fastify.prisma.folder.updateMany({
+    /**
+     * Deleting a folder must not take its files with it.
+     *
+     * The confirmation says "Files stay in place until you delete them
+     * separately", and that was untrue: only the folder rows were soft-deleted,
+     * so every asset kept pointing at a deleted folder. Listings exclude assets
+     * whose folder is deleted, and Trash only shows assets with their own
+     * deletedAt — so the file was in neither. It was alive in the database,
+     * present on disk, and unreachable from every screen, with no way back.
+     *
+     * Reparenting to the library root is what "stay in place" means: the files
+     * remain exactly where the dialog says they will be. Both writes are one
+     * transaction, so a failure cannot leave assets pointing at a folder that
+     * is already gone.
+     */
+    const doomed = await fastify.prisma.folder.findMany({
       where: {
         OR: [
           { id: existing.id },
@@ -300,14 +315,42 @@ export async function registerFolderRoutes(fastify: FastifyInstance) {
           },
         ],
       },
-      data: {
-        deletedAt: new Date(),
-      },
+      select: { id: true },
     })
+    const folderIds = doomed.map((f) => f.id)
+
+    const rescued = await fastify.prisma.$transaction(async (tx) => {
+      const moved = await tx.asset.updateMany({
+        where: { folderId: { in: folderIds }, deletedAt: null },
+        data: { folderId: null },
+      })
+
+      await tx.folder.updateMany({
+        where: { id: { in: folderIds } },
+        data: { deletedAt: new Date() },
+      })
+
+      return moved.count
+    })
+
+    if (rescued > 0 && request.auth) {
+      await recordAndBroadcastActivity(fastify, {
+        userId: request.auth.user.id,
+        type: "assets.moved",
+        title: "Files moved to the library root",
+        message: `${existing.name} was deleted; ${rescued} file${
+          rescued === 1 ? "" : "s"
+        } moved to the library root.`,
+        entityType: "folder",
+        entityId: existing.id,
+      })
+    }
 
     reply.send({
       data: {
         success: true,
+        foldersDeleted: folderIds.length,
+        assetsMovedToRoot: rescued,
       },
     })
   }
