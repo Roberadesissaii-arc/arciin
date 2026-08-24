@@ -5,6 +5,7 @@ import { z } from "zod"
 
 import {
   DEFAULT_LIBRARY_DEFINITIONS,
+  normalizeLibrarySelection,
   DEFAULT_LIBRARY_FOLDERS,
   DEFAULT_USER_PREFERENCES,
   JOB_TYPES,
@@ -48,7 +49,20 @@ const claimSchema = z
     adminEmail: z.email(),
     adminPassword: z.string().min(8),
     storageRoot: z.string().min(1),
-    libraries: z.array(z.string()).min(1),
+    /**
+     * Library identifiers, matched against the known set.
+     *
+     * Setup is a public endpoint, and it must not be able to produce an
+     * instance with no libraries — see normalizeLibrarySelection for what that
+     * cost. Slugs are accepted; anything unknown is rejected here.
+     */
+    libraries: z
+      .array(z.string().trim().min(1))
+      .min(1)
+      .refine((values) => normalizeLibrarySelection(values) !== null, {
+        message: `Libraries must be chosen from: ${DEFAULT_LIBRARY_DEFINITIONS.map((l) => l.name).join(", ")}.`,
+      })
+      .transform((values) => normalizeLibrarySelection(values) as string[]),
     acceptedTermsAndPrivacy: z
       .boolean()
       .refine((value) => value === true, {
