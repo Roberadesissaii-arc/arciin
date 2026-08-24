@@ -122,7 +122,20 @@ async function expectNoPaywall(page: Page, context: string) {
 }
 
 test.describe("Pro entitlement", () => {
-  test("never shows the paywall across 20 consecutive hard refreshes", async ({ page }) => {
+  test("never shows the paywall across 20 consecutive hard refreshes", async ({ page }, testInfo) => {
+    /**
+     * Twenty full navigations, budgeted as such.
+     *
+     * Each iteration is a hard reload of /chat against a dev server that
+     * compiles routes on demand, so this one test does more page loads than
+     * most specs do in total. On the default per-test budget it ran out of
+     * time mid-suite — not on an assertion, but on `goto` — which reads as the
+     * paywall regression having returned when nothing of the sort happened.
+     *
+     * The count is the point of the test and stays at twenty; only the clock
+     * it is measured against changes.
+     */
+    testInfo.setTimeout(300_000)
     await stubLicense(page, "pro")
 
     const paywallSightings: number[] = []

@@ -131,10 +131,17 @@ test.describe("card AI indicator", () => {
     await openVideos(page)
     await indicator(page).click()
 
-    const panel = page.getByTestId("asset-side-panel")
-    await expect(panel).toBeVisible({ timeout: 15_000 })
-    // Straight to the work, not Overview.
-    await expect(panel.getByTestId("video-ai-nav")).toBeVisible({ timeout: 20_000 })
+    /**
+     * Videos open the AI workspace in the drawer.
+     *
+     * Edit and AI were unified into one surface, so the indicator no longer
+     * routes a video through the single-asset side panel. The claim this test
+     * makes is unchanged — clicking the indicator lands on the work rather
+     * than on Overview — only the surface hosting it moved.
+     */
+    const workspace = page.getByTestId("video-edit-drawer")
+    await expect(workspace).toBeVisible({ timeout: 15_000 })
+    await expect(workspace.getByTestId("video-ai-nav")).toBeVisible({ timeout: 20_000 })
   })
 
   test("does not ask the server once per card", async ({ page }) => {
@@ -257,7 +264,15 @@ test.describe("card failure state", () => {
     await expect(page.getByRole("tooltip").first()).toContainText("Open AI for details")
 
     await indicator(page).click()
-    const panel = page.getByTestId("asset-side-panel")
-    await expect(panel.getByTestId("video-ai-nav")).toBeVisible({ timeout: 20_000 })
+    /**
+     * Same unified workspace as above.
+     *
+     * Retry itself is not asserted here: the failure in this test is stubbed on
+     * the card's activity feed, while the drawer loads the fixture's real
+     * transcript, which is READY. Asserting Retry would be asserting a state
+     * this fixture never reaches.
+     */
+    const workspace = page.getByTestId("video-edit-drawer")
+    await expect(workspace.getByTestId("video-ai-nav")).toBeVisible({ timeout: 20_000 })
   })
 })

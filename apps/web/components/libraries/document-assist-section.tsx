@@ -37,14 +37,22 @@ export function DocumentAssistSection({
   const [insight, setInsight] = useState<DocumentInsight | null>(
     asset?.documentInsight ?? null,
   )
-  const [hydratedAssetId, setHydratedAssetId] = useState(asset?.id)
-  const [hydratedInsight, setHydratedInsight] = useState(asset?.documentInsight)
 
-  // Keep local Assist state aligned with the selected asset without an effect
-  // (avoids react-hooks/set-state-in-effect cascading-render errors).
-  if (asset?.id !== hydratedAssetId || asset?.documentInsight !== hydratedInsight) {
-    setHydratedAssetId(asset?.id)
-    setHydratedInsight(asset?.documentInsight)
+  /**
+   * Follow the selected asset without an effect.
+   *
+   * `insight` is the asset's saved value plus whatever this panel has just
+   * generated, so it is derived state the component also writes. Adjusting it
+   * during render — keyed on the asset and its saved insight — swaps it before
+   * paint instead of showing the previous document's summary for a frame.
+   */
+  const [appliedFrom, setAppliedFrom] = useState<{
+    id: string | null
+    saved: AssetSummary["documentInsight"] | null
+  }>({ id: asset?.id ?? null, saved: asset?.documentInsight ?? null })
+
+  if (appliedFrom.id !== (asset?.id ?? null) || appliedFrom.saved !== (asset?.documentInsight ?? null)) {
+    setAppliedFrom({ id: asset?.id ?? null, saved: asset?.documentInsight ?? null })
     setInsight(asset?.documentInsight ?? null)
   }
 
