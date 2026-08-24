@@ -97,10 +97,20 @@ export function buildVisibleAssetWhere(
   }
 
   if (input.search) {
+    /**
+     * A search box is not a pattern language.
+     *
+     * Prisma's `contains` becomes SQL LIKE, so `%` and `_` kept their wildcard
+     * meaning: searching for a literal "%" matched 264 of 266 assets. Escaping
+     * them (and the escape character itself, first) makes the box mean what a
+     * reader thinks it means. This is not an injection — values are still
+     * parameterised — it is the wrong answer.
+     */
+    const literal = input.search.replace(/[\\%_]/g, (ch) => `\\${ch}`)
     and.push({
       OR: [
-        { originalFilename: { contains: input.search, mode: "insensitive" } },
-        { title: { contains: input.search, mode: "insensitive" } },
+        { originalFilename: { contains: literal, mode: "insensitive" } },
+        { title: { contains: literal, mode: "insensitive" } },
       ],
     })
   }

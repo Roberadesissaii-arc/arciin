@@ -20,6 +20,7 @@ import { useLibraries } from "@/hooks/use-libraries"
 import { formatBytes } from "@/lib/utils/format-bytes"
 import { resolveStorageUsagePercent } from "@/lib/utils/storage-usage"
 import type { StorageSettings } from "@/lib/types/models"
+import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { cn } from "@/lib/utils"
 
@@ -49,23 +50,6 @@ const SEGMENT_TONES = [
   "bg-zinc-400",
   "bg-zinc-300",
 ] as const
-
-/** Sample fallback when the storage API is unavailable (spec values). */
-const SAMPLE = {
-  volumeName: "Windows",
-  deviceLabel: "Local Disk",
-  mount: "C:",
-  usedBytes: 193_273_528_320,
-  totalBytes: 499_289_817_088,
-  writable: true,
-  libraries: [
-    { slug: "videos", name: "Videos", assetCount: 1842, sizeBytes: 51_754_188_800 },
-    { slug: "images", name: "Images", assetCount: 3901, sizeBytes: 13_314_392_064 },
-    { slug: "music", name: "Music", assetCount: 612, sizeBytes: 6_550_292_070 },
-    { slug: "documents", name: "Documents", assetCount: 880, sizeBytes: 4_079_511_961 },
-    { slug: "inbox", name: "Inbox", assetCount: 214, sizeBytes: 1_181_015_244 },
-  ],
-} as const
 
 type LibraryRow = {
   id: string
@@ -154,16 +138,16 @@ export function StorageDonutCard({ className }: { className?: string }) {
       }
     }
 
-    return {
-      volumeName: SAMPLE.volumeName,
-      deviceLabel: SAMPLE.deviceLabel,
-      mount: SAMPLE.mount,
-      usedBytes: SAMPLE.usedBytes,
-      totalBytes: SAMPLE.totalBytes,
-      availableBytes: SAMPLE.totalBytes - SAMPLE.usedBytes,
-      writable: SAMPLE.writable,
-      percent: usedPercent(SAMPLE.usedBytes, SAMPLE.totalBytes),
-    }
+    /**
+     * No invented disk.
+     *
+     * This used to fall back to a sample volume — "Windows", "C:", 180 GB of
+     * 465 GB, 1842 videos — whenever the storage call had not answered. On a
+     * Linux server that is a screenful of confident fiction, and nothing on
+     * the card told the reader it was looking at placeholder numbers. A
+     * dashboard that cannot get the figure has to say so.
+     */
+    return null
   }, [storageQuery.data])
 
   const libraries: LibraryRow[] = useMemo(() => {
@@ -184,14 +168,9 @@ export function StorageDonutCard({ className }: { className?: string }) {
       })
     }
 
-    return SAMPLE.libraries.map((lib) => ({
-      id: lib.slug,
-      slug: lib.slug,
-      name: lib.name,
-      assetCount: lib.assetCount,
-      sizeBytes: lib.sizeBytes,
-      href: LIBRARY_ROUTES[lib.slug] ?? "/files",
-    }))
+    // No live libraries yet: show none rather than inventing five.
+    return []
+
   }, [librariesQuery.data])
 
   const indexedTotal = useMemo(
@@ -207,6 +186,35 @@ export function StorageDonutCard({ className }: { className?: string }) {
 
   if (storageQuery.isLoading) {
     return <Skeleton className={cn("h-[14.5rem] w-full rounded-[2rem]", className)} />
+  }
+
+  // Say so, rather than drawing a disk that does not exist.
+  if (!storageView) {
+    return (
+      <section
+        className={cn(
+          "flex min-h-[14.5rem] flex-col items-center justify-center gap-3 rounded-[2rem] border border-zinc-200/90 bg-white px-6 text-center",
+          className,
+        )}
+        aria-label="Primary storage overview"
+      >
+        <p className="text-[13px] font-medium text-zinc-900">Storage details unavailable</p>
+        <p className="max-w-[22rem] text-[12px] leading-relaxed text-zinc-500">
+          Arciin could not read this server&apos;s disk usage just now. Your files are not
+          affected.
+        </p>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-8 text-[12px]"
+          onClick={() => void storageQuery.refetch()}
+          disabled={storageQuery.isFetching}
+        >
+          {storageQuery.isFetching ? "Retrying…" : "Retry"}
+        </Button>
+      </section>
+    )
   }
 
   const lowCapacity = storageView.percent >= 90
