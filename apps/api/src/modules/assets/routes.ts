@@ -233,6 +233,11 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
           category: z.enum(["code", "applications"]).optional(),
           search: z.string().optional(),
           ids: z.string().optional(),
+          /** Opt in to Inbox for "what did I just upload" style queries (chat). */
+          includeInbox: z
+            .union([z.literal("true"), z.literal("1"), z.literal("false"), z.literal("0")])
+            .optional()
+            .transform((v) => v === "true" || v === "1"),
         })
         .parse(request.query)
 
@@ -255,14 +260,17 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
         : []
 
       // Only an undirected cross-library browse hides Inbox. Every deliberate
-      // request still finds it: opening Inbox, searching by name, or asking for
-      // a category — Applications lives almost entirely in Inbox, so applying
-      // this there emptied the one page whose job is to list installers.
+      // request still finds it: opening Inbox, searching by name, asking for a
+      // category — Applications lives almost entirely in Inbox, so applying
+      // this there emptied the one page whose job is to list installers — or
+      // asking chat what was uploaded last, where an unclassified file is
+      // precisely the answer and hiding it names the wrong file.
       const excludeLibraryIds =
         !query.libraryId &&
         !query.folderId &&
         !query.search &&
         !query.category &&
+        !query.includeInbox &&
         !idList?.length
           ? (
               await fastify.prisma.library.findMany({

@@ -7,6 +7,7 @@ import { Check, File, FileText, Loader2, Music, Paperclip, Video } from "lucide-
 import { useChatAttach } from "@/components/chat/chat-attach-context"
 import { Button } from "@/components/ui/button"
 import { getAssets, getAssetsByIds } from "@/lib/api/assets"
+import { matchAssetsToTitles } from "@/lib/chat/listed-assets"
 import { queryKeys } from "@/lib/api/query-keys"
 import { cn } from "@/lib/utils"
 import { ASSET_API_BASE, fmtBytes } from "@/components/chat/chat-format"
@@ -30,6 +31,7 @@ const MEDIA_TYPE_MAP: Record<string, string> = {
 function chatListAssetFilters(mediaType: string): {
   mediaType?: string
   category?: "code" | "applications"
+  includeInbox?: boolean
 } {
   if (mediaType === "code" || mediaType === "python" || mediaType === "py") {
     return { category: "code" }
@@ -38,7 +40,16 @@ function chatListAssetFilters(mediaType: string): {
     return { category: "applications" }
   }
   const mapped = MEDIA_TYPE_MAP[mediaType]
-  return mapped ? { mediaType: mapped } : {}
+  // No library filter — "the latest upload" must include unclassified files,
+  // which is exactly where Inbox uploads sit.
+  return mapped ? { mediaType: mapped } : { includeInbox: true }
+}
+
+/** Copy for a tag's media type — "all" reads as "files", not "all". */
+function mediaLabel(mediaType: string): string {
+  if (MEDIA_TYPE_MAP[mediaType]) return mediaType
+  if (mediaType === "code" || mediaType === "python" || mediaType === "py") return "code files"
+  return "files"
 }
 
 /** How many file rows / cards to show before "Show more" in chat previews. */
@@ -337,6 +348,94 @@ export function InlineAssetBlockByIds({ assetIds }: { assetIds: string[] }) {
   )
 }
 
+/**
+ * Covers for exactly the files the reply enumerated.
+ *
+ * `InlineAssetBlock` answers "what is in this library" — recency-ordered, and
+ * blind to whatever the sentence above it said. For a filtered answer that is
+ * simply wrong: asked to list fictional stories, the model named 22 novels and
+ * the grid underneath showed TensorFlow manuals. Here the titles in the answer
+ * choose the cards.
+ */
+export function InlineAssetListedBlock({
+  titles,
+  mediaType = "documents",
+}: {
+  titles: string[]
+  mediaType?: string
+}) {
+  const [expanded, setExpanded] = useState(false)
+  const filter = chatListAssetFilters(mediaType)
+  const query = useQuery({
+    queryKey: queryKeys.assets({ ...filter, _chatListed: mediaType }),
+    queryFn: ({ signal }) => getAssets(filter, signal),
+    enabled: titles.length > 0,
+    staleTime: 30_000,
+  })
+
+  if (titles.length === 0) return null
+
+  if (query.isLoading) {
+    return (
+      <div className="my-2 flex items-center gap-2 rounded-xl border border-border bg-muted/30 px-4 py-3 text-[12px] text-muted-foreground">
+        <Loader2 className="size-3.5 animate-spin" />
+        Loading matches…
+      </div>
+    )
+  }
+
+  const matched = matchAssetsToTitles(
+    query.data ?? [],
+    titles,
+    (asset) => `${asset.title ?? ""} ${asset.originalFilename}`,
+  )
+
+  // Nothing recognised: the written answer already stands on its own, and a
+  // grid of unrelated files would contradict it — which is the bug this fixes.
+  if (matched.length === 0) return null
+
+  const isDocs =
+    mediaType === "documents" || mediaType === "books" || mediaType === "pdfs" ||
+    matched.some((asset) => isDocumentLike(asset))
+  const preview = 12
+  const shown = expanded ? matched : matched.slice(0, preview)
+  const remainder = expanded ? 0 : Math.max(0, matched.length - preview)
+
+  return (
+    <div className="my-2 space-y-2">
+      <p className="text-[11px] text-muted-foreground">
+        {matched.length === 1
+          ? "The file above — tap it to attach, then /summarize or ask a follow-up."
+          : `The ${matched.length} files listed above — tap one to attach, then /summarize or ask a follow-up.`}
+      </p>
+      <div
+        className={cn(
+          shown.length === 1
+            ? "grid max-w-[9.5rem] grid-cols-1 gap-2"
+            : isDocs
+              ? COVER_GRID
+              : FILE_GRID,
+        )}
+      >
+        {shown.map((asset) => (
+          <SelectableAssetCard key={asset.id} asset={asset} coverStyle={isDocs} />
+        ))}
+      </div>
+      {remainder > 0 || expanded ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-8 w-full border-border text-[11px] font-normal text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+          onClick={() => setExpanded((v) => !v)}
+        >
+          {expanded ? "Show fewer" : `Show ${remainder} more (${matched.length} listed)`}
+        </Button>
+      ) : null}
+    </div>
+  )
+}
+
 /** Document/book (and general) list — books/PDFs use cover grid; others stay as rows. */
 export function InlineAssetFilenameList({ mediaType }: { mediaType: string }) {
   const [expanded, setExpanded] = useState(false)
@@ -359,7 +458,7 @@ export function InlineAssetFilenameList({ mediaType }: { mediaType: string }) {
   if (query.isError) {
     return (
       <div className="my-2 rounded-xl border border-border bg-muted/30 px-4 py-3 text-[12px] text-muted-foreground">
-        Could not load {mediaType}.{" "}
+        Could not load {mediaLabel(mediaType)}.{" "}
         <button
           type="button"
           className="font-medium text-primary underline-offset-2 hover:underline"
@@ -374,7 +473,7 @@ export function InlineAssetFilenameList({ mediaType }: { mediaType: string }) {
   const assets = query.data ?? []
   if (!assets.length) {
     return (
-      <p className="my-2 text-[13px] text-muted-foreground">No {mediaType} in this library.</p>
+      <p className="my-2 text-[13px] text-muted-foreground">No {mediaLabel(mediaType)} in this library.</p>
     )
   }
 
@@ -459,7 +558,7 @@ export function InlineAssetBlock({ mediaType, limit = 9 }: { mediaType: string; 
     return (
       <div className="my-2 flex items-center gap-2 rounded-xl border border-border bg-muted/30 px-4 py-3 text-[12px] text-muted-foreground">
         <Loader2 className="size-3.5 animate-spin" />
-        Loading {mediaType}…
+        Loading {mediaLabel(mediaType)}…
       </div>
     )
   }
@@ -467,7 +566,7 @@ export function InlineAssetBlock({ mediaType, limit = 9 }: { mediaType: string; 
   if (query.isError) {
     return (
       <div className="my-2 rounded-xl border border-border bg-muted/30 px-4 py-3 text-[12px] text-muted-foreground">
-        Could not load {mediaType}.{" "}
+        Could not load {mediaLabel(mediaType)}.{" "}
         <button
           type="button"
           className="font-medium text-primary underline-offset-2 hover:underline"
@@ -484,7 +583,7 @@ export function InlineAssetBlock({ mediaType, limit = 9 }: { mediaType: string; 
   if (!assets.length) {
     return (
       <div className="my-2 rounded-xl border border-border bg-muted/30 px-4 py-3 text-[12px] text-muted-foreground">
-        No {mediaType} found.
+        No {mediaLabel(mediaType)} found.
       </div>
     )
   }

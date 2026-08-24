@@ -11,6 +11,8 @@ export type AssetFilters = {
   /** Server-side filter: code (scripts) or applications (installers). */
   category?: "code" | "applications"
   search?: string
+  /** Include Inbox in an undirected cross-library listing (chat "latest upload"). */
+  includeInbox?: boolean
 }
 
 export function getAssets(filters: AssetFilters = {}, signal?: AbortSignal) {

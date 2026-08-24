@@ -636,3 +636,144 @@ describe("argument-name variants a model actually produces", () => {
     expect(row?.folderId).toBeNull()
   })
 })
+
+/**
+ * The same defect shape as the move tool, one release later.
+ *
+ * The assistant could open all seven Atlantis PDFs, compare their page counts
+ * and prologues, correctly conclude four were redundant, ask whether to remove
+ * them — and then answer "I don't have a tool to delete files" when told yes.
+ * The verification worked; only the last step was missing.
+ */
+describe("delete_library_files", () => {
+  const DUPE = "The Atlantis World (A.G. Riddle) (z-lib.org).pdf"
+  const KEEP = "The Atlantis World (The Origin Mystery, Book 3) (Riddle, A.G.) (z-lib.org).pdf"
+
+  async function seedPair() {
+    const keep = await createAsset(fixtures, {
+      librarySlug: "documents",
+      mediaType: "DOCUMENT",
+      originalFilename: KEEP,
+    })
+    const dupe = await createAsset(fixtures, {
+      librarySlug: "documents",
+      mediaType: "DOCUMENT",
+      originalFilename: DUPE,
+    })
+    return { keep, dupe }
+  }
+
+  it("is offered to the assistant at all", () => {
+    // The whole defect in one assertion.
+    expect(ARCIIN_CHAT_TOOLS.map((t) => t.function.name)).toContain("delete_library_files")
+  })
+
+  it("describes deleting as something it does, and confirming as part of it", () => {
+    const tool = ARCIIN_CHAT_TOOLS.find((t) => t.function.name === "delete_library_files")
+    expect(tool?.function.description).toMatch(/performs the deletion/i)
+    expect(tool?.function.description).toMatch(/confirm with the user first/i)
+    expect(tool?.function.description).toMatch(/restorable/i)
+  })
+
+  it("deletes the file the model named", async () => {
+    const { dupe } = await seedPair()
+    const res = (await callTool("delete_library_files", {
+      files: [{ asset_id: dupe.id, filename: DUPE }],
+    })) as { deleted: number; failed: number; restorable_for_days: number }
+
+    expect(res.deleted).toBe(1)
+    expect(res.failed).toBe(0)
+    expect(res.restorable_for_days).toBeGreaterThan(0)
+
+    const row = await prisma.asset.findUnique({ where: { id: dupe.id } })
+    expect(row?.deletedAt).not.toBeNull()
+  })
+
+  it("leaves the copy the user chose to keep", async () => {
+    const { keep, dupe } = await seedPair()
+    await callTool("delete_library_files", { files: [{ asset_id: dupe.id, filename: DUPE }] })
+
+    const row = await prisma.asset.findUnique({ where: { id: keep.id } })
+    expect(row?.deletedAt).toBeNull()
+  })
+
+  it("records the deletion in activity, like a manual one", async () => {
+    const { dupe } = await seedPair()
+    await callTool("delete_library_files", { files: [{ asset_id: dupe.id, filename: DUPE }] })
+
+    const events = await prisma.activityEvent.findMany({ where: { entityId: dupe.id } })
+    expect(events.map((e) => e.type)).toContain("asset.deleted")
+  })
+
+  it("deletes nothing when the id and filename disagree", async () => {
+    const { keep } = await seedPair()
+    const res = (await callTool("delete_library_files", {
+      // The kept book's id under the duplicate's name.
+      files: [{ asset_id: keep.id, filename: DUPE }],
+    })) as { deleted: number; failures: { code: string; actual_filename?: string }[] }
+
+    expect(res.deleted).toBe(0)
+    expect(res.failures[0]!.code).toBe("name_mismatch")
+    expect(res.failures[0]!.actual_filename).toBe(KEEP)
+
+    const row = await prisma.asset.findUnique({ where: { id: keep.id } })
+    expect(row?.deletedAt).toBeNull()
+  })
+
+  it("insists on the filename rather than deleting on an id alone", async () => {
+    const { dupe } = await seedPair()
+    const res = (await callTool("delete_library_files", {
+      files: [{ asset_id: dupe.id }],
+    })) as { error?: string }
+
+    expect(res.error).toBe("validation")
+    const row = await prisma.asset.findUnique({ where: { id: dupe.id } })
+    expect(row?.deletedAt).toBeNull()
+  })
+
+  it("accepts the container name a model is likely to paraphrase", async () => {
+    const { dupe } = await seedPair()
+    const res = (await callTool("delete_library_files", {
+      assets: [{ id: dupe.id, name: DUPE }],
+    })) as { deleted: number }
+    expect(res.deleted).toBe(1)
+  })
+
+  it("is refused in sandbox mode, with a reason the assistant can repeat", async () => {
+    const { dupe } = await seedPair()
+    const res = (await callTool(
+      "delete_library_files",
+      { files: [{ asset_id: dupe.id, filename: DUPE }] },
+      "sandbox",
+    )) as { error?: string; message?: string }
+
+    expect(res.error).toBe("forbidden")
+    expect(res.message).toMatch(/AI Security/i)
+
+    const row = await prisma.asset.findUnique({ where: { id: dupe.id } })
+    expect(row?.deletedAt).toBeNull()
+  })
+
+  it("is refused when library tools are read-only", async () => {
+    const { dupe } = await seedPair()
+    const res = (await callTool(
+      "delete_library_files",
+      { files: [{ asset_id: dupe.id, filename: DUPE }] },
+      "vision_only",
+    )) as { error?: string }
+    expect(res.error).toBe("forbidden")
+  })
+
+  it("caps a runaway batch instead of attempting it", async () => {
+    const files = Array.from({ length: 51 }, (_, i) => ({
+      asset_id: `id-${i}`,
+      filename: `file-${i}.pdf`,
+    }))
+    const res = (await callTool("delete_library_files", { files })) as {
+      error?: string
+      max_per_call?: number
+    }
+    expect(res.error).toBe("too_many")
+    expect(res.max_per_call).toBe(50)
+  })
+})

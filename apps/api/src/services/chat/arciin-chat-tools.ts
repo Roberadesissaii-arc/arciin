@@ -3,6 +3,7 @@ import { nanoid } from "nanoid"
 import type { AiLibraryToolAccess } from "@arciin/shared"
 import {
   DELIVERY_CHAT_TOOLS,
+  libraryAllowsDeletion,
   libraryAllowsFolderMutations,
   libraryAllowsOrganize,
   matchAssetByName,
@@ -10,6 +11,9 @@ import {
 } from "@arciin/shared"
 
 import { recordAndBroadcastActivity } from "@/services/activity/record-and-broadcast-activity"
+import { buildRealtimeEvent } from "@/services/events/publish-event"
+import { clearAssetJellyfinMirror } from "@/services/integrations/jellyfin"
+import { clearAssetPlexMirror } from "@/services/integrations/plex"
 import { organizeImagesLibrary } from "@/services/chat/organize-images-library"
 import {
   loadImageCandidatesForVision,
@@ -18,6 +22,10 @@ import {
 } from "@/services/chat/vision-library"
 import { readPdfAssetContent } from "@/services/chat/read-pdf-asset"
 import { readTextAssetContent } from "@/services/chat/read-text-asset"
+import {
+  deleteLibraryAssets,
+  MAX_DELETES_PER_BATCH,
+} from "@/services/assets/delete-library-assets"
 import {
   findAssetsByExactName,
   MAX_MOVES_PER_BATCH,
@@ -311,6 +319,40 @@ export const ARCIIN_CHAT_TOOLS = [
           },
         },
         required: ["moves"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "delete_library_files",
+      description:
+        "Actually move one or many library files to Trash. This performs the deletion — never tell the user you have no way to delete files, and never send them to the UI to do it themselves. Files go to Trash and stay restorable for 30 days; nothing is erased from disk. ALWAYS confirm with the user first, naming the exact files, and only call this once they have agreed — the confirmation is part of the job, not a formality. Every file needs BOTH its id and its exact filename: the two are checked against each other and a mismatch deletes nothing, which is what makes it safe to run on a list you assembled yourself.",
+      parameters: {
+        type: "object",
+        properties: {
+          files: {
+            type: "array",
+            description: "Up to 50 files per call. Split larger clean-ups across several calls.",
+            items: {
+              type: "object",
+              properties: {
+                asset_id: {
+                  type: "string",
+                  description:
+                    "File id, copied EXACTLY as list_library_files or find_library_file returned it. Never retype, shorten or correct one.",
+                },
+                filename: {
+                  type: "string",
+                  description:
+                    "The file's exact name, as returned by the same listing. Verified against the id — if they disagree, that file is left untouched.",
+                },
+              },
+              required: ["asset_id", "filename"],
+            },
+          },
+        },
+        required: ["files"],
       },
     },
   },
@@ -762,6 +804,104 @@ export async function executeArciinChatTool(
       name_collisions: result.results
         .filter((r) => r.nameCollision)
         .map((r) => ({ asset_id: r.assetId, filename: r.filename })),
+    }
+  }
+
+  if (name === "delete_library_files") {
+    if (!libraryAllowsDeletion(access)) {
+      return {
+        error: "forbidden",
+        message:
+          "Deleting library files is disabled for the assistant on this instance (Settings → AI Security → Library tools).",
+      }
+    }
+
+    const a = args as Record<string, unknown>
+    // Models paraphrase the container name as readily as the field names.
+    const rawFiles = Array.isArray(a.files)
+      ? a.files
+      : Array.isArray(a.assets)
+        ? a.assets
+        : Array.isArray(a.deletes)
+          ? a.deletes
+          : []
+    if (rawFiles.length === 0) {
+      return { error: "validation", message: "files must contain at least one file." }
+    }
+    if (rawFiles.length > MAX_DELETES_PER_BATCH) {
+      return {
+        error: "too_many",
+        message: `Delete at most ${MAX_DELETES_PER_BATCH} files per call; split the rest into further calls.`,
+        max_per_call: MAX_DELETES_PER_BATCH,
+      }
+    }
+
+    const items: { assetId: string; filename: string }[] = []
+    for (const raw of rawFiles) {
+      const item = (raw ?? {}) as Record<string, unknown>
+      const assetId = coalesceOptionalId(pickArgString(item, ["asset_id", "assetId", "file_id", "id"]))
+      const filename = pickArgString(item, ["filename", "file_name", "name"])
+      if (!assetId) {
+        return { error: "validation", message: "Every file needs an asset_id." }
+      }
+      if (!filename) {
+        return {
+          error: "validation",
+          message:
+            "Every file needs its exact filename alongside asset_id — the pair is verified before anything is deleted.",
+        }
+      }
+      items.push({ assetId, filename })
+    }
+
+    const result = await deleteLibraryAssets({
+      prisma: ctx.prisma,
+      userId: ctx.userId,
+      items,
+      clearMirrors: async (assetId) => {
+        await clearAssetPlexMirror(ctx.prisma, assetId).catch(() => {})
+        await clearAssetJellyfinMirror(ctx.prisma, assetId).catch(() => {})
+      },
+      onDeleted: async (deleted) => {
+        await recordAndBroadcastActivity(
+          { prisma: ctx.prisma, publishRealtimeEvent: ctx.publishRealtimeEvent },
+          {
+            userId: ctx.userId,
+            type: "asset.deleted",
+            title: "Moved to Trash",
+            message: `${deleted.filename} was moved to Trash by the assistant. It will be permanently deleted after ${deleted.retentionDays} days.`,
+            entityType: "asset",
+            entityId: deleted.assetId,
+          },
+        )
+        await ctx.publishRealtimeEvent?.(
+          buildRealtimeEvent("asset.deleted", {
+            userId: ctx.userId,
+            libraryId: deleted.libraryId,
+            assetId: deleted.assetId,
+            message: `${deleted.filename} moved to Trash.`,
+          }),
+        )
+      },
+    })
+
+    return {
+      success: result.failed === 0,
+      deleted: result.deleted,
+      failed: result.failed,
+      restorable_for_days: result.retentionDays,
+      deleted_files: result.results
+        .filter((r) => r.status === "deleted")
+        .map((r) => r.filename),
+      failures: result.results
+        .filter((r) => r.status === "failed")
+        .map((r) => ({
+          asset_id: r.assetId,
+          filename: r.filename,
+          code: r.code,
+          message: r.message,
+          ...(r.actualFilename ? { actual_filename: r.actualFilename } : {}),
+        })),
     }
   }
 

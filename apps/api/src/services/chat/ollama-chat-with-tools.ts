@@ -298,11 +298,14 @@ function resolveOllamaTools(mode: ToolMode, withheld?: ReadonlySet<string>) {
   if (mode === "sandbox") {
     // Sandbox means "you may shape folders, but you may not shuffle the user's
     // files into them". Both bulk-move tools are withheld, not just the image
-    // one — moving books is the same power wearing a different name.
+    // one — moving books is the same power wearing a different name. Deletion
+    // is withheld for the same reason, more so: it is the strongest thing that
+    // can happen to a file this mode is meant to leave alone.
     return allowed.filter(
       (t) =>
         t.function.name !== "organize_images_library" &&
-        t.function.name !== "move_library_files",
+        t.function.name !== "move_library_files" &&
+        t.function.name !== "delete_library_files",
     )
   }
   return allowed

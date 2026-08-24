@@ -100,8 +100,9 @@ const CANVAS_WITHHELD_TOOLS = new Set([
   "delete_library_folder",
   "organize_images_library",
   // Same reasoning: a turn whose whole job is to write a document has no
-  // business reorganising the library on the side.
+  // business reorganising the library on the side — still less deleting from it.
   "move_library_files",
+  "delete_library_files",
   "list_library_files",
 ])
 
