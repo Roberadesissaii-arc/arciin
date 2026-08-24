@@ -75,7 +75,7 @@ pnpm build
 
 With the web and API running:
 
-1. Open `http://localhost:3000`
+1. Open `http://localhost:3100`
 2. You should be redirected to `/setup`
 3. Use `ARCIIN_SETUP_TOKEN` to claim the instance
 4. Create the owner account
@@ -83,9 +83,9 @@ With the web and API running:
 
 ## Useful paths
 
-- `http://localhost:3000/setup`
-- `http://localhost:3000/login`
-- `http://localhost:3000/dashboard`
+- `http://localhost:3100/setup`
+- `http://localhost:3100/login`
+- `http://localhost:3100/dashboard`
 - `http://localhost:4000/api/health`
 
 ## Notes
