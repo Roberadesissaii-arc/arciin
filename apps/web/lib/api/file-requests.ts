@@ -54,24 +54,6 @@ export type CreateFileRequestInput = {
   accessCode?: string
 }
 
-export type FileRequestSubmission = {
-  id: string
-  status: "UPLOADING" | "PROCESSING" | "COMPLETED" | "FAILED"
-  submitterName: string | null
-  submitterEmail: string | null
-  fileCount: number
-  totalBytes: number
-  createdAt: string
-  completedAt: string | null
-  assets: {
-    id: string
-    originalFilename: string
-    mediaType: string
-    sizeBytes: number
-    status: string
-  }[]
-}
-
 export function listFileRequests(signal?: AbortSignal) {
   return fetchApi<FileRequestSummary[]>("/file-requests", { signal })
 }
@@ -89,10 +71,6 @@ export function extendFileRequest(id: string, days: number) {
     method: "POST",
     body: { days },
   })
-}
-
-export function listFileRequestSubmissions(id: string, signal?: AbortSignal) {
-  return fetchApi<FileRequestSubmission[]>(`/file-requests/${id}/submissions`, { signal })
 }
 
 // ---------------------------------------------------------------------------

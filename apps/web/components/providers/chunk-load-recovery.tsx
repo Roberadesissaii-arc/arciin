@@ -28,8 +28,10 @@ export function ChunkLoadRecovery() {
         return
       }
       sessionStorage.setItem(RELOAD_KEY, "1")
-      window.location.reload()
+      // Say it before navigating away, not after. reload() tears the page down,
+      // so the one line explaining an unprompted reload never reached anyone.
       console.info("[Arciin] Reloading after stale build chunks:", reason)
+      window.location.reload()
     }
 
     const onError = (event: ErrorEvent) => {
