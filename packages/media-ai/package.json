@@ -8,7 +8,7 @@
   },
   "dependencies": {
     "@arciin/types": "workspace:*",
-    "@google/genai": "^2.10.0",
+    "@google/genai": "^2.18.0",
     "@prisma/client": "^6.19.3",
     "execa": "^9.6.0"
   }

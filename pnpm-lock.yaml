@@ -21,6 +21,7 @@ overrides:
   esbuild: ^0.28.1
   '@fastify/ajv-compiler>fast-uri': ^3.1.6
   fast-json-stringify@^6>fast-uri: ^3.1.6
+  lucide-react: 1.14.0
 
 importers:
 
@@ -114,7 +115,7 @@ importers:
         specifier: ^0.18.4
         version: 0.18.4
       lucide-react:
-        specifier: ^1.14.0
+        specifier: 1.14.0
         version: 1.14.0(react@19.2.4)
       nanoid:
         specifier: ^5.1.16
@@ -229,8 +230,8 @@ importers:
         specifier: workspace:*
         version: link:../../packages/config
       lucide-react:
-        specifier: ^1.14.0
-        version: 1.23.0(react@19.2.4)
+        specifier: 1.14.0
+        version: 1.14.0(react@19.2.4)
       next:
         specifier: 16.2.12
         version: 16.2.12(@babel/core@7.29.7)(@playwright/test@1.62.1)(@types/node@20.19.41)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
@@ -372,8 +373,8 @@ importers:
         specifier: workspace:*
         version: link:../types
       '@google/genai':
-        specifier: ^2.10.0
-        version: 2.10.0(@modelcontextprotocol/sdk@1.29.0(zod@4.4.3))
+        specifier: ^2.18.0
+        version: 2.18.0(@modelcontextprotocol/sdk@1.29.0(zod@4.4.3))
       '@prisma/client':
         specifier: ^6.19.3
         version: 6.19.3(prisma@6.19.3(typescript@5.9.3))(typescript@5.9.3)
@@ -841,15 +842,6 @@ packages:
 
   '@floating-ui/utils@0.2.11':
     resolution: {integrity: sha512-RiB/yIh78pcIxl6lLMG0CgBXAZ2Y0eVHqMPYugu+9U0AeT6YBeiJpf7lbdJNIugFP5SIjwNRgo4DhR1Qxi26Gg==}
-
-  '@google/genai@2.10.0':
-    resolution: {integrity: sha512-e4cFxj3tiuMtsgOT4G9c1hXyGJhg7/Buj7VVeBacRY3fRtkRZZ59Q3nuVp2xbq8BGQXLXCDB253qMhklMOeUDg==}
-    engines: {node: '>=20.0.0'}
-    peerDependencies:
-      '@modelcontextprotocol/sdk': ^1.25.2
-    peerDependenciesMeta:
-      '@modelcontextprotocol/sdk':
-        optional: true
 
   '@google/genai@2.18.0':
     resolution: {integrity: sha512-uy9gWVTAZXuA/2tld0QJl/QNiGEn4QOmfX4PiRgZQmeFQRQhojpD/Gf41SPnBJmjEnT83a+h4AdU1HHYaYvVDw==}
@@ -4357,11 +4349,6 @@ packages:
     peerDependencies:
       react: ^16.5.1 || ^17.0.0 || ^18.0.0 || ^19.0.0
 
-  lucide-react@1.23.0:
-    resolution: {integrity: sha512-38BpJcD0JhFosxHApP/BYsBetLpQFRoTRzEzstM/XCc3jsAG7wqaY1lgVwxiUe3xqYE+lNxo2PkCmYwXWrwwIw==}
-    peerDependencies:
-      react: ^16.5.1 || ^17.0.0 || ^18.0.0 || ^19.0.0
-
   luxon@3.7.2:
     resolution: {integrity: sha512-vtEhXh/gNjI9Yg1u4jX/0YVPMvxzHuGgCm6tC5kZyb08yjGWGnqAjGJvcXbqQR2P3MyMEFnRbpcdFS6PBcLqew==}
     engines: {node: '>=12'}
@@ -6258,19 +6245,6 @@ snapshots:
       react-dom: 19.2.4(react@19.2.4)
 
   '@floating-ui/utils@0.2.11': {}
-
-  '@google/genai@2.10.0(@modelcontextprotocol/sdk@1.29.0(zod@4.4.3))':
-    dependencies:
-      google-auth-library: 10.9.0
-      p-retry: 4.6.2
-      protobufjs: 7.6.5
-      ws: 8.21.3
-    optionalDependencies:
-      '@modelcontextprotocol/sdk': 1.29.0(zod@4.4.3)
-    transitivePeerDependencies:
-      - bufferutil
-      - supports-color
-      - utf-8-validate
 
   '@google/genai@2.18.0(@modelcontextprotocol/sdk@1.29.0(zod@4.4.3))':
     dependencies:
@@ -9832,10 +9806,6 @@ snapshots:
       yallist: 3.1.1
 
   lucide-react@1.14.0(react@19.2.4):
-    dependencies:
-      react: 19.2.4
-
-  lucide-react@1.23.0(react@19.2.4):
     dependencies:
       react: 19.2.4
 
