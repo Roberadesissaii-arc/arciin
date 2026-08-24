@@ -14,7 +14,7 @@ import {
   probeOllamaCloudModels,
 } from "@/services/chat/ollama-cloud-models"
 import { resolveOllamaModelCapabilities } from "@/services/models/ollama-model-capabilities"
-import { requireFeature, requireRole } from "@/services/security/auth"
+import { requireFeature, requireSessionRole } from "@/services/security/auth"
 
 const OLLAMA_PROVIDERS = new Set(["ollama", "ollama-local", "ollama-cloud"])
 
@@ -87,7 +87,7 @@ function normalizeGeminiProfileDefaults<
 export async function registerModelRoutes(fastify: FastifyInstance) {
   fastify.get(
     "/models",
-    { preHandler: requireRole(["OWNER", "ADMIN", "MEMBER"]) },
+    { preHandler: requireSessionRole(["OWNER", "ADMIN", "MEMBER"]) },
     async (_request, reply) => {
       const profiles = await fastify.prisma.modelProfile.findMany({
         orderBy: [{ isDefault: "desc" }, { createdAt: "asc" }],
@@ -99,7 +99,7 @@ export async function registerModelRoutes(fastify: FastifyInstance) {
 
   fastify.post(
     "/models",
-    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    { preHandler: requireSessionRole(["OWNER", "ADMIN"]) },
     async (request, reply) => {
       const parsed = upsertSchema.safeParse(request.body)
       if (!parsed.success) {
@@ -132,7 +132,7 @@ export async function registerModelRoutes(fastify: FastifyInstance) {
 
   fastify.patch(
     "/models/:id",
-    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    { preHandler: requireSessionRole(["OWNER", "ADMIN"]) },
     async (request, reply) => {
       const { id } = request.params as { id: string }
       const parsed = upsertSchema.partial().safeParse(request.body)
@@ -178,7 +178,7 @@ export async function registerModelRoutes(fastify: FastifyInstance) {
 
   fastify.delete(
     "/models/:id",
-    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    { preHandler: requireSessionRole(["OWNER", "ADMIN"]) },
     async (request, reply) => {
       const { id } = request.params as { id: string }
       const existing = await fastify.prisma.modelProfile.findUnique({ where: { id } })
@@ -191,7 +191,7 @@ export async function registerModelRoutes(fastify: FastifyInstance) {
   // ── Fetch available models from an Ollama instance ──────────────────────────
   fastify.get(
     "/models/:id/available-models",
-    { preHandler: requireRole(["OWNER", "ADMIN", "MEMBER"]) },
+    { preHandler: requireSessionRole(["OWNER", "ADMIN", "MEMBER"]) },
     async (request, reply) => {
       const { id } = request.params as { id: string }
       const profile = await fastify.prisma.modelProfile.findUnique({ where: { id } })
@@ -320,7 +320,7 @@ export async function registerModelRoutes(fastify: FastifyInstance) {
   /** Full cloud probe results (available / paid / rate-limited) for Models configure UI. */
   fastify.get(
     "/models/:id/cloud-models",
-    { preHandler: requireRole(["OWNER", "ADMIN", "MEMBER"]) },
+    { preHandler: requireSessionRole(["OWNER", "ADMIN", "MEMBER"]) },
     async (request, reply) => {
       const { id } = request.params as { id: string }
       const profile = await fastify.prisma.modelProfile.findUnique({ where: { id } })
@@ -361,7 +361,7 @@ export async function registerModelRoutes(fastify: FastifyInstance) {
   /** Batch Ollama /api/show — vision / thinking flags per model (cached). */
   fastify.post(
     "/models/:id/model-capabilities",
-    { preHandler: requireRole(["OWNER", "ADMIN", "MEMBER"]) },
+    { preHandler: requireSessionRole(["OWNER", "ADMIN", "MEMBER"]) },
     async (request, reply) => {
       const { id } = request.params as { id: string }
       const parsed = z
@@ -413,7 +413,7 @@ export async function registerModelRoutes(fastify: FastifyInstance) {
   /** POST /api/show — capabilities, quantization, context, thinking / vision flags. */
   fastify.post(
     "/models/:id/show",
-    { preHandler: requireRole(["OWNER", "ADMIN", "MEMBER"]) },
+    { preHandler: requireSessionRole(["OWNER", "ADMIN", "MEMBER"]) },
     async (request, reply) => {
       const { id } = request.params as { id: string }
       const parsed = z.object({
@@ -474,7 +474,7 @@ export async function registerModelRoutes(fastify: FastifyInstance) {
 
   fastify.post(
     "/models/:id/set-default",
-    { preHandler: requireRole(["OWNER", "ADMIN", "MEMBER"]) },
+    { preHandler: requireSessionRole(["OWNER", "ADMIN", "MEMBER"]) },
     async (request, reply) => {
       const { id } = request.params as { id: string }
       const existing = await fastify.prisma.modelProfile.findUnique({ where: { id } })
@@ -493,7 +493,7 @@ export async function registerModelRoutes(fastify: FastifyInstance) {
   fastify.post(
     "/models/:id/test",
     {
-      preHandler: [requireRole(["OWNER", "ADMIN", "MEMBER"]), requireFeature("core.basic_ai")],
+      preHandler: [requireSessionRole(["OWNER", "ADMIN", "MEMBER"]), requireFeature("core.basic_ai")],
     },
     async (request, reply) => {
       const { id } = request.params as { id: string }

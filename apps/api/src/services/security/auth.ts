@@ -468,11 +468,37 @@ export function requireAssetMediaAccess(
   }
 }
 
-export function requireRole(roles: Array<"OWNER" | "ADMIN" | "MEMBER" | "VIEWER">) {
+/**
+ * Session-only role check.
+ *
+ * A role belongs to a *person*, not to a credential they hand out. This guard
+ * used to accept an API key and then check the key owner's role, so a key
+ * scoped `assets:read` passed every OWNER/ADMIN route: it could create model
+ * profiles and, worse, mint a fresh key with `["admin"]`. Scopes were decoration.
+ *
+ * The surfaces guarded this way — settings, models, webhooks, api-keys,
+ * license, logs, integrations, the vault — have no scope in `API_KEY_SCOPES`
+ * at all, so they were never part of the published API-key contract. Keys are
+ * refused here rather than silently promoted; anything a key *should* reach
+ * uses `requireSessionRolesOrApiKeyScopes` and states the scope it wants.
+ */
+export function requireSessionRole(roles: Array<"OWNER" | "ADMIN" | "MEMBER" | "VIEWER">) {
   const handler = async (request: FastifyRequest, reply: FastifyReply) => {
     await authenticateFlexible(request, reply)
 
     if (!request.auth) {
+      return
+    }
+
+    // An API key never satisfies a role requirement, whoever owns it.
+    if (!request.auth.session) {
+      reply.status(403).send({
+        error: {
+          code: "SESSION_REQUIRED",
+          message:
+            "This endpoint requires a signed-in session. API keys cannot be used here.",
+        },
+      })
       return
     }
 
@@ -488,6 +514,13 @@ export function requireRole(roles: Array<"OWNER" | "ADMIN" | "MEMBER" | "VIEWER"
 
   return handler
 }
+
+/**
+ * @deprecated Use `requireSessionRole` (session-only) or
+ * `requireSessionRolesOrApiKeyScopes` (states the scope a key needs).
+ * Kept so any straggling import fails closed rather than reopening the hole.
+ */
+export const requireRole = requireSessionRole
 
 /**
  * Enforce plan entitlements on the API (never rely on UI alone).

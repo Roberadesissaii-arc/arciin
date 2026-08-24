@@ -25,7 +25,7 @@ function constantTimeEqual(a: string, b: string): boolean {
 }
 import { resolveEffectiveStorageRoot } from "@/services/storage/effective-storage-root"
 import { serializeAuth } from "@/services/serializers"
-import { createSession, hashPassword, requireRole, setSessionCookie } from "@/services/security/auth"
+import { createSession, hashPassword, requireSessionRole, setSessionCookie } from "@/services/security/auth"
 import { hashRecoveryAnswer } from "@/services/security/recovery-answer"
 import {
   consolidateStorageVolumes,
@@ -140,7 +140,7 @@ export async function registerInstanceRoutes(fastify: FastifyInstance) {
 
   fastify.get(
     "/instance/update-check",
-    { preHandler: requireRole(["OWNER", "ADMIN", "MEMBER", "VIEWER"]) },
+    { preHandler: requireSessionRole(["OWNER", "ADMIN", "MEMBER", "VIEWER"]) },
     async (request, reply) => {
       const query = request.query as { refresh?: string }
       if (query.refresh === "1" || query.refresh === "true") {
@@ -153,7 +153,7 @@ export async function registerInstanceRoutes(fastify: FastifyInstance) {
 
   fastify.get(
     "/instance/auto-update",
-    { preHandler: requireRole(["OWNER", "ADMIN", "MEMBER", "VIEWER"]) },
+    { preHandler: requireSessionRole(["OWNER", "ADMIN", "MEMBER", "VIEWER"]) },
     async (_request, reply) => {
       const instance = await fastify.prisma.instanceConfig.findFirst()
       reply.send({ data: parseAutoUpdateConfig(instance?.autoUpdateConfig) })
@@ -167,7 +167,7 @@ export async function registerInstanceRoutes(fastify: FastifyInstance) {
 
   fastify.patch(
     "/instance/auto-update",
-    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    { preHandler: requireSessionRole(["OWNER", "ADMIN"]) },
     async (request, reply) => {
       const parsed = autoUpdatePatchSchema.safeParse(request.body)
       if (!parsed.success) {
@@ -200,7 +200,7 @@ export async function registerInstanceRoutes(fastify: FastifyInstance) {
 
   fastify.post(
     "/instance/auto-update/apply",
-    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    { preHandler: requireSessionRole(["OWNER", "ADMIN"]) },
     async (request, reply) => {
       const instance = await fastify.prisma.instanceConfig.findFirst()
       const current = parseAutoUpdateConfig(instance?.autoUpdateConfig)
@@ -491,7 +491,7 @@ export async function registerInstanceRoutes(fastify: FastifyInstance) {
 
   fastify.get(
     "/instance/storage-summary",
-    { preHandler: requireRole(["OWNER", "ADMIN", "MEMBER", "VIEWER"]) },
+    { preHandler: requireSessionRole(["OWNER", "ADMIN", "MEMBER", "VIEWER"]) },
     async (_request, reply) => {
       const instance = await fastify.prisma.instanceConfig.findFirst()
       const defaultStorage = await fastify.prisma.storageLocation.findFirst({

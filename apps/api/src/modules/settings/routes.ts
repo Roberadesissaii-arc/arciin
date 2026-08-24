@@ -20,7 +20,7 @@ import { apiConfig } from "@/config"
 import { getUploadLimits, setUploadLimits } from "@/services/config/upload-limits"
 import { invalidateAccessControlCache } from "@/services/security/access-control-settings"
 import { invalidateApiProtectionCache } from "@/services/security/instance-security"
-import { hashToken, requireFeature, requireRole } from "@/services/security/auth"
+import { hashToken, requireFeature, requireSessionRole } from "@/services/security/auth"
 import { clientIpFromRequest, normalizeClientIp } from "@/services/security/client-ip"
 import { checkEndpointRateLimit } from "@/services/security/endpoint-rate-limit"
 import { enrichSecurityLogDeviceLabels } from "@/services/security/device-for-ip"
@@ -189,7 +189,7 @@ const securitySchema = z.object({
 export async function registerSettingsRoutes(fastify: FastifyInstance) {
   fastify.get(
     "/settings/general",
-    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    { preHandler: requireSessionRole(["OWNER", "ADMIN"]) },
     async (_request, reply) => {
       const instance = await fastify.prisma.instanceConfig.findFirst()
       reply.send({
@@ -204,7 +204,7 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
 
   fastify.patch(
     "/settings/general",
-    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    { preHandler: requireSessionRole(["OWNER", "ADMIN"]) },
     async (request, reply) => {
       const parsed = generalSchema.safeParse(request.body)
       if (!parsed.success) {
@@ -227,7 +227,7 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
   fastify.get(
     "/settings/storage",
     {
-      preHandler: requireRole(["OWNER", "ADMIN"]),
+      preHandler: requireSessionRole(["OWNER", "ADMIN"]),
     },
     async (_request, reply) => {
       const instance = await fastify.prisma.instanceConfig.findFirst()
@@ -270,7 +270,7 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
   fastify.get(
     "/settings/uploads",
     {
-      preHandler: requireRole(["OWNER", "ADMIN", "MEMBER", "VIEWER"]),
+      preHandler: requireSessionRole(["OWNER", "ADMIN", "MEMBER", "VIEWER"]),
     },
     async (_request, reply) => {
       const limits = getUploadLimits()
@@ -286,7 +286,7 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
 
   fastify.patch(
     "/settings/uploads",
-    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    { preHandler: requireSessionRole(["OWNER", "ADMIN"]) },
     async (request, reply) => {
       const parsed = uploadLimitsSchema.safeParse(request.body)
       if (!parsed.success) {
@@ -331,7 +331,7 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
   fastify.patch(
     "/settings/storage",
     {
-      preHandler: requireRole(["OWNER", "ADMIN"]),
+      preHandler: requireSessionRole(["OWNER", "ADMIN"]),
     },
     async (request, reply) => {
       const parsed = storageSchema.safeParse(request.body)
@@ -408,7 +408,7 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
 
   fastify.get(
     "/settings/storage/volumes",
-    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    { preHandler: requireSessionRole(["OWNER", "ADMIN"]) },
     async (_request, reply) => {
       const effective = await loadEffectiveStorageRoot(fastify.prisma)
       const displayRoot = resolveDisplayStorageRoot(
@@ -446,7 +446,7 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
 
   fastify.get(
     "/settings/storage/migrate/status",
-    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    { preHandler: requireSessionRole(["OWNER", "ADMIN"]) },
     async (_request, reply) => {
       const job = await fastify.prisma.job.findFirst({
         where: { type: JOB_TYPES.migrateStorage },
@@ -478,7 +478,7 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
 
   fastify.post(
     "/settings/storage/mount",
-    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    { preHandler: requireSessionRole(["OWNER", "ADMIN"]) },
     async (request, reply) => {
       const bodySchema = z.object({
         deviceId: z.string().min(1),
@@ -512,7 +512,7 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
 
   fastify.post(
     "/settings/storage/migrate",
-    { preHandler: requireRole(["OWNER"]) },
+    { preHandler: requireSessionRole(["OWNER"]) },
     async (request, reply) => {
       const bodySchema = z.object({ targetPath: z.string().min(1) })
       const parsed = bodySchema.safeParse(request.body)
@@ -573,7 +573,7 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
   fastify.get(
     "/settings/remote-access",
     {
-      preHandler: requireRole(["OWNER", "ADMIN"]),
+      preHandler: requireSessionRole(["OWNER", "ADMIN"]),
     },
     async (request, reply) => {
       const instance = await fastify.prisma.instanceConfig.findFirst()
@@ -608,7 +608,7 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
   fastify.patch(
     "/settings/remote-access",
     {
-      preHandler: requireRole(["OWNER", "ADMIN"]),
+      preHandler: requireSessionRole(["OWNER", "ADMIN"]),
     },
     async (request, reply) => {
       const parsed = remoteAccessSchema.safeParse(request.body)
@@ -716,7 +716,7 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
 
   fastify.get(
     "/settings/cloudflare-tunnel",
-    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    { preHandler: requireSessionRole(["OWNER", "ADMIN"]) },
     async (_request, reply) => {
       const tunnel = getCloudflareTunnelState()
       const instance = await fastify.prisma.instanceConfig.findFirst()
@@ -737,7 +737,7 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
     "/settings/cloudflare-tunnel/start",
     {
       preHandler: [
-        requireRole(["OWNER", "ADMIN"]),
+        requireSessionRole(["OWNER", "ADMIN"]),
         // The remote-access helper is a Pro capability. Stopping a tunnel is
         // deliberately left ungated: an entitlement lapse must never leave a
         // customer unable to close their own front door.
@@ -796,7 +796,7 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
     "/settings/cloudflare-tunnel/start-mobile",
     {
       preHandler: [
-        requireRole(["OWNER", "ADMIN"]),
+        requireSessionRole(["OWNER", "ADMIN"]),
         // The remote-access helper is a Pro capability. Stopping a tunnel is
         // deliberately left ungated: an entitlement lapse must never leave a
         // customer unable to close their own front door.
@@ -859,7 +859,7 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
 
   fastify.post(
     "/settings/cloudflare-tunnel/stop",
-    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    { preHandler: requireSessionRole(["OWNER", "ADMIN"]) },
     async (_request, reply) => {
       stopCloudflareQuickTunnel()
       reply.send({ data: getCloudflareTunnelState() })
@@ -877,7 +877,7 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
 
   fastify.get(
     "/settings/email",
-    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    { preHandler: requireSessionRole(["OWNER", "ADMIN"]) },
     async (_request, reply) => {
       const config = await loadEmailConfig(fastify.prisma)
       const fallbackRecipient = await resolveNotifyRecipient(fastify.prisma, config)
@@ -895,7 +895,7 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
 
   fastify.put(
     "/settings/email",
-    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    { preHandler: requireSessionRole(["OWNER", "ADMIN"]) },
     async (request, reply) => {
       const parsed = emailConfigSchema.safeParse(request.body)
       if (!parsed.success) {
@@ -940,7 +940,7 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
 
   fastify.delete(
     "/settings/email",
-    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    { preHandler: requireSessionRole(["OWNER", "ADMIN"]) },
     async (_request, reply) => {
       const instance = await fastify.prisma.instanceConfig.findFirst()
       if (!instance) {
@@ -961,7 +961,7 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
 
   fastify.post(
     "/settings/email/test",
-    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    { preHandler: requireSessionRole(["OWNER", "ADMIN"]) },
     async (request, reply) => {
       if (
         await checkEndpointRateLimit(request, reply, {
@@ -1015,7 +1015,7 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
 
   fastify.get(
     "/settings/discord",
-    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    { preHandler: requireSessionRole(["OWNER", "ADMIN"]) },
     async (_request, reply) => {
       const config = await loadDiscordConfig(fastify.prisma)
       reply.send({ data: serializeDiscordConfig(config) })
@@ -1024,7 +1024,7 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
 
   fastify.put(
     "/settings/discord",
-    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    { preHandler: requireSessionRole(["OWNER", "ADMIN"]) },
     async (request, reply) => {
       const parsed = discordConfigSchema.safeParse(request.body)
       if (!parsed.success) {
@@ -1072,7 +1072,7 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
 
   fastify.delete(
     "/settings/discord",
-    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    { preHandler: requireSessionRole(["OWNER", "ADMIN"]) },
     async (_request, reply) => {
       const instance = await fastify.prisma.instanceConfig.findFirst()
       if (!instance) {
@@ -1093,7 +1093,7 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
 
   fastify.post(
     "/settings/discord/test",
-    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    { preHandler: requireSessionRole(["OWNER", "ADMIN"]) },
     async (request, reply) => {
       if (
         await checkEndpointRateLimit(request, reply, {
@@ -1128,7 +1128,7 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
   /** Re-send the current address on demand — "text me the link" from Settings. */
   fastify.post(
     "/settings/email/send-current-url",
-    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    { preHandler: requireSessionRole(["OWNER", "ADMIN"]) },
     async (request, reply) => {
       if (
         await checkEndpointRateLimit(request, reply, {
@@ -1199,7 +1199,7 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
 
   fastify.get(
     "/settings/security/log",
-    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    { preHandler: requireSessionRole(["OWNER", "ADMIN"]) },
     async (_request, reply) => {
       const rows = await fastify.prisma.activityEvent.findMany({
         orderBy: { createdAt: "desc" },
@@ -1213,7 +1213,7 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
 
   fastify.get(
     "/settings/security",
-    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    { preHandler: requireSessionRole(["OWNER", "ADMIN"]) },
     async (_request, reply) => {
       const instance = await fastify.prisma.instanceConfig.findFirst()
       const raw = (instance?.remoteAccessConfig as Record<string, unknown> | null) || {}
@@ -1243,7 +1243,7 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
 
   fastify.patch(
     "/settings/security",
-    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    { preHandler: requireSessionRole(["OWNER", "ADMIN"]) },
     async (request, reply) => {
       const parsed = securitySchema.safeParse(request.body)
       if (!parsed.success) {
@@ -1304,7 +1304,7 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
 
   fastify.get(
     "/settings/access-control/status",
-    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    { preHandler: requireSessionRole(["OWNER", "ADMIN"]) },
     async (_request, reply) => {
       const instance = await fastify.prisma.instanceConfig.findFirst()
       const raw = (instance?.remoteAccessConfig as Record<string, unknown> | null) || {}
@@ -1339,7 +1339,7 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
 
   fastify.post(
     "/settings/access-control/revoke-all-sessions",
-    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    { preHandler: requireSessionRole(["OWNER", "ADMIN"]) },
     async (request, reply) => {
       const user = request.auth!.user
       const currentToken = request.cookies[apiConfig.SESSION_COOKIE_NAME]
@@ -1366,7 +1366,7 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
 
   fastify.get(
     "/settings/api-protection/status",
-    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    { preHandler: requireSessionRole(["OWNER", "ADMIN"]) },
     async (_request, reply) => {
       const instance = await fastify.prisma.instanceConfig.findFirst()
       const raw = (instance?.remoteAccessConfig as Record<string, unknown> | null) || {}
@@ -1403,7 +1403,7 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
 
   fastify.post(
     "/settings/api-protection/ip-rules",
-    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    { preHandler: requireSessionRole(["OWNER", "ADMIN"]) },
     async (request, reply) => {
       const parsed = z
         .object({
@@ -1499,7 +1499,7 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
 
   fastify.get(
     "/settings/ai",
-    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    { preHandler: requireSessionRole(["OWNER", "ADMIN"]) },
     async (_request, reply) => {
       const instance = await fastify.prisma.instanceConfig.findFirst()
       const cfg = getAiCfg(instance ?? { aiConfig: null })
@@ -1509,7 +1509,7 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
 
   fastify.patch(
     "/settings/ai",
-    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    { preHandler: requireSessionRole(["OWNER", "ADMIN"]) },
     async (request, reply) => {
       const parsed = aiSchema.safeParse(request.body)
       if (!parsed.success) {
@@ -1532,7 +1532,7 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
 
   fastify.get(
     "/settings/ai-security",
-    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    { preHandler: requireSessionRole(["OWNER", "ADMIN"]) },
     async (_request, reply) => {
       const instance = await fastify.prisma.instanceConfig.findFirst()
       const cfg = getAiCfg(instance ?? { aiConfig: null })
@@ -1543,7 +1543,7 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
 
   fastify.patch(
     "/settings/ai-security",
-    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    { preHandler: requireSessionRole(["OWNER", "ADMIN"]) },
     async (request, reply) => {
       const parsed = aiSecuritySchema.safeParse(request.body)
       if (!parsed.success) {
@@ -1572,7 +1572,7 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
 
   fastify.post(
     "/settings/clear-data",
-    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    { preHandler: requireSessionRole(["OWNER", "ADMIN"]) },
     async (request, reply) => {
       const parsed = clearDataSchema.safeParse(request.body)
       if (!parsed.success) {
@@ -1623,7 +1623,7 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
 
   fastify.get(
     "/settings/mobile-connection",
-    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    { preHandler: requireSessionRole(["OWNER", "ADMIN"]) },
     async (request, reply) => {
       if (!request.auth) return
       try {
@@ -1666,7 +1666,7 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
 
   fastify.post(
     "/settings/mobile-connection/code",
-    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    { preHandler: requireSessionRole(["OWNER", "ADMIN"]) },
     async (request, reply) => {
       if (!request.auth) return
       try {
@@ -1694,7 +1694,7 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
 
   fastify.delete(
     "/settings/mobile-connection/code",
-    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    { preHandler: requireSessionRole(["OWNER", "ADMIN"]) },
     async (request, reply) => {
       if (!request.auth) return
       try {
@@ -1712,7 +1712,7 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
 
   fastify.delete(
     "/settings/mobile-connection/devices/:id",
-    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    { preHandler: requireSessionRole(["OWNER", "ADMIN"]) },
     async (request, reply) => {
       if (!request.auth) return
       const { id } = request.params as { id: string }
@@ -1750,7 +1750,7 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
 
   fastify.get(
     "/settings/mobile-app",
-    { preHandler: requireRole(["OWNER"]) },
+    { preHandler: requireSessionRole(["OWNER"]) },
     async (_request, reply) => {
       reply.send({ data: await getMobileAppInstallStatus() })
     },
@@ -1763,7 +1763,7 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
 
   fastify.post(
     "/settings/mobile-app/install",
-    { preHandler: requireRole(["OWNER"]) },
+    { preHandler: requireSessionRole(["OWNER"]) },
     async (request, reply) => {
       if (
         await checkEndpointRateLimit(request, reply, {

@@ -30,7 +30,7 @@ import {
   suggestVideoSummary,
   translateTranscript,
 } from "@arciin/media-ai"
-import { requireFeature, requireRole } from "@/services/security/auth"
+import { requireFeature, requireSessionRole } from "@/services/security/auth"
 import { recordAndBroadcastActivity } from "@/services/activity/record-and-broadcast-activity"
 
 /** Media we will try to transcribe. Audio is included for future reuse. */
@@ -150,10 +150,10 @@ function serializeTranslation(
 }
 
 export async function transcriptRoutes(fastify: FastifyInstance) {
-  const guard = [requireRole(["OWNER", "ADMIN", "MEMBER"])]
+  const guard = [requireSessionRole(["OWNER", "ADMIN", "MEMBER"])]
   /** Assist tools share the AI Chat Pro gate. */
   const assistGuard = [
-    requireRole(["OWNER", "ADMIN", "MEMBER"]),
+    requireSessionRole(["OWNER", "ADMIN", "MEMBER"]),
     requireFeature("ai.chat"),
   ]
 

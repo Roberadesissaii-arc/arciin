@@ -4,6 +4,8 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest"
 import {
   authenticateFlexible,
   hashApiKey,
+  hashToken,
+  requireSessionRole,
   requireSessionRolesOrApiKeyScopes,
   scopeAllows,
   scopeAllowsAny,
@@ -239,6 +241,156 @@ describe("requireSessionRolesOrApiKeyScopes", () => {
     const { request, reply, captured } = makeRequest(`Bearer ${raw}`)
 
     await guard(request, reply)
+    expect(captured.status).toBeNull()
+  })
+})
+
+/**
+ * FIX-017 — a role is not something you can hand out.
+ *
+ * `requireSessionRole` (then named `requireRole`) authenticated flexibly and
+ * then checked only `auth.user.role`. Because an API key authenticates *as its
+ * owner*, a key scoped `assets:read` satisfied every OWNER/ADMIN route: it
+ * created model profiles, and it minted a fresh key with `["admin"]`. Scopes
+ * were decoration on 113 call sites.
+ *
+ * The surfaces behind that guard — settings, models, webhooks, api-keys,
+ * license, logs, the vault — have no entry in `API_KEY_SCOPES`, so refusing
+ * keys there removes nothing a published key was ever promised.
+ */
+async function makeSessionRequest(role: "OWNER" | "ADMIN" | "MEMBER" | "VIEWER" = "OWNER") {
+  const user =
+    role === "OWNER"
+      ? fixtures.user
+      : await prisma.user.create({
+          data: {
+            email: `scope-${role.toLowerCase()}-${Date.now()}@arciin.invalid`,
+            name: role,
+            passwordHash: "x",
+            role,
+            status: "ACTIVE",
+          },
+        })
+
+  // The row directly, rather than createSession(): this test is about what the
+  // guard does with a resolved session, not about how one is minted.
+  const token = `sess_${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`
+  const expiresAt = new Date()
+  expiresAt.setDate(expiresAt.getDate() + 1)
+  await prisma.session.create({
+    data: { userId: user.id, tokenHash: hashToken(token), expiresAt },
+  })
+
+  const captured: Captured = { status: null, body: null }
+  const request = {
+    headers: {},
+    cookies: { [process.env.SESSION_COOKIE_NAME || "arciin_session"]: token },
+    ip: "127.0.0.1",
+    socket: { remoteAddress: "127.0.0.1" },
+    server: { prisma, redis },
+    auth: undefined,
+  } as never
+  const reply = {
+    status(code: number) { captured.status = code; return this },
+    send(body: unknown) { captured.body = body; return this },
+  } as never
+
+  return { request, reply, captured }
+}
+
+describe("requireSessionRole refuses API keys outright", () => {
+  const PRIVILEGED = ["OWNER", "ADMIN"] as const
+
+  it("refuses a read-scoped key — the exact escalation that was found", async () => {
+    const raw = await createKey({ scopes: ["assets:read"] })
+    const { request, reply, captured } = makeRequest(`Bearer ${raw}`)
+
+    await requireSessionRole([...PRIVILEGED])(request, reply)
+
+    expect(captured.status).toBe(403)
+    expect(captured.body).toMatchObject({ error: { code: "SESSION_REQUIRED" } })
+  })
+
+  it("refuses an admin-scoped key too — no scope buys a role", async () => {
+    const raw = await createKey({ scopes: ["admin"] })
+    const { request, reply, captured } = makeRequest(`Bearer ${raw}`)
+
+    await requireSessionRole([...PRIVILEGED])(request, reply)
+
+    expect(captured.status).toBe(403)
+    expect(captured.body).toMatchObject({ error: { code: "SESSION_REQUIRED" } })
+  })
+
+  it("refuses a key holding every scope there is", async () => {
+    const raw = await createKey({
+      scopes: ["assets:read", "assets:write", "libraries:write", "uploads:create", "admin"],
+    })
+    const { request, reply, captured } = makeRequest(`Bearer ${raw}`)
+
+    await requireSessionRole([...PRIVILEGED])(request, reply)
+    expect(captured.status).toBe(403)
+  })
+
+  it("still lets a signed-in OWNER through", async () => {
+    const { request, reply, captured } = await makeSessionRequest("OWNER")
+    await requireSessionRole([...PRIVILEGED])(request, reply)
+    expect(captured.status).toBeNull()
+  })
+
+  it("still refuses a signed-in VIEWER on a privileged route", async () => {
+    const { request, reply, captured } = await makeSessionRequest("VIEWER")
+    await requireSessionRole([...PRIVILEGED])(request, reply)
+    expect(captured.status).toBe(403)
+    expect(captured.body).toMatchObject({ error: { code: "FORBIDDEN" } })
+  })
+
+  it("distinguishes no credential (401) from a key (403)", async () => {
+    const anon = makeRequest()
+    await requireSessionRole([...PRIVILEGED])(anon.request, anon.reply)
+    expect(anon.captured.status).toBe(401)
+
+    const raw = await createKey({ scopes: ["assets:read"] })
+    const keyed = makeRequest(`Bearer ${raw}`)
+    await requireSessionRole([...PRIVILEGED])(keyed.request, keyed.reply)
+    expect(keyed.captured.status).toBe(403)
+  })
+
+  it("the deprecated alias fails closed, so a missed import cannot reopen it", async () => {
+    const { requireRole } = await import("../../apps/api/src/services/security/auth")
+    const raw = await createKey({ scopes: ["admin"] })
+    const { request, reply, captured } = makeRequest(`Bearer ${raw}`)
+
+    await requireRole(["OWNER", "ADMIN"])(request, reply)
+    expect(captured.status).toBe(403)
+  })
+})
+
+describe("the escalation chain is broken end to end", () => {
+  /**
+   * The chain that mattered: any key, however weak, reaching the key-minting
+   * route. One link is enough — if a key cannot pass the guard on
+   * `POST /api-keys`, it cannot mint anything.
+   */
+  it("no key of any scope passes the guard that protects key creation", async () => {
+    for (const scopes of [
+      ["assets:read"],
+      ["assets:write"],
+      ["uploads:create"],
+      ["activity:read"],
+      ["admin"],
+    ]) {
+      const raw = await createKey({ scopes })
+      const { request, reply, captured } = makeRequest(`Bearer ${raw}`)
+      await requireSessionRole(["OWNER", "ADMIN"])(request, reply)
+      expect(captured.status, `scopes=${scopes.join(",")} must not pass`).toBe(403)
+    }
+  })
+
+  it("legitimate scoped access is untouched", async () => {
+    const raw = await createKey({ scopes: ["assets:read"] })
+    const { request, reply, captured } = makeRequest(`Bearer ${raw}`)
+
+    await requireSessionRolesOrApiKeyScopes(["OWNER"], ["assets:read"])(request, reply)
     expect(captured.status).toBeNull()
   })
 })

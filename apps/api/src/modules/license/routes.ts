@@ -10,7 +10,7 @@ import {
   syncLicenseStatusIfNeeded,
 } from "@/services/license/license-service"
 import { licenseServerBaseUrl } from "@/services/license/hosted-client"
-import { requireRole } from "@/services/security/auth"
+import { requireSessionRole } from "@/services/security/auth"
 
 const activateSchema = z.object({
   licenseKey: z.string().min(4).max(200),
@@ -31,7 +31,7 @@ const activateSchema = z.object({
 export async function registerLicenseRoutes(fastify: FastifyInstance) {
   fastify.get(
     "/license/status",
-    { preHandler: requireRole(["OWNER", "ADMIN", "MEMBER", "VIEWER"]) },
+    { preHandler: requireSessionRole(["OWNER", "ADMIN", "MEMBER", "VIEWER"]) },
     async (_request, reply) => {
       // Prefer live re-check (hosted revoke / expiry) so clients never flash a
       // stale Pro plan from the local row alone. Offline keeps signed token grace.
@@ -50,7 +50,7 @@ export async function registerLicenseRoutes(fastify: FastifyInstance) {
 
   fastify.post(
     "/license/activate",
-    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    { preHandler: requireSessionRole(["OWNER", "ADMIN"]) },
     async (request, reply) => {
       const parsed = activateSchema.safeParse(request.body)
       if (!parsed.success) {
@@ -89,7 +89,7 @@ export async function registerLicenseRoutes(fastify: FastifyInstance) {
 
   fastify.post(
     "/license/refresh",
-    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    { preHandler: requireSessionRole(["OWNER", "ADMIN"]) },
     async (_request, reply) => {
       const snapshot = await refreshLicense(fastify.prisma)
       reply.send({
@@ -103,7 +103,7 @@ export async function registerLicenseRoutes(fastify: FastifyInstance) {
 
   fastify.post(
     "/license/deactivate",
-    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    { preHandler: requireSessionRole(["OWNER", "ADMIN"]) },
     async (_request, reply) => {
       const snapshot = await deactivateLicense(fastify.prisma)
       reply.send({

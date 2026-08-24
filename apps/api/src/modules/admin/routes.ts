@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify"
 
-import { requireRole } from "@/services/security/auth"
+import { requireSessionRole } from "@/services/security/auth"
 
 // Tables exposed through the admin browser — order determines display order
 const TABLES = [
@@ -249,7 +249,7 @@ export async function registerAdminRoutes(fastify: FastifyInstance) {
   // GET /admin/tables — list all tables with counts
   fastify.get(
     "/admin/tables",
-    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    { preHandler: requireSessionRole(["OWNER", "ADMIN"]) },
     async (_request, reply) => {
       const tables = await Promise.all(
         TABLES.map(async (t) => ({
@@ -264,7 +264,7 @@ export async function registerAdminRoutes(fastify: FastifyInstance) {
   // GET /admin/tables/:table?page=1&limit=20 — paginated rows
   fastify.get<{ Params: { table: string }; Querystring: { page?: string; limit?: string } }>(
     "/admin/tables/:table",
-    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    { preHandler: requireSessionRole(["OWNER", "ADMIN"]) },
     async (request, reply) => {
       const { table } = request.params
       const page  = Math.max(1, parseInt(request.query.page  ?? "1",  10))

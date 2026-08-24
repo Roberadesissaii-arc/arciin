@@ -52,7 +52,7 @@ import {
   visionSuggestAssetRename,
 } from "@/services/chat/vision-library"
 import { generateConversationTitle } from "@/services/chat/auto-title"
-import { requireFeature, requireRole } from "@/services/security/auth"
+import { requireFeature, requireSessionRole } from "@/services/security/auth"
 import {
   AI_RATE_LIMITS,
   checkAiRateLimit,
@@ -276,7 +276,7 @@ const saveMessagesSchema = z.object({
 export async function registerChatRoutes(fastify: FastifyInstance) {
   /** Full AI chat / file analysis — Pro+. Free keeps core.files only. */
   const requireAiChat = [
-    requireRole(["OWNER", "ADMIN", "MEMBER"]),
+    requireSessionRole(["OWNER", "ADMIN", "MEMBER"]),
     requireFeature("ai.chat"),
   ]
 
