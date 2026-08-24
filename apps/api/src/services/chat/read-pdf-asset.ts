@@ -162,7 +162,8 @@ export async function readPdfAssetContent(
       parts.push(`${marker}\n${text || "(no extractable text on this page)"}`)
     }
 
-    await doc.destroy()
+    // pdf.js 6 removed PDFDocumentProxy.destroy(); the loading task owns teardown.
+    await doc.loadingTask.destroy()
 
     const pagesToRead = contentPageNumbers.length
     let orderedParts = parts

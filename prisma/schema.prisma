@@ -1,6 +1,17 @@
 generator client {
   provider     = "prisma-client-js"
   moduleFormat = "esm"
+  // Name the Docker runtime rather than letting the generator infer it.
+  //
+  // Prisma detects the OpenSSL flavour by shelling out to `ldconfig`, which
+  // lives in /sbin and is not on a non-root PATH. The images generate the
+  // client as uid 1000, so detection silently fell back to
+  // debian-openssl-1.1.x while the runtime is bookworm/OpenSSL 3. The client
+  // still constructed — it only failed on the first actual query, with
+  // "could not locate the Query Engine for runtime debian-openssl-3.0.x".
+  // Declaring the target makes the engine set independent of who runs the
+  // generator and what happens to be on their PATH.
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
 }
 
 datasource db {

@@ -85,17 +85,29 @@ const licensePublicKeyRegistry = defaultPublicKeyRegistry(parsed.ARCIIN_LICENSE_
  * Which upstream hops to trust for X-Forwarded-For. Default trusts only
  * loopback + private ranges (the real edge proxy is always Caddy/Next on a
  * private/loopback address), so a client on the public internet cannot forge
- * a trusted client IP. Overridable via ARCIIN_TRUST_PROXY (CSV of CIDRs, or a
- * hop count like "1").
+ * a trusted client IP. Overridable via ARCIIN_TRUST_PROXY (CSV of CIDRs).
+ *
+ * A bare hop count is no longer accepted. Fastify 5.12 made numeric trustProxy
+ * trust nothing at all — hop counting cannot validate the immediate peer, so a
+ * direct client could otherwise spoof X-Forwarded-For by sending enough hops.
+ * Honouring the old spelling silently would leave request.ip pointing at the
+ * proxy instead of the client, quietly corrupting rate limits and audit logs,
+ * so we say so and fall back to the safe default rather than guessing.
  */
 const DEFAULT_TRUSTED_PROXIES =
   "127.0.0.1/8, ::1/128, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10, fc00::/7"
 
-function resolveTrustProxy(): string | number {
+function resolveTrustProxy(): string {
   const raw = parsed.ARCIIN_TRUST_PROXY?.trim()
   if (!raw) return DEFAULT_TRUSTED_PROXIES
-  const asNumber = Number(raw)
-  return Number.isInteger(asNumber) && asNumber >= 0 && String(asNumber) === raw ? asNumber : raw
+  if (/^\d+$/.test(raw)) {
+    throw new Error(
+      "ARCIIN_TRUST_PROXY no longer accepts a hop count. Set it to a comma-separated " +
+        "list of CIDRs for your proxies (for example \"127.0.0.1/8, 10.0.0.0/8\"), or " +
+        "unset it to trust only loopback and private ranges.",
+    )
+  }
+  return raw
 }
 
 export const apiConfig = {

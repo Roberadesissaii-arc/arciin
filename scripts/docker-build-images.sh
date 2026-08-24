@@ -49,7 +49,7 @@ arciin_docker_stash_repo_media "$ROOT_DIR" || true
 build_web() {
   echo -e "${BOLD}Building ${IMAGE_WEB}${RESET}"
   docker build \
-    -f Dockerfile.web \
+    -f Dockerfile --target web \
     -t "${IMAGE_WEB}" \
     --build-arg "NEXT_PUBLIC_API_BASE_URL=${API_BASE}" \
     --build-arg "NEXT_PUBLIC_SOCKET_URL=" \
@@ -60,13 +60,13 @@ build_web() {
 
 build_api() {
   echo -e "${BOLD}Building ${IMAGE_API}${RESET}"
-  docker build -f Dockerfile.api -t "${IMAGE_API}" .
+  docker build -f Dockerfile --target api -t "${IMAGE_API}" .
   ok "api → ${IMAGE_API}"
 }
 
 build_worker() {
   echo -e "${BOLD}Building ${IMAGE_WORKER}${RESET}"
-  docker build -f Dockerfile.worker -t "${IMAGE_WORKER}" .
+  docker build -f Dockerfile --target worker -t "${IMAGE_WORKER}" .
   ok "worker → ${IMAGE_WORKER}"
 }
 
