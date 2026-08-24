@@ -14,9 +14,24 @@ import { expect, test, type Page } from "@playwright/test"
 
 const VIDEO_FIXTURE = "e2e-video-transcript-fixture"
 const IMAGE_FIXTURE = "e2e-image-fixture"
+const DOC_FIXTURE = "e2e-doc-fixture"
 
 const panel = (page: Page) => page.getByTestId("asset-side-panel")
 const bulkBar = (page: Page) => page.getByRole("region", { name: "Bulk asset actions" })
+
+/**
+ * Put the page back to "nothing selected" before reaching for a card again.
+ *
+ * The panel is a modal sheet, so while it is open it legitimately swallows
+ * pointer events aimed at the grid underneath — a right-click on a card became
+ * "subtree intercepts pointer events", retried until the test timed out. That
+ * is the panel behaving correctly and the test asking at the wrong moment.
+ */
+async function dismissPanel(page: Page) {
+  if ((await panel(page).count()) === 0) return
+  await page.keyboard.press("Escape")
+  await expect(panel(page)).toHaveCount(0, { timeout: 15_000 })
+}
 
 async function openVideos(page: Page) {
   await page.goto("/videos")
@@ -49,6 +64,7 @@ async function expectMenuSections(
   sections: Array<"overview" | "edit" | "ai" | "move" | "share">,
   absent: Array<"overview" | "edit" | "ai" | "move" | "share"> = [],
 ) {
+  await dismissPanel(page)
   await assetLocator.click({ button: "right" })
   const menu = page.getByTestId("asset-card-menu")
   await expect(menu).toBeVisible()
@@ -145,9 +161,14 @@ test.describe("the single-asset panel", () => {
     await expectMenuSections(page, card, ["overview", "ai", "move", "share"], ["edit"])
     await card.click({ button: "right" })
     await expect(page.getByTestId("asset-menu-rename")).toBeVisible()
-    await page.keyboard.press("Escape")
+    // Not Escape: it also clears the selection, so the card re-renders while
+    // the next context menu is still animating in and the item being clicked is
+    // detached mid-click. The helper above avoids Escape for the same reason.
+    await page.mouse.click(8, 8)
+    await expect(page.getByTestId("asset-card-menu")).toHaveCount(0)
 
     // AI opens the video workspace (same Details as Overview + transcript tools).
+    await dismissPanel(page)
     await card.click({ button: "right" })
     await page.getByTestId("asset-menu-ai").click()
     await expect(page.getByTestId("video-edit-drawer")).toBeVisible({ timeout: 15_000 })
@@ -360,6 +381,13 @@ test.describe("asset type decides the sections", () => {
       ["overview", "edit", "move", "share"],
       ["ai"],
     )
+
+    // Reading the menu closes the panel, so reopen it before asserting on its
+    // contents. Without this the transcript check below passes on an absent
+    // panel rather than on a present one with no transcript — true, and about
+    // nothing.
+    await card.click()
+    await expect(panel(page)).toBeVisible({ timeout: 15_000 })
     await expect(panel(page).getByTestId("video-transcript")).toHaveCount(0)
 
     // Download and Delete are both offered on Overview.
@@ -383,21 +411,28 @@ test.describe("asset type decides the sections", () => {
     /**
      * A PDF is offered Assist; it has text to work on.
      *
-     * The documents library leads with PDFs, and this used to assert that no
-     * document was offered AI at all. That stopped being true when PDF Assist
-     * shipped — the menu offers AI and Rename there, exactly as it does for a
-     * video — so asserting its absence was testing the old product.
+     * This used to assert that no document was offered AI at all. That stopped
+     * being true when PDF Assist shipped — the menu offers AI and Rename there,
+     * exactly as it does for a video — so asserting its absence was testing the
+     * old product.
+     *
+     * It then reached for whatever the documents library listed first, which is
+     * whatever earlier work left behind: on this machine the newest document
+     * was a realtime-probe.txt from an audit session, and a .txt is correctly
+     * *not* offered PDF Assist. The test failed on a true statement about the
+     * wrong file. It now names a seeded PDF, the way the image branch already
+     * did.
      */
     await page.goto("/documents")
-    const docs = cards(page)
-    await expect(docs.first(), "documents library should have files").toBeVisible({
+    const pdf = page.locator(`[data-asset-id="${DOC_FIXTURE}"]`)
+    await expect(pdf, "the seeded PDF fixture should be in the documents library").toBeVisible({
       timeout: 60_000,
     })
-    await docs.nth(0).click()
+    await pdf.click()
     await expect(panel(page)).toBeVisible({ timeout: 15_000 })
     // A PDF has no transcript — Assist reads the document itself.
     await expect(panel(page).getByTestId("video-transcript")).toHaveCount(0)
-    await expectMenuSections(page, docs.nth(0), ["overview", "ai", "move", "share"], ["edit"])
+    await expectMenuSections(page, pdf, ["overview", "ai", "move", "share"], ["edit"])
 
     /**
      * An image cannot be offered either, and that is the half of the original

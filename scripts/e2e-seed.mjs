@@ -95,6 +95,29 @@ export const E2E_IMAGE_METADATA = {
 }
 
 /**
+ * A PDF, so "a document is offered Assist" can be asserted against a document
+ * we control.
+ *
+ * The suite used to reach for whatever the documents library happened to list
+ * first. That library accumulates whatever earlier work left behind — on this
+ * machine the newest document was a realtime-probe.txt from an audit session —
+ * and a .txt is correctly *not* offered PDF Assist, so the test failed on a
+ * true statement about the wrong file.
+ *
+ * Hand-written rather than downloaded: 601 bytes, one page, one line of text,
+ * and legible as source instead of an opaque blob.
+ */
+export const E2E_DOC_ASSET_ID = "e2e-doc-fixture"
+export const E2E_DOC_FILENAME = "e2e-doc-fixture.pdf"
+export const E2E_DOC_SOURCE = path.join(
+  path.resolve(import.meta.dirname, ".."),
+  "tests/fixtures/e2e-doc-fixture.pdf",
+)
+export const E2E_DOC_METADATA = {
+  mimeType: "application/pdf",
+}
+
+/**
  * The translations the transcript suite works with.
  *
  * Two, in different scripts, because the panel's language switching and the
@@ -335,6 +358,16 @@ async function seedVideoFixture(prisma, ownerId, storageRoot) {
     mediaType: "IMAGE",
     librarySlug: "images",
     metadata: E2E_IMAGE_METADATA,
+  })
+  await seedFixtureAsset(prisma, ownerId, storageRoot, {
+    assetId: E2E_DOC_ASSET_ID,
+    storageObjectId: "e2e-doc-fixture-object",
+    filename: E2E_DOC_FILENAME,
+    source: E2E_DOC_SOURCE,
+    extension: ".pdf",
+    mediaType: "DOCUMENT",
+    librarySlug: "documents",
+    metadata: E2E_DOC_METADATA,
   })
   return video
 }
