@@ -160,6 +160,34 @@ export async function createServer() {
   const trashPurgeBootTimer = setTimeout(runTrashPurge, 45_000)
   const trashPurgeTimer = setInterval(runTrashPurge, trashPurgeIntervalMs)
 
+  /**
+   * Expired sessions were kept forever.
+   *
+   * `resolveSession` already refuses one past its expiry, so this is not an
+   * access problem — the rows simply accumulated, half of them dead on this
+   * instance. They hold a device id and a token hash, which is exactly the
+   * material worth not keeping once it can no longer be used for anything.
+   *
+   * A window past expiry, so a clock skew between processes cannot delete a
+   * session a moment before its last legitimate request.
+   */
+  const sessionSweepIntervalMs = 6 * 60 * 60_000
+  const runSessionSweep = () => {
+    const cutoff = new Date(Date.now() - 24 * 60 * 60_000)
+    void fastify.prisma.session
+      .deleteMany({ where: { expiresAt: { lt: cutoff } } })
+      .then(({ count }) => {
+        if (count > 0) {
+          fastify.log.info({ removed: count }, "Removed expired sessions")
+        }
+      })
+      .catch((error) => {
+        fastify.log.warn({ err: error }, "Session sweep failed")
+      })
+  }
+  const sessionSweepBootTimer = setTimeout(runSessionSweep, 60_000)
+  const sessionSweepTimer = setInterval(runSessionSweep, sessionSweepIntervalMs)
+
   // Outbox reconciliation: the guarantee behind UP-007. An upload's background
   // jobs are committed as durable rows; if Redis was unreachable when the
   // request finished, this is what eventually gets them queued. Without it, a
@@ -195,7 +223,9 @@ export async function createServer() {
   fastify.addHook("onClose", async () => {
     clearInterval(logTrimTimer)
     clearTimeout(trashPurgeBootTimer)
+    clearTimeout(sessionSweepBootTimer)
     clearInterval(trashPurgeTimer)
+    clearInterval(sessionSweepTimer)
     clearTimeout(outboxBootTimer)
     clearInterval(outboxTimer)
     clearInterval(outboxPruneTimer)

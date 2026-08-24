@@ -38,6 +38,9 @@ const TYPE_ICONS: Record<string, LucideIcon> = {
   "upload.completed": Upload,
   "upload.failed": AlertTriangle,
   "asset.moved": ArrowRightLeft,
+  // Batch moves (folder delete, bulk organise) record the plural name.
+  // Historical rows already carry it, so it is aliased rather than renamed.
+  "assets.moved": ArrowRightLeft,
   "folder.created": FolderPlus,
   "appdata.folder.created": FolderPlus,
   "appdata.database.created": FilePlus,

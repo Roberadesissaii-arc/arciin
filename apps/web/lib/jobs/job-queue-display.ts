@@ -30,6 +30,11 @@ export function jobTypeBadgeLabel(type: string) {
       return "STORAGE"
     case "migrate_storage":
       return "MIGRATE"
+    // Dubbing was removed. Historical rows remain, and the default branch
+    // rendered them as "DUB MEDI" — a truncated label for a feature that no
+    // longer exists, which reads like something still on offer.
+    case "dub_media":
+      return "REMOVED"
     case "plex_sync_placeholder":
       return "PLEX"
     default:
