@@ -7,6 +7,7 @@ import {
   buildTranslationPrompt,
   parseSummaryPayload,
   parseTitles,
+  parseTitleResponse,
 } from "../packages/media-ai/src/transcript-text-ai"
 import { isSameLanguage, languageName, translationLanguageOptions } from "../packages/types/src/languages"
 import { titleToFilename } from "../apps/web/components/libraries/video-ai-title"
@@ -140,6 +141,93 @@ describe("title suggestions", () => {
     expect(prompt).toContain("Today we're discussing Arciin.")
     expect(prompt).toMatch(/ONE or TWO words/i)
     expect(prompt).toMatch(/quotation marks/i)
+  })
+
+  it("asks the model to name a released work before describing it", () => {
+    const prompt = buildTitlePrompt("Mr Wayne, the Joker has taken the ferry.")
+    expect(prompt).toMatch(/already-released work/i)
+    expect(prompt).toMatch(/movie/i)
+    expect(prompt).toMatch(/exact released title/i)
+    // Length cap applies to the generic labels, never to a real title.
+    expect(prompt).toMatch(/even when it runs longer than two words/i)
+  })
+
+  it("warns the model off guessing a famous title", () => {
+    const prompt = buildTitlePrompt("Some people talking.")
+    expect(prompt).toMatch(/confident.*false|unsure/i)
+    expect(prompt).toMatch(/wrong film title/i)
+  })
+})
+
+describe("identifying a released work from a transcript", () => {
+  it("leads with the real film name, past the two-word cap", () => {
+    const parsed = parseTitleResponse(
+      JSON.stringify({
+        work: { kind: "movie", title: "The Dark Knight", confident: true },
+        titles: ["Gotham chaos", "Ferry choice"],
+      }),
+    )
+    expect(parsed.work).toEqual({ kind: "movie", title: "The Dark Knight" })
+    expect(parsed.titles[0]).toBe("The Dark Knight")
+    expect(parsed.titles).toEqual(["The Dark Knight", "Gotham chaos", "Ferry choice"])
+  })
+
+  it("ignores a work the model is not confident about", () => {
+    const parsed = parseTitleResponse(
+      JSON.stringify({
+        work: { kind: "movie", title: "Inception", confident: false },
+        titles: ["Dream heist", "Spinning top"],
+      }),
+    )
+    expect(parsed.work).toBeNull()
+    expect(parsed.titles).toEqual(["Dream heist", "Spinning top"])
+  })
+
+  it("still returns short labels when nothing is identified", () => {
+    const parsed = parseTitleResponse(JSON.stringify({ titles: ["Coffee", "Tokyo night"] }))
+    expect(parsed.work).toBeNull()
+    expect(parsed.titles).toEqual(["Coffee", "Tokyo night"])
+  })
+
+  it("cleans a work title the same way as a label, minus the cap", () => {
+    const parsed = parseTitleResponse(
+      JSON.stringify({
+        work: { kind: "movie", title: '"Spirited Away.mp4"', confident: true },
+        titles: ["Bath house"],
+      }),
+    )
+    expect(parsed.titles[0]).toBe("Spirited Away")
+  })
+
+  it("treats an article-stripped repeat as the same answer", () => {
+    // The model really does return both of these together.
+    const parsed = parseTitleResponse(
+      JSON.stringify({
+        work: { kind: "movie", title: "The Dark Knight", confident: true },
+        titles: ["Batman", "Joker", "Dark Knight"],
+      }),
+    )
+    expect(parsed.titles).toEqual(["The Dark Knight", "Batman", "Joker"])
+  })
+
+  it("does not repeat the work title as a label", () => {
+    const parsed = parseTitleResponse(
+      JSON.stringify({
+        work: { kind: "movie", title: "Alien", confident: true },
+        titles: ["Alien", "Nostromo"],
+      }),
+    )
+    expect(parsed.titles).toEqual(["Alien", "Nostromo"])
+  })
+
+  it("survives a reply with no usable work block", () => {
+    expect(parseTitleResponse("garbage")).toEqual({ work: null, titles: [] })
+    expect(
+      parseTitleResponse(JSON.stringify({ work: "not an object", titles: ["Coffee"] })),
+    ).toEqual({ work: null, titles: ["Coffee"] })
+    expect(
+      parseTitleResponse(JSON.stringify({ work: { kind: "movie", confident: true }, titles: [] })),
+    ).toEqual({ work: null, titles: [] })
   })
 })
 

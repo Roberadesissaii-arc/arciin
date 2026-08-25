@@ -509,6 +509,19 @@ function cleanTitleText(entry: string): string {
 }
 
 /**
+ * A title reduced to what makes it distinct, for comparison only.
+ *
+ * "The Dark Knight" and "Dark Knight" are one answer, not two.
+ */
+function looseTitleKey(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/^(the|a|an)\s+/, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+}
+
+/**
  * Read titles out of a model reply, and refuse the ones that are not titles.
  *
  * Pure, so the rules are testable.
@@ -579,7 +592,9 @@ export function parseTitleResponse(modelText: string): {
 
   if (!work) return { work: null, titles }
 
-  // The real name leads; drop a generic label that only repeats it.
-  const key = work.title.toLowerCase()
-  return { work, titles: [work.title, ...titles.filter((t) => t.toLowerCase() !== key)] }
+  // The real name leads; drop a label that only repeats it. Compared loosely,
+  // because the model offers "Dark Knight" beside "The Dark Knight" and two
+  // rows for one answer is just noise to read past.
+  const key = looseTitleKey(work.title)
+  return { work, titles: [work.title, ...titles.filter((t) => looseTitleKey(t) !== key)] }
 }

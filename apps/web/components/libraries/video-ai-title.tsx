@@ -66,6 +66,8 @@ export function VideoAiTitle({
   /** True only when Title itself asked for a transcript — stay on this tab. */
   const [awaitingTranscript, setAwaitingTranscript] = useState(false)
   const kickedOff = useRef(false)
+  /** Fire the failure toast once per failure, not once per poll. */
+  const announcedFailure = useRef(false)
   const updateAsset = useUpdateAsset()
 
   const suggest = useMutation({
@@ -105,10 +107,16 @@ export function VideoAiTitle({
     suggest.mutate()
   }, [awaitingTranscript, hasTranscript, transcriptStatus, suggest])
 
-  // Stop the infinite "preparing" spinner when the background transcript fails.
+  // Say so once when the background transcript fails. The spinner is already
+  // gone — `waitingForTranscript` excludes a failed transcript — so there is no
+  // state to unwind here, only a message to deliver.
   useEffect(() => {
-    if (!awaitingTranscript || !transcriptFailed) return
-    setAwaitingTranscript(false)
+    if (!transcriptFailed) {
+      announcedFailure.current = false
+      return
+    }
+    if (!awaitingTranscript || announcedFailure.current) return
+    announcedFailure.current = true
     kickedOff.current = false
     const description =
       transcriptStatus === "NO_AUDIO"

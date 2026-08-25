@@ -84,6 +84,8 @@ export function VideoAiSummarize({
    */
   const pendingElsewhere = pendingSummaries.has(asset.id) && !savedInsight
   const kickedOff = useRef(false)
+  /** Fire the failure toast once per failure, not once per poll. */
+  const announcedFailure = useRef(false)
 
   /**
    * Adopt the saved insight when it arrives (or changes after a regenerate).
@@ -158,10 +160,16 @@ export function VideoAiSummarize({
     summarize.mutate()
   }, [awaitingTranscript, hasTranscript, transcriptStatus, summarize])
 
-  // Stop the infinite "preparing" spinner when the background transcript fails.
+  // Say so once when the background transcript fails. The spinner is already
+  // gone — `waitingForTranscript` excludes a failed transcript — so there is no
+  // state to unwind here, only a message to deliver.
   useEffect(() => {
-    if (!awaitingTranscript || !transcriptFailed) return
-    setAwaitingTranscript(false)
+    if (!transcriptFailed) {
+      announcedFailure.current = false
+      return
+    }
+    if (!awaitingTranscript || announcedFailure.current) return
+    announcedFailure.current = true
     kickedOff.current = false
     const description =
       transcriptStatus === "NO_AUDIO"
