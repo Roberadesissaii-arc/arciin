@@ -95,6 +95,11 @@ export function UploadQueueItem({ item }: { item: UploadQueueItemModel }) {
       removeUpload(id)
     }, AUTO_DISMISS_MS)
     return () => window.clearTimeout(timer)
+  // isQueueComplete reads item.status and item.progress and nothing else, and
+  // both are listed. Depending on `item` would restart the dismissal timer on
+  // every field that changes during an upload, so a finished item would never
+  // dismiss.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [item.id, item.progress, item.status, removeUpload])
 
   const mediaType =

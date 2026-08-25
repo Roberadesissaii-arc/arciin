@@ -4,7 +4,7 @@ import Link from "next/link"
 
 import { useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { ArrowUpRight, ChevronRight, Database } from "lucide-react"
+import { ArrowUpRight, Database } from "lucide-react"
 
 import { fetchApi } from "@/lib/api/client"
 import { listAppDatabases } from "@/lib/api/app-databases"
@@ -16,7 +16,6 @@ import {
   CardContent,
   CardDescription,
   CardHeader,
-  CardTitle,
 } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
 import { formatBytes } from "@/lib/utils/format-bytes"

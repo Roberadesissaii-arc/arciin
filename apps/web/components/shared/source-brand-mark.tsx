@@ -1,3 +1,7 @@
+/* eslint-disable @next/next/no-img-element -- every image in this file is a
+   local import-source brand SVG of a couple of kilobytes. next/image would add an
+   optimizer round-trip and a layout wrapper to a mark that is already the
+   smallest thing on its row. */
 "use client"
 
 import { useState } from "react"

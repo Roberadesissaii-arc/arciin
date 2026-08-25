@@ -511,7 +511,7 @@ function resolvePhysicalDiskRow(
   return current?.type === "disk" ? current : null
 }
 
-function diskRole(row: LsblkInventoryRow, rows: LsblkInventoryRow[]): StorageBlockDisk["role"] {
+function diskRole(row: LsblkInventoryRow): StorageBlockDisk["role"] {
   if (row.name === "nvme0n1" || row.transport === "nvme") return "system"
   if (row.name.startsWith("mmcblk0") || row.transport === "usb") return "attached"
   if (row.name.startsWith("mmcblk") || row.transport === "mmc") return "internal"
@@ -548,7 +548,7 @@ function discoverBlockDisks(rows: LsblkInventoryRow[]): StorageBlockDisk[] {
       sizeBytes: row.sizeBytes,
       model: row.model,
       transport: row.transport,
-      role: diskRole(row, rows),
+      role: diskRole(row),
       unmountedPartitionCount: countUnmountedPartitionsOnDisk(row.name, rows),
     }))
     .sort((a, b) => (b.sizeBytes ?? 0) - (a.sizeBytes ?? 0))

@@ -11,7 +11,6 @@ import {
   CircleDot,
 } from "lucide-react"
 
-import { DEMO_CUSTOMER } from "@/lib/demo-customer"
 import { cn } from "@/components/ui"
 
 export type ProfileSummary = {

@@ -96,6 +96,10 @@ export function FolderBrowser({
     if (assetsQuery.hasNextPage && !assetsQuery.isFetchingNextPage) {
       void assetsQuery.fetchNextPage()
     }
+  // The three fields this effect reads are listed individually on purpose.
+  // `assetsQuery` is a new object every render, and this effect fetches the
+  // next page — depending on it would never stop.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     assetsQuery.hasNextPage,
     assetsQuery.isFetchingNextPage,

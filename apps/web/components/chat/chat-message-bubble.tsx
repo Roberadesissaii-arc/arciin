@@ -149,7 +149,6 @@ function MessageActions({
 export function MessageBubble({
   msg,
   isLive = false,
-  reasoningUiEnabled = false,
   isStreaming = false,
   canRegenerate = false,
   onRegenerate,
@@ -160,7 +159,6 @@ export function MessageBubble({
 }: {
   msg: Message
   isLive?: boolean
-  reasoningUiEnabled?: boolean
   isStreaming?: boolean
   canRegenerate?: boolean
   onRegenerate?: () => void
