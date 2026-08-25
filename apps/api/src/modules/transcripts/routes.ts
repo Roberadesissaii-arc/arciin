@@ -199,10 +199,36 @@ export async function transcriptRoutes(fastify: FastifyInstance) {
       const asset = await loadAccessibleAsset(request, reply, assetId)
       if (!asset) return
 
-      const transcript = await fastify.prisma.mediaTranscript.findUnique({
+      let transcript = await fastify.prisma.mediaTranscript.findUnique({
         where: { assetId },
         include: { translations: { orderBy: { language: "asc" } } },
       })
+
+      /**
+       * Heal rows left PENDING/PROCESSING after the linked Job already FAILED
+       * (worker crash, Redis EPIPE, etc.). Without this, Assist spins on
+       * "Preparing media…" forever even though the work is dead.
+       */
+      if (
+        transcript &&
+        (transcript.status === "PENDING" || transcript.status === "PROCESSING") &&
+        transcript.jobId
+      ) {
+        const job = await fastify.prisma.job.findUnique({
+          where: { id: transcript.jobId },
+          select: { status: true, error: true },
+        })
+        if (job?.status === "FAILED") {
+          transcript = await fastify.prisma.mediaTranscript.update({
+            where: { id: transcript.id },
+            data: {
+              status: "FAILED",
+              error: job.error ?? "Transcript generation failed.",
+            },
+            include: { translations: { orderBy: { language: "asc" } } },
+          })
+        }
+      }
 
       reply.send({
         data: {

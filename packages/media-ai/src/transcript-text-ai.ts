@@ -185,6 +185,20 @@ export function applyTranslation(
 export const TITLE_RESPONSE_SCHEMA = {
   type: "object",
   properties: {
+    /**
+     * Set only when the transcript belongs to an already-released work the
+     * model can name. A recognised film should be titled by its real name,
+     * not described — "Inception", not "Dream heist".
+     */
+    work: {
+      type: "object",
+      properties: {
+        kind: { type: "string" },
+        title: { type: "string" },
+        confident: { type: "boolean" },
+      },
+      required: ["kind", "title", "confident"],
+    },
     titles: { type: "array", items: { type: "string" } },
   },
   required: ["titles"],
@@ -192,7 +206,25 @@ export const TITLE_RESPONSE_SCHEMA = {
 
 export function buildTitlePrompt(transcriptText: string, count = 3): string {
   return [
-    `Suggest ${count} very short titles for a video, based only on what is said in it.`,
+    `Name this video from what is said in it. Return both parts below.`,
+    "",
+    "PART 1 — \"work\": is this transcript from an already-released work?",
+    "A film, a TV episode, a song, a game, a recorded stage show. Clues:",
+    "characters addressing each other by name, lines you recognise, a narrator",
+    "naming it, opening or closing credits, a distinctive plot.",
+    "",
+    "If you can name it with real confidence, set:",
+    '  { "kind": movie|tv_show|music|game|other,',
+    '    "title": its exact released title, spelled the official way —',
+    "             no year, no resolution, no release-group tag,",
+    '    "confident": true }',
+    "Use the real title even when it runs longer than two words.",
+    'If you are unsure, set "confident": false and leave the naming to part 2.',
+    "Never stretch a vague resemblance into a famous name — a wrong film title",
+    "is worse than an honest description.",
+    "",
+    `PART 2 — "titles": ${count} short library labels for the content itself.`,
+    "Always fill this in, whether or not part 1 identified anything.",
     "",
     "Hard rule — each title MUST be ONE or TWO words only. Never three or more.",
     "Think library labels / folder names, not YouTube headlines.",
@@ -208,7 +240,7 @@ export function buildTitlePrompt(transcriptText: string, count = 3): string {
     "Never:",
     "- use quotation marks, emoji, or a file extension",
     "- use clickbait, hype, a sentence, or a long phrase",
-    "- invent details that are not in the transcript",
+    "- invent details that are not supported by the transcript",
     "",
     "Transcript:",
     transcriptText.slice(0, 20_000),
@@ -224,14 +256,15 @@ export type SuggestTitlesInput = {
 
 export async function suggestTitles(
   input: SuggestTitlesInput,
-): Promise<{ titles: string[]; model: string }> {
+): Promise<{ titles: string[]; work: IdentifiedWork | null; model: string }> {
   const { text, model } = await runGeminiText(
     input.config,
     buildTitlePrompt(input.transcriptText, input.count ?? 3),
     TITLE_RESPONSE_SCHEMA as unknown as Record<string, unknown>,
     input.signal,
   )
-  return { titles: parseTitles(text), model }
+  const { work, titles } = parseTitleResponse(text)
+  return { titles, work, model }
 }
 
 /* ------------------------------------------------------------------ summarize */
@@ -459,11 +492,26 @@ export async function suggestDocumentSummary(
 }
 
 /**
+ * Strip what models add despite being told not to: wrapping quotes, a trailing
+ * file extension, stray newlines. Shared so a recognised work title gets the
+ * same cleanup as a generic label — without the two-word cap.
+ */
+function cleanTitleText(entry: string): string {
+  return entry
+    .replace(/[\r\n]+/g, " ")
+    // Surrounding quotes, straight or curly.
+    .replace(/^\s*["'“”‘’]+|["'“”‘’]+\s*$/g, "")
+    // A trailing extension the model added anyway.
+    .replace(/\.(mp4|mov|mkv|webm|avi|m4v|mp3|wav|m4a)\s*$/i, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 80)
+}
+
+/**
  * Read titles out of a model reply, and refuse the ones that are not titles.
  *
- * Models reliably wrap in quotes and occasionally append the extension despite
- * being told not to, so the cleanup happens here rather than being trusted to
- * the prompt. Pure, so the rules are testable.
+ * Pure, so the rules are testable.
  */
 export function parseTitles(modelText: string): string[] {
   let raw: unknown[] = []
@@ -478,15 +526,7 @@ export function parseTitles(modelText: string): string[] {
   const titles: string[] = []
   for (const entry of raw) {
     if (typeof entry !== "string") continue
-    let cleaned = entry
-      .replace(/[\r\n]+/g, " ")
-      // Surrounding quotes, straight or curly.
-      .replace(/^\s*["'“”‘’]+|["'“”‘’]+\s*$/g, "")
-      // A trailing extension the model added anyway.
-      .replace(/\.(mp4|mov|mkv|webm|avi|m4v|mp3|wav|m4a)\s*$/i, "")
-      .replace(/\s+/g, " ")
-      .trim()
-      .slice(0, 80)
+    let cleaned = cleanTitleText(entry)
     if (!cleaned) continue
     // Hard cap: keep at most two words so library names stay short.
     const words = cleaned.split(" ").filter(Boolean)
@@ -497,4 +537,49 @@ export function parseTitles(modelText: string): string[] {
     titles.push(cleaned)
   }
   return titles
+}
+
+/** A released work the model recognised in the transcript. */
+export type IdentifiedWork = {
+  /** movie | tv_show | music | game | other */
+  kind: string
+  title: string
+}
+
+/**
+ * The full title reply: a named work when the model recognised one, plus the
+ * short library labels.
+ *
+ * A recognised work leads and keeps its real length — "The Dark Knight" must
+ * survive the two-word cap that keeps generic labels short. Anything the model
+ * is not confident about is dropped, because a confidently wrong film name is
+ * worse than a plain description.
+ */
+export function parseTitleResponse(modelText: string): {
+  work: IdentifiedWork | null
+  titles: string[]
+} {
+  const titles = parseTitles(modelText)
+
+  let work: IdentifiedWork | null = null
+  try {
+    const parsed = JSON.parse(modelText) as { work?: unknown }
+    const row = parsed.work
+    if (row && typeof row === "object") {
+      const entry = row as Record<string, unknown>
+      const title = typeof entry.title === "string" ? cleanTitleText(entry.title) : ""
+      const kind = typeof entry.kind === "string" ? entry.kind.trim() : ""
+      if (title && entry.confident === true) {
+        work = { kind: kind || "other", title }
+      }
+    }
+  } catch {
+    work = null
+  }
+
+  if (!work) return { work: null, titles }
+
+  // The real name leads; drop a generic label that only repeats it.
+  const key = work.title.toLowerCase()
+  return { work, titles: [work.title, ...titles.filter((t) => t.toLowerCase() !== key)] }
 }

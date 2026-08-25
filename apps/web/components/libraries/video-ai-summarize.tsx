@@ -145,6 +145,11 @@ export function VideoAiSummarize({
     },
   })
 
+  const transcriptFailed =
+    transcriptStatus === "FAILED" ||
+    transcriptStatus === "NO_AUDIO" ||
+    transcriptStatus === "NO_SPEECH"
+
   useEffect(() => {
     if (!awaitingTranscript) return
     if (transcriptStatus !== "READY" || !hasTranscript) return
@@ -152,6 +157,20 @@ export function VideoAiSummarize({
     kickedOff.current = true
     summarize.mutate()
   }, [awaitingTranscript, hasTranscript, transcriptStatus, summarize])
+
+  // Stop the infinite "preparing" spinner when the background transcript fails.
+  useEffect(() => {
+    if (!awaitingTranscript || !transcriptFailed) return
+    setAwaitingTranscript(false)
+    kickedOff.current = false
+    const description =
+      transcriptStatus === "NO_AUDIO"
+        ? "This video has no audio track to summarize."
+        : transcriptStatus === "NO_SPEECH"
+          ? "No speech was detected, so nothing useful could be summarized."
+          : "The transcript failed. Try Summarize again."
+    toast.error("Could not prepare a transcript", { description })
+  }, [awaitingTranscript, transcriptFailed, transcriptStatus])
 
   // If the reader left Assist while summarize was running, poll until the
   // persisted insight shows up — no second button press required.
@@ -171,11 +190,15 @@ export function VideoAiSummarize({
     }
     setAwaitingTranscript(true)
     kickedOff.current = false
-    onGenerateTranscript()
+    // A transcript may already be running, started from the Transcript tab or
+    // from Title. Queue onto that one; starting a second would duplicate the
+    // work and race for the same row.
+    if (!transcriptRunning) onGenerateTranscript()
   }
 
   const waitingForTranscript =
     awaitingTranscript &&
+    !transcriptFailed &&
     (transcriptRunning ||
       transcriptStatus === "PENDING" ||
       transcriptStatus === "RUNNING" ||
@@ -189,8 +212,8 @@ export function VideoAiSummarize({
     Boolean(about) ||
     topics.length > 0
 
-  // Transcript is running elsewhere (started from Transcript / Title) — Summarize
-  // stays idle and explains; it does not look like Summarize itself is processing.
+  // No transcript yet and Summarize was not asked for one. A transcript running
+  // elsewhere does not disable this tab: asking here queues onto it.
   if (!hasTranscript && !waitingForTranscript) {
     return (
       <div
@@ -201,26 +224,21 @@ export function VideoAiSummarize({
         <p className="mt-2 text-[13px] font-medium text-foreground">Summarize</p>
         <p className="mx-auto mt-1 max-w-[38ch] text-[12.5px] text-muted-foreground">
           {transcriptRunning
-            ? "A transcript is already running. Summarize unlocks when it finishes — this tab is separate."
-            : "A summary comes from what the video says, so it needs a transcript first. Generating one here starts it — you stay on this tab."}
+            ? "A transcript is being prepared. Ask for a summary now — it arrives as soon as it lands."
+            : transcriptFailed
+              ? "Transcript preparation failed. Summarize will retry it here — you stay on this tab."
+              : "Get a synopsis from what the video says. Summarize prepares a transcript in the background and stays on this tab."}
         </p>
-        {transcriptRunning ? (
-          <p className="mt-3 inline-flex items-center gap-1.5 text-[12px] text-muted-foreground">
-            <Loader2 className="size-3.5 animate-spin text-primary" />
-            Waiting for transcript…
-          </p>
-        ) : (
-          <Button
-            type="button"
-            size="sm"
-            className="mt-3"
-            onClick={startSummarize}
-            data-testid="ai-summary-generate-transcript"
-          >
-            <Sparkles className="size-3.5" />
-            Generate transcript
-          </Button>
-        )}
+        <Button
+          type="button"
+          size="sm"
+          className="mt-3"
+          onClick={startSummarize}
+          data-testid="generate-ai-summary"
+        >
+          <Sparkles className="size-3.5" />
+          Summarize
+        </Button>
       </div>
     )
   }

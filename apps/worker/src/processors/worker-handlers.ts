@@ -75,10 +75,29 @@ async function markJob(
 }
 
 export async function markJobFailure(jobRecordId: string | undefined, error: unknown) {
+  const message = error instanceof Error ? error.message : "Job failed."
   await markJob(jobRecordId, {
     status: "FAILED",
     progress: 0,
-    error: error instanceof Error ? error.message : "Job failed.",
+    error: message,
+  })
+
+  /**
+   * Keep MediaTranscript in sync when failure happens outside the transcribe
+   * handler's own `failTranscript` path (Redis EPIPE, worker restart mid-job,
+   * BullMQ abort, etc.). Otherwise the Job is FAILED while the transcript row
+   * stays PENDING forever — Assist shows "Preparing media…" indefinitely.
+   */
+  if (!jobRecordId) return
+  await prisma.mediaTranscript.updateMany({
+    where: {
+      jobId: jobRecordId,
+      status: { in: ["PENDING", "PROCESSING"] },
+    },
+    data: {
+      status: "FAILED",
+      error: message,
+    },
   })
 }
 

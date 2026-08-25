@@ -91,6 +91,11 @@ export function VideoAiTitle({
     },
   })
 
+  const transcriptFailed =
+    transcriptStatus === "FAILED" ||
+    transcriptStatus === "NO_AUDIO" ||
+    transcriptStatus === "NO_SPEECH"
+
   // After Title kicked off a transcript, suggest once it is READY.
   useEffect(() => {
     if (!awaitingTranscript) return
@@ -100,6 +105,20 @@ export function VideoAiTitle({
     suggest.mutate()
   }, [awaitingTranscript, hasTranscript, transcriptStatus, suggest])
 
+  // Stop the infinite "preparing" spinner when the background transcript fails.
+  useEffect(() => {
+    if (!awaitingTranscript || !transcriptFailed) return
+    setAwaitingTranscript(false)
+    kickedOff.current = false
+    const description =
+      transcriptStatus === "NO_AUDIO"
+        ? "This video has no audio track to title from."
+        : transcriptStatus === "NO_SPEECH"
+          ? "No speech was detected, so a title could not be suggested."
+          : "The transcript failed. Try Generate titles again."
+    toast.error("Could not prepare a transcript", { description })
+  }, [awaitingTranscript, transcriptFailed, transcriptStatus])
+
   function startTitles() {
     if (hasTranscript && transcriptStatus === "READY") {
       suggest.mutate()
@@ -108,7 +127,10 @@ export function VideoAiTitle({
     // Stay on Title — same pattern as Summarize.
     setAwaitingTranscript(true)
     kickedOff.current = false
-    onGenerateTranscript()
+    // A transcript may already be running, started from the Transcript tab or
+    // from Summarize. Queue onto that one; starting a second would duplicate
+    // the work and race for the same row.
+    if (!transcriptRunning) onGenerateTranscript()
   }
 
   async function applyTitle() {
@@ -129,6 +151,7 @@ export function VideoAiTitle({
 
   const waitingForTranscript =
     awaitingTranscript &&
+    !transcriptFailed &&
     (transcriptRunning ||
       transcriptStatus === "PENDING" ||
       transcriptStatus === "PROCESSING" ||
@@ -145,29 +168,21 @@ export function VideoAiTitle({
         <p className="mt-2 text-[13px] font-medium text-foreground">AI title</p>
         <p className="mx-auto mt-1 max-w-[38ch] text-[12.5px] text-muted-foreground">
           {transcriptRunning
-            ? "A transcript is already running. Titles unlock when it finishes — you stay on this tab."
-            : "Suggest a short name from what this video says. If there is no transcript yet, Generate prepares one here and stays on Title."}
+            ? "A transcript is being prepared. Ask for titles now — they arrive as soon as it lands."
+            : transcriptFailed
+              ? "Transcript preparation failed. Generate titles will retry it here — you stay on Title."
+              : "Suggest a short name from what this video says. Generate titles prepares a transcript in the background and stays on this tab."}
         </p>
-        {transcriptRunning ? (
-          <p
-            className="mt-3 inline-flex items-center gap-1.5 text-[12px] text-muted-foreground"
-            data-testid="ai-title-waiting-transcript"
-          >
-            <Loader2 className="size-3.5 animate-spin text-primary" />
-            Waiting for transcript…
-          </p>
-        ) : (
-          <Button
-            type="button"
-            size="sm"
-            className="mt-3"
-            onClick={startTitles}
-            data-testid="generate-ai-title"
-          >
-            <Wand2 className="size-3.5" />
-            Generate titles
-          </Button>
-        )}
+        <Button
+          type="button"
+          size="sm"
+          className="mt-3"
+          onClick={startTitles}
+          data-testid="generate-ai-title"
+        >
+          <Wand2 className="size-3.5" />
+          Generate titles
+        </Button>
       </div>
     )
   }
