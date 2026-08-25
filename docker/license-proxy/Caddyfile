@@ -28,11 +28,22 @@
 # Service authentication is unchanged and still enforced by the application:
 # this perimeter narrows what can be reached, it does not decide who may.
 #
-# The site address is a variable so this file is the same in test and
-# production. Give it a hostname and Caddy provisions TLS automatically:
-#   LICENSE_SITE_ADDRESS=license.example.com
-# Left unset it serves plain HTTP on loopback, which is how the perimeter is
-# tested without a certificate.
+# Two addresses, both plain HTTP, and that is deliberate.
+#
+# Caddy matches a site by the request's Host header. Behind a tunnel the Host is
+# the public name — cloudflared forwards `Host: license.arciin.com` — so a block
+# bound only to 127.0.0.1:4443 matches nothing, and Caddy answers an empty 200
+# without running the site's handlers or its access log. That is exactly what a
+# first attempt did: every path returned 200 with no body, the origin logged
+# nothing, and every piece of configuration looked correct because it was. The
+# public name has to be a matcher here, not merely the port it listens on.
+#
+# `http://` on both prevents Caddy from attempting certificates. TLS terminates
+# at Cloudflare and the tunnel speaks plain HTTP to this origin over loopback;
+# an ACME attempt would fail regardless, since nothing here answers on 80/443.
+#
+# The loopback address stays so the perimeter can be exercised directly, with
+# the tunnel out of the path.
 
 {
 	# No admin API. It listens on 2019 by default and can rewrite this config.
@@ -43,7 +54,7 @@
 	}
 }
 
-{$LICENSE_SITE_ADDRESS:http://127.0.0.1:4443} {
+http://{$LICENSE_PUBLIC_HOST:license.arciin.com}:4443, http://127.0.0.1:4443 {
 	# Access logging is on deliberately: an authority that mints entitlements
 	# should be able to say who called it and when. Caddy redacts Authorization
 	# and Cookie in access logs and never records request bodies, so the service

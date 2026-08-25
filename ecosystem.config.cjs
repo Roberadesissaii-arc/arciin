@@ -129,5 +129,35 @@ module.exports = {
       env: sharedEnv,
       ...appLogFiles("arciin-worker"),
     },
+    {
+      /**
+       * The public ingress for the licensing authority.
+       *
+       * A named Cloudflare tunnel, so the hostname survives restarts — a quick
+       * tunnel gets a new random name every time it starts, which is fine for
+       * looking at your own instance and useless for a licensing authority that
+       * customers' installations and the checkout both hard-depend on.
+       *
+       * Its origin is the Caddy perimeter on 127.0.0.1:4443, never the
+       * authority on 4100. The authority stays loopback-only and is not
+       * reachable except through the perimeter's allowlist.
+       *
+       * Under PM2 rather than its own systemd unit because pm2-arce.service is
+       * already enabled and owns reboot persistence for everything else here;
+       * a second supervisor for one process would be a second thing to
+       * remember.
+       */
+      name: "arciin-license-tunnel",
+      cwd: ROOT,
+      script: "cloudflared",
+      args: ["--no-autoupdate", "--config", "/home/arce/.cloudflared/config.yml", "tunnel", "run"],
+      interpreter: "none",
+      exec_mode: "fork",
+      watch: false,
+      autorestart: true,
+      max_restarts: 20,
+      min_uptime: "10s",
+      ...appLogFiles("arciin-license-tunnel"),
+    },
   ],
 }
