@@ -33,7 +33,7 @@ export default function globalSetup() {
 
   let worker: ChildProcess | null = null
   let geminiProfileCreated = false
-  let quietedProfiles: string[] = []
+  let quietedProfiles = false
 
   try {
     // Before anything opens a browser: take the local model out of the run, so
@@ -60,7 +60,7 @@ export default function globalSetup() {
 function teardown(
   worker: ChildProcess | null,
   geminiProfileCreated: boolean,
-  quietedProfiles: string[] = [],
+  quietedProfiles = false,
 ) {
   // Both, whatever either one does: a failure stopping the worker must not
   // strand a paid credential in the dev database.
