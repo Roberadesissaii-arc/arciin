@@ -63,6 +63,26 @@ import { serializeAsset } from "@/services/serializers"
 import { loadAssetAiSummaries, withAiSummaries } from "@/services/assets/ai-summary"
 import { loadUserPreferences } from "@/services/user/preferences"
 
+/** Batched AI badges + heal stuck transcripts so hard-killed workers clear cards. */
+async function loadAiSummariesForPage(fastify: FastifyInstance, assetIds: string[]) {
+  const heartbeatRaw = await fastify.redis.get(apiConfig.workerHeartbeatKey).catch(() => null)
+  const workerHeartbeatMs = heartbeatRaw ? Number(heartbeatRaw) : null
+  return loadAssetAiSummaries(fastify.prisma, assetIds, {
+    workerHeartbeatMs: Number.isFinite(workerHeartbeatMs) ? workerHeartbeatMs : null,
+    onHealed: async (healed) => {
+      await fastify
+        .publishRealtimeEvent(
+          buildRealtimeEvent("asset.transcript.failed", {
+            assetId: healed.assetId,
+            message: healed.error,
+            data: { transcriptId: healed.transcriptId, healed: true },
+          }),
+        )
+        .catch(() => {})
+    },
+  })
+}
+
 /**
  * MIME types safe to render inline in the browser. Everything else (SVG, HTML,
  * XML, unknown) is served as a download so uploaded active content can't run
@@ -324,7 +344,10 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
         // requests to draw two hundred badges.
         data: withAiSummaries(
           assets.map(serializeAsset),
-          await loadAssetAiSummaries(fastify.prisma, assets.map((a) => a.id)),
+          await loadAiSummariesForPage(
+            fastify,
+            assets.map((a) => a.id),
+          ),
         ),
       })
     }
@@ -435,7 +458,10 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
         data: {
           items: withAiSummaries(
             page.items.map(serializeAsset),
-            await loadAssetAiSummaries(fastify.prisma, page.items.map((a) => a.id)),
+            await loadAiSummariesForPage(
+              fastify,
+              page.items.map((a) => a.id),
+            ),
           ),
           nextCursor: page.nextCursor,
           hasMore: page.hasMore,

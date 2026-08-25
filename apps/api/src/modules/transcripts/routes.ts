@@ -32,6 +32,8 @@ import {
 } from "@arciin/media-ai"
 import { requireFeature, requireSessionRole } from "@/services/security/auth"
 import { recordAndBroadcastActivity } from "@/services/activity/record-and-broadcast-activity"
+import { apiConfig } from "@/config"
+import { healStuckTranscripts } from "@/services/assets/heal-stuck-transcripts"
 
 /** Media we will try to transcribe. Audio is included for future reuse. */
 function isTranscribableAsset(mediaType: string): boolean {
@@ -205,26 +207,34 @@ export async function transcriptRoutes(fastify: FastifyInstance) {
       })
 
       /**
-       * Heal rows left PENDING/PROCESSING after the linked Job already FAILED
-       * (worker crash, Redis EPIPE, etc.). Without this, Assist spins on
-       * "Preparing media…" forever even though the work is dead.
+       * Heal rows left PENDING/PROCESSING after the worker died (FAILED Job,
+       * missing Job, or heartbeat gone). Same rules the library card uses, so
+       * Assist and the thumbnail spinner agree.
        */
       if (
         transcript &&
-        (transcript.status === "PENDING" || transcript.status === "PROCESSING") &&
-        transcript.jobId
+        (transcript.status === "PENDING" || transcript.status === "PROCESSING")
       ) {
-        const job = await fastify.prisma.job.findUnique({
-          where: { id: transcript.jobId },
-          select: { status: true, error: true },
-        })
-        if (job?.status === "FAILED") {
-          transcript = await fastify.prisma.mediaTranscript.update({
-            where: { id: transcript.id },
-            data: {
-              status: "FAILED",
-              error: job.error ?? "Transcript generation failed.",
+        const heartbeatRaw = await fastify.redis.get(apiConfig.workerHeartbeatKey).catch(() => null)
+        const workerHeartbeatMs = heartbeatRaw ? Number(heartbeatRaw) : null
+        const healed = await healStuckTranscripts(
+          fastify.prisma,
+          [
+            {
+              id: transcript.id,
+              assetId: transcript.assetId,
+              status: transcript.status,
+              jobId: transcript.jobId,
+              error: transcript.error,
             },
+          ],
+          {
+            workerHeartbeatMs: Number.isFinite(workerHeartbeatMs) ? workerHeartbeatMs : null,
+          },
+        )
+        if (healed[0]) {
+          transcript = await fastify.prisma.mediaTranscript.findUnique({
+            where: { assetId },
             include: { translations: { orderBy: { language: "asc" } } },
           })
         }

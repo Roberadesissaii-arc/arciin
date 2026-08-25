@@ -1,5 +1,7 @@
 import type { PrismaClient } from "@prisma/client"
 
+import { healStuckTranscripts } from "@/services/assets/heal-stuck-transcripts"
+
 /**
  * What a card needs to know about an asset's AI state.
  *
@@ -55,19 +57,58 @@ const EMPTY: AssetAiSummary = { languageCount: 0, activity: null }
  * AI state for a page of assets, in a fixed number of queries.
  *
  * Two, whatever the page size: transcripts for these assets, and translations
- * for those transcripts.
+ * for those transcripts — plus a heal pass for rows left spinning after a
+ * worker crash (see heal-stuck-transcripts).
  */
 export async function loadAssetAiSummaries(
   prisma: PrismaClient,
   assetIds: string[],
+  options: {
+    /** Worker heartbeat timestamp (ms), or null if missing. */
+    workerHeartbeatMs?: number | null
+    /** Called for each row healed so open sockets can drop the spinner. */
+    onHealed?: (healed: {
+      transcriptId: string
+      assetId: string
+      error: string
+    }) => void | Promise<void>
+  } = {},
 ): Promise<Map<string, AssetAiSummary>> {
   const summaries = new Map<string, AssetAiSummary>()
   if (assetIds.length === 0) return summaries
 
-  const transcripts = await prisma.mediaTranscript.findMany({
+  let transcripts = await prisma.mediaTranscript.findMany({
     where: { assetId: { in: assetIds } },
-    select: { id: true, assetId: true, language: true, status: true, updatedAt: true },
+    select: {
+      id: true,
+      assetId: true,
+      language: true,
+      status: true,
+      updatedAt: true,
+      jobId: true,
+      error: true,
+    },
   })
+
+  const healed = await healStuckTranscripts(prisma, transcripts, {
+    workerHeartbeatMs: options.workerHeartbeatMs,
+  })
+  if (healed.length > 0) {
+    const healedById = new Map(healed.map((h) => [h.transcriptId, h]))
+    transcripts = transcripts.map((t) => {
+      const hit = healedById.get(t.id)
+      if (!hit) return t
+      return {
+        ...t,
+        status: "FAILED",
+        error: hit.error,
+        updatedAt: new Date(),
+      }
+    })
+    for (const row of healed) {
+      await options.onHealed?.(row)
+    }
+  }
 
   const translations =
     transcripts.length > 0
