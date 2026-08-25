@@ -1,3 +1,5 @@
+import { SOCKET_EVENT_TYPES, type SocketEventType } from "@arciin/types"
+
 export type SocketEventPayload = {
   id: string
   type: string
@@ -13,33 +15,17 @@ export type SocketEventPayload = {
   createdAt: string
 }
 
-export const socketEventTypes = [
-  "upload.started",
-  "upload.progress",
-  "upload.completed",
-  "upload.failed",
-  "asset.created",
-  "asset.updated",
-  "asset.moved",
-  "asset.deleted",
-  "asset.classified",
-  "thumbnail.created",
-  "media.metadata.extracted",
-  "media.processing.completed",
-  "media.processing.failed",
-  "library.created",
-  "library.updated",
-  "library.scanned",
-  "job.created",
-  "job.progress",
-  "job.completed",
-  "job.failed",
-  "activity.created",
-  "instance.urls.updated",
-  "plex.connected",
-  "plex.sync.started",
-  "plex.sync.completed",
-  "plex.sync.failed",
-] as const
+/**
+ * Every realtime event the browser subscribes to.
+ *
+ * Re-exported from the shared package rather than restated here. This file used
+ * to keep its own copy, and the copy fell behind: the worker was publishing
+ * `asset.transcript.ready`, nothing in the browser was listening for it, and a
+ * card kept spinning over a transcript that had already finished until someone
+ * reloaded the page. A second list is a second thing to forget.
+ *
+ * Anything a client should react to belongs in SOCKET_EVENT_TYPES.
+ */
+export const socketEventTypes = SOCKET_EVENT_TYPES
 
-export type SocketEventType = (typeof socketEventTypes)[number]
+export type { SocketEventType }

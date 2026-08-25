@@ -530,6 +530,17 @@ export async function handleMediaJob(
         progress: 100,
         ...(status === "FAILED" ? { error: message } : { result: { outcome: status } }),
       })
+      // The card is spinning on this transcript. Every way out of PROCESSING
+      // has to say so, or the spinner outlives the work that started it.
+      await publishRealtimeEvent(
+        redis,
+        createRealtimeEvent("asset.transcript.failed", {
+          userId: payload.userId,
+          assetId: asset.id,
+          message: `Transcript failed for ${asset.originalFilename}.`,
+          data: { transcriptId: payload.transcriptId, outcome: status },
+        }),
+      ).catch(() => {})
     }
 
     try {
