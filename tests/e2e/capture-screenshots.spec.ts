@@ -27,10 +27,7 @@ async function settle(page: Page) {
 
 const shots: Array<{ name: string; path: string; wait?: string }> = [
   { name: "dashboard", path: "/dashboard" },
-  { name: "files", path: "/files" },
-  { name: "videos", path: "/videos" },
   { name: "chat", path: "/chat" },
-  { name: "settings", path: "/settings" },
 ]
 
 for (const shot of shots) {

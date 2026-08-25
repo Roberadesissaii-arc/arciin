@@ -24,18 +24,6 @@ Arciin is a self-hosted private file, library, and media management platform. Ru
   <em>AI Chat — ask your own files. Bring your own model: Gemini, OpenAI, or a local Ollama.</em>
 </p>
 
-<p align="center">
-  <img src="./docs/screenshots/videos.png" alt="Arciin video library" width="900" />
-  <br />
-  <em>Video library — thumbnails, transcripts, and translations generated on your own hardware.</em>
-</p>
-
-<p align="center">
-  <img src="./docs/screenshots/files.png" alt="Arciin file browser" width="900" />
-  <br />
-  <em>All Files — every library in one browser, with grid and list views and bulk actions.</em>
-</p>
-
 ---
 
 ## Table of contents
