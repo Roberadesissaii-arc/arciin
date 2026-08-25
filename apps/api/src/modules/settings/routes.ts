@@ -195,7 +195,7 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
       reply.send({
         data: {
           instanceName: instance?.instanceName ?? "Arciin",
-          version: "0.1.0",
+          version: apiConfig.appVersion,
           initializedAt: instance?.initializedAt?.toISOString() ?? null,
         },
       })
@@ -220,7 +220,13 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
         where: { id: instance.id },
         data: { instanceName: parsed.data.instanceName },
       })
-      reply.send({ data: { instanceName: updated.instanceName, version: "0.1.0", initializedAt: instance.initializedAt?.toISOString() ?? null } })
+      reply.send({
+        data: {
+          instanceName: updated.instanceName,
+          version: apiConfig.appVersion,
+          initializedAt: instance.initializedAt?.toISOString() ?? null,
+        },
+      })
     }
   )
 

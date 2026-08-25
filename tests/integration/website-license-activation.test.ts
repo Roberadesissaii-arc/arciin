@@ -134,7 +134,7 @@ describeE2E("a website-issued key activates a clean Arciin instance", () => {
         licenseKey: handoff!.licenseKey,
         instanceId: INSTANCE_A,
         instanceName: "E2E Clean Instance",
-        version: "0.1.0",
+        version: "1.0.0",
       }),
     })
 

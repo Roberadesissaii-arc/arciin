@@ -1,6 +1,6 @@
 {
   "name": "arciin",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "license": "SEE LICENSE IN LICENSE",
   "packageManager": "pnpm@10.32.1",
