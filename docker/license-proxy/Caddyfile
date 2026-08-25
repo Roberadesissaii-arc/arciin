@@ -1,0 +1,135 @@
+# Public HTTPS perimeter for the licensing authority.
+#
+# The authority itself stays bound to 127.0.0.1:4100 and is never exposed
+# directly. This is the only thing on the internet, and it forwards a short,
+# explicit list of paths to loopback. Everything else is 404 — including routes
+# that exist and work, but that nothing outside this host has any business
+# calling.
+#
+# The allowlist is derived from the two real clients, not from the route table:
+#
+#   apps/api/src/services/license/hosted-client.ts  (customer installations)
+#     POST /licenses/activate, /licenses/refresh, /licenses/deactivate
+#
+#   arciin-web lib/licensing/client.ts              (the website, service auth)
+#     POST /licenses/issue, /licenses/revoke, /account/deactivate-server
+#     GET  /licenses/by-order/:externalOrderId, /account/overview
+#
+# Deliberately NOT public, though they exist upstream:
+#
+#   POST /licenses/demo    mints a licence — admin only
+#   POST /licenses/delete  destroys records — admin only
+#   GET  /licenses/status  unauthenticated status, enumerable
+#   GET  /licenses/lookup, /account/licenses, /account/activations
+#                          service-authenticated but unused by the website;
+#                          an unused route on the internet is only a liability
+#   GET  /                 build/service banner
+#
+# Service authentication is unchanged and still enforced by the application:
+# this perimeter narrows what can be reached, it does not decide who may.
+#
+# The site address is a variable so this file is the same in test and
+# production. Give it a hostname and Caddy provisions TLS automatically:
+#   LICENSE_SITE_ADDRESS=license.example.com
+# Left unset it serves plain HTTP on loopback, which is how the perimeter is
+# tested without a certificate.
+
+{
+	# No admin API. It listens on 2019 by default and can rewrite this config.
+	admin off
+	log {
+		output stderr
+		format json
+	}
+}
+
+{$LICENSE_SITE_ADDRESS:http://127.0.0.1:4443} {
+	# Access logging is on deliberately: an authority that mints entitlements
+	# should be able to say who called it and when. Caddy redacts Authorization
+	# and Cookie in access logs and never records request bodies, so the service
+	# credential and the licence key in a payload stay out of them — asserted in
+	# the perimeter test rather than assumed.
+	log {
+		output stderr
+		format json
+	}
+
+	# Licensing payloads are a key, an instance id and a little metadata.
+	# Anything larger is not a licensing request.
+	request_body {
+		max_size 64KB
+	}
+
+	header {
+		-Server
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+	}
+
+	# ── Customer installations ────────────────────────────────────────────
+	# No service credential: the licence key in the body is the credential,
+	# and the authority verifies it.
+	@instance {
+		method POST
+		path /licenses/activate /licenses/refresh /licenses/deactivate
+	}
+	handle @instance {
+		reverse_proxy 127.0.0.1:4100 {
+			header_up X-Forwarded-For {remote_host}
+			header_up -X-Real-IP
+			transport http {
+				dial_timeout 5s
+				response_header_timeout 20s
+			}
+		}
+	}
+
+	# ── The website, service-authenticated ────────────────────────────────
+	@servicePost {
+		method POST
+		path /licenses/issue /licenses/revoke /account/deactivate-server
+	}
+	@serviceGet {
+		method GET
+		path /account/overview /licenses/by-order/*
+	}
+	handle @servicePost {
+		reverse_proxy 127.0.0.1:4100 {
+			header_up X-Forwarded-For {remote_host}
+			header_up -X-Real-IP
+			transport http {
+				dial_timeout 5s
+				response_header_timeout 20s
+			}
+		}
+	}
+	handle @serviceGet {
+		reverse_proxy 127.0.0.1:4100 {
+			header_up X-Forwarded-For {remote_host}
+			header_up -X-Real-IP
+			transport http {
+				dial_timeout 5s
+				response_header_timeout 20s
+			}
+		}
+	}
+
+	# ── Liveness ──────────────────────────────────────────────────────────
+	# Returns {"ok":true,"service":...} and nothing else.
+	@health {
+		method GET
+		path /health
+	}
+	handle @health {
+		reverse_proxy 127.0.0.1:4100
+	}
+
+	# ── Default deny ──────────────────────────────────────────────────────
+	# Anything unlisted, and any disallowed method on a listed path, ends
+	# here. 404 rather than 405, so the perimeter does not confirm which
+	# paths exist upstream.
+	handle {
+		respond 404
+	}
+}
