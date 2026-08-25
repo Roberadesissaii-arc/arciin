@@ -1,13 +1,16 @@
 # Arciin — private distribution (image-based)
 #
 # Customer install uses pre-built images only — no monorepo, no source bind mounts.
+# Public one-liner: curl -fsSL https://get.arciin.com/install.sh | bash
+# (served compose lives in Arciin_web/public/install/ — keep image defaults in sync).
+#
 # Local prototype: build images first with `pnpm docker:build` (or scripts/docker-build-images.sh),
 # then: docker compose -f docker-compose.production.yml --env-file .env up -d
 #
 # Image tags (override via .env):
 #   ARCIIN_IMAGE_WEB / ARCIIN_IMAGE_API / ARCIIN_IMAGE_WORKER
 #
-# Registry note: images are NOT published publicly yet. Load local tags or a private registry.
+# Registry: public GHCR packages under ghcr.io/roberadesissaii-arc/arciin-{web,api,worker}.
 
 name: arciin
 
@@ -34,7 +37,7 @@ services:
       start_period: 20s
 
   web:
-    image: ${ARCIIN_IMAGE_WEB:-arciin/arciin-web:latest}
+    image: ${ARCIIN_IMAGE_WEB:-ghcr.io/roberadesissaii-arc/arciin-web:latest}
     restart: unless-stopped
     # No env_file: public web tier must not hold back-end secrets.
     environment:
@@ -64,7 +67,7 @@ services:
       start_period: 40s
 
   api:
-    image: ${ARCIIN_IMAGE_API:-arciin/arciin-api:latest}
+    image: ${ARCIIN_IMAGE_API:-ghcr.io/roberadesissaii-arc/arciin-api:latest}
     restart: unless-stopped
     env_file:
       - .env
@@ -107,7 +110,7 @@ services:
       - ${ARCIIN_HOST_DATA_DIR:-/srv/arciin-storage/arciin}:/data/arciin
 
   worker:
-    image: ${ARCIIN_IMAGE_WORKER:-arciin/arciin-worker:latest}
+    image: ${ARCIIN_IMAGE_WORKER:-ghcr.io/roberadesissaii-arc/arciin-worker:latest}
     restart: unless-stopped
     env_file:
       - .env
