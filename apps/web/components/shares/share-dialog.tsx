@@ -15,6 +15,7 @@ import {
 } from "lucide-react"
 import { toast } from "@/lib/notifications/arciin-toast"
 
+import { ExistingShareLinks } from "@/components/shares/existing-share-links"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field"
@@ -424,7 +425,7 @@ export function AssetShareContent({
                   Link expires
                 </FieldLabel>
                 <FieldDescription className="mb-2 text-[12px] leading-relaxed">
-                  After expiry the link stops working. You can revoke links anytime from Activity.
+                  After expiry the link stops working. Active links are listed below, and you can revoke any of them at any time.
                 </FieldDescription>
                 <Select value={expiresInDays} onValueChange={setExpiresInDays}>
                   <SelectTrigger className="h-10 w-full bg-muted/40">
@@ -437,6 +438,21 @@ export function AssetShareContent({
                     <SelectItem value="never">Never</SelectItem>
                   </SelectContent>
                 </Select>
+              </Field>
+
+              {/*
+                The links already handed out.
+
+                The line above used to point at Activity, which had no revoke
+                control — and nothing else in the app called revokeShareLink
+                either, so a public link with no expiry was permanent. The
+                server route worked the whole time; this is the missing half.
+              */}
+              <Field>
+                <FieldLabel className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  Existing links
+                </FieldLabel>
+                <ExistingShareLinks className="mt-1.5" />
               </Field>
 
               <label className="flex cursor-pointer items-start gap-2.5 rounded-lg border border-border bg-muted/20 px-3 py-2.5">

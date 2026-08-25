@@ -17,7 +17,8 @@ services:
   web:
     build:
       context: .
-      dockerfile: Dockerfile.web
+      dockerfile: Dockerfile
+      target: web
       args:
         NEXT_PUBLIC_API_BASE_URL: /api
         ARCIIN_PUBLIC_URL: http://localhost
@@ -38,7 +39,8 @@ services:
   api:
     build:
       context: .
-      dockerfile: Dockerfile.api
+      dockerfile: Dockerfile
+      target: api
     env_file:
       - .env
     # Match a host uid so the bind-mounted data dir stays writable as non-root.
@@ -86,7 +88,8 @@ services:
   worker:
     build:
       context: .
-      dockerfile: Dockerfile.worker
+      dockerfile: Dockerfile
+      target: worker
     env_file:
       - .env
     user: "${ARCIIN_PUID:-1000}:${ARCIIN_PGID:-1000}"

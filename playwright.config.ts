@@ -48,10 +48,27 @@ export default defineConfig({
    */
   globalSetup: "./tests/e2e/global-setup.ts",
   /**
-   * Boots the isolated dev stack on :4100/:3100 if it is not already up.
-   * `reuseExistingServer` means a developer who already has `pnpm dev` running
-   * keeps it; CI gets a fresh one. Production is on 4000/3002 and is never
-   * touched — the guard above refuses those ports outright.
+   * Boots the isolated stack if it is not already up. `reuseExistingServer`
+   * means a developer who already has one running keeps it; CI gets a fresh
+   * one. Production is on 4000/3002 and is never touched — the guard above
+   * refuses those ports outright.
+   *
+   * The web app is **built and served, not run under `next dev`**. Two reasons,
+   * in order of importance:
+   *
+   * 1. `next dev` compiles a route the first time it is requested, so the first
+   *    assertion to touch a page was really measuring a compile. It passed or
+   *    failed on whether an earlier run had left a warm cache behind.
+   * 2. Worse, that compile is not merely slow. On Next 16.2.6 the dev compiler
+   *    deadlocks on `/dashboard`: the request never returns, and every Turbopack
+   *    worker sits parked in `futex_do_wait` at 0% CPU indefinitely — observed
+   *    at >8 minutes with no completion. The same route builds in 56s and then
+   *    serves in 0.16s here. Signing in navigates to `/dashboard`, so the login
+   *    step inherited that hang and looked like a broken login.
+   *
+   * The build costs about two minutes once, and buys back more than that in dev
+   * compiles that no longer happen. It also means the suite certifies the
+   * artefact that actually ships rather than one that never leaves a laptop.
    */
   webServer: [
     {
@@ -63,10 +80,18 @@ export default defineConfig({
       stderr: "pipe",
     },
     {
-      command: `ARCIIN_ENV_NAMESPACE=dev PORT=${E2E_WEB_PORT} NEXT_DIST_DIR=.next-e2e ARCIIN_API_URL=http://127.0.0.1:${E2E_API_PORT} pnpm --filter @arciin/web dev`,
+      // NODE_ENV=production for this child only. `.env.development` above sets
+      // it to development, and `next build` under that value fails while
+      // prerendering with "Cannot read properties of null (reading
+      // 'useState')". The guard reads NODE_ENV from this config's own process,
+      // which stays as it was.
+      command:
+        `NODE_ENV=production ARCIIN_ENV_NAMESPACE=dev NEXT_DIST_DIR=.next-e2e ARCIIN_API_URL=http://127.0.0.1:${E2E_API_PORT} pnpm --filter @arciin/web build && ` +
+        `NODE_ENV=production ARCIIN_ENV_NAMESPACE=dev PORT=${E2E_WEB_PORT} NEXT_DIST_DIR=.next-e2e ARCIIN_API_URL=http://127.0.0.1:${E2E_API_PORT} pnpm --filter @arciin/web start -p ${E2E_WEB_PORT}`,
       url: `http://127.0.0.1:${E2E_WEB_PORT}/login`,
       reuseExistingServer: true,
-      timeout: 180_000,
+      // Covers a cold production build, not just the boot that follows it.
+      timeout: 900_000,
       stdout: "ignore",
       stderr: "pipe",
     },

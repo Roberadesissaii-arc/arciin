@@ -2,7 +2,6 @@ import { access } from "node:fs/promises"
 
 import type { FastifyInstance } from "fastify"
 
-import { WORKER_HEARTBEAT_KEY } from "@arciin/shared"
 
 import { apiConfig } from "@/config"
 
@@ -23,7 +22,7 @@ export async function registerHealthRoutes(fastify: FastifyInstance) {
     try {
       await fastify.redis.ping()
       realtime = "online"
-      const heartbeat = await fastify.redis.get(WORKER_HEARTBEAT_KEY)
+      const heartbeat = await fastify.redis.get(apiConfig.workerHeartbeatKey)
 
       if (heartbeat) {
         worker = Date.now() - Number(heartbeat) < 60_000 ? "online" : "offline"

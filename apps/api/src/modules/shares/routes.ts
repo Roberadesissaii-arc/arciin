@@ -18,7 +18,7 @@ import {
 import { recordAndBroadcastActivity } from "@/services/activity/record-and-broadcast-activity"
 import { assertAssetFolderAccess } from "@/services/folders/folder-lock"
 import { streamFileResponse } from "@/services/media/stream-file-response"
-import { requireRole } from "@/services/security/auth"
+import { requireSessionRole } from "@/services/security/auth"
 import {
   ASSET_PAGE_ORDER_BY,
   buildAssetPage,
@@ -73,7 +73,7 @@ export async function registerShareRoutes(fastify: FastifyInstance) {
   fastify.get(
     "/shares",
     {
-      preHandler: requireRole(["OWNER", "ADMIN", "MEMBER"]),
+      preHandler: requireSessionRole(["OWNER", "ADMIN", "MEMBER"]),
     },
     async (request, reply) => {
       if (!request.auth) {
@@ -104,7 +104,7 @@ export async function registerShareRoutes(fastify: FastifyInstance) {
   fastify.post(
     "/shares",
     {
-      preHandler: requireRole(["OWNER", "ADMIN", "MEMBER"]),
+      preHandler: requireSessionRole(["OWNER", "ADMIN", "MEMBER"]),
     },
     async (request, reply) => {
       const parsed = createShareSchema.safeParse(request.body)
@@ -237,7 +237,7 @@ export async function registerShareRoutes(fastify: FastifyInstance) {
   fastify.delete(
     "/shares/:shareId",
     {
-      preHandler: requireRole(["OWNER", "ADMIN", "MEMBER"]),
+      preHandler: requireSessionRole(["OWNER", "ADMIN", "MEMBER"]),
     },
     async (request, reply) => {
       const params = z.object({ shareId: z.string() }).parse(request.params)

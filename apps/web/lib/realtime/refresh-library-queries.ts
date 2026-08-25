@@ -46,7 +46,6 @@ function runRefresh(queryClient: QueryClient, libraryIds: Set<string>) {
  * refresh for the whole batch instead, so events are parked until it finishes.
  */
 let bulkDepth = 0
-let refreshOwed = false
 
 export function beginBulkLibraryMutation() {
   bulkDepth += 1
@@ -59,7 +58,6 @@ export function beginBulkLibraryMutation() {
 export function endBulkLibraryMutation(queryClient: QueryClient) {
   bulkDepth = Math.max(0, bulkDepth - 1)
   if (bulkDepth > 0) return
-  refreshOwed = false
   runRefresh(queryClient, new Set())
 }
 
@@ -71,7 +69,7 @@ export function endBulkLibraryMutation(queryClient: QueryClient) {
  */
 export function refreshLibraryQueries(queryClient: QueryClient, libraryId?: string) {
   if (bulkDepth > 0) {
-    refreshOwed = true
+    // The caller owns one refresh for the whole batch; see endBulkLibraryMutation.
     return
   }
 

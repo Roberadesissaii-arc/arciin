@@ -17,7 +17,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify"
 import { z } from "zod"
 
-import { requireRole } from "@/services/security/auth"
+import { requireSessionRole } from "@/services/security/auth"
 
 /** How long a claim survives without a heartbeat. */
 export const LEASE_TTL_MS = 45_000
@@ -113,7 +113,7 @@ function sessionIdOf(request: FastifyRequest): string | null {
 }
 
 export async function bookRunRoutes(fastify: FastifyInstance) {
-  const guard = [requireRole(["OWNER", "ADMIN", "MEMBER"])]
+  const guard = [requireSessionRole(["OWNER", "ADMIN", "MEMBER"])]
 
   async function loadOwnRun(
     request: FastifyRequest,

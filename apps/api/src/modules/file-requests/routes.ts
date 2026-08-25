@@ -41,7 +41,7 @@ import {
 } from "@/services/file-requests/file-request-access"
 import { mediaQueue } from "@/services/jobs/queues"
 import { clientIpFromRequest } from "@/services/security/client-ip"
-import { requireRole } from "@/services/security/auth"
+import { requireSessionRole } from "@/services/security/auth"
 import { resolveEffectiveStorageRoot } from "@/services/storage/effective-storage-root"
 import {
   createObjectStoragePath,
@@ -163,7 +163,7 @@ export async function registerFileRequestRoutes(fastify: FastifyInstance) {
 
   fastify.get(
     "/file-requests",
-    { preHandler: requireRole(["OWNER", "ADMIN", "MEMBER"]) },
+    { preHandler: requireSessionRole(["OWNER", "ADMIN", "MEMBER"]) },
     async (request, reply) => {
       if (!request.auth) return
 
@@ -184,7 +184,7 @@ export async function registerFileRequestRoutes(fastify: FastifyInstance) {
 
   fastify.post(
     "/file-requests",
-    { preHandler: requireRole(["OWNER", "ADMIN", "MEMBER"]) },
+    { preHandler: requireSessionRole(["OWNER", "ADMIN", "MEMBER"]) },
     async (request, reply) => {
       if (!request.auth) return
 
@@ -299,7 +299,7 @@ export async function registerFileRequestRoutes(fastify: FastifyInstance) {
 
   fastify.post(
     "/file-requests/:id/revoke",
-    { preHandler: requireRole(["OWNER", "ADMIN", "MEMBER"]) },
+    { preHandler: requireSessionRole(["OWNER", "ADMIN", "MEMBER"]) },
     async (request, reply) => {
       if (!request.auth) return
       const params = z.object({ id: z.string() }).parse(request.params)
@@ -323,7 +323,7 @@ export async function registerFileRequestRoutes(fastify: FastifyInstance) {
 
   fastify.post(
     "/file-requests/:id/extend",
-    { preHandler: requireRole(["OWNER", "ADMIN", "MEMBER"]) },
+    { preHandler: requireSessionRole(["OWNER", "ADMIN", "MEMBER"]) },
     async (request, reply) => {
       if (!request.auth) return
       const params = z.object({ id: z.string() }).parse(request.params)
@@ -362,7 +362,7 @@ export async function registerFileRequestRoutes(fastify: FastifyInstance) {
 
   fastify.get(
     "/file-requests/:id/submissions",
-    { preHandler: requireRole(["OWNER", "ADMIN", "MEMBER"]) },
+    { preHandler: requireSessionRole(["OWNER", "ADMIN", "MEMBER"]) },
     async (request, reply) => {
       if (!request.auth) return
       const params = z.object({ id: z.string() }).parse(request.params)

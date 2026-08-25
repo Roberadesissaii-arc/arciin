@@ -21,7 +21,7 @@
 
 import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs"
 import path from "node:path"
-import { createHash, randomBytes } from "node:crypto"
+import { createHash, randomBytes, createHmac } from "node:crypto"
 
 import { config as loadEnv } from "dotenv"
 import { hash } from "@node-rs/argon2"
@@ -48,6 +48,17 @@ export const E2E_PASSWORD_FILE = "/tmp/arciin-e2e-pw"
  * something.
  */
 export const E2E_VIDEO_ASSET_ID = "e2e-video-transcript-fixture"
+/**
+ * A second video that has nothing happening on it.
+ *
+ * The card tests need a quiet row to contrast against the busy one — no AI
+ * activity, no translations — and they address it by this id. It existed only
+ * as a hand-made row in the long-lived arciin_dev database, so the suite
+ * silently required a database nobody could recreate: on a freshly migrated
+ * one, every test touching it failed on a card that was never seeded. Same
+ * bytes as the transcript fixture; only its emptiness matters.
+ */
+export const E2E_QUIET_VIDEO_ASSET_ID = "dev-video-promo"
 export const E2E_VIDEO_STORAGE_OBJECT_ID = "e2e-video-transcript-object"
 export const E2E_VIDEO_FILENAME = "e2e-video-transcript-fixture.mp4"
 export const E2E_VIDEO_SOURCE = path.join(
@@ -81,6 +92,29 @@ export const E2E_IMAGE_METADATA = {
   width: 480,
   height: 270,
   mimeType: "image/png",
+}
+
+/**
+ * A PDF, so "a document is offered Assist" can be asserted against a document
+ * we control.
+ *
+ * The suite used to reach for whatever the documents library happened to list
+ * first. That library accumulates whatever earlier work left behind — on this
+ * machine the newest document was a realtime-probe.txt from an audit session —
+ * and a .txt is correctly *not* offered PDF Assist, so the test failed on a
+ * true statement about the wrong file.
+ *
+ * Hand-written rather than downloaded: 601 bytes, one page, one line of text,
+ * and legible as source instead of an opaque blob.
+ */
+export const E2E_DOC_ASSET_ID = "e2e-doc-fixture"
+export const E2E_DOC_FILENAME = "e2e-doc-fixture.pdf"
+export const E2E_DOC_SOURCE = path.join(
+  path.resolve(import.meta.dirname, ".."),
+  "tests/fixtures/e2e-doc-fixture.pdf",
+)
+export const E2E_DOC_METADATA = {
+  mimeType: "application/pdf",
 }
 
 /**
@@ -306,6 +340,16 @@ async function seedVideoFixture(prisma, ownerId, storageRoot) {
     metadata: E2E_VIDEO_METADATA,
   })
   await seedFixtureAsset(prisma, ownerId, storageRoot, {
+    assetId: E2E_QUIET_VIDEO_ASSET_ID,
+    storageObjectId: "e2e-quiet-video-fixture-object",
+    filename: "dev-video-promo.mp4",
+    source: E2E_VIDEO_SOURCE,
+    extension: ".mp4",
+    mediaType: "VIDEO",
+    librarySlug: "videos",
+    metadata: E2E_VIDEO_METADATA,
+  })
+  await seedFixtureAsset(prisma, ownerId, storageRoot, {
     assetId: E2E_IMAGE_ASSET_ID,
     storageObjectId: "e2e-image-fixture-object",
     filename: E2E_IMAGE_FILENAME,
@@ -315,20 +359,78 @@ async function seedVideoFixture(prisma, ownerId, storageRoot) {
     librarySlug: "images",
     metadata: E2E_IMAGE_METADATA,
   })
+  await seedFixtureAsset(prisma, ownerId, storageRoot, {
+    assetId: E2E_DOC_ASSET_ID,
+    storageObjectId: "e2e-doc-fixture-object",
+    filename: E2E_DOC_FILENAME,
+    source: E2E_DOC_SOURCE,
+    extension: ".pdf",
+    mediaType: "DOCUMENT",
+    librarySlug: "documents",
+    metadata: E2E_DOC_METADATA,
+  })
   return video
 }
 
 /**
  * The suite writes to this database. Pointing it at production would seed a
  * fake owner into a real instance, so this is a hard stop rather than a warning.
+ *
+ * The rule is "a database marked as dev or test", not one specific name. It was
+ * pinned to `arciin_dev` exactly, which meant the whole browser suite could only
+ * ever run against that one database — so certifying a release from an isolated
+ * worktree was impossible without pointing it at the same database a second
+ * checkout was actively using. That is the contention the isolation exists to
+ * remove. This now matches the policy tests/e2e/guard.ts already enforces, and
+ * still refuses production by name.
  */
+const PRODUCTION_DATABASE_NAME = "arciin"
+
+/**
+ * Mint the same local mock licence token `activateMockLicense` produces.
+ *
+ * Seeding `licensePlan: "pro"` alone does not survive a single request. The API
+ * re-evaluates the licence from `licenseSignedToken`; an absent *or malformed*
+ * token makes it write Free back over these columns and null the token
+ * (license-service.ts), after which every Pro-gated route answers 403 — the AI
+ * drawer, the transcript panel, chat conversations, all of it.
+ *
+ * That went unnoticed because the long-lived arciin_dev database already held a
+ * valid token from a hand-run activation, so the browser suite only ever passed
+ * against a database nobody could recreate. Signing a real one here is what
+ * makes the suite reproducible from an empty database — which is what
+ * certifying a release from an isolated worktree requires.
+ *
+ * Signed with SESSION_SECRET exactly as the app does, and marked `mock_dev`, so
+ * it is valid for this instance only and obviously not a production licence.
+ */
+function signMockLicenceToken(instanceId, plan, activatedAt, expiresAt) {
+  const payload = {
+    v: 1,
+    instanceId,
+    plan,
+    activatedAt: activatedAt.toISOString(),
+    expiresAt: expiresAt ? expiresAt.toISOString() : null,
+    graceUntil: null,
+    keyPrefix: "ARCIIN-DEV",
+    source: "mock_dev",
+  }
+  const body = Buffer.from(JSON.stringify(payload), "utf8").toString("base64url")
+  const secret = process.env.SESSION_SECRET || "arciin-dev-license-secret"
+  const sig = createHmac("sha256", secret).update(body).digest("base64url")
+  return `arclic.v1.${body}.${sig}`
+}
+
 function assertDevDatabase(url) {
   if (!url) throw new Error("DATABASE_URL is not set")
   const name = new URL(url).pathname.replace(/^\//, "")
-  if (name !== "arciin_dev") {
+  if (name === PRODUCTION_DATABASE_NAME) {
+    throw new Error(`refusing to seed: DATABASE_URL points at the production database "${name}".`)
+  }
+  if (!/test|dev/.test(name)) {
     throw new Error(
-      `refusing to seed: DATABASE_URL points at "${name}", expected "arciin_dev". ` +
-        "Run with .env.development loaded.",
+      `refusing to seed: DATABASE_URL database "${name}" is not marked as a test or dev ` +
+        "database. Run with .env.development loaded, or name the database with a dev/test marker.",
     )
   }
   return name
@@ -370,6 +472,22 @@ export async function seedE2EUser() {
     } else {
       instance = await prisma.instanceConfig.update({ where: { id: instance.id }, data: licence })
     }
+
+    // The token binds to the instance id, so it can only be signed once the row
+    // exists. Without this the licence above survives exactly until the first
+    // request re-evaluates it.
+    await prisma.instanceConfig.update({
+      where: { id: instance.id },
+      data: {
+        licenseSignedToken: signMockLicenceToken(
+          instance.id,
+          "pro",
+          licence.licenseActivatedAt,
+          licence.licenseExpiresAt,
+        ),
+        licenseKeyPrefix: "ARCIIN-DEV",
+      },
+    })
 
     // A chat profile must exist or the chat page renders its "no models
     // configured" empty state instead of the entitlement UI, and the gating

@@ -328,8 +328,8 @@ export async function activateMockLicense(
       ok: false,
       code: "INVALID_LICENSE_KEY",
       message: licenseServerBaseUrl()
-        ? "Unrecognized license key. Get a key from arciin.vercel.app after checkout, then paste it here."
-        : "Unrecognized license key. Check the key and try again, or open arciin.vercel.app/pricing to get a license.",
+        ? "Unrecognized license key. Get a key from arciin.com after checkout, then paste it here."
+        : "Unrecognized license key. Check the key and try again, or open arciin.com/pricing to get a license.",
     }
   }
 

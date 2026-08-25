@@ -147,6 +147,10 @@ export function ImportLinkDialog() {
     setFormatId(preview.defaultFormatId)
     setAudioOnlyEnabled(false)
     setError(undefined)
+  // Keyed on the link, not the preview object: this resets the form for a
+  // *different* link. Re-running it whenever a preview is refetched would
+  // discard the format the user had just chosen.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [preview?.source.href])
 
   useEffect(() => {

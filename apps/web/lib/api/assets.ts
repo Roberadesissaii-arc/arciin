@@ -8,9 +8,13 @@ export type AssetFilters = {
   /** When true, only assets at the library root (not inside a folder). */
   rootOnly?: boolean
   mediaType?: string
-  /** Server-side filter: code (scripts) or applications (installers). */
-  category?: "code" | "applications"
+  /** Server-side filter: code, installers, or Other (uncategorized + zips). */
+  category?: "code" | "applications" | "other"
   search?: string
+  /** Include Inbox in an undirected cross-library listing (chat "latest upload"). */
+  includeInbox?: boolean
+  /** `only` = Archives chip; default excludes archived from main views. */
+  archived?: "exclude" | "only" | "include"
 }
 
 export function getAssets(filters: AssetFilters = {}, signal?: AbortSignal) {
@@ -89,6 +93,19 @@ export function moveAsset(
 export function deleteAsset(assetId: string) {
   return fetchApi<{ success: true }>(`/assets/${assetId}`, {
     method: "DELETE",
+  })
+}
+
+/** Soft-archive: hide from main libraries; show under All Files → Archives. */
+export function archiveAsset(assetId: string) {
+  return fetchApi<AssetSummary>(`/assets/${assetId}/archive`, {
+    method: "POST",
+  })
+}
+
+export function unarchiveAsset(assetId: string) {
+  return fetchApi<AssetSummary>(`/assets/${assetId}/unarchive`, {
+    method: "POST",
   })
 }
 

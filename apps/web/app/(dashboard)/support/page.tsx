@@ -9,12 +9,12 @@ const resources = [
   },
   {
     title: "GitHub Issues",
-    href: "https://github.com/your-org/arciin/issues",
+    href: "https://github.com/Roberadesissaii-arc/arciin/issues",
     description: "Report a bug or request a feature directly on GitHub.",
   },
   {
     title: "Community",
-    href: "https://github.com/your-org/arciin/discussions",
+    href: "https://github.com/Roberadesissaii-arc/arciin/discussions",
     description: "Ask questions and share ideas with other Arciin users.",
   },
   {

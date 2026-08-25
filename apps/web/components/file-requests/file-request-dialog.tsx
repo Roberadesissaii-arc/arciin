@@ -24,6 +24,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet"
+import { ExistingFileRequests } from "@/components/file-requests/existing-file-requests"
 import { createFileRequest, type CreatedFileRequest } from "@/lib/api/file-requests"
 import { libraryGlassSheetPanel } from "@/lib/library-glass-sheet"
 import type { FolderSummary } from "@/lib/types/models"
@@ -423,6 +424,22 @@ export function FileRequestDialog({
                   <span>Notify me when files arrive</span>
                 </label>
               </div>
+
+              {/*
+                The links already handed out.
+
+                A file request is a public URL that writes into a private
+                folder. Nothing in the app listed them, so one created without
+                an expiry accepted uploads forever with no way to stop it. The
+                server routes were there the whole time; this is the half that
+                was missing.
+              */}
+              <Field>
+                <FieldLabel className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  Existing upload links
+                </FieldLabel>
+                <ExistingFileRequests className="mt-1.5" />
+              </Field>
             </>
           )}
         </div>

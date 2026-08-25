@@ -34,8 +34,8 @@ check "Docker API entrypoint runs init" "grep -q arciin-init scripts/entrypoint-
 check "Native install runs init" "grep -q arciin-init.sh install.sh"
 check ".env.example present" "test -f .env.example"
 check ".env.docker.example present" "test -f .env.docker.example"
-check "Dockerfiles: web, api, worker" \
-  "test -f Dockerfile.web && test -f Dockerfile.api && test -f Dockerfile.worker"
+check "Dockerfile targets: web, api, worker" \
+  "test -f Dockerfile && grep -q 'AS web\$' Dockerfile && grep -q 'AS api\$' Dockerfile && grep -q 'AS worker\$' Dockerfile"
 
 for key in ARCIIN_SETUP_TOKEN SESSION_SECRET MAX_UPLOAD_SIZE_MB UPLOAD_RATE_LIMIT_PER_MINUTE LOG_MAX_FILE_BYTES; do
   check ".env.example has ${key}" "grep -q '^${key}=' .env.example"

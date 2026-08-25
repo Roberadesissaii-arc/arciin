@@ -9,7 +9,7 @@ import {
   type MediaConnectorDef,
 } from "@/services/integrations/library-media-connector"
 import { recordAndBroadcastActivity } from "@/services/activity/record-and-broadcast-activity"
-import { requireRole } from "@/services/security/auth"
+import { requireSessionRole } from "@/services/security/auth"
 import { serializeIntegration } from "@/services/serializers"
 
 const patchSchema = z.object({
@@ -29,7 +29,7 @@ export function registerMediaConnectorRoutes(
 
   fastify.get(
     `${basePath}/status`,
-    { preHandler: requireRole(["OWNER", "ADMIN", "MEMBER", "VIEWER"]) },
+    { preHandler: requireSessionRole(["OWNER", "ADMIN", "MEMBER", "VIEWER"]) },
     async (_request, reply) => {
       const status = await getConnectorStatus(fastify.prisma, def)
       if (!status) {
@@ -44,7 +44,7 @@ export function registerMediaConnectorRoutes(
 
   fastify.post(
     `${basePath}/setup-folders`,
-    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    { preHandler: requireSessionRole(["OWNER", "ADMIN"]) },
     async (request, reply) => {
       const existing = await def.findIntegration(fastify.prisma)
       if (!existing) {
@@ -74,7 +74,7 @@ export function registerMediaConnectorRoutes(
 
   fastify.patch(
     basePath,
-    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    { preHandler: requireSessionRole(["OWNER", "ADMIN"]) },
     async (request, reply) => {
       const parsed = patchSchema.safeParse(request.body)
       if (!parsed.success) {

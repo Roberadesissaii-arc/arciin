@@ -381,7 +381,7 @@ pnpm dev              # web + api + worker together
 Run processes separately:
 
 ```bash
-pnpm dev:web      # Next.js on :3000
+pnpm dev:web      # Next.js on :3100
 pnpm dev:api      # Fastify on :4000
 pnpm dev:worker   # BullMQ consumer
 ```

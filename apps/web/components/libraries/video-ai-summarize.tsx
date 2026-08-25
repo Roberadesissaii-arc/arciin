@@ -74,25 +74,38 @@ export function VideoAiSummarize({
   const [topics, setTopics] = useState<string[]>(savedInsight?.topics ?? [])
   /** True only when Summarize itself asked for a transcript — not when Transcript tab is busy. */
   const [awaitingTranscript, setAwaitingTranscript] = useState(false)
-  const [hydratedFrom, setHydratedFrom] = useState(savedInsight)
+  /**
+   * Derived, not stored.
+   *
+   * "A summarize is running that this panel did not start" is a fact about the
+   * module-level `pendingSummaries` set and whether the insight has landed yet.
+   * Keeping a copy in state meant writing it from two effects, and the write in
+   * the polling effect below was a synchronous setState in an effect body.
+   */
+  const pendingElsewhere = pendingSummaries.has(asset.id) && !savedInsight
   const kickedOff = useRef(false)
 
-  // Hydrate when the saved insight arrives (or changes after regenerate).
-  // Adjust during render — avoids react-hooks/set-state-in-effect errors.
-  if (savedInsight !== hydratedFrom) {
-    setHydratedFrom(savedInsight)
-    if (savedInsight) {
-      setSummary(savedInsight.summary || null)
-      setKeywords(savedInsight.keywords ?? [])
-      setLinks(savedInsight.links ?? [])
-      setAbout(savedInsight.about ?? null)
-      setTopics(savedInsight.topics ?? [])
-      pendingSummaries.delete(asset.id)
-    }
+  /**
+   * Adopt the saved insight when it arrives (or changes after a regenerate).
+   *
+   * Adjusted while rendering rather than in an effect: an effect shows the old
+   * summary for one paint and then replaces it. Clearing the module-level
+   * pending marker is a genuine external-store side effect and stays below.
+   */
+  const [appliedInsight, setAppliedInsight] = useState(savedInsight ?? null)
+  if (savedInsight && savedInsight !== appliedInsight) {
+    setAppliedInsight(savedInsight)
+    setSummary(savedInsight.summary || null)
+    setKeywords(savedInsight.keywords ?? [])
+    setLinks(savedInsight.links ?? [])
+    setAbout(savedInsight.about ?? null)
+    setTopics(savedInsight.topics ?? [])
   }
 
-  /** Survives tab switches / remounts while a summarize job is still in flight. */
-  const pendingElsewhere = pendingSummaries.has(asset.id) && !savedInsight
+  useEffect(() => {
+    if (!savedInsight) return
+    pendingSummaries.delete(asset.id)
+  }, [savedInsight, asset.id])
 
   const summarize = useMutation({
     mutationKey: ["transcript-summary", asset.id],

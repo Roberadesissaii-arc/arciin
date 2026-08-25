@@ -55,10 +55,15 @@ pnpm dev:worker
 
 Default local ports:
 
-- web: `3000`
-- api: `4000`
+- web: `3100` (`pnpm dev:web` sets `PORT=3100`)
+- api: `4100`
 - postgres: `5432`
 - redis: `6379`
+
+`3000` and `4000` belong to a *production* Arciin, not to `pnpm dev`. The dev
+stack is deliberately somewhere else — its own ports, its own database
+(`arciin_dev`), its own Redis db and its own `.next-dev` — so a development
+process cannot reach production state by accident.
 
 ## Verification
 
@@ -75,7 +80,7 @@ pnpm build
 
 With the web and API running:
 
-1. Open `http://localhost:3000`
+1. Open `http://localhost:3100`
 2. You should be redirected to `/setup`
 3. Use `ARCIIN_SETUP_TOKEN` to claim the instance
 4. Create the owner account
@@ -83,10 +88,10 @@ With the web and API running:
 
 ## Useful paths
 
-- `http://localhost:3000/setup`
-- `http://localhost:3000/login`
-- `http://localhost:3000/dashboard`
-- `http://localhost:4000/api/health`
+- `http://localhost:3100/setup`
+- `http://localhost:3100/login`
+- `http://localhost:3100/dashboard`
+- `http://localhost:4100/api/health`
 
 ## Notes
 

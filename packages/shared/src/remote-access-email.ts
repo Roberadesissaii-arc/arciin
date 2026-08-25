@@ -211,7 +211,6 @@ export function renderRemoteAccessEmail(input: RemoteAccessEmailInput): Rendered
   const instanceName = input.instanceName.trim() || "Arciin"
   const safeName = escapeHtml(instanceName)
   const url = input.publicUrl.trim()
-  const newHost = hostOf(url)
   const previousHost = hostOf(input.previousPublicUrl)
   const localUrl = input.localUrl?.trim() || null
   const localHost = hostOf(localUrl)
@@ -339,47 +338,6 @@ export function renderEmailTestMessage(instanceName: string): RenderedEmail {
   <tr><td class="pad" style="padding:22px 28px 0 28px;">&nbsp;</td></tr>`,
     }),
   }
-}
-
-/** File-type badge for the attachment card (email-safe, no external icons). */
-function fileKindFromName(
-  filename: string,
-  mimeType?: string | null,
-): { label: string; chip: string; glyph: string } {
-  const lower = filename.toLowerCase()
-  const mime = (mimeType ?? "").toLowerCase()
-
-  if (mime.startsWith("image/") || /\.(png|jpe?g|gif|webp|heic|svg|avif)$/i.test(lower)) {
-    return { label: "Image", chip: "#EEF2FF", glyph: "IMG" }
-  }
-  if (mime.startsWith("video/") || /\.(mp4|mov|mkv|webm|avi)$/i.test(lower)) {
-    return { label: "Video", chip: "#F5F3FF", glyph: "VID" }
-  }
-  if (mime.startsWith("audio/") || /\.(mp3|wav|flac|aac|m4a|ogg)$/i.test(lower)) {
-    return { label: "Audio", chip: "#ECFDF5", glyph: "AUD" }
-  }
-  if (mime.includes("pdf") || lower.endsWith(".pdf")) {
-    return { label: "PDF", chip: "#FFF4F0", glyph: "PDF" }
-  }
-  if (
-    mime.includes("zip") ||
-    mime.includes("compressed") ||
-    /\.(zip|rar|7z|tar|gz)$/i.test(lower)
-  ) {
-    return { label: "Archive", chip: "#FFFBEB", glyph: "ZIP" }
-  }
-  if (
-    mime.includes("word") ||
-    mime.includes("document") ||
-    /\.(docx?|odt|rtf|txt|md)$/i.test(lower)
-  ) {
-    return { label: "Document", chip: "#EFF6FF", glyph: "DOC" }
-  }
-  if (mime.includes("sheet") || mime.includes("excel") || /\.(xlsx?|csv)$/i.test(lower)) {
-    return { label: "Spreadsheet", chip: "#ECFDF5", glyph: "XLS" }
-  }
-  const ext = lower.includes(".") ? lower.split(".").pop()!.slice(0, 4).toUpperCase() : "FILE"
-  return { label: "File", chip: "#F4F4F5", glyph: ext || "FILE" }
 }
 
 function formatEmailBytes(bytes: number | null | undefined): string | null {

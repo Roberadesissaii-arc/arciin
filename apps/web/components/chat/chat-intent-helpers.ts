@@ -1,6 +1,7 @@
 import { stripAssistantStreamMarkup } from "@arciin/shared"
 
 import type { Message } from "@/components/chat/chat-message-model"
+import { extractListedTitles } from "@/lib/chat/listed-assets"
 
 /**
  * Intent detection + response tag enforcement for chat replies —
@@ -69,6 +70,85 @@ function stripAllAssetTags(content: string): string {
     .trim()
 }
 
+/**
+ * "Files" / "uploads" with no library word — the user means the instance as a
+ * whole, not one media type.
+ *
+ * These read as vague, so an earlier gate that required a media noun treated
+ * them as small talk and stripped the gallery the model had already produced:
+ * "what is the latest upload" answered "here's the most recent file:" followed
+ * by nothing at all.
+ */
+const GENERIC_FILE_NOUN = /\b(uploads?|files?|assets?|additions?)\b/i
+
+/** Recency + a generic file noun: "the latest upload", "my recent files". */
+function mentionsRecentUploads(text: string): boolean {
+  const t = text.toLowerCase()
+  return (
+    /\b(latest|newest|last|most\s+recent|recent(?:ly)?|just)\b/.test(t) &&
+    GENERIC_FILE_NOUN.test(t)
+  )
+}
+
+/**
+ * Singular phrasing about one upload — "what is the latest upload", "my last
+ * file", "what did I just upload". These deserve the one card they named, not
+ * a grid of the whole instance.
+ */
+function userWantsExactlyOneFile(userText: string): boolean {
+  const t = normalizeDocumentListQuery(userText).trim().toLowerCase()
+  if (!t) return false
+  if (userRequestsCodeFiles(userText)) return false
+  // Plurals and "all/them" ask for the set, not the single newest file.
+  if (/\b(uploads|files|assets|additions|them|those|these|all|every)\b/.test(t)) return false
+  if (/\bwhat\s+did\s+i\s+(?:just\s+)?upload(?:ed)?\b/.test(t)) return true
+  return /\b(latest|newest|last|most\s+recent)\b[^.?!]{0,24}\b(upload|file|asset|addition|one|item)\b/.test(
+    t,
+  )
+}
+
+/** Generic browse of the whole instance: "my files", "the latest upload", "recent uploads". */
+function userWantsGenericFileBrowse(userText: string, priorMessages: Message[]): boolean {
+  const t = normalizeDocumentListQuery(userText).trim().toLowerCase()
+  if (!t) return false
+  if (userRequestsCodeFiles(userText)) return false
+  if (userMeansAppDataDatabases(userText)) return false
+  // "delete my last upload" is an instruction, not a browse request.
+  if (/\b(delete|remove|trash|move|rename|organi[sz]e|sort|share|download)\b/.test(t)) {
+    return false
+  }
+
+  if (mentionsRecentUploads(t)) return true
+  // Bare noun phrases with no verb — "my files", "my uploads", "all my files".
+  if (/^(?:my|the|all\s+(?:my|the)?|show\s+my)?\s*(?:recent\s+)?(?:uploads?|files?|assets?)[\s!.,?]*$/.test(t)) {
+    return true
+  }
+  // "what/which files do I have", "what's in my library"
+  if (/\b(what|which|any)\b/.test(t) && GENERIC_FILE_NOUN.test(t)) return true
+
+  return affirmsAssistantFileOffer(userText, priorMessages)
+}
+
+/** Bare "yes"/"sure" answering an assistant offer to show files. */
+function affirmsAssistantFileOffer(userText: string, priorMessages: Message[]): boolean {
+  const t = userText.trim()
+  if (
+    !/^(?:yes|yeah|yea|yep|yup|sure|ok(?:ay)?|please(?:\s+do)?|go\s+ahead|do\s+it|sounds\s+good)[\s!.,?]*$/i.test(
+      t,
+    )
+  ) {
+    return false
+  }
+  const lastAssistant = [...priorMessages].reverse().find((m) => m.role === "assistant")
+  if (!lastAssistant?.content) return false
+  return (
+    /\b(show|see|preview|display|view)\b/i.test(lastAssistant.content) &&
+    /\b(uploads?|files?|assets?|images?|videos?|music|documents?|books?|pdfs?)\b/i.test(
+      lastAssistant.content,
+    )
+  )
+}
+
 /** Recent chat turn mentioned a library type (for follow-ups like "show me"). */
 function conversationMentionsMediaType(
   priorMessages: Message[],
@@ -86,7 +166,7 @@ function conversationMentionsMediaType(
             ? /\b(documents?|books?|pdfs?|story\s*books?|ebooks?)\b/i
             : kind === "code"
               ? /\b(python|py\s+files?|\.py\b|scripts?|source\s*code|code\s+files?)\b/i
-              : /\bfiles?\b/i
+              : GENERIC_FILE_NOUN
 
   return recent.some((m) => pattern.test(m.content))
 }
@@ -99,6 +179,8 @@ function userWantsAssetGallery(userText: string, priorMessages: Message[] = []):
   if (userRequestsCodeFiles(userText)) return false
   // Cover gallery for books/docs always wins over bare filename list.
   if (userWantsDocumentCovers(userText, priorMessages)) return true
+  // "what is the latest upload" / "my files" / "yes" after an offer to show them.
+  if (userWantsGenericFileBrowse(userText, priorMessages)) return true
   // Code / non-document filename lists stay text-only (no image cards).
   if (userWantsFilenameList(userText, priorMessages)) {
     const media = resolveAssetListMediaType(userText, priorMessages)
@@ -149,6 +231,8 @@ function userWantsAssetGallery(userText: string, priorMessages: Message[] = []):
   if (shortShowRequest && conversationMentionsMediaType(priorMessages, "videos")) return true
   if (shortShowRequest && conversationMentionsMediaType(priorMessages, "music")) return true
   if (shortShowRequest && conversationMentionsMediaType(priorMessages, "documents")) return true
+  // Nothing named a library, but the turn before was about uploads/files.
+  if (shortShowRequest && conversationMentionsMediaType(priorMessages, "files")) return true
 
   if (wantsSee && !mentionsVisualMedia && !mentionsGenericFiles) {
     if (conversationMentionsMediaType(priorMessages, "code")) return false
@@ -156,6 +240,7 @@ function userWantsAssetGallery(userText: string, priorMessages: Message[] = []):
     if (conversationMentionsMediaType(priorMessages, "videos")) return true
     if (conversationMentionsMediaType(priorMessages, "music")) return true
     if (conversationMentionsMediaType(priorMessages, "documents")) return true
+    if (conversationMentionsMediaType(priorMessages, "files")) return true
   }
 
   return false
@@ -244,7 +329,8 @@ function resolveGalleryMediaType(userText: string, priorMessages: Message[]): st
   if (/\bimages?|pictures?|photos?\b/.test(t)) return "images"
   if (/\bvideos?\b/.test(t)) return "videos"
   if (/\bmusic|audio\b/.test(t)) return "music"
-  if (/\ball\s+files?\b/.test(t)) return "all"
+  // No library named — "my files", "the latest upload" span every library.
+  if (GENERIC_FILE_NOUN.test(t)) return "all"
 
   for (const m of [...priorMessages].reverse()) {
     const c = m.content.toLowerCase()
@@ -255,9 +341,40 @@ function resolveGalleryMediaType(userText: string, priorMessages: Message[]): st
     const tag = m.content.match(/\[\[ASSETS:([a-z]+)/i)?.[1]
     if (tag && tag !== "ids") return tag
     if (/\[\[ASSET_LIST:documents\]\]/i.test(m.content)) return "documents"
+    if (GENERIC_FILE_NOUN.test(c)) return "all"
   }
 
   return "images"
+}
+
+/**
+ * Limit carried over from the gallery the assistant just showed.
+ *
+ * "show me the preview" after "here's the most recent file" means *that* file
+ * again — re-deriving from scratch turned the single card into a full grid.
+ */
+function lastGalleryLimit(priorMessages: Message[], media: string): number | null {
+  for (const m of [...priorMessages].reverse()) {
+    if (m.role !== "assistant") continue
+    const match = m.content.match(/\[\[ASSETS:([a-z]+)(?::(\d+))?\]\]/i)
+    if (!match) continue
+    if (match[1].toLowerCase() !== media) return null
+    if (!match[2]) return null
+    const n = parseInt(match[2], 10)
+    return Number.isFinite(n) && n > 0 ? n : null
+  }
+  return null
+}
+
+/**
+ * Deictic follow-up with no noun of its own — "show me the preview", "show it
+ * again". It means the gallery already on screen, so the previous limit holds.
+ * A fresh plural noun ("my files") asks for the wider set instead.
+ */
+function userAsksForSameGalleryAgain(userText: string): boolean {
+  const t = userText.trim().toLowerCase()
+  if (/\b(uploads|files|assets|them|those|these|all|every|more|other)\b/.test(t)) return false
+  return /\b(preview|it|that|this|again|same|one)\b/.test(t)
 }
 
 /** Inject [[ASSETS:…]] when the user asked to preview files but the model only replied with prose. */
@@ -267,7 +384,13 @@ function ensureAssetGalleryTag(
   priorMessages: Message[],
 ): string {
   if (!userWantsAssetGallery(userText, priorMessages)) return content
-  if (/\[\[ASSETS:/i.test(content)) return content
+  if (/\[\[ASSETS:/i.test(content)) {
+    // Model showed the library when one file was asked for — narrow it.
+    if (userWantsExactlyOneFile(userText)) {
+      return content.replace(/\[\[ASSETS:([a-z]+)\]\]/gi, "[[ASSETS:$1:1]]")
+    }
+    return content
+  }
 
   const media = resolveGalleryMediaType(userText, priorMessages)
   const wantsAll = /\b(all|every|entire|full\s+list)\b/i.test(
@@ -279,10 +402,42 @@ function ensureAssetGalleryTag(
     const trimmed = content.trim()
     return trimmed ? `${trimmed}\n\n${tag}` : tag
   }
-  const count = inferGalleryCountFromContext(priorMessages, media)
+  // "the latest upload" names one file — show that card, not the library.
+  const singular = userWantsExactlyOneFile(userText)
+  const carried = userAsksForSameGalleryAgain(userText)
+    ? lastGalleryLimit(priorMessages, media)
+    : null
+  const count = singular ? 1 : (carried ?? inferGalleryCountFromContext(priorMessages, media))
   const tag = count != null ? `[[ASSETS:${media}:${count}]]` : `[[ASSETS:${media}]]`
   const trimmed = content.trim()
   return trimmed ? `${trimmed}\n\n${tag}` : tag
+}
+
+/** Wants to look at something specific: "show me Hamlet", "find the Atlantis book". */
+function userWantsToSeeSomething(userText: string): boolean {
+  const t = userText.trim().toLowerCase()
+  if (!t) return false
+  return /\b(show|see|view|open|find|preview|display|pull\s+up|look\s+at|where(?:'s| is))\b/.test(t)
+}
+
+/**
+ * Cards for a named file when nothing else would have rendered any.
+ *
+ * "Show me Harry Potter and the Goblet of Fire" names no library, so the
+ * gallery gate reads it as chat and the answer arrives with no picture of the
+ * book at all. Injecting a *listed* tag is safe where injecting a library
+ * gallery would not be: it can only render files the reply already named, so
+ * a wrong guess shows nothing rather than 24 unrelated covers.
+ */
+function ensureListedGalleryTag(content: string, userText: string): string {
+  if (/\[\[ASSETS:/i.test(content)) return content
+  if (!userWantsToSeeSomething(userText)) return content
+  if (userRequestsCodeFiles(userText)) return content
+  if (userMeansAppDataDatabases(userText)) return content
+  if (extractListedTitles(content).length === 0) return content
+
+  const trimmed = content.trim()
+  return trimmed ? `${trimmed}\n\n[[ASSETS:listed]]` : content
 }
 
 function assistantRecentlyShowedAssets(priorMessages: Message[]): boolean {
@@ -378,7 +533,16 @@ function ensureFilenameListTag(content: string, userText: string, priorMessages:
         wantsAll ? "[[ASSETS:documents:24]]" : "[[ASSETS:documents]]",
       )
     }
-    if (/\[\[ASSETS:documents/i.test(out) || /\[\[ASSETS:ids:/i.test(out)) return out
+    // A model that emitted [[ASSETS:listed]] itself has already answered this.
+    // Missing that case appended a second tag, and the reply rendered the same
+    // eight covers twice.
+    if (
+      /\[\[ASSETS:documents/i.test(out) ||
+      /\[\[ASSETS:ids:/i.test(out) ||
+      /\[\[ASSETS:listed/i.test(out)
+    ) {
+      return out
+    }
     const tag = wantsAll ? "[[ASSETS:documents:24]]" : "[[ASSETS:documents]]"
     const trimmed = out.trim()
     return trimmed ? `${trimmed}\n\n${tag}` : tag
@@ -401,9 +565,14 @@ function stripUnrequestedAssetTags(
 ): string {
   if (!/\[\[ASSETS:/i.test(content)) return content
 
+  // [[ASSETS:ids:…]] and [[ASSETS:listed]] survive every strip. Both render
+  // only assets the answer already identified — a tool result, or the titles
+  // written above the tag — so neither can dump the library, which is the one
+  // thing this strip exists to prevent. Removing them left "find X in my
+  // library" answering with nothing to look at.
   const stripGallery = () =>
     content
-      .replace(/\n*\[\[ASSETS:[^\]]+\]\]\n*/gi, "\n")
+      .replace(/\n*\[\[ASSETS:(?!ids:|listed)[^\]]+\]\]\n*/gi, "\n")
       .replace(/\n{3,}/g, "\n\n")
       .trim()
 
@@ -440,6 +609,54 @@ function stripUnrequestedFilenameLists(
   if (/\bList my (?:documents?|files?|recent files)/i.test(userText)) return content
   return content
     .replace(/\n*\[\[ASSET_LIST:[^\]]+\]\]\n*/gi, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim()
+}
+
+/**
+ * Point a whole-library gallery at the files the reply actually named.
+ *
+ * `[[ASSETS:documents]]` renders the most recent documents, which contradicts
+ * every filtered answer. Asked to list fictional stories, the reply named 22
+ * novels and the covers underneath were TensorFlow manuals and IELTS
+ * workbooks — the text was right and the pictures were wrong.
+ *
+ * Whenever the answer enumerates files, the enumeration wins. A recency
+ * gallery only survives when the reply named nothing for it to disagree with.
+ */
+function scopeGalleryToListedFiles(content: string): string {
+  if (!/\[\[ASSET(?:S|_LIST):/i.test(content)) return content
+  if (extractListedTitles(content).length === 0) return content
+
+  const scoped = content
+    // Never touch [[ASSETS:ids:…]] — tool results already name exact assets.
+    .replace(
+      /\[\[ASSETS:(?!ids:|listed)([a-z]+)(?::\d+)?\]\]/gi,
+      (_match, media: string) => `[[ASSETS:listed:${media.toLowerCase()}]]`,
+    )
+    // Documents only: for code and other media the filename rows are the
+    // answer, and swapping them for cards would remove information.
+    .replace(/\[\[ASSET_LIST:documents\]\]/gi, "[[ASSETS:listed:documents]]")
+
+  return keepOneListedTag(scoped)
+}
+
+/**
+ * One list, one grid.
+ *
+ * Every tag here renders the same set — the titles written above it — so a
+ * second one is always a repeat. They arrive from two directions: the model
+ * emitting its own tag, and a tag injected beside it. Rather than police every
+ * producer, the last step keeps the first and drops the rest.
+ */
+function keepOneListedTag(content: string): string {
+  let seen = false
+  return content
+    .replace(/\n*\[\[ASSETS:listed(?::[a-z]+)?\]\]\n*/gi, (match) => {
+      if (seen) return "\n"
+      seen = true
+      return match
+    })
     .replace(/\n{3,}/g, "\n\n")
     .trim()
 }
@@ -484,10 +701,13 @@ export function finalizeAssistantContent(
   if (!options.streaming) {
     out = ensureFilenameListTag(out, userText, priorMessages)
     out = ensureAssetGalleryTag(out, userText, priorMessages)
+    out = ensureListedGalleryTag(out, userText)
   }
   out = stripUnrequestedAssetTags(out, userText, priorMessages)
   out = stripUnrequestedFilenameLists(out, userText, priorMessages)
   out = stripAssetListsWhenQueryingAppDatabases(out, userText)
+  // Last: whatever tag survived, the cards follow the answer's own list.
+  out = scopeGalleryToListedFiles(out)
   return stripAssistantStreamMarkup(out)
 }
 

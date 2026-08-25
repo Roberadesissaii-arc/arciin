@@ -177,6 +177,7 @@ export function serializeAsset(asset: Asset) {
     createdAt: asset.createdAt.toISOString(),
     updatedAt: asset.updatedAt.toISOString(),
     deletedAt: asset.deletedAt?.toISOString() ?? null,
+    archivedAt: asset.archivedAt?.toISOString() ?? null,
   }
 }
 

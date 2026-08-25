@@ -27,16 +27,21 @@ export function DocumentAiKeywords({
   const queryClient = useQueryClient()
   const [keywords, setKeywords] = useState<string[]>(savedInsight?.keywords ?? [])
   const [topics, setTopics] = useState<string[]>(savedInsight?.topics ?? [])
-  const [hydratedFrom, setHydratedFrom] = useState(savedInsight)
 
-  // Adjust state during render when the parent passes a new saved insight
-  // (avoids react-hooks/set-state-in-effect cascading-render errors).
-  if (savedInsight !== hydratedFrom) {
-    setHydratedFrom(savedInsight)
-    if (savedInsight) {
-      setKeywords(savedInsight.keywords ?? [])
-      setTopics(savedInsight.topics ?? [])
-    }
+  /**
+   * Adopt a newly-saved insight without an effect.
+   *
+   * This is state derived from a prop that the component also edits locally, so
+   * it cannot simply be read from the prop. React's answer is to adjust it
+   * while rendering, guarded by the previous value: an effect would paint the
+   * stale keywords first and correct them on a second pass, which is the
+   * cascading render the lint rule is about.
+   */
+  const [appliedInsight, setAppliedInsight] = useState(savedInsight ?? null)
+  if (savedInsight && savedInsight !== appliedInsight) {
+    setAppliedInsight(savedInsight)
+    setKeywords(savedInsight.keywords ?? [])
+    setTopics(savedInsight.topics ?? [])
   }
 
   const generate = useMutation({

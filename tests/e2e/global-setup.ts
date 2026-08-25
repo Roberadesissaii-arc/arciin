@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import path from "node:path"
 
 import { createTemporaryGeminiProfile, removeTemporaryGeminiProfile } from "./gemini-fixture"
+import { quietModelProfiles, restoreModelProfiles } from "./model-profile-quiet"
 
 /**
  * Everything the suite needs before a browser opens, and nothing left behind.
@@ -32,8 +33,12 @@ export default function globalSetup() {
 
   let worker: ChildProcess | null = null
   let geminiProfileCreated = false
+  let quietedProfiles = false
 
   try {
+    // Before anything opens a browser: take the local model out of the run, so
+    // server-side auto-titling cannot spend the suite's clock on it.
+    quietedProfiles = quietModelProfiles()
     worker = startMediaWorker()
     geminiProfileCreated = createTemporaryGeminiProfile()
     if (!geminiProfileCreated) {
@@ -44,21 +49,30 @@ export default function globalSetup() {
   } catch (error) {
     // Setup failed after something was already created. Undo it here, because
     // Playwright never runs teardown for a globalSetup that threw.
-    teardown(worker, geminiProfileCreated)
+    teardown(worker, geminiProfileCreated, quietedProfiles)
     throw error
   }
 
   // Playwright runs a returned function as global teardown.
-  return () => teardown(worker, geminiProfileCreated)
+  return () => teardown(worker, geminiProfileCreated, quietedProfiles)
 }
 
-function teardown(worker: ChildProcess | null, geminiProfileCreated: boolean) {
+function teardown(
+  worker: ChildProcess | null,
+  geminiProfileCreated: boolean,
+  quietedProfiles = false,
+) {
   // Both, whatever either one does: a failure stopping the worker must not
   // strand a paid credential in the dev database.
   try {
     stopMediaWorker(worker)
   } finally {
-    if (geminiProfileCreated) removeTemporaryGeminiProfile()
+    try {
+      if (geminiProfileCreated) removeTemporaryGeminiProfile()
+    } finally {
+      // The instance belongs to the developer; give their model back.
+      restoreModelProfiles(quietedProfiles)
+    }
   }
 }
 

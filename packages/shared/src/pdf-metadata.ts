@@ -53,7 +53,8 @@ export async function extractPdfMetadataFromBytes(data: Uint8Array): Promise<Pdf
       /* InfoDict is optional */
     }
 
-    await doc.destroy()
+    // pdf.js 6 removed PDFDocumentProxy.destroy(); the loading task owns teardown.
+    await doc.loadingTask.destroy()
 
     return { pageCount, author, title, subject, creator, producer, keywords }
   } catch {

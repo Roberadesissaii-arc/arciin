@@ -1,10 +1,9 @@
 import type { FastifyInstance } from "fastify"
 import { z } from "zod"
 
-import { WORKER_HEARTBEAT_KEY } from "@arciin/shared"
 
 import { apiConfig } from "@/config"
-import { requireRole } from "@/services/security/auth"
+import { requireSessionRole } from "@/services/security/auth"
 import {
   getLogsDisplayPath,
   getLogsDirectory,
@@ -31,7 +30,7 @@ async function collectHealth(fastify: FastifyInstance) {
   try {
     await fastify.redis.ping()
     realtime = "online"
-    const heartbeat = await fastify.redis.get(WORKER_HEARTBEAT_KEY)
+    const heartbeat = await fastify.redis.get(apiConfig.workerHeartbeatKey)
     if (heartbeat) {
       const seenMs = Number(heartbeat)
       workerLastSeenAt = new Date(seenMs).toISOString()
@@ -64,7 +63,7 @@ async function collectHealth(fastify: FastifyInstance) {
 export async function registerLogsRoutes(fastify: FastifyInstance) {
   fastify.get(
     "/logs/overview",
-    { preHandler: requireRole(["OWNER", "ADMIN", "MEMBER", "VIEWER"]) },
+    { preHandler: requireSessionRole(["OWNER", "ADMIN", "MEMBER", "VIEWER"]) },
     async (_request, reply) => {
       const health = await collectHealth(fastify)
 
@@ -113,7 +112,7 @@ export async function registerLogsRoutes(fastify: FastifyInstance) {
 
   fastify.get(
     "/logs/files",
-    { preHandler: requireRole(["OWNER", "ADMIN", "MEMBER"]) },
+    { preHandler: requireSessionRole(["OWNER", "ADMIN", "MEMBER"]) },
     async (_request, reply) => {
       try {
         const files = await listLogFiles()
@@ -131,7 +130,7 @@ export async function registerLogsRoutes(fastify: FastifyInstance) {
 
   fastify.get<{ Params: { filename: string }; Querystring: { lines?: string } }>(
     "/logs/files/:filename/tail",
-    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    { preHandler: requireSessionRole(["OWNER", "ADMIN"]) },
     async (request, reply) => {
       const params = z.object({ filename: z.string() }).parse(request.params)
       const lines = Math.min(

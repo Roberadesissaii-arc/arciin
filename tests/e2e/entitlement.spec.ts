@@ -75,6 +75,30 @@ async function stubLicense(
 }
 
 /**
+ * Take the local model out of the measurement.
+ *
+ * Opening /chat kicks off conversation auto-titling, which reaches for the
+ * on-device model. When that model is loaded but unresponsive the request sits
+ * until it times out — harmless to the page, invisible to a user, and fatal to
+ * a test that performs twenty full navigations against a wall clock. It made
+ * this spec take 5.3 minutes inside the suite and 45 seconds on its own, which
+ * reads as a paywall regression and is nothing of the kind.
+ *
+ * Nothing asserted here concerns titling, so the request is answered
+ * immediately instead. The twenty refreshes and every paywall assertion are
+ * untouched.
+ */
+async function stubAutoTitle(page: Page) {
+  await page.route("**/api/chat/conversations/*/auto-title", async (route: Route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ data: { title: null } }),
+    })
+  })
+}
+
+/**
  * Guard against a vacuous pass.
  *
  * If the app redirected to /login or /setup there would be no paywall text
@@ -122,7 +146,21 @@ async function expectNoPaywall(page: Page, context: string) {
 }
 
 test.describe("Pro entitlement", () => {
-  test("never shows the paywall across 20 consecutive hard refreshes", async ({ page }) => {
+  test("never shows the paywall across 20 consecutive hard refreshes", async ({ page }, testInfo) => {
+    /**
+     * Twenty full navigations, budgeted as such.
+     *
+     * Each iteration is a hard reload of /chat against a dev server that
+     * compiles routes on demand, so this one test does more page loads than
+     * most specs do in total. On the default per-test budget it ran out of
+     * time mid-suite — not on an assertion, but on `goto` — which reads as the
+     * paywall regression having returned when nothing of the sort happened.
+     *
+     * The count is the point of the test and stays at twenty; only the clock
+     * it is measured against changes.
+     */
+    testInfo.setTimeout(300_000)
+    await stubAutoTitle(page)
     await stubLicense(page, "pro")
 
     const paywallSightings: number[] = []

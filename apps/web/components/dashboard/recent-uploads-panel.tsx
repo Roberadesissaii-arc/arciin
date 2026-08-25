@@ -5,7 +5,6 @@ import { SelectableAssetsContainer } from "@/components/libraries/selectable-ass
 import { Skeleton } from "@/components/ui/skeleton"
 import { useAssets } from "@/hooks/use-assets"
 import {
-  dashboardFeedEmpty,
   dashboardOverviewUploadsBody,
   DASHBOARD_UPLOADS_LIMIT,
   dashboardUploadsGrid,

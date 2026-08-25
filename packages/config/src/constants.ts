@@ -31,6 +31,32 @@ export const DEFAULT_LIBRARY_FOLDERS: Record<string, readonly string[]> = {
   inbox: [],
 }
 
+/**
+ * Resolve setup's library choices to canonical names.
+ *
+ * Claim used to take any strings and filter the definitions by *name*, so a
+ * payload of slugs — "videos" rather than "Videos" — selected nothing, claimed
+ * successfully, and left an instance with no libraries at all. Every upload
+ * then failed with LIBRARY_NOT_CONFIGURED, and the only way out was restarting
+ * the API so the seed re-ran with an instance present.
+ *
+ * Slugs are accepted because they are the obvious guess, and anything not in
+ * the known set returns null so the caller can reject it rather than quietly
+ * building an unusable instance.
+ */
+export function normalizeLibrarySelection(values: string[]): string[] | null {
+  const resolved: string[] = []
+  for (const value of values) {
+    const wanted = value.trim().toLowerCase()
+    const match = DEFAULT_LIBRARY_DEFINITIONS.find(
+      (library) => library.name.toLowerCase() === wanted || library.slug.toLowerCase() === wanted,
+    )
+    if (!match) return null
+    if (!resolved.includes(match.name)) resolved.push(match.name)
+  }
+  return resolved.length > 0 ? resolved : null
+}
+
 export const API_KEY_SCOPES = [
   "assets:read",
   "assets:write",

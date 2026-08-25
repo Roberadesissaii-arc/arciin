@@ -113,9 +113,17 @@ describe("upload session lifecycle in PostgreSQL", () => {
   })
 
   it("creates immediately-ready uploads READY with completedAt set", async () => {
-    // DOCUMENT/IMAGE/VIDEO/AUDIO need worker jobs; ARCHIVE/OTHER finish at store time.
+    /**
+     * A media type the worker has nothing to do for.
+     *
+     * This used to use DOCUMENT, which stopped being true when PDFs began
+     * needing page/author extraction — DOCUMENT now goes through PROCESSING
+     * like video and audio. OTHER is the honest example of "stored, nothing
+     * left to do", and it will stay honest: the moment a type needs a worker
+     * pass it is no longer immediately ready, which is the property under test.
+     */
     const asset = await createAsset(fixtures, {
-      librarySlug: "documents",
+      librarySlug: "inbox",
       mediaType: "OTHER",
     })
     const session = await createSession(asset.id, "OTHER")

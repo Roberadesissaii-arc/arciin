@@ -8,10 +8,12 @@ import {
 } from "@tanstack/react-query"
 
 import {
+  archiveAsset,
   deleteAsset,
   getAssets,
   getAssetsPage,
   moveAsset,
+  unarchiveAsset,
   updateAsset,
   type AssetFilters,
   type AssetPageFilters,
@@ -161,6 +163,36 @@ export function useDeleteAsset() {
       queryClient.invalidateQueries({
         queryKey: queryKeys.assetsRoot,
       })
+    },
+  })
+}
+
+export function useArchiveAsset() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (assetId: string) => archiveAsset(assetId),
+    onSuccess: (updated) => {
+      queryClient.setQueriesData({ queryKey: ["assets"] }, (old: unknown) =>
+        mapCachedAssets(old, (a) => (a.id === updated.id ? { ...a, ...updated } : a)),
+      )
+      queryClient.invalidateQueries({ queryKey: queryKeys.assetsRoot })
+      queryClient.invalidateQueries({ queryKey: queryKeys.libraries })
+    },
+  })
+}
+
+export function useUnarchiveAsset() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (assetId: string) => unarchiveAsset(assetId),
+    onSuccess: (updated) => {
+      queryClient.setQueriesData({ queryKey: ["assets"] }, (old: unknown) =>
+        mapCachedAssets(old, (a) => (a.id === updated.id ? { ...a, ...updated } : a)),
+      )
+      queryClient.invalidateQueries({ queryKey: queryKeys.assetsRoot })
+      queryClient.invalidateQueries({ queryKey: queryKeys.libraries })
     },
   })
 }

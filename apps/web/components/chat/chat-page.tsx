@@ -2018,7 +2018,6 @@ export function ChatPage() {
                   key={msg.id}
                   msg={msg}
                   isLive={msg.id === streamingMsgId}
-                  reasoningUiEnabled={reasoningUiEnabled}
                   isStreaming={streaming && msg.id === streamingMsgId}
                   canRegenerate={
                     !chatLocked &&

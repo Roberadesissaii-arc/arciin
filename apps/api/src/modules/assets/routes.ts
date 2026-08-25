@@ -230,9 +230,19 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
             .optional()
             .transform((v) => v === "true" || v === "1"),
           mediaType: z.string().optional(),
-          category: z.enum(["code", "applications"]).optional(),
+          category: z.enum(["code", "applications", "other"]).optional(),
           search: z.string().optional(),
           ids: z.string().optional(),
+          /** Opt in to Inbox for "what did I just upload" style queries (chat). */
+          includeInbox: z
+            .union([z.literal("true"), z.literal("1"), z.literal("false"), z.literal("0")])
+            .optional()
+            .transform((v) => v === "true" || v === "1"),
+          /**
+           * `only` = Archives chip (user-archived files).
+           * Default excludes archived from main libraries / All Files.
+           */
+          archived: z.enum(["exclude", "only", "include"]).optional(),
         })
         .parse(request.query)
 
@@ -245,6 +255,8 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
         ? query.ids.split(",").map((s) => s.trim()).filter(Boolean).slice(0, 20)
         : undefined
 
+      const archivedMode = query.archived ?? "exclude"
+
       // All Files + Overview (no folder scope): exclude assets in hidden folders
       // and every nested folder under them. Open the folder itself to browse.
       const excludeHiddenRemoteFolders =
@@ -255,14 +267,19 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
         : []
 
       // Only an undirected cross-library browse hides Inbox. Every deliberate
-      // request still finds it: opening Inbox, searching by name, or asking for
-      // a category — Applications lives almost entirely in Inbox, so applying
-      // this there emptied the one page whose job is to list installers.
+      // request still finds it: opening Inbox, searching by name, asking for a
+      // category — Applications lives almost entirely in Inbox, so applying
+      // this there emptied the one page whose job is to list installers — or
+      // asking chat what was uploaded last, where an unclassified file is
+      // precisely the answer and hiding it names the wrong file.
+      // Archives / Other chips also need Inbox (zips and unclassified land there).
       const excludeLibraryIds =
         !query.libraryId &&
         !query.folderId &&
         !query.search &&
         !query.category &&
+        !query.includeInbox &&
+        archivedMode !== "only" &&
         !idList?.length
           ? (
               await fastify.prisma.library.findMany({
@@ -277,6 +294,11 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
           ? {
               deletedAt: null,
               id: { in: idList },
+              ...(archivedMode === "only"
+                ? { archivedAt: { not: null } }
+                : archivedMode === "exclude"
+                  ? { archivedAt: null }
+                  : {}),
             }
           : buildVisibleAssetWhere({
               scope: resolveAssetScope(query),
@@ -285,6 +307,7 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
               mediaType: query.mediaType,
               category: query.category,
               search: query.search,
+              archived: archivedMode,
             }),
         orderBy: {
           createdAt: "desc",
@@ -332,8 +355,13 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
             .optional()
             .transform((v) => v === "true" || v === "1"),
           mediaType: z.string().optional(),
-          category: z.enum(["code", "applications"]).optional(),
+          category: z.enum(["code", "applications", "other"]).optional(),
           search: z.string().optional(),
+          includeInbox: z
+            .union([z.literal("true"), z.literal("1"), z.literal("false"), z.literal("0")])
+            .optional()
+            .transform((v) => v === "true" || v === "1"),
+          archived: z.enum(["exclude", "only", "include"]).optional(),
           cursor: z.string().optional(),
           limit: z.coerce.number().int().positive().optional(),
           /** Total is a second query; ask for it only on the first page. */
@@ -350,6 +378,7 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
       }
 
       const scope = resolveAssetScope(query)
+      const archivedMode = query.archived ?? "exclude"
 
       const hiddenFolderIds =
         !query.folderId && !query.rootOnly
@@ -358,7 +387,12 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
 
       // Same rule as the unpaginated listing above.
       const excludeLibraryIds =
-        !query.libraryId && !query.folderId && !query.search && !query.category
+        !query.libraryId &&
+        !query.folderId &&
+        !query.search &&
+        !query.category &&
+        !query.includeInbox &&
+        archivedMode !== "only"
           ? (
               await fastify.prisma.library.findMany({
                 where: { kind: "INBOX" },
@@ -376,6 +410,7 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
         mediaType: query.mediaType,
         category: query.category,
         search: query.search,
+        archived: archivedMode,
       }
 
       const limit = clampPageSize(query.limit)
@@ -507,6 +542,64 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
     "/assets/:assetId/delete",
     { preHandler: deleteAssetPreHandler },
     async (request, reply) => handleSoftDeleteAsset(fastify, request, reply),
+  )
+
+  /**
+   * Soft-archive: hide from main libraries / All Files chips, show under Archives.
+   * Not Trash — file stays on disk and can be unarchived.
+   */
+  fastify.post(
+    "/assets/:assetId/archive",
+    {
+      preHandler: requireSessionRolesOrApiKeyScopes(
+        ["OWNER", "ADMIN", "MEMBER"],
+        ["assets:write"],
+      ),
+    },
+    async (request, reply) => {
+      const params = z.object({ assetId: z.string() }).parse(request.params)
+      const asset = await fastify.prisma.asset.findFirst({
+        where: { id: params.assetId, deletedAt: null },
+      })
+      if (!asset) {
+        reply.status(404).send({
+          error: { code: "NOT_FOUND", message: "Asset not found." },
+        })
+        return
+      }
+      const updated = await fastify.prisma.asset.update({
+        where: { id: asset.id },
+        data: { archivedAt: asset.archivedAt ?? new Date() },
+      })
+      reply.send({ data: serializeAsset(updated) })
+    },
+  )
+
+  fastify.post(
+    "/assets/:assetId/unarchive",
+    {
+      preHandler: requireSessionRolesOrApiKeyScopes(
+        ["OWNER", "ADMIN", "MEMBER"],
+        ["assets:write"],
+      ),
+    },
+    async (request, reply) => {
+      const params = z.object({ assetId: z.string() }).parse(request.params)
+      const asset = await fastify.prisma.asset.findFirst({
+        where: { id: params.assetId, deletedAt: null },
+      })
+      if (!asset) {
+        reply.status(404).send({
+          error: { code: "NOT_FOUND", message: "Asset not found." },
+        })
+        return
+      }
+      const updated = await fastify.prisma.asset.update({
+        where: { id: asset.id },
+        data: { archivedAt: null },
+      })
+      reply.send({ data: serializeAsset(updated) })
+    },
   )
 
   fastify.post(

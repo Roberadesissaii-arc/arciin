@@ -28,13 +28,28 @@ export const KIND_CHIP_OPTIONS: { value: LibraryKindFilter; label: string }[] = 
   { value: "OTHER", label: "Other" },
 ]
 
+/**
+ * Kind chips on All Files.
+ *
+ * Archives = user-archived files (any media type), not only zip containers.
+ * Other = unclassified / installers / code / zip containers that are still active.
+ */
 export function mediaTypeMatchesKind(
   mediaType: MediaType,
   kind: LibraryKindFilter,
+  archivedAt?: string | null,
 ): boolean {
+  const isArchived = Boolean(archivedAt)
+  if (kind === "ARCHIVE") return isArchived
+  if (isArchived) return false
   if (kind === "all") return true
   if (kind === "OTHER") {
-    return mediaType === "OTHER" || mediaType === "APPLICATION" || mediaType === "CODE"
+    return (
+      mediaType === "OTHER" ||
+      mediaType === "APPLICATION" ||
+      mediaType === "CODE" ||
+      mediaType === "ARCHIVE"
+    )
   }
   if (kind === "AUDIO") return mediaType === "AUDIO"
   return mediaType === kind

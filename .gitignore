@@ -85,3 +85,16 @@ apps/web/.next-e2e/
 
 # Playwright shared auth state (outside outputDir so Playwright cannot sweep it)
 .playwright-auth/
+
+# Credential files that must never be committed.
+# .env.local is Next.js's conventional local override; the service-account and
+# adminsdk patterns are the shapes Firebase and GCP hand you by default.
+.env.local
+.env.*.local
+*-service-account*.json
+*service-account*.json
+firebase-adminsdk*.json
+*-adminsdk-*.json
+*.p8
+*.p12
+*.pfx

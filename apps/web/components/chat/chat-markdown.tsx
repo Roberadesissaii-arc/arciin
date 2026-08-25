@@ -6,7 +6,9 @@ import {
   InlineAssetBlock,
   InlineAssetBlockByIds,
   InlineAssetFilenameList,
+  InlineAssetListedBlock,
 } from "@/components/chat/chat-inline-assets"
+import { extractListedTitles } from "@/lib/chat/listed-assets"
 import { MathBlock, renderInlineWithMath } from "@/components/chat/math"
 
 // ── Markdown renderer ──────────────────────────────────────────────────────────
@@ -61,6 +63,9 @@ export function MarkdownContent({ content }: { content: string }) {
   // Display equations lifted out before the line loop — see the canvas
   // renderer for why this happens first.
   const { text: withMathPlaceholders, blocks: mathBlocks } = extractBlockMath(content)
+  // Read from the whole reply, because a [[ASSETS:listed]] tag on one line
+  // refers to the titles enumerated on the lines above it.
+  const listedTitles = extractListedTitles(withMathPlaceholders)
   const lines = withMathPlaceholders.split("\n")
   const nodes: React.ReactNode[] = []
   const listItems: { text: string; ordered: boolean }[] = []
@@ -178,6 +183,20 @@ export function MarkdownContent({ content }: { content: string }) {
       if (before) nodes.push(<p key={k++} className="text-[13px] leading-relaxed">{parseInline(before)}</p>)
       nodes.push(<InlineAssetBlockByIds key={k++} assetIds={ids} />)
       if (after)  nodes.push(<p key={k++} className="text-[13px] leading-relaxed">{parseInline(after)}</p>)
+      continue
+    }
+
+    // [[ASSETS:listed]] / [[ASSETS:listed:type]] — only the files named above
+    const listedMatch = line.match(/\[\[ASSETS:listed(?::([a-z]+))?\]\]/i)
+    if (listedMatch) {
+      flushAll()
+      const before = line.slice(0, listedMatch.index!).trim()
+      const after = line.slice(listedMatch.index! + listedMatch[0].length).trim()
+      if (before) nodes.push(<p key={k++} className="text-[13px] leading-relaxed">{parseInline(before)}</p>)
+      nodes.push(
+        <InlineAssetListedBlock key={k++} titles={listedTitles} mediaType={listedMatch[1] ?? "documents"} />,
+      )
+      if (after) nodes.push(<p key={k++} className="text-[13px] leading-relaxed">{parseInline(after)}</p>)
       continue
     }
 

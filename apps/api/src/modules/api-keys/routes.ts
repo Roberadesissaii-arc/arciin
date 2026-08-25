@@ -6,7 +6,7 @@ import { z } from "zod"
 import { API_KEY_SCOPES } from "@arciin/shared"
 
 import { recordAndBroadcastActivity } from "@/services/activity/record-and-broadcast-activity"
-import { hashApiKey, requireFeature, requireRole } from "@/services/security/auth"
+import { hashApiKey, requireFeature, requireSessionRole } from "@/services/security/auth"
 import { serializeApiKey } from "@/services/serializers"
 
 const createApiKeySchema = z.object({
@@ -19,7 +19,7 @@ export async function registerApiKeyRoutes(fastify: FastifyInstance) {
   fastify.get(
     "/api-keys",
     {
-      preHandler: [requireRole(["OWNER", "ADMIN"]), requireFeature("developer.api_keys")],
+      preHandler: [requireSessionRole(["OWNER", "ADMIN"]), requireFeature("developer.api_keys")],
     },
     async (_request, reply) => {
       const apiKeys = await fastify.prisma.apiKey.findMany({
@@ -41,7 +41,7 @@ export async function registerApiKeyRoutes(fastify: FastifyInstance) {
   fastify.post(
     "/api-keys",
     {
-      preHandler: [requireRole(["OWNER", "ADMIN"]), requireFeature("developer.api_keys")],
+      preHandler: [requireSessionRole(["OWNER", "ADMIN"]), requireFeature("developer.api_keys")],
     },
     async (request, reply) => {
       const parsed = createApiKeySchema.safeParse(request.body)
@@ -116,7 +116,7 @@ export async function registerApiKeyRoutes(fastify: FastifyInstance) {
   fastify.post(
     "/api-keys/:id/rotate",
     {
-      preHandler: [requireRole(["OWNER", "ADMIN"]), requireFeature("developer.api_keys")],
+      preHandler: [requireSessionRole(["OWNER", "ADMIN"]), requireFeature("developer.api_keys")],
     },
     async (request, reply) => {
       const params = z.object({ id: z.string() }).parse(request.params)
@@ -171,7 +171,7 @@ export async function registerApiKeyRoutes(fastify: FastifyInstance) {
   fastify.delete(
     "/api-keys/:id",
     {
-      preHandler: [requireRole(["OWNER", "ADMIN"]), requireFeature("developer.api_keys")],
+      preHandler: [requireSessionRole(["OWNER", "ADMIN"]), requireFeature("developer.api_keys")],
     },
     async (request, reply) => {
       const params = z.object({ id: z.string() }).parse(request.params)

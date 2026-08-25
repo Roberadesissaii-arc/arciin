@@ -5,6 +5,7 @@ import { z } from "zod"
 
 import {
   DEFAULT_LIBRARY_DEFINITIONS,
+  normalizeLibrarySelection,
   DEFAULT_LIBRARY_FOLDERS,
   DEFAULT_USER_PREFERENCES,
   JOB_TYPES,
@@ -25,7 +26,7 @@ function constantTimeEqual(a: string, b: string): boolean {
 }
 import { resolveEffectiveStorageRoot } from "@/services/storage/effective-storage-root"
 import { serializeAuth } from "@/services/serializers"
-import { createSession, hashPassword, requireRole, setSessionCookie } from "@/services/security/auth"
+import { createSession, hashPassword, requireSessionRole, setSessionCookie } from "@/services/security/auth"
 import { hashRecoveryAnswer } from "@/services/security/recovery-answer"
 import {
   consolidateStorageVolumes,
@@ -48,7 +49,20 @@ const claimSchema = z
     adminEmail: z.email(),
     adminPassword: z.string().min(8),
     storageRoot: z.string().min(1),
-    libraries: z.array(z.string()).min(1),
+    /**
+     * Library identifiers, matched against the known set.
+     *
+     * Setup is a public endpoint, and it must not be able to produce an
+     * instance with no libraries — see normalizeLibrarySelection for what that
+     * cost. Slugs are accepted; anything unknown is rejected here.
+     */
+    libraries: z
+      .array(z.string().trim().min(1))
+      .min(1)
+      .refine((values) => normalizeLibrarySelection(values) !== null, {
+        message: `Libraries must be chosen from: ${DEFAULT_LIBRARY_DEFINITIONS.map((l) => l.name).join(", ")}.`,
+      })
+      .transform((values) => normalizeLibrarySelection(values) as string[]),
     acceptedTermsAndPrivacy: z
       .boolean()
       .refine((value) => value === true, {
@@ -116,6 +130,17 @@ export async function registerInstanceRoutes(fastify: FastifyInstance) {
         ? discovery.hostDataDir
         : discovery.recommendedArciinPath
 
+    /**
+     * Storage paths belong to the setup window only.
+     *
+     * This route is unauthenticated by necessity — the login page asks it
+     * whether the instance still needs claiming. It also answered with the
+     * server's absolute storage paths, to anyone who could reach the port,
+     * forever. Setup genuinely needs a path to suggest; a claimed instance
+     * does not, and its own settings screens are authenticated.
+     */
+    const inSetupWindow = !claimed
+
     reply.send({
       data: {
         // Must match setup/login routing: only "claimed" when an owner user exists.
@@ -123,11 +148,17 @@ export async function registerInstanceRoutes(fastify: FastifyInstance) {
         setupRequired,
         instanceName: instance?.instanceName,
         version: apiConfig.appVersion,
-        suggestedStorageRoot: suggested,
-        runtimeStorageRoot: discovery.runtimeDataDir,
-        hostStorageRoot: discovery.hostDataDir,
+        ...(inSetupWindow
+          ? {
+              suggestedStorageRoot: suggested,
+              runtimeStorageRoot: discovery.runtimeDataDir,
+              hostStorageRoot: discovery.hostDataDir,
+            }
+          : {}),
         isDockerRuntime: discovery.isDockerRuntime,
-        storageRootHint: discovery.isDockerRuntime
+        storageRootHint: !inSetupWindow
+          ? undefined
+          : discovery.isDockerRuntime
           ? discovery.hostDataDir
             ? `Docker: container path /data/arciin is bind-mounted from ${discovery.hostDataDir} on the host. Re-run ./scripts/docker-setup.sh to change the host folder.`
             : "Docker: set ARCIIN_HOST_DATA_DIR in .env (default /srv/arciin-storage/arciin) and run ./scripts/docker-setup.sh before claim."
@@ -140,7 +171,7 @@ export async function registerInstanceRoutes(fastify: FastifyInstance) {
 
   fastify.get(
     "/instance/update-check",
-    { preHandler: requireRole(["OWNER", "ADMIN", "MEMBER", "VIEWER"]) },
+    { preHandler: requireSessionRole(["OWNER", "ADMIN", "MEMBER", "VIEWER"]) },
     async (request, reply) => {
       const query = request.query as { refresh?: string }
       if (query.refresh === "1" || query.refresh === "true") {
@@ -153,7 +184,7 @@ export async function registerInstanceRoutes(fastify: FastifyInstance) {
 
   fastify.get(
     "/instance/auto-update",
-    { preHandler: requireRole(["OWNER", "ADMIN", "MEMBER", "VIEWER"]) },
+    { preHandler: requireSessionRole(["OWNER", "ADMIN", "MEMBER", "VIEWER"]) },
     async (_request, reply) => {
       const instance = await fastify.prisma.instanceConfig.findFirst()
       reply.send({ data: parseAutoUpdateConfig(instance?.autoUpdateConfig) })
@@ -167,7 +198,7 @@ export async function registerInstanceRoutes(fastify: FastifyInstance) {
 
   fastify.patch(
     "/instance/auto-update",
-    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    { preHandler: requireSessionRole(["OWNER", "ADMIN"]) },
     async (request, reply) => {
       const parsed = autoUpdatePatchSchema.safeParse(request.body)
       if (!parsed.success) {
@@ -200,7 +231,7 @@ export async function registerInstanceRoutes(fastify: FastifyInstance) {
 
   fastify.post(
     "/instance/auto-update/apply",
-    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    { preHandler: requireSessionRole(["OWNER", "ADMIN"]) },
     async (request, reply) => {
       const instance = await fastify.prisma.instanceConfig.findFirst()
       const current = parseAutoUpdateConfig(instance?.autoUpdateConfig)
@@ -491,7 +522,7 @@ export async function registerInstanceRoutes(fastify: FastifyInstance) {
 
   fastify.get(
     "/instance/storage-summary",
-    { preHandler: requireRole(["OWNER", "ADMIN", "MEMBER", "VIEWER"]) },
+    { preHandler: requireSessionRole(["OWNER", "ADMIN", "MEMBER", "VIEWER"]) },
     async (_request, reply) => {
       const instance = await fastify.prisma.instanceConfig.findFirst()
       const defaultStorage = await fastify.prisma.storageLocation.findFirst({

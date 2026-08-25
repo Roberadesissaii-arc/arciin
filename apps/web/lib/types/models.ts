@@ -286,6 +286,8 @@ export type AssetSummary = {
   createdAt: string
   updatedAt: string
   deletedAt?: string | null
+  /** Set when the user archived the file (All Files → Archives). */
+  archivedAt?: string | null
   /** Absent on responses that predate the summary, or on single-asset reads. */
   ai?: AssetAiSummary
 }

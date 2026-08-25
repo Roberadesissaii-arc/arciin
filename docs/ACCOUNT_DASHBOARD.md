@@ -1,5 +1,12 @@
 # Account dashboard prototype
 
+> **Superseded.** The customer portal that ships is the one in `arciin-web`
+> (Firebase Auth + Firestore, at the public site's `/account`). This app stays
+> for reference while its remaining ideas are folded in; it is not the portal
+> customers use, nothing in Arciin links to it, and it must not be presented as
+> the account experience. It runs on port 3010 under PM2 on the maintainer's
+> box only.
+
 Future home: **account.arciin.com**. Separate from the self-hosted Arciin app.
 
 **No Stripe. No billing.** Demo licenses only, backed by the hosted license server.

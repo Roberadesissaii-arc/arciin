@@ -154,7 +154,10 @@ test.describe("transcript reading", () => {
     await openTranscript(page)
     await transcript(page).getByTestId("transcript-search").fill("line 3")
 
-    await expect(transcript(page).getByTestId("transcript-match-count")).toHaveText("1 match")
+    // The counter is a bare number now — the word was dropped when it moved
+    // inside the field. What it has to say is still "exactly one", and the
+    // single <mark> below is the other half of that claim.
+    await expect(transcript(page).getByTestId("transcript-match-count")).toHaveText("1")
     await expect(transcript(page).locator("mark")).toHaveCount(1)
     await expect(transcript(page).getByTestId("video-transcript-segments")).toContainText("line 3")
 
@@ -167,10 +170,31 @@ test.describe("transcript reading", () => {
 
     const active = transcript(page).getByTestId("transcript-active-segment")
     await expect(active).toHaveCount(1)
-    // An accent edge rather than a colour change on every word: following along
-    // must not turn the page into a flashing list.
-    const border = await active.evaluate((el) => getComputedStyle(el).borderLeftWidth)
-    expect(parseFloat(border)).toBeGreaterThan(0)
+
+    /**
+     * Distinguished from its neighbours, and only just.
+     *
+     * This used to assert a left border, which is one way to draw it and no
+     * longer the way it is drawn — the marker is a faint background wash now.
+     * Pinning the mechanism made an intentional restyle look like a broken
+     * feature, so this asserts the property the test is named for instead: the
+     * playing line is marked, and the line above it is not.
+     */
+    const activeBg = await active.evaluate((el) => getComputedStyle(el).backgroundColor)
+    const inactiveBg = await transcript(page)
+      .getByTestId("video-transcript-segments")
+      .locator('li div:not([data-testid="transcript-active-segment"])')
+      .first()
+      .evaluate((el) => getComputedStyle(el).backgroundColor)
+
+    expect(activeBg, "the playing segment must be marked").not.toBe(inactiveBg)
+
+    // And quietly. A fractional alpha is what makes it a wash rather than a
+    // block of colour; the browser may serialise it as rgba() or oklab(), so
+    // this looks for the alpha rather than for a particular colour space.
+    expect(activeBg, "the marker must be translucent, not a solid fill").toMatch(
+      /(?:\/|,)\s*0?\.\d+\s*\)/,
+    )
   })
 
   test("a translation uses the same layout as the original", async ({ page }) => {

@@ -4,9 +4,7 @@ For **Docker** (any Linux host), SSD bind mounts, and apt troubleshooting, read 
 
 Arciin ships with Docker assets for a local-first self-hosted deployment:
 
-- `Dockerfile.web`
-- `Dockerfile.api`
-- `Dockerfile.worker`
+- `Dockerfile` — one file, three targets (`--target web`, `--target api`, `--target worker`)
 - `docker-compose.yml` — source build (dev / clone)
 - `docker-compose.production.yml` — private distribution (pre-built images)
 - `.env.production.example`

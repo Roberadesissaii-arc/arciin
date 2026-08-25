@@ -6,12 +6,14 @@
  * pricing links (do not point NEXT_PUBLIC_ARCIIN_ACCOUNT_URL at a local portal
  * URL — that previously broke every upgrade CTA).
  *
- * During development the marketing site is on Vercel. Switch
- * NEXT_PUBLIC_ARCIIN_WEBSITE_URL to https://arciin.com when the custom domain
- * is live.
+ * The default is the real domain. It was arciin.vercel.app while the custom
+ * domain was still being set up, which meant every "get a license" and "view
+ * plans" button in a customer's instance pointed at a deployment URL rather
+ * than the product — and told them so in the button text.
+ * NEXT_PUBLIC_ARCIIN_WEBSITE_URL still overrides it for development.
  */
 
-const DEFAULT_WEBSITE = "https://arciin.vercel.app"
+const DEFAULT_WEBSITE = "https://arciin.com"
 
 function websiteBase(): string {
   const configured = process.env.NEXT_PUBLIC_ARCIIN_WEBSITE_URL
@@ -24,12 +26,12 @@ function accountBase(): string {
   return `${websiteBase()}/account`
 }
 
-/** Hostname for UI copy (“view plans on arciin.vercel.app”). */
+/** Hostname for UI copy (“view plans on arciin.com”). */
 export function websiteHostLabel(): string {
   try {
     return new URL(websiteBase()).host
   } catch {
-    return "arciin.vercel.app"
+    return "arciin.com"
   }
 }
 

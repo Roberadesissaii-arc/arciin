@@ -7,13 +7,13 @@ import {
   PLEX_CONNECTOR_DEF,
 } from "@/services/integrations/library-media-connector"
 import { registerMediaConnectorRoutes } from "@/modules/integrations/connector-routes"
-import { requireRole } from "@/services/security/auth"
+import { requireSessionRole } from "@/services/security/auth"
 import { serializeIntegration } from "@/services/serializers"
 
 export async function registerIntegrationRoutes(fastify: FastifyInstance) {
   fastify.get(
     "/integrations",
-    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    { preHandler: requireSessionRole(["OWNER", "ADMIN"]) },
     async (_request, reply) => {
       await ensureDefaultMediaIntegrations(fastify.prisma)
       const integrations = await fastify.prisma.integration.findMany({
@@ -26,7 +26,7 @@ export async function registerIntegrationRoutes(fastify: FastifyInstance) {
 
   fastify.get(
     "/integrations/plex",
-    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    { preHandler: requireSessionRole(["OWNER", "ADMIN"]) },
     async (_request, reply) => {
       const plex = await fastify.prisma.integration.findFirst({ where: { type: "PLEX" } })
       if (!plex) {
@@ -41,7 +41,7 @@ export async function registerIntegrationRoutes(fastify: FastifyInstance) {
 
   fastify.get(
     "/integrations/jellyfin",
-    { preHandler: requireRole(["OWNER", "ADMIN"]) },
+    { preHandler: requireSessionRole(["OWNER", "ADMIN"]) },
     async (_request, reply) => {
       const jellyfin = await fastify.prisma.integration.findFirst({
         where: { id: JELLYFIN_INTEGRATION_ID },

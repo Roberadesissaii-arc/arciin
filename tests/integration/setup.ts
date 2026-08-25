@@ -145,17 +145,25 @@ export async function createFolder(
   input: {
     librarySlug: string
     name: string
+    /** Nests the folder, and builds the pathCache the cascade queries rely on. */
+    parentFolderId?: string | null
     deletedAt?: Date | null
     hideFromAllFiles?: boolean
     lockedAt?: Date | null
   },
 ) {
+  const slug = input.name.toLowerCase().replace(/\s+/g, "-")
+  const parent = input.parentFolderId
+    ? await prisma.folder.findUniqueOrThrow({ where: { id: input.parentFolderId } })
+    : null
+
   return prisma.folder.create({
     data: {
       libraryId: fixtures.libraries[input.librarySlug].id,
       name: input.name,
-      slug: input.name.toLowerCase().replace(/\s+/g, "-"),
-      pathCache: `/${input.name.toLowerCase().replace(/\s+/g, "-")}`,
+      slug,
+      parentFolderId: input.parentFolderId ?? null,
+      pathCache: parent ? `${parent.pathCache}/${slug}` : `/${slug}`,
       deletedAt: input.deletedAt ?? null,
       hideFromAllFiles: input.hideFromAllFiles ?? false,
       lockedAt: input.lockedAt ?? null,

@@ -1,14 +1,14 @@
 import type { FastifyInstance } from "fastify"
 import { z } from "zod"
 
-import { requireFeature, requireRole } from "@/services/security/auth"
+import { requireFeature, requireSessionRole } from "@/services/security/auth"
 import { serializeJob } from "@/services/serializers"
 
 export async function registerJobRoutes(fastify: FastifyInstance) {
   fastify.get(
     "/jobs",
     {
-      preHandler: requireRole(["OWNER", "ADMIN", "MEMBER", "VIEWER"]),
+      preHandler: requireSessionRole(["OWNER", "ADMIN", "MEMBER", "VIEWER"]),
     },
     async (_request, reply) => {
       const jobs = await fastify.prisma.job.findMany({
@@ -31,7 +31,7 @@ export async function registerJobRoutes(fastify: FastifyInstance) {
    */
   fastify.delete(
     "/jobs",
-    { preHandler: [requireRole(["OWNER", "ADMIN"]), requireFeature("ops.job_controls")] },
+    { preHandler: [requireSessionRole(["OWNER", "ADMIN"]), requireFeature("ops.job_controls")] },
     async (_request, reply) => {
       const { count } = await fastify.prisma.job.deleteMany({
         where: { status: { in: ["COMPLETED", "FAILED"] } },
@@ -43,7 +43,7 @@ export async function registerJobRoutes(fastify: FastifyInstance) {
   fastify.get(
     "/jobs/:jobId",
     {
-      preHandler: requireRole(["OWNER", "ADMIN", "MEMBER", "VIEWER"]),
+      preHandler: requireSessionRole(["OWNER", "ADMIN", "MEMBER", "VIEWER"]),
     },
     async (request, reply) => {
       const params = z.object({ jobId: z.string() }).parse(request.params)

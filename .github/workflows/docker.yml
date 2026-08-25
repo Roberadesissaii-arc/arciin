@@ -26,11 +26,8 @@ jobs:
       matrix:
         include:
           - service: api
-            dockerfile: Dockerfile.api
           - service: web
-            dockerfile: Dockerfile.web
           - service: worker
-            dockerfile: Dockerfile.worker
 
     steps:
       - uses: actions/checkout@v4
@@ -69,7 +66,8 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: ${{ matrix.dockerfile }}
+          file: Dockerfile
+          target: ${{ matrix.service }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

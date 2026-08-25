@@ -84,6 +84,7 @@ export function releasePdfDocument(fileUrl: string) {
   hit.refs -= 1
   if (hit.refs <= 0) {
     pdfDocumentCache.delete(fileUrl)
-    void hit.pdf.destroy()
+    // pdf.js 6 removed PDFDocumentProxy.destroy(); the loading task owns teardown.
+    void hit.pdf.loadingTask.destroy()
   }
 }
