@@ -6,6 +6,7 @@ import {
   ArrowRightLeft,
   AlertTriangle,
   Archive,
+  ArchiveRestore,
   Code2,
   File,
   FileText,
@@ -38,6 +39,8 @@ import {
 import { useAssetPanelIntent } from "@/components/libraries/asset-panel-intent"
 import { useAssistLicense } from "@/components/libraries/assist-license-gate"
 import { useVideoEditor } from "@/components/libraries/video-edit-context"
+import { useArchiveAsset, useUnarchiveAsset } from "@/hooks/use-assets"
+import { toast } from "@/lib/notifications/arciin-toast"
 import {
   ContextMenu,
   ContextMenuContent,
@@ -350,11 +353,14 @@ export function AssetCard({ asset }: { asset: AssetSummary }) {
   const panelIntent = useAssetPanelIntent()
   const videoEditor = useVideoEditor()
   const { locked: assistLocked, planLabel: assistPlanLabel } = useAssistLicense()
+  const archiveMutation = useArchiveAsset()
+  const unarchiveMutation = useUnarchiveAsset()
   const selected = selection?.isSelected(asset.id) ?? false
   const canOpen = isViewableAsset(asset) && Boolean(viewer?.canOpen(asset))
   const source = sourceChipLabel(asset)
   const metaLine = `${formatBytes(asset.sizeBytes)} · ${formatCardRelativeTime(asset.createdAt)}`
   const [hover, setHover] = useState(false)
+  const isArchived = Boolean(asset.archivedAt)
 
   /** Single click = select (bulk bar). Double-click = open preview. */
   const onCardClick = (event: React.MouseEvent) => {
@@ -582,6 +588,50 @@ export function AssetCard({ asset }: { asset: AssetSummary }) {
           <Share2 />
           Share
         </ContextMenuItem>
+        <ContextMenuSeparator className="-mx-0.5 my-1" />
+        {isArchived ? (
+          <ContextMenuItem
+            className={libraryGlassContextMenuItem}
+            disabled={unarchiveMutation.isPending}
+            onSelect={() => {
+              unarchiveMutation.mutate(asset.id, {
+                onSuccess: () =>
+                  toast.success("Restored from Archives", {
+                    description: asset.originalFilename,
+                  }),
+                onError: () =>
+                  toast.error("Could not unarchive", {
+                    description: "Try again in a moment.",
+                  }),
+              })
+            }}
+            data-testid="asset-menu-unarchive"
+          >
+            <ArchiveRestore />
+            Unarchive
+          </ContextMenuItem>
+        ) : (
+          <ContextMenuItem
+            className={libraryGlassContextMenuItem}
+            disabled={archiveMutation.isPending}
+            onSelect={() => {
+              archiveMutation.mutate(asset.id, {
+                onSuccess: () =>
+                  toast.success("Moved to Archives", {
+                    description: "Find it under All Files → Archives.",
+                  }),
+                onError: () =>
+                  toast.error("Could not archive", {
+                    description: "Try again in a moment.",
+                  }),
+              })
+            }}
+            data-testid="asset-menu-archive"
+          >
+            <Archive />
+            Archive
+          </ContextMenuItem>
+        )}
       </ContextMenuContent>
     </ContextMenu>
   )

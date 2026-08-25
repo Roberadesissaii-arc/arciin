@@ -501,6 +501,9 @@ model Asset {
   createdAt               DateTime               @default(now())
   updatedAt               DateTime               @updatedAt
   deletedAt               DateTime?
+  /// User archived the file — hidden from Videos/Images/etc. and All Files
+  /// kind chips except Archives. Not Trash; Unarchive restores it.
+  archivedAt              DateTime?
   library                 Library                @relation(fields: [libraryId], references: [id], onDelete: Restrict)
   folder                  Folder?                @relation(fields: [folderId], references: [id], onDelete: SetNull)
   storageObject           StorageObject          @relation(fields: [storageObjectId], references: [id], onDelete: Restrict)
@@ -525,11 +528,13 @@ model Asset {
   @@index([mediaType])
   @@index([createdAt])
   @@index([deletedAt])
+  @@index([archivedAt])
   // Composite indexes matching the hot list queries (library/folder browse,
   // newest-first, excluding soft-deleted) so large libraries don't degrade to
   // index-scan-plus-sort under concurrent load.
   @@index([libraryId, deletedAt, createdAt(sort: Desc)])
   @@index([folderId, deletedAt, createdAt(sort: Desc)])
+  @@index([archivedAt, deletedAt, createdAt(sort: Desc)])
 }
 
 model UploadSession {

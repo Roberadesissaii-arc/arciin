@@ -31,8 +31,11 @@ export function filterAssetsByKind(
   assets: AssetSummary[],
   kind: LibraryKindFilter,
 ): AssetSummary[] {
-  if (kind === "all") return assets
-  return assets.filter((a) => mediaTypeMatchesKind(a.mediaType, kind))
+  if (kind === "all") {
+    // All Files default: hide user-archived (Archives chip shows those).
+    return assets.filter((a) => !a.archivedAt)
+  }
+  return assets.filter((a) => mediaTypeMatchesKind(a.mediaType, kind, a.archivedAt))
 }
 
 export function filterAssetsBySource(

@@ -85,14 +85,25 @@ export function LibraryBrowser({
 
   const foldersQuery = useFolders(library?.id || "")
   /**
-   * No mediaType filter on the API: kind chips filter client-side so a file
-   * filed under a mismatched library stays reachable from its library page.
+   * Kind chips drive server filters for Archives / Other so Inbox zips and
+   * user-archived files are actually fetchable (All Files otherwise hides Inbox
+   * and excludes archived). Other chips still refine client-side.
    */
   const assetsQuery = useAssetsPage({
     libraryId: library?.id,
     search: search || undefined,
     // Library pages default to root; All Files has no folders so keep the full set.
     ...(librarySlug && scope === "root" ? { rootOnly: true } : {}),
+    ...(isAllFiles && kindFilter === "ARCHIVE"
+      ? { archived: "only" as const, includeInbox: true }
+      : {}),
+    ...(isAllFiles && kindFilter === "OTHER"
+      ? { includeInbox: true, archived: "exclude" as const, category: "other" as const }
+      : {}),
+    ...(isAllFiles && kindFilter !== "ARCHIVE" && kindFilter !== "OTHER"
+      ? { archived: "exclude" as const }
+      : {}),
+    ...(!isAllFiles ? { archived: "exclude" as const } : {}),
   })
 
   // Pull remaining pages so grid/list page numbers can walk the full set.

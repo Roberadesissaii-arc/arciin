@@ -33,7 +33,7 @@ export type VisibleAssetQueryInput = {
   mediaType?: string
   search?: string
   /** Cross-library groupings that are not their own media type. */
-  category?: "code" | "applications"
+  category?: "code" | "applications" | "other"
   /**
    * Libraries whose contents are deliberately absent from a cross-library
    * listing — in practice Inbox, which is a holding area rather than a place
@@ -41,6 +41,12 @@ export type VisibleAssetQueryInput = {
    * one of these libraries by name.
    */
   excludeLibraryIds?: string[]
+  /**
+   * User-archive filter. Default `exclude` keeps Archives out of Videos /
+   * Images / All Files. `only` is the Archives chip. `include` is rare
+   * (admin / search).
+   */
+  archived?: "exclude" | "only" | "include"
   /** Keyset condition from `buildCursorWhere`, when paginating. */
   cursor?: Prisma.AssetWhereInput | null
 }
@@ -135,6 +141,13 @@ export function buildVisibleAssetWhere(
     and.push({ mediaType: "APPLICATION" })
   }
 
+  // All Files → Other: unclassified, installers, code, and zip containers.
+  if (input.category === "other") {
+    and.push({
+      mediaType: { in: ["OTHER", "APPLICATION", "CODE", "ARCHIVE"] },
+    })
+  }
+
   // Inbox is where a file waits to be filed, not a library of its own. Its
   // contents are unclassified by definition — an .msi, a .zip, a .json — so
   // they have no thumbnail and nothing to preview, and in a grid of media they
@@ -147,6 +160,13 @@ export function buildVisibleAssetWhere(
   // uses — quietly subtracted them from Inbox's own badge.
   if (input.excludeLibraryIds?.length) {
     and.push({ libraryId: { notIn: input.excludeLibraryIds } })
+  }
+
+  const archivedMode = input.archived ?? "exclude"
+  if (archivedMode === "only") {
+    and.push({ archivedAt: { not: null } })
+  } else if (archivedMode === "exclude") {
+    and.push({ archivedAt: null })
   }
 
   if (input.cursor) {
