@@ -10,6 +10,8 @@ import {
 } from "react"
 
 import { AssetPreviewWorkspace } from "@/components/libraries/asset-preview-workspace"
+import { useAssetSelection } from "@/components/libraries/asset-selection"
+import { useSidebar } from "@/components/ui/sidebar"
 import { filterViewableAssets } from "@/lib/utils/viewable-asset"
 import type { AssetSummary } from "@/lib/types/models"
 
@@ -30,6 +32,9 @@ export function AssetViewerProvider({
   children: ReactNode
 }) {
   const viewableAssets = useMemo(() => filterViewableAssets(assets), [assets])
+  const selection = useAssetSelection()
+  const sidebar = useSidebar()
+
   const [state, setState] = useState<{
     open: boolean
     index: number
@@ -46,14 +51,19 @@ export function AssetViewerProvider({
     (assetId: string) => {
       const index = viewableAssets.findIndex((a) => a.id === assetId)
       if (index < 0) return
+      // Close the asset Sheet and collapse the nav rail — both sit above the
+      // preview (Sheet is z-50 fixed) and hide the picture if left open.
+      selection?.clear()
+      sidebar.setOpen(false)
+      sidebar.setOpenMobile(false)
       setState({
         open: true,
         index,
-        layout: "embedded",
+        layout: "fullscreen",
         aiOpen: false,
       })
     },
-    [viewableAssets],
+    [viewableAssets, selection, sidebar],
   )
 
   const closeViewer = useCallback(() => {

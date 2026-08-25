@@ -116,10 +116,11 @@ function PreviewBody({
     <div
       className={cn(
         "relative min-h-0 min-w-0 flex-1 overflow-hidden bg-zinc-50",
-        isPdf || isImage || isText
+        isPdf || isImage || isText || isVideo
           ? "flex min-h-0 flex-col"
           : "flex items-center justify-center p-4",
         isText && "p-4",
+        isVideo && "bg-black",
       )}
     >
       {isPdf ? (
@@ -136,7 +137,7 @@ function PreviewBody({
           onPageChange={onPdfPageChange}
         />
       ) : isVideo ? (
-        <VideoAssetViewer src={mediaUrl} />
+        <VideoAssetViewer src={mediaUrl} className="min-h-0 flex-1" />
       ) : isText ? (
         <TextAssetViewer
           key={mediaUrl}

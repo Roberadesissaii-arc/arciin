@@ -43,6 +43,7 @@ import {
   resolvedThumbnailPath,
 } from "@/services/media/thumbnail-cache"
 import { generateAssetCoverImage } from "@/services/media/generate-cover-image"
+import { ensureBrowserPlayableVideo } from "@/services/media/browser-playable-video"
 import { streamFileResponse } from "@/services/media/stream-file-response"
 import {
   assetIsInJellyfinFolder,
@@ -1010,10 +1011,45 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
         reply.header("Content-Security-Policy", "sandbox; default-src 'none'")
       }
 
+      /**
+       * VP9/AV1-in-MP4 (and HEVC) often play as audio-only in Chrome. Remux or
+       * lightly transcode once, cache under thumbnails/playable/, and serve that
+       * for both inline preview and downloads that need to play in a browser.
+       */
+      let servePath = resolvedPath
+      let serveType = contentType
+      let serveDisposition = contentDisposition
+      if (asset.mediaType === "VIDEO") {
+        try {
+          const playable = await ensureBrowserPlayableVideo({
+            sourcePath: resolvedPath,
+            storageRoot: resolvedRoot,
+            assetId: asset.id,
+            codec: asset.codec,
+            mimeType: asset.mimeType,
+          })
+          if (playable) {
+            servePath = playable.path
+            serveType = playable.contentType
+            if (inlineSafe) {
+              serveDisposition = "inline"
+            } else {
+              const base = asset.originalFilename.replace(/\.[^.]+$/, "") || "video"
+              const ext = playable.contentType.includes("webm") ? "webm" : "mp4"
+              const name = `${base}.${ext}`
+              const safeAscii = name.replace(/[^\w.\- ]/g, "_")
+              serveDisposition = `attachment; filename="${safeAscii}"; filename*=UTF-8''${encodeURIComponent(name)}`
+            }
+          }
+        } catch {
+          // Fall through to the original file if remux fails.
+        }
+      }
+
       return streamFileResponse(reply, {
-        path: resolvedPath,
-        contentType,
-        contentDisposition,
+        path: servePath,
+        contentType: serveType,
+        contentDisposition: serveDisposition,
         rangeHeader: request.headers.range ?? null,
       })
     }

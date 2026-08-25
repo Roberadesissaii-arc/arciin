@@ -406,11 +406,11 @@ export function VideoAssetViewer({
          * panel it left the whole column shifting, and a Playwright click on the
          * close button never found it stable.
          */
-        controlsBelow ? "w-full flex-col" : "h-full",
+        controlsBelow ? "w-full flex-col" : "h-full min-h-0 w-full",
         // The full preview mats the video against the page; inside a panel the
         // panel is already the frame, so the padding and wash only shrink the
         // picture and leave a grey band around it.
-        compact ? "w-full" : "bg-zinc-50 p-4 sm:p-6",
+        compact ? "w-full" : controlsBelow ? "bg-zinc-50" : "bg-black",
         className,
       )}
     >
@@ -420,20 +420,25 @@ export function VideoAssetViewer({
       {error ? (
         <p className="max-w-md px-4 text-center text-sm text-zinc-500">{error}</p>
       ) : (
-        <div className={controlsBelow ? "flex w-full flex-col gap-2" : "contents"}>
+        <div
+          className={
+            controlsBelow
+              ? "flex w-full flex-col gap-2"
+              : "flex h-full min-h-0 w-full items-center justify-center"
+          }
+        >
         <div
           ref={shellRef}
           className={cn(
             "group/video relative overflow-hidden rounded-xl",
-            compact ? "h-full w-full" : "max-h-full max-w-full",
-            // The bar no longer sits inside the frame, so the frame owns the
-            // picture's shape rather than the parent stretching both.
+            // Fill the available stage and letterbox with object-contain —
+            // never size to the video's intrinsic pixels (portrait clips).
+            compact || !controlsBelow ? "h-full w-full" : "max-h-full max-w-full",
+            // Side-panel bar-below keeps a 16:9 box; full Open uses the stage.
             controlsBelow && "aspect-video w-full",
-            // Full viewer gets a soft mat; the panel frame is already bordered,
-            // so keep the video shell plain there.
             controlsBelow
               ? "bg-zinc-950"
-              : "bg-zinc-950 shadow-[0_4px_24px_rgba(0,0,0,0.12)] ring-1 ring-black/10",
+              : "bg-black",
             !ready && "opacity-0",
             isFullscreen && "rounded-none",
           )}
@@ -460,9 +465,9 @@ export function VideoAssetViewer({
             data-testid="asset-video"
             className={cn(
               "block cursor-pointer object-contain",
-              compact
-                ? "h-full w-full"
-                : "max-h-[min(100%,calc(100dvh-8rem))] max-w-full",
+              // Always fill the shell; object-contain keeps the real aspect
+              // (portrait 9:16 stays 9:16, landscape stays landscape).
+              "h-full w-full",
             )}
             onClick={togglePlay}
             onLoadedData={() => setReady(true)}
