@@ -4,16 +4,36 @@
 
 Arciin is a self-hosted private file, library, and media management platform. Run it on your own machine — organize videos, images, music, and documents into libraries, upload from the browser or scripts, and watch activity update in real time. No cloud account required.
 
+> **Arciin is proprietary software, not open source.** You may run and modify it
+> on servers you own or control. You may not redistribute it, resell it, or host
+> it as a multi-tenant service for third parties. Cloning this repository does
+> not grant a licence to redistribute — see [`LICENSE`](./LICENSE).
+>
+> The application is free to self-host. Paid plans licence the AI and developer
+> capabilities, not the right to keep files on your own disk.
+
 <p align="center">
-  <img src="./apps/web/public/assets/images/dashboard.png" alt="Arciin dashboard" width="900" />
+  <img src="./docs/screenshots/dashboard.png" alt="Arciin dashboard" width="900" />
   <br />
-  <em>Dashboard — libraries, storage overview, uploads, and live activity.</em>
+  <em>Dashboard — storage, libraries, recent uploads, and live activity.</em>
 </p>
 
 <p align="center">
-  <img src="./apps/web/public/assets/images/Sign_up..png" alt="Arciin first-run setup" width="900" />
+  <img src="./docs/screenshots/chat.png" alt="Arciin AI Chat" width="900" />
   <br />
-  <em>First visit — claim the instance with your setup token and create the owner account.</em>
+  <em>AI Chat — ask your own files. Bring your own model: Gemini, OpenAI, or a local Ollama.</em>
+</p>
+
+<p align="center">
+  <img src="./docs/screenshots/videos.png" alt="Arciin video library" width="900" />
+  <br />
+  <em>Video library — thumbnails, transcripts, and translations generated on your own hardware.</em>
+</p>
+
+<p align="center">
+  <img src="./docs/screenshots/files.png" alt="Arciin file browser" width="900" />
+  <br />
+  <em>All Files — every library in one browser, with grid and list views and bulk actions.</em>
 </p>
 
 ---
@@ -124,7 +144,20 @@ Pick **one** install path:
 | Path | You need on the host |
 |------|----------------------|
 | **Docker** (recommended for most installs) | [Docker](https://docs.docker.com/engine/install/) + Compose plugin |
-| **Native** (`./install.sh`) | Linux/WSL2, Node 20+, pnpm, PostgreSQL 14+, Redis 6+, FFmpeg |
+| **Native** (`./install.sh`) | A Debian/Ubuntu Linux or WSL2 host, and `sudo`. That is all. |
+
+The native installer provisions everything else itself — **Node 24**, pnpm via
+Corepack, PostgreSQL, Redis, FFmpeg, poppler-utils, PM2, and the optional
+`yt-dlp` / `gallery-dl` / `cloudflared` tools — then creates the database, writes
+`.env`, builds, and registers the services for boot. You do not install those
+first.
+
+If they are already present and you would rather the installer left the system
+alone, run it as `ARCIIN_SKIP_SYSTEM_PACKAGES=1 ./install.sh`.
+
+Node 24 is a hard requirement, not a preference: `undici` 8 calls
+`webidl.util.markAsUncloneable`, which does not exist before Node 22, so an older
+runtime builds cleanly, applies migrations, and then dies on its first import.
 
 On **Windows**, start with [Windows (WSL2)](#windows-wsl2) below — the installer is a bash script and cannot run in PowerShell, CMD, or Git Bash.
 
@@ -479,7 +512,7 @@ bash scripts/verify-install-parity.sh   # quick parity check
 
 Full guide: **[`docs/DOCKER.md`](./docs/DOCKER.md)** (storage bind mounts, any Linux host, troubleshooting).
 
-**Private distribution (customers, no monorepo):** **[`docs/PRIVATE_DISTRIBUTION.md`](./docs/PRIVATE_DISTRIBUTION.md)** — image-based compose, `install-private.sh`, release tarball. Prototype only (no public registry / Stripe / license cloud yet).
+**Private distribution (customers, no monorepo):** **[`docs/PRIVATE_DISTRIBUTION.md`](./docs/PRIVATE_DISTRIBUTION.md)** — image-based compose, `install-private.sh`, release tarball. Images publish to GHCR from `main`. Card payment is not wired up yet; licences are issued by the live authority at `license.arciin.com`.
 
 ### Dev / source-based compose
 
@@ -499,7 +532,7 @@ export ARCIIN_HOST_DATA_DIR=/mnt/your-ssd/arciin-data
 docker compose up --build -d
 ```
 
-### Production images (local prototype)
+### Production images
 
 ```bash
 pnpm docker:build          # tag arciin/arciin-{web,api,worker}:latest
@@ -557,9 +590,9 @@ arciin/
 |-----|----------|
 | [`docs/DEVELOPMENT.md`](./docs/DEVELOPMENT.md) | Day-to-day dev workflow |
 | [`docs/DOCKER.md`](./docs/DOCKER.md) | Docker on any Linux host, SSD bind mounts |
-| [`docs/PRIVATE_DISTRIBUTION.md`](./docs/PRIVATE_DISTRIBUTION.md) | Image-based install without monorepo (prototype) |
-| [`docs/LICENSE_SERVER.md`](./docs/LICENSE_SERVER.md) | Hosted license server prototype (no Stripe) |
-| [`docs/ACCOUNT_DASHBOARD.md`](./docs/ACCOUNT_DASHBOARD.md) | Account portal prototype (account.arciin.com) |
+| [`docs/PRIVATE_DISTRIBUTION.md`](./docs/PRIVATE_DISTRIBUTION.md) | Image-based install without the monorepo |
+| [`docs/LICENSE_SERVER.md`](./docs/LICENSE_SERVER.md) | The licensing authority — live at `license.arciin.com`, behind a default-deny perimeter |
+| [`docs/ACCOUNT_DASHBOARD.md`](./docs/ACCOUNT_DASHBOARD.md) | Customer account portal — live at `arciin.com/account` |
 | [`docs/DEPLOYMENT.md`](./docs/DEPLOYMENT.md) | Production and self-hosting |
 | [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) | System design |
 | [`docs/API.md`](./docs/API.md) | API overview |
@@ -583,7 +616,13 @@ Arciin is **proprietary** software. See [`LICENSE`](./LICENSE) for full terms.
 
 You may install and run Arciin on servers you own or control. Redistribution, sublicensing, and multi-tenant SaaS resale require separate permission.
 
+Cloning this repository does not grant a licence to redistribute it.
+
 Third-party open-source components and brand icon attributions are documented in [`docs/THIRD_PARTY_NOTICES.md`](./docs/THIRD_PARTY_NOTICES.md).
+
+- Plans and checkout: **[arciin.com/pricing](https://arciin.com/pricing)**
+- Your licences and activated servers: **[arciin.com/account](https://arciin.com/account)**
+- Security issues: **security@arciin.com** — please report privately rather than opening a public issue.
 
 ---
 
