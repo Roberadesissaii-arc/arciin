@@ -154,8 +154,14 @@ describe("in-app upgrade links point at the public website", () => {
 
   it("defaults to the public site rather than a developer machine", () => {
     const helper = read("apps/web/lib/license/upgrade-url.ts")
-    // Dev marketing site until arciin.com DNS is live.
-    expect(helper).toContain("https://arciin.vercel.app")
+    // arciin.com is live now. This asserted the Vercel deployment URL while the
+    // custom domain was being set up, which meant every "get a license" button
+    // in a customer's instance sent them to a deployment hostname — and said so
+    // in the button text.
+    expect(helper).toContain("https://arciin.com")
+    expect(helper, "the deployment URL must not be the default").not.toContain(
+      '"https://arciin.vercel.app"',
+    )
     expect(helper).not.toContain("localhost:3010")
   })
 })
