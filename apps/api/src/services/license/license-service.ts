@@ -6,6 +6,7 @@ import {
   evaluateLicenseState,
   keyDisplayPrefix,
   looksLikeHostedLicenseKey,
+  describeNonKeyInput,
   normalizeLicenseKey,
   resolveMockPlanFromKey,
   licenseTokenVersion,
@@ -212,6 +213,14 @@ export async function activateLicense(
       code: "INSTANCE_NOT_READY",
       message: "Claim this instance before activating a license.",
     }
+  }
+
+  // Answer the two common paste mistakes precisely, before spending a round
+  // trip to the authority to be told "unrecognized" — which is true but sends
+  // people looking in the wrong place.
+  const shapeProblem = describeNonKeyInput(rawKey)
+  if (shapeProblem) {
+    return { ok: false, code: "INVALID_LICENSE_KEY", message: shapeProblem }
   }
 
   const key = normalizeLicenseKey(rawKey)

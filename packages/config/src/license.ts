@@ -52,6 +52,39 @@ export function normalizeLicenseKey(raw: string): string {
 }
 
 /**
+ * Why this input cannot be a license key, when the shape already says so.
+ *
+ * Two mistakes account for nearly all failed activations, and "unrecognized
+ * license key" sends people to check the wrong thing for both.
+ *
+ * The first is pasting the shortened key the portal and the email show —
+ * `ARC_PRO_8544…FEEA`. The ellipsis stands in for the middle, so it reads like
+ * a key and is one character-class away from being one.
+ *
+ * The second is pasting the promo code that produced the license instead of the
+ * license itself. A promo is spent at checkout on the website; the key it
+ * issues arrives by email. Dev mock keys also start with ARCIIN-, so those are
+ * deliberately left alone.
+ *
+ * Returns null when nothing is obviously wrong — this rejects, it never
+ * accepts, and a key that gets past it still has to satisfy the authority.
+ */
+export function describeNonKeyInput(raw: string): string | null {
+  const value = raw.trim()
+  if (!value) return "Paste your license key to activate."
+
+  if (/…|\.\.\./.test(value)) {
+    return "That is the shortened key shown on screen — the … stands in for the middle. Open your license email and copy the whole key."
+  }
+
+  if (/^ARCIIN-(?!DEV-)/i.test(value)) {
+    return "That is a promo code, not a license key. Apply it at checkout on arciin.com; the license key it issues is emailed to you and begins with ARC_."
+  }
+
+  return null
+}
+
+/**
  * Resolve plan from demo/dev keys:
  * - ARCIIN-DEV-PRO / DEV-TEAM
  * - DEV-PRO-30D
