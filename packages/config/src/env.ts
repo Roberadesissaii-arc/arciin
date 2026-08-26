@@ -57,12 +57,21 @@ export const apiEnvSchema = coreEnvSchema.extend({
   MAX_UPLOAD_SIZE_MB: z.coerce.number().int().positive().default(20 * 1024),
   API_PORT: z.coerce.number().int().positive().default(4000),
   /**
-   * Hosted license server (future license.arciin.com). When set, activate/refresh
-   * call this service. Empty → local mock keys only (dev fallback).
+   * The licensing authority activate/refresh talk to.
+   *
+   * Defaults to the vendor's, because that is the only answer that is right for
+   * an ordinary install. It used to have no default, which meant a customer who
+   * installed Arciin and pasted the key from their purchase email was told
+   * "Unrecognized license key" — activation had quietly fallen through to the
+   * local mock path, which has never heard of a real key. Nothing in that
+   * message pointed at a missing environment variable.
+   *
+   * Override to run against your own authority; the token verification keys
+   * ship in source, so nothing else needs configuring either way.
    */
   ARCIIN_LICENSE_SERVER_URL: z.preprocess(
     (v) => (typeof v === "string" && v.trim() === "" ? undefined : v),
-    z.string().url().optional(),
+    z.string().url().default("https://license.arciin.com"),
   ),
   /**
    * Extra entitlement-token verification keys, as `kid:publicKey` pairs.
