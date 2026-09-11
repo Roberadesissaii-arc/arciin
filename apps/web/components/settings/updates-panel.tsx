@@ -28,6 +28,7 @@ import {
 import { queryKeys } from "@/lib/api/query-keys"
 import { cn } from "@/lib/utils"
 import { RelativeTime } from "@/components/shared/relative-time"
+import { useLicense } from "@/lib/license/use-license"
 
 function hourLabel(hour: number): string {
   const period = hour < 12 ? "AM" : "PM"
@@ -84,6 +85,8 @@ export function UpdatesPanel() {
 
 function AutoUpdateCard({ data }: { data: AutoUpdateConfig }) {
   const queryClient = useQueryClient()
+  const license = useLicense()
+  const autoUpdatesLocked = license.shouldPaywall("ops.auto_updates")
   const hour = data.hour ?? 2
 
   const saveMutation = useMutation({
@@ -118,11 +121,15 @@ function AutoUpdateCard({ data }: { data: AutoUpdateConfig }) {
     <SettingsCard className="space-y-3">
       <SettingRow
         label="Automatic updates"
-        hint="At your chosen hour, Arciin downloads and builds a new version in the background — nothing is applied until you click Apply."
+        hint={
+          autoUpdatesLocked
+            ? "Automatic staging is a Pro capability. Checking for updates stays available on every plan."
+            : "At your chosen hour, Arciin downloads and builds a new version in the background — nothing is applied until you click Apply."
+        }
       >
         <PillSwitch
           on={data.enabled}
-          disabled={saveMutation.isPending}
+          disabled={saveMutation.isPending || autoUpdatesLocked}
           onChange={() => saveMutation.mutate({ enabled: !data.enabled, hour: data.enabled ? null : hour })}
         />
       </SettingRow>
@@ -131,7 +138,7 @@ function AutoUpdateCard({ data }: { data: AutoUpdateConfig }) {
         <SettingRow label="Stage updates around" hint="Local server time — pick an hour you're usually asleep">
           <Select
             value={String(hour)}
-            disabled={saveMutation.isPending}
+            disabled={saveMutation.isPending || autoUpdatesLocked}
             onValueChange={(value) => saveMutation.mutate({ enabled: true, hour: Number(value) })}
           >
             <SelectTrigger className="w-full sm:w-40">
@@ -164,7 +171,7 @@ function AutoUpdateCard({ data }: { data: AutoUpdateConfig }) {
             type="button"
             size="sm"
             className="bg-primary text-white hover:bg-primary/90"
-            disabled={applyMutation.isPending}
+            disabled={applyMutation.isPending || autoUpdatesLocked}
             onClick={() => applyMutation.mutate()}
           >
             {applyMutation.isPending ? "Applying…" : "Apply now"}

@@ -226,6 +226,7 @@ export async function transcriptRoutes(fastify: FastifyInstance) {
               status: transcript.status,
               jobId: transcript.jobId,
               error: transcript.error,
+              updatedAt: transcript.updatedAt,
             },
           ],
           {

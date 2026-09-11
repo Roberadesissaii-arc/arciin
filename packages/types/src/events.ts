@@ -12,6 +12,7 @@ export const SOCKET_EVENT_TYPES = [
   "media.metadata.extracted",
   "media.processing.completed",
   "media.processing.failed",
+  "asset.transcript.updated",
   "asset.transcript.ready",
   "asset.transcript.failed",
   "library.created",

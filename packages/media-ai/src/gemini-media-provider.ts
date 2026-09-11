@@ -12,7 +12,7 @@
  * already uses for chat, decrypted by the Prisma wrapper on read.
  */
 
-import { createReadStream } from "node:fs"
+import { basename } from "node:path"
 import { stat } from "node:fs/promises"
 
 import { GoogleGenAI, type File as GeminiFile } from "@google/genai"
@@ -27,8 +27,8 @@ export const DEFAULT_GEMINI_MEDIA_MODEL = "gemini-2.5-flash"
  * Above this, bytes go through the Files API instead of inline data.
  *
  * Inline parts are base64 inside the request JSON, which inflates by a third
- * and has to be held in memory twice. The Files API streams instead, so it is
- * the right answer for anything but a very short clip.
+ * and has to be held in memory twice. The Files API streams from a filesystem
+ * path instead, so it is the right answer for anything but a very short clip.
  */
 export const INLINE_UPLOAD_LIMIT_BYTES = 12 * 1024 * 1024
 
@@ -36,6 +36,13 @@ export class GeminiNotConfiguredError extends Error {
   constructor() {
     super("GEMINI_NOT_CONFIGURED")
     this.name = "GeminiNotConfiguredError"
+  }
+}
+
+export class GeminiUnsupportedMediaError extends Error {
+  constructor(mimeType: string) {
+    super(`Gemini media understanding does not accept MIME type "${mimeType}".`)
+    this.name = "GeminiUnsupportedMediaError"
   }
 }
 
@@ -96,6 +103,53 @@ export type MediaUnderstandingResult = {
   model: string
 }
 
+export type GeminiMediaTransport =
+  | { mode: "inline"; sizeBytes: number; mimeType: string }
+  | {
+      mode: "filesApi"
+      sizeBytes: number
+      mimeType: string
+      /** Filesystem path. The Node SDK stats and streams this — not a Blob. */
+      file: string
+      displayName: string
+    }
+
+export function isSupportedGeminiMediaMime(mimeType: string): boolean {
+  const mime = mimeType.trim().toLowerCase()
+  return mime.startsWith("audio/") || mime.startsWith("video/")
+}
+
+export function assertSupportedGeminiMediaMime(mimeType: string): void {
+  if (!isSupportedGeminiMediaMime(mimeType)) {
+    throw new GeminiUnsupportedMediaError(mimeType)
+  }
+}
+
+/**
+ * Choose inline base64 vs Files API from size. Equality stays inline — the
+ * documented threshold is "larger than" the limit.
+ */
+export function planGeminiMediaTransport(input: {
+  sizeBytes: number
+  filePath: string
+  mimeType: string
+}): GeminiMediaTransport {
+  assertSupportedGeminiMediaMime(input.mimeType)
+  if (!Number.isFinite(input.sizeBytes) || input.sizeBytes < 0) {
+    throw new Error("Media file size is unknown; refusing to upload.")
+  }
+  if (input.sizeBytes <= INLINE_UPLOAD_LIMIT_BYTES) {
+    return { mode: "inline", sizeBytes: input.sizeBytes, mimeType: input.mimeType }
+  }
+  return {
+    mode: "filesApi",
+    sizeBytes: input.sizeBytes,
+    mimeType: input.mimeType,
+    file: input.filePath,
+    displayName: basename(input.filePath) || "media",
+  }
+}
+
 /**
  * Ask Gemini about a media file, and clean up after.
  *
@@ -108,24 +162,37 @@ export async function runGeminiMediaUnderstanding(
 ): Promise<MediaUnderstandingResult> {
   const ai = new GoogleGenAI({ apiKey: input.config.apiKey })
   const size = (await stat(input.filePath)).size
+  const transport = planGeminiMediaTransport({
+    sizeBytes: size,
+    filePath: input.filePath,
+    mimeType: input.mimeType,
+  })
 
   let uploaded: GeminiFile | null = null
   try {
     let mediaPart: Record<string, unknown>
 
-    if (size <= INLINE_UPLOAD_LIMIT_BYTES) {
+    if (transport.mode === "inline") {
       // Small enough that a round trip through the Files API costs more than it
       // saves. Read once, send once.
       const { readFile } = await import("node:fs/promises")
       const bytes = await readFile(input.filePath)
       mediaPart = {
-        inlineData: { mimeType: input.mimeType, data: bytes.toString("base64") },
+        inlineData: { mimeType: transport.mimeType, data: bytes.toString("base64") },
       }
     } else {
       input.onStage?.("uploading")
+      // Node SDK: `file` is a filesystem path or a Blob. A ReadStream is
+      // neither — it has no `size`, so the Files API received size_bytes:
+      // undefined. Passing the path lets NodeUploader.stat + uploadFileFromPath
+      // stream from disk.
       uploaded = await ai.files.upload({
-        file: createReadStream(input.filePath) as unknown as Blob,
-        config: { mimeType: input.mimeType },
+        file: transport.file,
+        config: {
+          mimeType: transport.mimeType,
+          displayName: transport.displayName,
+          abortSignal: input.signal,
+        },
       })
 
       // The file is not usable until Google finishes processing it.
@@ -141,7 +208,7 @@ export async function runGeminiMediaUnderstanding(
         throw new Error("Gemini could not process this media file.")
       }
       uploaded = current
-      mediaPart = { fileData: { mimeType: input.mimeType, fileUri: current.uri! } }
+      mediaPart = { fileData: { mimeType: transport.mimeType, fileUri: current.uri! } }
     }
 
     input.onStage?.("analyzing")

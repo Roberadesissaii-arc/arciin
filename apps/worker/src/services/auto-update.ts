@@ -6,9 +6,10 @@ import type { Prisma } from "@prisma/client"
 
 import { APP_VERSION } from "@arciin/config"
 import { prisma } from "@arciin/database"
-import { parseAutoUpdateConfig, type AutoUpdateConfig } from "@arciin/shared"
+import { JOB_TYPES, parseAutoUpdateConfig, type AutoUpdateConfig } from "@arciin/shared"
 
 import { workerConfig } from "@/config"
+import { assertPaidJobEntitlement, isLicenseRequiredError } from "@/services/entitlement"
 import { createRealtimeEvent, publishRealtimeEvent } from "@/services/realtime"
 
 async function updateAutoUpdateConfig(patch: Partial<AutoUpdateConfig>): Promise<AutoUpdateConfig> {
@@ -69,6 +70,13 @@ async function fetchLatestVersionIfNewer(): Promise<string | null> {
 export async function maybeRunScheduledStage(redis: Redis): Promise<void> {
   const instance = await prisma.instanceConfig.findFirst()
   if (!instance) return
+
+  try {
+    await assertPaidJobEntitlement(prisma, JOB_TYPES.stageUpdate)
+  } catch (error) {
+    if (isLicenseRequiredError(error)) return
+    throw error
+  }
 
   const config = parseAutoUpdateConfig(instance.autoUpdateConfig)
   if (!config.enabled || config.hour === null) return

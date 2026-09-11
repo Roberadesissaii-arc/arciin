@@ -5,6 +5,10 @@ import { useQueryClient } from "@tanstack/react-query"
 import type { Socket } from "socket.io-client"
 
 import { queryKeys } from "@/lib/api/query-keys"
+import {
+  applyTranscriptRealtimeToAssetCache,
+  isTranscriptRealtimeType,
+} from "@/lib/realtime/apply-transcript-activity"
 import { refreshLibraryQueries } from "@/lib/realtime/refresh-library-queries"
 import { buildLiveSocketEvent, useEventsFeedStore } from "@/lib/stores/events-feed-store"
 import { useSocketStore } from "@/lib/stores/socket-store"
@@ -289,12 +293,23 @@ export function useSocketEvents(socket: Socket | null) {
         }
       }
 
+      if (isTranscriptRealtimeType(type) && typeof payload.assetId === "string") {
+        applyTranscriptRealtimeToAssetCache(queryClient, {
+          type,
+          assetId: payload.assetId,
+          createdAt: payload.createdAt,
+        })
+      }
+
       if (
         type === "asset.created" ||
         type === "asset.updated" ||
         type === "asset.moved" ||
         type === "asset.deleted" ||
         type === "asset.classified" ||
+        type === "asset.transcript.updated" ||
+        type === "asset.transcript.ready" ||
+        type === "asset.transcript.failed" ||
         type === "upload.completed" ||
         type === "thumbnail.created" ||
         type === "media.processing.completed"
@@ -333,17 +348,20 @@ export function useSocketEvents(socket: Socket | null) {
 
     socket.on("connect", onConnect)
     socket.on("disconnect", onDisconnect)
+    const listeners = new Map<string, (payload: SocketEventPayload) => void>()
     for (const eventType of socketEventTypes) {
-      socket.on(eventType, (payload: SocketEventPayload) => {
+      const listener = (payload: SocketEventPayload) => {
         handleRealtimeEvent(eventType, payload)
-      })
+      }
+      listeners.set(eventType, listener)
+      socket.on(eventType, listener)
     }
 
     return () => {
       socket.off("connect", onConnect)
       socket.off("disconnect", onDisconnect)
-      for (const eventType of socketEventTypes) {
-        socket.off(eventType)
+      for (const [eventType, listener] of listeners) {
+        socket.off(eventType, listener)
       }
     }
   }, [

@@ -26,7 +26,7 @@ function constantTimeEqual(a: string, b: string): boolean {
 }
 import { resolveEffectiveStorageRoot } from "@/services/storage/effective-storage-root"
 import { serializeAuth } from "@/services/serializers"
-import { createSession, hashPassword, requireSessionRole, setSessionCookie } from "@/services/security/auth"
+import { createSession, hashPassword, requireFeature, requireSessionRole, setSessionCookie } from "@/services/security/auth"
 import { hashRecoveryAnswer } from "@/services/security/recovery-answer"
 import {
   consolidateStorageVolumes,
@@ -198,7 +198,7 @@ export async function registerInstanceRoutes(fastify: FastifyInstance) {
 
   fastify.patch(
     "/instance/auto-update",
-    { preHandler: requireSessionRole(["OWNER", "ADMIN"]) },
+    { preHandler: [requireSessionRole(["OWNER", "ADMIN"]), requireFeature("ops.auto_updates")] },
     async (request, reply) => {
       const parsed = autoUpdatePatchSchema.safeParse(request.body)
       if (!parsed.success) {
@@ -231,7 +231,7 @@ export async function registerInstanceRoutes(fastify: FastifyInstance) {
 
   fastify.post(
     "/instance/auto-update/apply",
-    { preHandler: requireSessionRole(["OWNER", "ADMIN"]) },
+    { preHandler: [requireSessionRole(["OWNER", "ADMIN"]), requireFeature("ops.auto_updates")] },
     async (request, reply) => {
       const instance = await fastify.prisma.instanceConfig.findFirst()
       const current = parseAutoUpdateConfig(instance?.autoUpdateConfig)

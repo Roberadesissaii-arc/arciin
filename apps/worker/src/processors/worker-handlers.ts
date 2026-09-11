@@ -38,6 +38,11 @@ import {
   resolveArciinStorageRoot,
 } from "@arciin/storage"
 import { workerConfig } from "@/config"
+import {
+  assertPaidJobEntitlement,
+  isLicenseRequiredError,
+  LICENSE_REQUIRED_CODE,
+} from "@/services/entitlement"
 import { runApplyUpdate, runStageUpdate } from "@/services/auto-update"
 import { syncConnectorMirrorsForAsset } from "@/services/connector-mirror"
 import { createRealtimeEvent, publishRealtimeEvent } from "@/services/realtime"
@@ -390,6 +395,41 @@ export async function handleMediaJob(
     | (TranscribeMediaPayload & { jobRecordId?: string }),
   redis: Redis
 ) {
+  try {
+    await assertPaidJobEntitlement(prisma, name)
+  } catch (error) {
+    if (isLicenseRequiredError(error)) {
+      await markJob(data.jobRecordId, {
+        status: "FAILED",
+        progress: 100,
+        error: error.message,
+        result: { code: LICENSE_REQUIRED_CODE, feature: error.feature },
+      })
+      if (name === JOB_TYPES.transcribeMedia && "transcriptId" in data) {
+        const payload = data as TranscribeMediaPayload & { jobRecordId?: string }
+        await prisma.mediaTranscript.updateMany({
+          where: { id: payload.transcriptId, status: { in: ["PENDING", "PROCESSING"] } },
+          data: { status: "FAILED", error: error.message },
+        })
+        await publishRealtimeEvent(
+          redis,
+          createRealtimeEvent("asset.transcript.failed", {
+            userId: payload.userId,
+            assetId: payload.assetId,
+            message: "Transcript blocked by the current license.",
+            data: {
+              transcriptId: payload.transcriptId,
+              outcome: "FAILED",
+              code: LICENSE_REQUIRED_CODE,
+            },
+          }),
+        ).catch(() => {})
+      }
+      return
+    }
+    throw error
+  }
+
   await markJob(data.jobRecordId, { status: "ACTIVE", progress: 10 })
 
   const asset = await prisma.asset.findUnique({
@@ -551,6 +591,15 @@ export async function handleMediaJob(
         data: { status: "PROCESSING", model: config.model, provider: "gemini" },
       })
       await markJob(payload.jobRecordId, { status: "ACTIVE", progress: 20 })
+      await publishRealtimeEvent(
+        redis,
+        createRealtimeEvent("asset.transcript.updated", {
+          userId: payload.userId,
+          assetId: asset.id,
+          message: `Transcript running for ${asset.originalFilename}.`,
+          data: { transcriptId: payload.transcriptId, status: "PROCESSING" },
+        }),
+      ).catch(() => {})
 
       const result = await transcribeMedia({
         config,
@@ -693,6 +742,21 @@ export async function handleStorageJob(
     | (ApplyUpdatePayload & { jobRecordId?: string }),
   redis: Redis
 ) {
+  try {
+    await assertPaidJobEntitlement(prisma, name)
+  } catch (error) {
+    if (isLicenseRequiredError(error)) {
+      await markJob(data.jobRecordId, {
+        status: "FAILED",
+        progress: 100,
+        error: error.message,
+        result: { code: LICENSE_REQUIRED_CODE, feature: error.feature },
+      })
+      return
+    }
+    throw error
+  }
+
   if (name === JOB_TYPES.stageUpdate && "targetVersion" in data) {
     await markJob(data.jobRecordId, { status: "ACTIVE", progress: 10 })
     const result = await runStageUpdate(data.targetVersion, redis)

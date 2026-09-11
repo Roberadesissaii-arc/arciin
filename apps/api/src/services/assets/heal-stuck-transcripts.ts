@@ -18,12 +18,24 @@ import type { PrismaClient } from "@prisma/client"
 
 export const WORKER_GONE_MS = 5 * 60_000
 
+/**
+ * A transcript that just moved into PENDING/PROCESSING is not stuck.
+ *
+ * The listing heal used to treat a leftover COMPLETED/FAILED/missing Job as
+ * proof the worker died. That is true for a row that has been spinning for
+ * minutes. It is false for a row someone (or an e2e) just set to PROCESSING
+ * — the card then rendered `failed` while the database still said the job
+ * was in flight (ARC-006).
+ */
+export const RECENT_TRANSCRIPT_ACTIVITY_MS = 2 * 60_000
+
 export type HealableTranscript = {
   id: string
   assetId: string
   status: string
   jobId: string | null
   error: string | null
+  updatedAt?: Date | null
 }
 
 export type HealedTranscript = {
@@ -41,10 +53,31 @@ export function isWorkerGone(
 }
 
 export function decideStuckTranscriptFailure(input: {
-  job: { status: string; error: string | null } | null
+  job: { status: string; error: string | null; completedAt?: Date | null } | null
   workerGone: boolean
+  /** When the transcript row last moved. */
+  transcriptUpdatedAt?: Date | null
+  now?: number
 }): string | null {
   const { job, workerGone } = input
+  const now = input.now ?? Date.now()
+  const updatedAt = input.transcriptUpdatedAt?.getTime()
+  if (updatedAt != null && Number.isFinite(updatedAt)) {
+    const age = now - updatedAt
+    if (age >= 0 && age < RECENT_TRANSCRIPT_ACTIVITY_MS) {
+      return null
+    }
+    // Leftover job from a previous run: the transcript moved after that job
+    // finished, so the jobId is stale rather than evidence this run died.
+    if (
+      job &&
+      (job.status === "COMPLETED" || job.status === "FAILED") &&
+      job.completedAt &&
+      updatedAt > job.completedAt.getTime()
+    ) {
+      return null
+    }
+  }
 
   if (!job) {
     return workerGone
@@ -92,7 +125,7 @@ export async function healStuckTranscripts(
     jobIds.length > 0
       ? await prisma.job.findMany({
           where: { id: { in: jobIds } },
-          select: { id: true, status: true, error: true },
+          select: { id: true, status: true, error: true, completedAt: true },
         })
       : []
   const jobById = new Map(jobs.map((j) => [j.id, j]))
@@ -101,7 +134,12 @@ export async function healStuckTranscripts(
 
   for (const transcript of running) {
     const job = transcript.jobId ? (jobById.get(transcript.jobId) ?? null) : null
-    const error = decideStuckTranscriptFailure({ job, workerGone })
+    const error = decideStuckTranscriptFailure({
+      job,
+      workerGone,
+      transcriptUpdatedAt: transcript.updatedAt,
+      now: options.now,
+    })
     if (!error) continue
 
     await prisma.mediaTranscript.update({

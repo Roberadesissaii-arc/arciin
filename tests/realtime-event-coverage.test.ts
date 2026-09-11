@@ -46,6 +46,7 @@ describe("realtime event coverage", () => {
   it("both ways out of a running transcript are announced", () => {
     // The card spinner is driven by transcript status. Whichever way the job
     // ends, the client has to be told, or the spinner outlives the work.
+    expect(WORKER).toContain('createRealtimeEvent("asset.transcript.updated"')
     expect(WORKER).toContain('createRealtimeEvent("asset.transcript.ready"')
     expect(WORKER).toContain('createRealtimeEvent("asset.transcript.failed"')
   })
@@ -62,7 +63,11 @@ describe("realtime event coverage", () => {
   it("transcript events invalidate the asset list", () => {
     // use-socket-events keys off the `asset.` prefix to refresh the listing the
     // cards read from; a rename that broke that prefix would break the fix.
-    for (const name of ["asset.transcript.ready", "asset.transcript.failed"]) {
+    for (const name of [
+      "asset.transcript.updated",
+      "asset.transcript.ready",
+      "asset.transcript.failed",
+    ]) {
       expect(name.startsWith("asset.")).toBe(true)
     }
     const hook = readFileSync(

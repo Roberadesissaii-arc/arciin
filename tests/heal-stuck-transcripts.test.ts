@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 
 import {
+  RECENT_TRANSCRIPT_ACTIVITY_MS,
   WORKER_GONE_MS,
   decideStuckTranscriptFailure,
   isWorkerGone,
@@ -78,5 +79,42 @@ describe("decideStuckTranscriptFailure", () => {
         workerGone: true,
       }),
     ).toMatch(/Worker stopped/i)
+  })
+
+  it("does not heal a transcript that just moved into PROCESSING", () => {
+    const now = 5_000_000
+    expect(
+      decideStuckTranscriptFailure({
+        job: { status: "COMPLETED", error: null, completedAt: new Date(now - 60_000) },
+        workerGone: true,
+        transcriptUpdatedAt: new Date(now - 1_000),
+        now,
+      }),
+    ).toBeNull()
+  })
+
+  it("does not treat a leftover completed job as stuck after a newer transcript update", () => {
+    const now = 5_000_000
+    expect(
+      decideStuckTranscriptFailure({
+        job: { status: "COMPLETED", error: null, completedAt: new Date(now - RECENT_TRANSCRIPT_ACTIVITY_MS - 10_000) },
+        workerGone: false,
+        transcriptUpdatedAt: new Date(now - RECENT_TRANSCRIPT_ACTIVITY_MS - 1_000),
+        now,
+      }),
+    ).toBeNull()
+  })
+
+  it("still heals a long-stuck PROCESSING row with a matching completed job", () => {
+    const now = 5_000_000
+    const completedAt = new Date(now - RECENT_TRANSCRIPT_ACTIVITY_MS - 5_000)
+    expect(
+      decideStuckTranscriptFailure({
+        job: { status: "COMPLETED", error: null, completedAt },
+        workerGone: false,
+        transcriptUpdatedAt: new Date(completedAt.getTime() - 1_000),
+        now,
+      }),
+    ).toMatch(/without saving/i)
   })
 })

@@ -72,7 +72,7 @@ test.describe("the card follows the transcript in real time", () => {
   test("the spinner clears when the transcript finishes — no reload", async ({ page }) => {
     await prisma.mediaTranscript.update({
       where: { assetId: FIXTURE },
-      data: { status: "PROCESSING" },
+      data: { status: "PROCESSING", updatedAt: new Date() },
     })
 
     await page.goto("/videos")
@@ -100,7 +100,7 @@ test.describe("the card follows the transcript in real time", () => {
   test("a failed transcript also stops the spinner", async ({ page }) => {
     await prisma.mediaTranscript.update({
       where: { assetId: FIXTURE },
-      data: { status: "PROCESSING" },
+      data: { status: "PROCESSING", updatedAt: new Date() },
     })
 
     await page.goto("/videos")
@@ -117,5 +117,27 @@ test.describe("the card follows the transcript in real time", () => {
 
     // Still an indicator, but it stops claiming work is in flight.
     await expect(indicator).toHaveAttribute("data-ai-status", "failed", { timeout: 20_000 })
+  })
+
+  test("a failed card returns to running when the transcript is retried — no reload", async ({ page }) => {
+    await prisma.mediaTranscript.update({
+      where: { assetId: FIXTURE },
+      data: { status: "FAILED", error: "e2e previous failure" },
+    })
+
+    await page.goto("/videos")
+    const card = page.locator(`[data-asset-id="${FIXTURE}"]`)
+    await expect(card).toBeVisible({ timeout: 60_000 })
+    const indicator = card.getByTestId("asset-ai-indicator")
+    await expect(indicator).toHaveAttribute("data-ai-status", "failed", { timeout: 30_000 })
+
+    await prisma.mediaTranscript.update({
+      where: { assetId: FIXTURE },
+      data: { status: "PROCESSING", error: null, updatedAt: new Date() },
+    })
+    await announce("asset.transcript.updated", ownerId, FIXTURE)
+
+    await expect(indicator).toHaveAttribute("data-ai-status", "running", { timeout: 20_000 })
+    expect(page.url()).toContain("/videos")
   })
 })

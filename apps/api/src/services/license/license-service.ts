@@ -1,18 +1,20 @@
-import { createHmac, timingSafeEqual } from "node:crypto"
+import { createHmac } from "node:crypto"
 
 import {
   LICENSE_GRACE_MS,
   defaultLicenseSnapshot,
-  evaluateLicenseState,
   keyDisplayPrefix,
   looksLikeHostedLicenseKey,
   describeNonKeyInput,
   normalizeLicenseKey,
   resolveMockPlanFromKey,
-  licenseTokenVersion,
+  trustedLicenseSnapshotFromRow,
   verifyHostedLicenseToken,
+  verifyMockLicenseToken as verifyMockLicenseTokenWithSecret,
+  verifyStoredEntitlement,
   type LicensePlanId,
   type LicenseStateSnapshot,
+  type MockLicenseTokenPayload,
 } from "@arciin/shared"
 import type { PrismaClient } from "@prisma/client"
 
@@ -43,17 +45,16 @@ function mockSigningSecret() {
   return apiConfig.SESSION_SECRET || "arciin-dev-license-secret"
 }
 
-/** Legacy v1 local mock tokens (pre-hosted). */
-type MockTokenPayload = {
-  v: 1
-  instanceId: string
-  plan: LicensePlanId
-  activatedAt: string
-  expiresAt: string | null
-  graceUntil: string | null
-  keyPrefix: string
-  source: "mock_dev"
+function trustedEntitlementContext() {
+  return {
+    mockHmacSecret: mockSigningSecret(),
+    publicKeys: apiConfig.licensePublicKeyRegistry,
+    legacyHmacSecret: apiConfig.legacyLicenseSecret,
+  }
 }
+
+/** Legacy v1 local mock tokens (pre-hosted). */
+type MockTokenPayload = MockLicenseTokenPayload
 
 function signMockPayload(payload: MockTokenPayload): string {
   const body = Buffer.from(JSON.stringify(payload), "utf8").toString("base64url")
@@ -65,25 +66,7 @@ export function verifyMockLicenseToken(
   token: string,
   expectedInstanceId: string,
 ): MockTokenPayload | null {
-  const parts = token.split(".")
-  if (parts.length !== 4 || parts[0] !== "arclic" || parts[1] !== "v1") return null
-  const body = parts[2]!
-  const sig = parts[3]!
-  const expected = createHmac("sha256", mockSigningSecret()).update(body).digest("base64url")
-  try {
-    const a = Buffer.from(sig)
-    const b = Buffer.from(expected)
-    if (a.length !== b.length || !timingSafeEqual(a, b)) return null
-  } catch {
-    return null
-  }
-  try {
-    const payload = JSON.parse(Buffer.from(body, "base64url").toString("utf8")) as MockTokenPayload
-    if (payload.v !== 1 || payload.instanceId !== expectedInstanceId) return null
-    return payload
-  } catch {
-    return null
-  }
+  return verifyMockLicenseTokenWithSecret(token, expectedInstanceId, mockSigningSecret())
 }
 
 /** @deprecated use verifyMockLicenseToken or verifyHostedLicenseToken */
@@ -91,94 +74,8 @@ export function verifySignedLicenseToken(token: string, expectedInstanceId: stri
   return verifyMockLicenseToken(token, expectedInstanceId)
 }
 
-/** What a verified entitlement token actually entitles this instance to. */
-type VerifiedEntitlement = {
-  plan: LicensePlanId
-  expiresAt: Date | null
-  graceUntil: Date | null
-  keyPrefix: string | null
-}
-
-/**
- * The entitlement this instance can prove it holds.
- *
- * Everything above free core is derived from here, and `null` means free core.
- * The stored `licensePlan` / `licenseStatus` columns are treated as cache: they
- * are useful for display and for knowing what the authority last said, but they
- * cannot grant anything on their own. Before this existed, a single UPDATE
- * setting `licensePlan = 'business'` alongside any non-empty token string
- * unlocked every paid gate (ARC-001).
- *
- * Verification is asymmetric — this build holds vendor *public* keys only, so
- * it can check a token but never mint one. A token that is missing, malformed,
- * signed by another key, issued to a different install, or revoked by the
- * authority fails closed to free core. Failing closed here costs a customer
- * their paid features; it must never cost them their files, which is why the
- * caller keeps free-core entitlements regardless of the outcome.
- *
- * A token signed by a key newer than this build also lands here, which is the
- * intended conservative outcome of key rotation: refresh re-fetches a token
- * this build can verify, and until then the instance runs as free core.
- */
-function verifyStoredEntitlement(row: InstanceLicenseRow): VerifiedEntitlement | null {
-  const token = row.licenseSignedToken
-  if (!token) return null
-
-  // Local dev/mock keys carry a v1 token signed with this instance's own
-  // secret. They are still verified — a forged v1 blob is rejected exactly like
-  // a forged hosted one — they simply have a different issuer.
-  if (row.licenseSource !== "hosted" && licenseTokenVersion(token) === null) {
-    const mock = verifyMockLicenseToken(token, row.id)
-    if (!mock) return null
-    return {
-      plan: mock.plan,
-      expiresAt: mock.expiresAt ? new Date(mock.expiresAt) : null,
-      graceUntil: mock.graceUntil ? new Date(mock.graceUntil) : null,
-      keyPrefix: mock.keyPrefix,
-    }
-  }
-
-  const payload = verifyHostedLicenseToken(token, licenseVerifyOptions(row.id))
-  if (!payload) return null
-  if (payload.status === "revoked" || payload.status === "expired" || payload.status === "inactive") {
-    return null
-  }
-
-  return {
-    plan: payload.plan,
-    expiresAt: payload.expiresAt ? new Date(payload.expiresAt) : null,
-    graceUntil: payload.graceUntil ? new Date(payload.graceUntil) : null,
-    keyPrefix: payload.keyPrefix || row.licenseKeyPrefix,
-  }
-}
-
 function rowToSnapshot(row: InstanceLicenseRow | null): LicenseStateSnapshot {
-  if (!row) return defaultLicenseSnapshot(null)
-
-  const verified = verifyStoredEntitlement(row)
-  if (!verified) {
-    // No provable entitlement. The key prefix is display-only and grants
-    // nothing, so it survives to keep the licence screen informative.
-    return {
-      ...defaultLicenseSnapshot(row.id),
-      keyPrefix: row.licenseKeyPrefix,
-      activatedAt: row.licenseActivatedAt?.toISOString() ?? null,
-    }
-  }
-
-  // Dates come from the token too: a column claiming a longer runway than the
-  // signed entitlement would otherwise extend a licence for free.
-  return evaluateLicenseState({
-    plan: verified.plan,
-    status: row.licenseStatus,
-    instanceId: row.id,
-    keyPrefix: verified.keyPrefix,
-    activatedAt: row.licenseActivatedAt,
-    expiresAt: verified.expiresAt,
-    graceUntil: verified.graceUntil,
-    signedToken: row.licenseSignedToken,
-    source: row.licenseSource,
-  })
+  return trustedLicenseSnapshotFromRow(row, trustedEntitlementContext())
 }
 
 const licenseSelect = {
@@ -581,7 +478,7 @@ async function evaluateLocalToken(
   // housekeeping half: it stops the licence screen advertising a key that can
   // never be honoured, and it is a write, so it belongs on the refresh path
   // rather than on every read.
-  if (instance.licenseSignedToken && !verifyStoredEntitlement(instance)) {
+  if (instance.licenseSignedToken && !verifyStoredEntitlement(instance, trustedEntitlementContext())) {
     await prisma.instanceConfig.update({
       where: { id: instance.id },
       data: {

@@ -175,6 +175,8 @@ describe("paid capabilities are enforced by the API, not just the UI", () => {
     ["apps/api/src/modules/chat/routes.ts", "ai.chat"],
     ["apps/api/src/modules/jobs/routes.ts", "ops.job_controls"],
     ["apps/api/src/modules/settings/routes.ts", "ops.remote_access_helper"],
+    ["apps/api/src/modules/instance/routes.ts", "ops.auto_updates"],
+    ["apps/api/src/modules/users/routes.ts", "team.multi_user"],
   ]
 
   for (const [file, feature] of gated) {
