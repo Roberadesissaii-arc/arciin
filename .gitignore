@@ -43,6 +43,8 @@ yarn-error.log*
 
 # private distribution packaging output
 /dist/
+apps/api/dist/
+apps/worker/dist/
 
 # hosted license server SQLite (prototype)
 /apps/license-server/data/

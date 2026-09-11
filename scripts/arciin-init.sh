@@ -15,6 +15,9 @@ warn() {
   printf '\n[arciin-init] warning: %s\n' "$1" >&2
 }
 
+EXISTING_DATABASE_URL="${DATABASE_URL:-}"
+EXISTING_DATA_DIR="${ARCIIN_DATA_DIR:-}"
+
 # shellcheck disable=SC1091
 if [[ -f "${ROOT_DIR}/.env" ]]; then
   set -a
@@ -23,8 +26,8 @@ if [[ -f "${ROOT_DIR}/.env" ]]; then
   set +a
 fi
 
-DATABASE_URL="${DATABASE_URL:-postgresql://arciin:arciin@localhost:5432/arciin}"
-ARCIIN_DATA_DIR="${ARCIIN_DATA_DIR:-/srv/arciin-storage/arciin}"
+DATABASE_URL="${EXISTING_DATABASE_URL:-${DATABASE_URL:-postgresql://arciin:arciin@localhost:5432/arciin}}"
+ARCIIN_DATA_DIR="${EXISTING_DATA_DIR:-${ARCIIN_DATA_DIR:-/srv/arciin-storage/arciin}}"
 
 wait_for_postgres() {
   local host port user tries=30
@@ -99,11 +102,29 @@ recover_chat_migration_failure() {
 }
 
 run_migrations() {
+  # shellcheck source=scripts/migration-backup.sh
+  source "${ROOT_DIR}/scripts/migration-backup.sh"
+
+  if has_pending_migrations; then
+    log "Pending migrations detected — creating pre-migration backup"
+    if ! backup_path="$(create_migration_backup)"; then
+      echo "[arciin-init] FATAL: pre-migration backup failed; refusing to migrate" >&2
+      exit 1
+    fi
+    log "Pre-migration backup stored at ${backup_path}"
+  else
+    log "Database schema is up to date — skipping pre-migration backup"
+  fi
+
   log "Applying database migrations (prisma migrate deploy)"
-  recover_chat_migration_failure
+  if ! recover_chat_migration_failure; then
+    echo "[arciin-init] FATAL: migration failed; a pre-migration backup may be available under $(migration_backup_dir)" >&2
+    exit 1
+  fi
   local count
   count="$(find "${ROOT_DIR}/prisma/migrations" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')"
   log "Migration folders on disk: ${count} (includes bootstrap, chat, password vault, mobile pairing, session vault unlock, etc.)"
+  return 0
 }
 
 run_seed() {

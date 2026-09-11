@@ -77,9 +77,8 @@ COPY --chown=1000:1000 prisma ./prisma
 #
 # The single most expensive layer in the release, built once for all three.
 # --prod drops eslint, typescript, vitest, tailwind, @types/* and the Playwright
-# client. tsx and prisma stay: this deployment runs the API and worker from
-# TypeScript source through tsx, and the entrypoint applies migrations with the
-# Prisma CLI, so both are runtime dependencies rather than build tooling.
+# client. prisma stays for migrate/seed in the entrypoint. API and worker run
+# compiled bundles from apps/*/dist (see scripts/build-backend.mjs).
 # ─────────────────────────────────────────────────────────────────────────────
 FROM manifests AS prod-deps
 RUN pnpm install --frozen-lockfile --prod --ignore-scripts
@@ -109,7 +108,7 @@ ENV ARCIIN_PUBLIC_URL=${ARCIIN_PUBLIC_URL}
 
 # The wasm copy is explicit because the install above runs --ignore-scripts.
 # Without it PDF preview renders a grey placeholder, so it is not optional.
-RUN pnpm pdfjs:copy-wasm && pnpm db:generate && pnpm build:web
+RUN pnpm pdfjs:copy-wasm && pnpm db:generate && pnpm build:web && pnpm build:backend
 
 # ─────────────────────────────────────────────────────────────────────────────
 # media — ffmpeg + poppler. Shared by api and worker; never reaches web.
@@ -130,22 +129,27 @@ USER 1000:1000
 # ─────────────────────────────────────────────────────────────────────────────
 FROM media AS api
 USER root
-# bash for the entrypoint, psql for the migration wait, curl for health checks.
+# bash for the entrypoint, matching pg_dump/psql for Postgres 16, curl for health.
+# Debian's default postgresql-client is 15 and refuses to dump a 16 server, which
+# would block every first-boot migrate (ARC-014).
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      bash postgresql-client curl \
+      bash curl ca-certificates gnupg \
+    && curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+      | gpg --dearmor -o /usr/share/keyrings/pgdg.gpg \
+    && echo "deb [signed-by=/usr/share/keyrings/pgdg.gpg] http://apt.postgresql.org/pub/repos/apt bookworm-pgdg main" \
+      > /etc/apt/sources.list.d/pgdg.list \
+    && apt-get update && apt-get install -y --no-install-recommends postgresql-client-16 \
     && rm -rf /var/lib/apt/lists/*
 COPY scripts/install-cloudflared.sh /tmp/install-cloudflared.sh
 RUN chmod +x /tmp/install-cloudflared.sh && /tmp/install-cloudflared.sh && rm /tmp/install-cloudflared.sh
 USER 1000:1000
 
-# Runtime source: apps/*/src is what tsx executes, not build input.
-# .dockerignore keeps tests, docs, reports and caches out.
-COPY --chown=1000:1000 apps/api ./apps/api
-COPY --chown=1000:1000 apps/worker ./apps/worker
+# Compiled bundles come from the builder, not the host tree (dist is gitignored).
+COPY --from=web-builder --chown=1000:1000 /app/apps/api/dist ./apps/api/dist
 COPY --chown=1000:1000 packages ./packages
 COPY --chown=1000:1000 scripts ./scripts
 COPY --chown=1000:1000 tsconfig.base.json tsconfig.json ./
-RUN chmod +x scripts/arciin-init.sh scripts/entrypoint-api.sh
+RUN chmod +x scripts/arciin-init.sh scripts/entrypoint-api.sh scripts/restore-migration-backup.sh scripts/migration-backup.sh
 
 ENV NODE_ENV=production
 ENV API_PORT=4000
@@ -167,17 +171,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 USER 1000:1000
 
-COPY --chown=1000:1000 apps/worker ./apps/worker
-COPY --chown=1000:1000 apps/api ./apps/api
+COPY --from=web-builder --chown=1000:1000 /app/apps/worker/dist ./apps/worker/dist
 COPY --chown=1000:1000 packages ./packages
 COPY --chown=1000:1000 scripts ./scripts
 COPY --chown=1000:1000 tsconfig.base.json tsconfig.json ./
+RUN chmod +x scripts/worker-healthcheck.mjs
 
 ENV NODE_ENV=production
 
-# tsx directly rather than through pnpm: one less process, and nothing that
-# could try to resolve a package manager at start.
-CMD ["node_modules/.bin/tsx", "--tsconfig", "apps/worker/tsconfig.json", "apps/worker/src/index.ts"]
+CMD ["node", "apps/worker/dist/index.js"]
 
 # ─────────────────────────────────────────────────────────────────────────────
 # web — build output only. No media toolchain, no application source.

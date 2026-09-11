@@ -8,7 +8,7 @@ export default function UsersSettingsPage() {
       <div className="space-y-6">
         <PageHeader
           title="Users"
-          description="Owner account details and team member management."
+          description="Manage local team accounts, roles, and access."
         />
         <UsersPanel />
       </div>

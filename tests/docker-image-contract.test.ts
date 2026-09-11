@@ -115,6 +115,17 @@ describe("the build system points at the unified file", () => {
     expect(ci).toMatch(/target: \$\{\{ matrix\.service \}\}/)
   })
 
+  it("production API and worker run compiled bundles, not tsx", () => {
+    expect(dockerfile).toMatch(/pnpm build:backend/)
+    expect(dockerfile).toMatch(/COPY --from=web-builder[^\n]+\/app\/apps\/api\/dist/)
+    expect(dockerfile).toMatch(/COPY --from=web-builder[^\n]+\/app\/apps\/worker\/dist/)
+    expect(dockerfile).toMatch(/CMD \["node", "apps\/worker\/dist\/index\.js"\]/)
+    expect(dockerfile).not.toMatch(/tsx.*apps\/(api|worker)/)
+    const entry = readFileSync(path.join(root, "scripts/entrypoint-api.sh"), "utf8")
+    expect(entry).toMatch(/exec node apps\/api\/dist\/index\.js/)
+    expect(entry).not.toMatch(/tsx/)
+  })
+
   it("the build script builds each service by target", () => {
     const sh = readFileSync(path.join(root, "scripts/docker-build-images.sh"), "utf8")
     expect(sh).not.toMatch(/Dockerfile\.(api|web|worker)/)

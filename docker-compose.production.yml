@@ -137,6 +137,12 @@ services:
         condition: service_started
     volumes:
       - ${ARCIIN_HOST_DATA_DIR:-/srv/arciin-storage/arciin}:/data/arciin
+    healthcheck:
+      test: ["CMD", "node", "scripts/worker-healthcheck.mjs"]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+      start_period: 60s
 
   postgres:
     image: postgres:16-alpine

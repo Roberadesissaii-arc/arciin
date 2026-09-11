@@ -18,7 +18,7 @@ overrides:
   qs: ^6.15.2
   body-parser: ^2.3.0
   '@babel/core': ^7.29.6
-  esbuild: ^0.28.1
+  esbuild: ^0.28.2
   '@fastify/ajv-compiler>fast-uri': ^3.1.6
   fast-json-stringify@^6>fast-uri: ^3.1.6
   lucide-react: 1.14.0
@@ -205,6 +205,9 @@ importers:
       cross-env:
         specifier: ^10.1.0
         version: 10.1.0
+      esbuild:
+        specifier: ^0.28.2
+        version: 0.28.2
       eslint:
         specifier: ^9
         version: 9.39.4(jiti@2.7.0)

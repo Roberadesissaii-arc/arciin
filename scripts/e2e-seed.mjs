@@ -33,6 +33,10 @@ loadEnv({ path: path.join(repoRoot, ".env.development"), override: true, quiet: 
 
 export const E2E_EMAIL = "e2e@arciin.invalid"
 export const E2E_PASSWORD_FILE = "/tmp/arciin-e2e-pw"
+export const E2E_ROLE_PASSWORD_FILE = "/tmp/arciin-e2e-role-users.json"
+export const E2E_ADMIN_EMAIL = "e2e-admin@arciin.invalid"
+export const E2E_MEMBER_EMAIL = "e2e-member@arciin.invalid"
+export const E2E_VIEWER_EMAIL = "e2e-viewer@arciin.invalid"
 
 /**
  * The video the transcript suite works on.
@@ -446,14 +450,13 @@ export async function seedE2EUser() {
     const password = randomBytes(24).toString("base64url")
     const passwordHash = await hash(password)
 
-    // The instance is seeded Pro because the entitlement suite tests Pro
-    // behaviour, and the plan is decided server-side: the chat page renders the
-    // soft-lock before any browser route stub can intervene, so a Free instance
-    // made every Pro test fail on a paywall that was correctly shown. Tests
-    // that need Free stub the license endpoint and drive the client-side state.
+    // Team includes every Pro feature plus `team.multi_user`. The entitlement
+    // suite stubs `/api/license/status`, so it does not depend on this column.
+    // Settings → Users cannot be browser-certified on Pro alone.
+    const requestedPlan = process.argv.includes("--plan=free") ? "free" : "team"
     const licence = {
-      licensePlan: "pro",
-      licenseStatus: "active",
+      licensePlan: requestedPlan,
+      licenseStatus: requestedPlan === "free" ? "none" : "active",
       licenseSource: "mock_dev",
       licenseActivatedAt: new Date(),
       licenseExpiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
@@ -481,7 +484,7 @@ export async function seedE2EUser() {
       data: {
         licenseSignedToken: signMockLicenceToken(
           instance.id,
-          "pro",
+          requestedPlan,
           licence.licenseActivatedAt,
           licence.licenseExpiresAt,
         ),
@@ -528,6 +531,30 @@ export async function seedE2EUser() {
     writeFileSync(E2E_PASSWORD_FILE, password, { mode: 0o600 })
     chmodSync(E2E_PASSWORD_FILE, 0o600)
 
+    const roleUsers = {}
+    for (const spec of [
+      { email: E2E_ADMIN_EMAIL, name: "E2E Admin", role: "ADMIN" },
+      { email: E2E_MEMBER_EMAIL, name: "E2E Member", role: "MEMBER" },
+      { email: E2E_VIEWER_EMAIL, name: "E2E Viewer", role: "VIEWER" },
+    ]) {
+      const rolePassword = randomBytes(24).toString("base64url")
+      const roleHash = await hash(rolePassword)
+      await prisma.user.upsert({
+        where: { email: spec.email },
+        create: {
+          email: spec.email,
+          name: spec.name,
+          passwordHash: roleHash,
+          role: spec.role,
+          status: "ACTIVE",
+        },
+        update: { passwordHash: roleHash, status: "ACTIVE", role: spec.role },
+      })
+      roleUsers[spec.role.toLowerCase()] = { email: spec.email, password: rolePassword }
+    }
+    writeFileSync(E2E_ROLE_PASSWORD_FILE, JSON.stringify(roleUsers), { mode: 0o600 })
+    chmodSync(E2E_ROLE_PASSWORD_FILE, 0o600)
+
     const storageRoot =
       process.env.ARCIIN_DATA_DIR ?? instance.storageRoot ?? "/srv/arce-projects/arciin-dev-storage"
     const video = await seedVideoFixture(prisma, user.id, storageRoot)
@@ -539,22 +566,53 @@ export async function seedE2EUser() {
   }
 }
 
+export async function setE2EPlan(plan) {
+  if (plan !== "free" && plan !== "team" && plan !== "pro") {
+    throw new Error(`unsupported e2e plan: ${plan}`)
+  }
+  assertDevDatabase(process.env.DATABASE_URL)
+  const prisma = new PrismaClient()
+  try {
+    const instance = await prisma.instanceConfig.findFirst()
+    if (!instance) throw new Error("no InstanceConfig to update")
+    const activatedAt = new Date()
+    const expiresAt = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000)
+    await prisma.instanceConfig.update({
+      where: { id: instance.id },
+      data: {
+        licensePlan: plan,
+        licenseStatus: plan === "free" ? "none" : "active",
+        licenseSource: "mock_dev",
+        licenseActivatedAt: activatedAt,
+        licenseExpiresAt: expiresAt,
+        licenseSignedToken: signMockLicenceToken(instance.id, plan, activatedAt, expiresAt),
+        licenseKeyPrefix: "ARCIIN-DEV",
+      },
+    })
+    return { instanceId: instance.id, plan }
+  } finally {
+    await prisma.$disconnect()
+  }
+}
+
 // Allow `node scripts/e2e-seed.mjs` as well as import from globalSetup.
 if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(import.meta.filename)) {
-  seedE2EUser()
-    .then((result) => {
-      console.log(
-        `seeded ${result.email} in ${result.databaseName}; password written to ${E2E_PASSWORD_FILE}`,
-      )
-      console.log(
-        `video fixture ${result.video.assetId} ready (${Math.round(result.video.sizeBytes / 1024)} KB)`,
-      )
-      console.log(
-        `translations seeded: ${result.transcript.languages.join(", ")}`,
-      )
-    })
-    .catch((error) => {
-      console.error(error.message)
-      process.exit(1)
-    })
+  const setPlanArg = process.argv.find((arg) => arg.startsWith("--set-plan="))
+  const work = setPlanArg
+    ? setE2EPlan(setPlanArg.slice("--set-plan=".length)).then((result) => {
+        console.log(`e2e plan set to ${result.plan}`)
+      })
+    : seedE2EUser().then((result) => {
+        console.log(
+          `seeded ${result.email} in ${result.databaseName}; password written to ${E2E_PASSWORD_FILE}`,
+        )
+        console.log(
+          `video fixture ${result.video.assetId} ready (${Math.round(result.video.sizeBytes / 1024)} KB)`,
+        )
+        console.log(`translations seeded: ${result.transcript.languages.join(", ")}`)
+      })
+  work.catch((error) => {
+    console.error(error.message)
+    process.exit(1)
+  })
 }

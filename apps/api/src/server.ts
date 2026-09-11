@@ -25,6 +25,7 @@ import { registerMobileRoutes } from "@/modules/mobile/routes"
 import { registerLibraryRoutes } from "@/modules/libraries/routes"
 import { registerPasswordVaultRoutes } from "@/modules/password-vault/routes"
 import { registerSettingsRoutes } from "@/modules/settings/routes"
+import { registerUserAdminRoutes } from "@/modules/users/routes"
 import { registerFileRequestRoutes } from "@/modules/file-requests/routes"
 import { registerShareRoutes } from "@/modules/shares/routes"
 import { registerUploadRoutes } from "@/modules/uploads/routes"
@@ -261,6 +262,7 @@ export async function createServer() {
       await registerLogsRoutes(api)
       await registerApiKeyRoutes(api)
       await registerSettingsRoutes(api)
+      await registerUserAdminRoutes(api)
       await registerLicenseRoutes(api)
       await registerPasswordVaultRoutes(api)
       await registerWebhookRoutes(api)
