@@ -1,5 +1,3 @@
-import { timingSafeEqual } from "node:crypto"
-
 import type { FastifyInstance } from "fastify"
 import { z } from "zod"
 
@@ -16,14 +14,10 @@ import { apiConfig } from "@/config"
 import { storageQueue } from "@/services/jobs/queues"
 import { clientIpFromRequest } from "@/services/security/client-ip"
 import { checkForUpdate, invalidateUpdateCheckCache } from "@/services/instance/update-check"
-
-/** Length-safe, constant-time string compare (avoids setup-token timing leaks). */
-function constantTimeEqual(a: string, b: string): boolean {
-  const ab = Buffer.from(a)
-  const bb = Buffer.from(b)
-  if (ab.length !== bb.length) return false
-  return timingSafeEqual(ab, bb)
-}
+import {
+  constantTimeEqual,
+  requireSetupAuthorization,
+} from "@/services/security/setup-authorization"
 import { resolveEffectiveStorageRoot } from "@/services/storage/effective-storage-root"
 import { serializeAuth } from "@/services/serializers"
 import { createSession, hashPassword, requireFeature, requireSessionRole, setSessionCookie } from "@/services/security/auth"
@@ -34,6 +28,7 @@ import {
   parseLinuxMounts,
   prepareStoragePathForSetup,
 } from "@/services/storage/discover-storage"
+import { toSetupStorageDiscovery } from "@/services/storage/setup-storage-view"
 import {
   ensureStorageDirectories,
   probeStorageRoot,
@@ -262,7 +257,11 @@ export async function registerInstanceRoutes(fastify: FastifyInstance) {
     },
   )
 
-  fastify.get("/instance/storage-discovery", async (_request, reply) => {
+  fastify.get("/instance/storage-discovery", async (request, reply) => {
+    if (await checkEndpointRateLimit(request, reply, { key: "storage-discovery", limit: 20, windowSec: 300 })) {
+      return
+    }
+
     if (await isInitialized(fastify)) {
       reply.status(409).send({
         error: {
@@ -273,6 +272,8 @@ export async function registerInstanceRoutes(fastify: FastifyInstance) {
       return
     }
 
+    if (!(await requireSetupAuthorization(request, reply))) return
+
     const discovery = await discoverStorageVolumes()
     const mounts = await parseLinuxMounts()
     const volumes = consolidateStorageVolumes(
@@ -280,7 +281,7 @@ export async function registerInstanceRoutes(fastify: FastifyInstance) {
       mounts,
       discovery.runtimeDataDir,
     )
-    reply.send({ data: { ...discovery, volumes } })
+    reply.send({ data: toSetupStorageDiscovery({ ...discovery, volumes }) })
   })
 
   fastify.post("/instance/storage-prepare", async (request, reply) => {
@@ -297,6 +298,8 @@ export async function registerInstanceRoutes(fastify: FastifyInstance) {
       })
       return
     }
+
+    if (!(await requireSetupAuthorization(request, reply))) return
 
     const bodySchema = z.object({ path: z.string().min(1) })
     const parsed = bodySchema.safeParse(request.body)

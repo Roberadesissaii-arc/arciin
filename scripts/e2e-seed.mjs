@@ -29,7 +29,11 @@ import { PrismaClient } from "@prisma/client"
 
 const repoRoot = path.resolve(import.meta.dirname, "..")
 loadEnv({ path: path.join(repoRoot, ".env"), quiet: true })
-loadEnv({ path: path.join(repoRoot, ".env.development"), override: true, quiet: true })
+loadEnv({
+  path: path.join(repoRoot, ".env.development"),
+  override: process.env.CI !== "true",
+  quiet: true,
+})
 
 export const E2E_EMAIL = "e2e@arciin.invalid"
 export const E2E_PASSWORD_FILE = "/tmp/arciin-e2e-pw"

@@ -53,7 +53,7 @@ import { config as loadEnv } from "dotenv"
 import { PrismaClient } from "@prisma/client"
 const repoRoot = process.cwd()
 loadEnv({ path: path.join(repoRoot, ".env"), quiet: true })
-loadEnv({ path: path.join(repoRoot, ".env.development"), override: true, quiet: true })
+loadEnv({ path: path.join(repoRoot, ".env.development"), override: process.env.CI !== "true", quiet: true })
 const name = new URL(process.env.DATABASE_URL).pathname.replace(/^\\//, "")
 if (name !== "arciin_dev") {
   throw new Error('refusing to touch model profiles in "' + name + '"; expected arciin_dev')

@@ -56,30 +56,7 @@ import {
 import { pruneExpiredIdempotencyRecords } from "@/services/uploads/idempotency-store"
 import { ensureStorageDirectories } from "@/services/storage/local-storage"
 
-const REDACTED_QUERY_PARAMS = ["access_token", "media_token"]
-
-/**
- * Media URLs carry their credential in the query string because media tags
- * cannot send headers. Neither belongs in a log file: `access_token` is a live
- * session, and `media_token` is a signed grant for one asset.
- */
-function redactSensitiveUrl(url: string): string {
-  const [pathPart, queryPart] = url.split("?")
-  if (!queryPart) return url
-  try {
-    const params = new URLSearchParams(queryPart)
-    let redacted = false
-    for (const name of REDACTED_QUERY_PARAMS) {
-      if (params.has(name)) {
-        params.set(name, "[redacted]")
-        redacted = true
-      }
-    }
-    return redacted ? `${pathPart}?${params.toString()}` : url
-  } catch {
-    return url
-  }
-}
+import { serializeRequestForLog } from "@/services/security/request-log-redaction"
 
 export async function createServer() {
   await mkdir(apiConfig.storage.logsDir, { recursive: true })
@@ -101,13 +78,14 @@ export async function createServer() {
       ]),
       serializers: {
         req(request) {
-          return {
+          return serializeRequestForLog({
             method: request.method,
-            url: redactSensitiveUrl(request.url),
+            url: request.url,
             hostname: request.hostname,
-            remoteAddress: request.ip,
-            remotePort: request.socket?.remotePort,
-          }
+            ip: request.ip,
+            headers: request.headers as Record<string, unknown>,
+            socket: request.socket,
+          })
         },
       },
     },

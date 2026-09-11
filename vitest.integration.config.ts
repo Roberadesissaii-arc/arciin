@@ -95,6 +95,19 @@ export default defineConfig({
       PORT: "3100",
       ARCIIN_QUEUE_PREFIX: "bull_test",
       ARCIIN_LICENSE_PUBLIC_KEYS: `${LICENSE_TEST_KID}:${licensePublicKeyFromPrivate(LICENSE_TEST_SIGNING_KEY)}`,
+      /**
+       * Isolated licensing authority for the purchase → activate chain.
+       * dotenv will not overwrite these, so a developer .env cannot redirect
+       * the suite at a real vendor key or production license database.
+       */
+      ARCIIN_LICENSE_SERVER_URL: "http://127.0.0.1:4398",
+      LICENSE_DATABASE_URL: "file:/tmp/arciin-integration-license/licenses.db",
+      LICENSE_SIGNING_KEY: LICENSE_TEST_SIGNING_KEY,
+      LICENSE_SIGNING_KID: LICENSE_TEST_KID,
+      LICENSE_SERVICE_TOKENS: "test-service-token-aaaaaaaaaaaaaaaaaaaa",
+      LICENSE_ADMIN_TOKENS: "test-admin-token-bbbbbbbbbbbbbbbbbbbb",
+      LICENSE_SERVER_PORT: "4398",
+      LOG_LEVEL: "silent",
     },
   },
 })

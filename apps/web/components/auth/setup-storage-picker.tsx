@@ -55,19 +55,22 @@ function resolveChoiceId(value: string, discovery: StorageDiscovery): string {
 export function SetupStoragePicker({
   value,
   onChange,
+  setupToken,
   hint,
   errorMessage,
   compact = true,
 }: {
   value: string
   onChange: (path: string) => void
+  setupToken: string
   hint?: string | null
   errorMessage?: string
   /** Tighter layout for the multi-step setup wizard. */
   compact?: boolean
 }) {
   const [discovery, setDiscovery] = useState<StorageDiscovery | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [loadedForToken, setLoadedForToken] = useState<string | null>(null)
+  const [loadFailed, setLoadFailed] = useState(false)
   const [preparing, setPreparing] = useState(false)
   const [choiceId, setChoiceId] = useState<string | null>(null)
   const [prepareError, setPrepareError] = useState<string | null>(null)
@@ -75,12 +78,17 @@ export function SetupStoragePicker({
 
   const customMode = choiceId === CUSTOM_CHOICE_ID || showCustom
 
+  const token = setupToken.trim()
+
   useEffect(() => {
+    if (!token) return
     let cancelled = false
-    void getStorageDiscovery()
+    void getStorageDiscovery(token)
       .then((data) => {
         if (cancelled) return
         setDiscovery(data)
+        setLoadedForToken(token)
+        setLoadFailed(false)
         if (!value.trim()) {
           onChange(data.recommendedArciinPath)
           const rec = data.volumes.find((v) => v.recommended) ?? data.volumes[0]
@@ -93,20 +101,18 @@ export function SetupStoragePicker({
         }
       })
       .catch(() => {
-        if (!cancelled) {
-          setDiscovery(null)
-          setShowCustom(true)
-          setChoiceId(CUSTOM_CHOICE_ID)
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false)
+        if (cancelled) return
+        setDiscovery(null)
+        setLoadedForToken(token)
+        setLoadFailed(true)
+        setShowCustom(true)
+        setChoiceId(CUSTOM_CHOICE_ID)
       })
     return () => {
       cancelled = true
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- seed default once on load
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- refetch when the setup token is entered
+  }, [token])
 
   const selectVolume = async (option: StorageVolumeOption) => {
     setChoiceId(option.id)
@@ -114,7 +120,7 @@ export function SetupStoragePicker({
     setPrepareError(null)
     setPreparing(true)
     try {
-      const result = await prepareStoragePath(option.arciinPath)
+      const result = await prepareStoragePath(option.arciinPath, setupToken)
       onChange(result.arciinPath)
       if (!result.writable) {
         setPrepareError(
@@ -142,7 +148,9 @@ export function SetupStoragePicker({
     setPrepareError(null)
   }
 
-  if (loading) {
+  const scanning = Boolean(token) && loadedForToken !== token
+
+  if (scanning) {
     return (
       <div
         className={cn(
@@ -156,14 +164,15 @@ export function SetupStoragePicker({
     )
   }
 
-  const volumes = discovery?.volumes ?? []
-  const unmounted = discovery?.unmountedDevices ?? []
+  const effectiveDiscovery = token && loadedForToken === token && !loadFailed ? discovery : null
+  const volumes = effectiveDiscovery?.volumes ?? []
+  const unmounted = effectiveDiscovery?.unmountedDevices ?? []
   const recommended = volumes.find((v) => v.recommended) ?? volumes[0]
   const others = volumes.filter((v) => v.id !== recommended?.id)
 
   return (
     <div className={cn("space-y-2", compact && "space-y-1.5")}>
-      {discovery && recommended ? (
+      {effectiveDiscovery && recommended ? (
         <button
           type="button"
           disabled={preparing}
@@ -370,7 +379,7 @@ export function SetupStoragePicker({
         </div>
       ) : null}
 
-      {!discovery ? (
+      {!effectiveDiscovery ? (
         <p className="text-[11px] text-[#a0a0a0]">
           Could not scan storage. Enter a custom path or re-run install on the server.
         </p>

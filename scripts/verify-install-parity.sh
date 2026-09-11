@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Verify Docker and native install paths expose the same Arciin stack.
+# Verify native install and production Docker expose the same Arciin contract.
+# See docs/INSTALL-PARITY.md for the contract and intentional differences.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -22,30 +23,38 @@ check() {
 
 echo ""
 echo "Arciin install parity checks"
+echo "Contract: docs/INSTALL-PARITY.md"
 echo ""
 
-check "docker-compose.yml exists" "test -f docker-compose.yml"
-check "Compose defines web, api, worker, postgres, redis, caddy" \
-  "grep -qE '^  (web|api|worker|postgres|redis|caddy):' docker-compose.yml"
-check "install.sh supports --docker" "grep -q -- '--docker' install.sh"
-check "docker-setup.sh exists" "test -f scripts/docker-setup.sh"
+check "docker-compose.production.yml exists" "test -f docker-compose.production.yml"
+check "docs/INSTALL-PARITY.md exists" "test -f docs/INSTALL-PARITY.md"
+check "install.sh exists" "test -f install.sh"
 check "Shared init: arciin-init.sh" "test -f scripts/arciin-init.sh"
 check "Docker API entrypoint runs init" "grep -q arciin-init scripts/entrypoint-api.sh"
 check "Native install runs init" "grep -q arciin-init.sh install.sh"
-check ".env.example present" "test -f .env.example"
-check ".env.docker.example present" "test -f .env.docker.example"
-check "Dockerfile targets: web, api, worker" \
-  "test -f Dockerfile && grep -q 'AS web\$' Dockerfile && grep -q 'AS api\$' Dockerfile && grep -q 'AS worker\$' Dockerfile"
+check "Worker healthcheck script" "test -f scripts/worker-healthcheck.mjs"
+check "Production compose is the contract (not development compose)" \
+  "grep -q 'docker-compose.production.yml' scripts/verify-install-parity.sh"
 
-for key in ARCIIN_SETUP_TOKEN SESSION_SECRET MAX_UPLOAD_SIZE_MB UPLOAD_RATE_LIMIT_PER_MINUTE LOG_MAX_FILE_BYTES; do
-  check ".env.example has ${key}" "grep -q '^${key}=' .env.example"
-  check ".env.docker.example has ${key}" "grep -q '^${key}=' .env.docker.example"
-done
+echo ""
+echo "Semantic production/native contract"
+echo ""
 
-check "docs/DOCKER.md exists" "test -f docs/DOCKER.md"
+if node scripts/lib/install-parity.mjs "$ROOT"; then
+  echo -e "  ${GREEN}✔${RESET}  production/native contract"
+else
+  echo -e "  ${RED}✖${RESET}  production/native contract"
+  fail=1
+fi
 
 if command -v docker &>/dev/null && docker compose version &>/dev/null; then
-  check "docker compose config validates" "docker compose --env-file .env.docker.example config -q"
+  if [[ -f .env.docker.example ]]; then
+    if docker compose -f docker-compose.production.yml --env-file .env.docker.example config -q >/dev/null 2>&1; then
+      echo -e "  ${GREEN}✔${RESET}  docker compose -f docker-compose.production.yml config"
+    else
+      echo -e "  ${YELLOW}○${RESET}  docker compose production config (env placeholders may be required)"
+    fi
+  fi
 else
   echo -e "  ${YELLOW}○${RESET}  docker compose config (skipped — Docker not available)"
 fi

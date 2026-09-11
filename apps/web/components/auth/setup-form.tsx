@@ -348,6 +348,7 @@ export function SetupForm() {
               <SetupStoragePicker
                 value={storageRoot ?? ""}
                 onChange={(path) => form.setValue("storageRoot", path, { shouldValidate: true })}
+                setupToken={setupTokenValue ?? ""}
                 hint={storageRootHint}
                 errorMessage={form.formState.errors.storageRoot?.message}
                 compact

@@ -26,7 +26,11 @@ if [[ -f "${ROOT_DIR}/.env" ]]; then
   set +a
 fi
 
-DATABASE_URL="${EXISTING_DATABASE_URL:-${DATABASE_URL:-postgresql://arciin:arciin@localhost:5432/arciin}}"
+DATABASE_URL="${EXISTING_DATABASE_URL:-${DATABASE_URL:-}}"
+if [[ -z "${DATABASE_URL}" ]]; then
+  echo "[arciin-init] DATABASE_URL is required. Refusing to substitute a default password." >&2
+  exit 1
+fi
 ARCIIN_DATA_DIR="${EXISTING_DATA_DIR:-${ARCIIN_DATA_DIR:-/srv/arciin-storage/arciin}}"
 
 wait_for_postgres() {

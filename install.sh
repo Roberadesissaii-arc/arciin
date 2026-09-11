@@ -14,6 +14,8 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${ROOT_DIR}/scripts/lib/host-platform.sh"
 # shellcheck source=scripts/lib/storage-defaults.sh
 source "${ROOT_DIR}/scripts/lib/storage-defaults.sh"
+# shellcheck source=scripts/lib/db-credentials.sh
+source "${ROOT_DIR}/scripts/lib/db-credentials.sh"
 
 docker_available() {
   command -v docker &>/dev/null && (docker compose version &>/dev/null || command -v docker-compose &>/dev/null)
@@ -430,17 +432,33 @@ _set_env_kv() {
 }
 
 _detect_lan_ip() {
+  # Prefer RFC1918 that is not loopback, link-local, or Docker's default bridge.
+  # Do not use hostname -I's first address — that is often a container IP.
   local ip
   ip="$(hostname -I 2>/dev/null | awk '{
-    for (i = 1; i <= NF; i++)
-      if ($i !~ /^127\./) { print $i; exit }
+    for (i = 1; i <= NF; i++) {
+      if ($i ~ /^127\./) continue
+      if ($i ~ /^169\.254\./) continue
+      if ($i ~ /^172\.17\./) continue
+      if ($i ~ /^192\.168\./) { print $i; exit }
+    }
+    for (i = 1; i <= NF; i++) {
+      if ($i ~ /^10\./) { print $i; exit }
+    }
+    for (i = 1; i <= NF; i++) {
+      if ($i ~ /^172\.(1[6-9]|2[0-9]|3[0-1])\./ && $i !~ /^172\.17\./) { print $i; exit }
+    }
   }')"
   if [[ -n "$ip" ]]; then
     echo "$ip"
     return
   fi
   ip="$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for (i=1;i<=NF;i++) if ($i=="src") { print $(i+1); exit }}')"
-  [[ -n "$ip" ]] && echo "$ip" || echo "127.0.0.1"
+  if [[ -n "$ip" && "$ip" != 127.* && "$ip" != 172.17.* && "$ip" != 169.254.* ]]; then
+    echo "$ip"
+    return
+  fi
+  echo "127.0.0.1"
 }
 
 _env_public_url_port() {
@@ -739,8 +757,34 @@ configure_postgres_port() {
   maybe_reconfigure_postgresql_port "$pg_port"
   ARCIIN_PG_PORT="$pg_port"
 
-  _set_env_kv "$env_file" "DATABASE_URL" "postgresql://arciin:arciin@localhost:${pg_port}/arciin"
+  local password encoded existing_url user host db
+  existing_url="$(arciin_read_env_database_url "$env_file" || true)"
+  if ! password="$(arciin_resolve_db_password "$env_file" "${ARCIIN_FRESH_INSTALL:-0}")"; then
+    fail "Could not resolve a database password. Set DATABASE_URL in .env or re-run a fresh install."
+  fi
+  encoded="$(arciin_urlencode_db_password "$password")" || fail "Could not encode the database password for DATABASE_URL."
+  user="arciin"
+  host="localhost"
+  db="arciin"
+  if [[ -n "$existing_url" ]]; then
+    local parsed
+    parsed="$(arciin_parse_database_url "$existing_url" || true)"
+    if [[ -n "$parsed" ]]; then
+      user="$(printf '%s' "$parsed" | awk -F'\t' '{print $1}')"
+      host="$(printf '%s' "$parsed" | awk -F'\t' '{print $3}')"
+      db="$(printf '%s' "$parsed" | awk -F'\t' '{print $5}')"
+      [[ -n "$user" ]] || user="arciin"
+      [[ -n "$host" ]] || host="localhost"
+      [[ -n "$db" ]] || db="arciin"
+    fi
+  fi
+  _set_env_kv "$env_file" "DATABASE_URL" "$(arciin_format_database_url "$user" "$encoded" "$host" "$pg_port" "$db")"
   _set_env_kv "$env_file" "ARCIIN_PG_PORT" "${pg_port}"
+  arciin_restrict_env_perms "$env_file"
+  ARCIIN_DB_PASSWORD="$password"
+  if [[ "${ARCIIN_FRESH_INSTALL:-0}" == "1" ]]; then
+    ok "Database credentials generated successfully."
+  fi
 
   if pg_isready -h localhost -p "$pg_port" &>/dev/null 2>&1; then
     ok "PostgreSQL → localhost:${pg_port}"
@@ -972,10 +1016,24 @@ ensure_postgres_role_and_db() {
     drop_arciin_database
   fi
 
+  local password="${ARCIIN_DB_PASSWORD:-}"
+  if [[ -z "$password" ]]; then
+    password="$(arciin_resolve_db_password "${ROOT_DIR}/.env" "${ARCIIN_FRESH_INSTALL:-0}")" \
+      || fail "Could not resolve a database password for the arciin role."
+  fi
+
+  local role_exists=0
   if sudo -u postgres env PGPORT="$pg_port" psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='arciin'" | grep -q 1; then
-    sudo -u postgres env PGPORT="$pg_port" psql -c "ALTER ROLE arciin WITH LOGIN PASSWORD 'arciin' CREATEDB;" &>/dev/null
-  else
-    sudo -u postgres env PGPORT="$pg_port" psql -c "CREATE ROLE arciin WITH LOGIN PASSWORD 'arciin' CREATEDB;" &>/dev/null
+    role_exists=1
+  fi
+
+  if [[ "$role_exists" -eq 0 ]]; then
+    sudo -u postgres env PGPORT="$pg_port" psql -v ON_ERROR_STOP=1 -v pwd="$password" \
+      -c "CREATE ROLE arciin WITH LOGIN PASSWORD :'pwd' CREATEDB;" &>/dev/null
+  elif [[ "${ARCIIN_FRESH_INSTALL:-0}" == "1" || "$RESET_DB" == "true" ]]; then
+    # Fresh claim of this host: the password we just wrote must match the role.
+    sudo -u postgres env PGPORT="$pg_port" psql -v ON_ERROR_STOP=1 -v pwd="$password" \
+      -c "ALTER ROLE arciin WITH LOGIN PASSWORD :'pwd' CREATEDB;" &>/dev/null
   fi
 
   if sudo -u postgres env PGPORT="$pg_port" psql -tAc "SELECT 1 FROM pg_database WHERE datname='arciin'" | grep -q 1; then
@@ -985,7 +1043,7 @@ ensure_postgres_role_and_db() {
   fi
 
   sudo -u postgres env PGPORT="$pg_port" psql -d arciin -c "GRANT ALL ON SCHEMA public TO arciin;" &>/dev/null || true
-  ok "PostgreSQL role/database: arciin / arciin (port ${pg_port})"
+  ok "PostgreSQL role/database ready (port ${pg_port})"
 }
 
 # ── Preconditions ─────────────────────────────────────────────────────────────

@@ -14,7 +14,14 @@ import { assertSafeE2ETarget } from "./tests/e2e/guard"
  * port, database, Redis db, storage root, or queue prefix.
  */
 loadEnv({ path: path.resolve(__dirname, ".env"), quiet: true })
-loadEnv({ path: path.resolve(__dirname, ".env.development"), override: true, quiet: true })
+// Locally, development values must win over a production `.env`. In CI the
+// workflow already supplies isolated throwaway credentials — do not clobber them
+// with committed laptop paths such as `/srv/arce-projects/arciin-dev-storage`.
+loadEnv({
+  path: path.resolve(__dirname, ".env.development"),
+  override: process.env.CI !== "true",
+  quiet: true,
+})
 
 /**
  * The suite gets its own ports, not the dev stack's.

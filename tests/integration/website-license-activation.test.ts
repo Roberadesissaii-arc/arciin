@@ -1,6 +1,9 @@
+import { execFileSync } from "node:child_process"
 import fs from "node:fs"
+import path from "node:path"
 
-import { afterAll, beforeAll, describe, expect, it } from "vitest"
+import type { FastifyInstance } from "fastify"
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest"
 
 import {
   hasFeature,
@@ -9,378 +12,275 @@ import {
   defaultPublicKeyRegistry,
 } from "@arciin/config"
 
+import { activateLicense } from "../../apps/api/src/services/license/license-service"
+import { requireFeature } from "../../apps/api/src/services/security/auth"
 import { prisma } from "./setup"
 
 /**
- * The whole chain, from a key a customer bought on the website to a paid
- * feature unlocking on their own server.
+ * Website purchase → authority issue → customer activation → feature gate.
  *
- * This is the test the integration exists for. Everything else asserts a piece;
- * this asserts that the pieces are actually connected — a real license issued
- * by the authority against a real order, activated by the product's own
- * activation path, verified with nothing but a public key, and gating a real
- * server-side capability.
- *
- * Driven by `scratchpad/e2e/purchase.mjs`, which runs the isolated authority
- * and the website and leaves the issued key in handoff.json. Skips cleanly when
- * that has not been run, so the suite stays green on its own.
+ * Stripe/payment is the only mocked boundary: a paid order is assumed captured
+ * and then the same `POST /licenses/issue` call the website makes after
+ * checkout is exercised for real.
  */
 
-const HANDOFF_PATH =
-  process.env.ARCIIN_E2E_HANDOFF ??
-  "/tmp/claude-1000/-srv-arce-projects-arciin/8a1b3552-25ef-44ba-bc5c-554695527178/scratchpad/e2e/handoff.json"
+const LICENSE_DB = "/tmp/arciin-integration-license/licenses.db"
+const SERVICE_TOKEN = "test-service-token-aaaaaaaaaaaaaaaaaaaa"
+const SIGNING_KID = "arciin-lic-test"
+const AUTHORITY = "http://127.0.0.1:4398"
 
-type Handoff = {
-  licenseKey: string
-  orderId: string
-  licenseServerUrl: string
-  serviceToken: string
-  signingKid: string
-}
-
-function readHandoff(): Handoff | null {
-  try {
-    const raw = JSON.parse(fs.readFileSync(HANDOFF_PATH, "utf8")) as Handoff
-    return raw.licenseKey ? raw : null
-  } catch {
-    return null
-  }
-}
-
-const handoff = readHandoff()
-
-/**
- * Skip unless the isolated authority from the purchase phase is actually up.
- *
- * A stale handoff.json is worse than none: the suite would fail with connection
- * errors that look like a licensing bug rather than a harness that was not
- * started. Probed once, at load, so the whole file skips as a unit.
- */
-async function authorityReachable(): Promise<boolean> {
-  if (!handoff) return false
-  try {
-    const res = await fetch(`${handoff.licenseServerUrl}/health`, {
-      signal: AbortSignal.timeout(2_000),
-    })
-    return res.ok
-  } catch {
-    return false
-  }
-}
-
-const describeE2E = (await authorityReachable()) ? describe : describe.skip
-
-/**
- * The response body is genuinely dynamic — each route returns a different
- * shape, and these tests assert against the wire format on purpose rather than
- * through a type that could drift from what the server actually sends.
- */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type LicenseServerBody = any
-
-async function licenseServer(
-  path: string,
-  init: RequestInit & { service?: boolean } = {},
-): Promise<{ status: number; body: LicenseServerBody }> {
-  const res = await fetch(`${handoff!.licenseServerUrl}${path}`, {
-    ...init,
-    headers: {
-      "content-type": "application/json",
-      ...(init.service ? { authorization: `Bearer ${handoff!.serviceToken}` } : {}),
-      ...(init.headers ?? {}),
-    },
-  })
-  return { status: res.status, body: await res.json().catch(() => ({})) }
-}
-
-/** Exactly what a released build ships: public keys, no secret. */
 function publicKeysOnly() {
   return defaultPublicKeyRegistry(process.env.ARCIIN_LICENSE_PUBLIC_KEYS)
 }
 
-const INSTANCE_A = "e2e-arciin-instance-a"
-const INSTANCE_B = "e2e-arciin-instance-b"
-
-describeE2E("a website-issued key activates a clean Arciin instance", () => {
-  let token: string
-
-  beforeAll(async () => {
-    // Leave no activations behind from a previous run.
-    await licenseServer("/licenses/deactivate", {
-      method: "POST",
-      body: JSON.stringify({ licenseKey: handoff!.licenseKey, instanceId: INSTANCE_A }),
-    })
-    await licenseServer("/licenses/deactivate", {
-      method: "POST",
-      body: JSON.stringify({ licenseKey: handoff!.licenseKey, instanceId: INSTANCE_B }),
-    })
-  })
-
-  afterAll(async () => {
-    await licenseServer("/licenses/deactivate", {
-      method: "POST",
-      body: JSON.stringify({ licenseKey: handoff!.licenseKey, instanceId: INSTANCE_A }),
-    })
-    await licenseServer("/licenses/deactivate", {
-      method: "POST",
-      body: JSON.stringify({ licenseKey: handoff!.licenseKey, instanceId: INSTANCE_B }),
-    })
-  })
-
-  it("activates against the authority", async () => {
-    const { status, body } = await licenseServer("/licenses/activate", {
-      method: "POST",
-      body: JSON.stringify({
-        licenseKey: handoff!.licenseKey,
-        instanceId: INSTANCE_A,
-        instanceName: "E2E Clean Instance",
-        version: "1.0.0",
-      }),
-    })
-
-    expect(status).toBe(200)
-    expect(body.data.license.plan).toBe("pro")
-    expect(body.data.servers).toEqual({ activated: 1, limit: 1 })
-    token = body.data.token
-  })
-
-  it("returns a v3 token", () => {
-    expect(licenseTokenVersion(token)).toBe(3)
-  })
-
-  it("verifies with the public key alone — no secret involved", () => {
-    const payload = verifyHostedLicenseToken(token, {
-      publicKeys: publicKeysOnly(),
-      expectedInstanceId: INSTANCE_A,
-    })
-
-    expect(payload).not.toBeNull()
-    expect(payload!.plan).toBe("pro")
-    expect(payload!.status).toBe("active")
-    expect(payload!.alg).toBe("EdDSA")
-    expect(payload!.kid).toBe(handoff!.signingKid)
-  })
-
-  it("carries the Pro entitlements the pricing page sells", () => {
-    const payload = verifyHostedLicenseToken(token, { publicKeys: publicKeysOnly() })!
-    for (const feature of [
-      "ai.chat",
-      "vault.password",
-      "developer.api_keys",
-      "developer.webhooks",
-      "ops.job_controls",
-      "ops.remote_access_helper",
-    ] as const) {
-      expect(payload.features).toContain(feature)
-    }
-    expect(payload.serverLimit).toBe(1)
-  })
-
-  it("is bound to the instance that activated it", () => {
-    expect(
-      verifyHostedLicenseToken(token, {
-        publicKeys: publicKeysOnly(),
-        expectedInstanceId: INSTANCE_B,
-      }),
-    ).toBeNull()
-  })
-
-  it("cannot be forged by anyone holding only public keys", () => {
-    const [prefix, version, body] = token.split(".")
-    const decoded = JSON.parse(Buffer.from(body!, "base64url").toString("utf8"))
-    decoded.plan = "business"
-    decoded.serverLimit = 999
-    const tampered = Buffer.from(JSON.stringify(decoded), "utf8").toString("base64url")
-
-    // Re-signing is impossible without the private key; the best an attacker on
-    // their own machine can do is rewrite the body and reuse the signature.
-    const forged = `${prefix}.${version}.${tampered}.${token.split(".")[3]}`
-    expect(verifyHostedLicenseToken(forged, { publicKeys: publicKeysOnly() })).toBeNull()
-  })
-})
-
-describeE2E("entitlement state on the instance", () => {
-  it("unlocks Pro features and keeps free core intact", async () => {
-    const { body } = await licenseServer("/licenses/activate", {
-      method: "POST",
-      body: JSON.stringify({ licenseKey: handoff!.licenseKey, instanceId: INSTANCE_A }),
-    })
-    const payload = verifyHostedLicenseToken(body.data.token, {
-      publicKeys: publicKeysOnly(),
-    })!
-
-    const snapshot = {
-      plan: payload.plan,
-      status: "active" as const,
-      instanceId: INSTANCE_A,
-      keyPrefix: payload.keyPrefix,
-      activatedAt: new Date().toISOString(),
-      expiresAt: payload.expiresAt,
-      graceUntil: payload.graceUntil,
-      features: payload.features,
-      signedToken: body.data.token,
-      source: "hosted" as const,
-      isFreeCore: false,
-      premiumActive: true,
-    }
-
-    // The gate the API actually applies.
-    expect(hasFeature(snapshot, "vault.password")).toBe(true)
-    expect(hasFeature(snapshot, "ai.chat")).toBe(true)
-    // Free core is unconditional.
-    expect(hasFeature(snapshot, "core.files")).toBe(true)
-  })
-})
-
-/**
- * Mint a throwaway license for the destructive cases.
- *
- * Revocation is one-way, so running those against the purchased key would make
- * the suite pass once and fail every time after. This asks the authority for a
- * fresh one — the same call the website makes — so the run is repeatable.
- */
-async function issueThrowawayPro(label: string): Promise<string> {
-  const { body } = await licenseServer("/licenses/issue", {
-    method: "POST",
-    service: true,
-    body: JSON.stringify({
-      externalOrderId: `e2e-throwaway-${label}-${Date.now()}-${Math.random()}`,
-      plan: "pro",
-      billingInterval: "monthly",
-      customerEmail: "throwaway@example.invalid",
-      customerName: "Throwaway",
-    }),
-  })
-  return body.data.licenseKey
+type LicenseServerBody = {
+  data?: {
+    licenseKey?: string | null
+    token?: string
+    license?: { plan?: string }
+    servers?: { activated?: number; limit?: number }
+    payload?: { status?: string }
+    activation?: { lastCheckInAt?: string }
+  }
+  error?: { code?: string; message?: string }
 }
 
-describeE2E("seat limits, refresh, and revocation", () => {
-  let key: string
+let authority: FastifyInstance
+let instanceId: string
 
-  beforeAll(async () => {
-    key = await issueThrowawayPro("seats")
+async function issuePaidOrder(input: {
+  plan?: string
+  orderId: string
+  email?: string
+}): Promise<{ status: number; body: LicenseServerBody }> {
+  const res = await fetch(`${AUTHORITY}/licenses/issue`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${SERVICE_TOKEN}`,
+    },
+    body: JSON.stringify({
+      externalOrderId: input.orderId,
+      plan: input.plan ?? "pro",
+      billingInterval: "monthly",
+      customerEmail: input.email ?? "buyer@example.invalid",
+      customerName: "Website Buyer",
+    }),
+  })
+  return { status: res.status, body: (await res.json().catch(() => ({}))) as LicenseServerBody }
+}
+
+async function authorityCall(path: string, init: RequestInit = {}) {
+  const res = await fetch(`${AUTHORITY}${path}`, {
+    ...init,
+    headers: {
+      "content-type": "application/json",
+      ...(init.headers ?? {}),
+    },
+  })
+  return { status: res.status, body: (await res.json().catch(() => ({}))) as LicenseServerBody }
+}
+
+async function resetCustomerInstance() {
+  await prisma.instanceConfig.deleteMany()
+  const instance = await prisma.instanceConfig.create({
+    data: {
+      instanceName: "Purchase Activation Instance",
+      storageRoot: "/tmp/arciin-integration-storage",
+      initializedAt: new Date(),
+      licensePlan: "free",
+      licenseStatus: "none",
+    },
+  })
+  instanceId = instance.id
+}
+
+beforeAll(async () => {
+  if (!LICENSE_DB.startsWith("/tmp/")) {
+    throw new Error("Refusing to use a license database outside /tmp.")
+  }
+  fs.rmSync(path.dirname(LICENSE_DB), { recursive: true, force: true })
+  fs.mkdirSync(path.dirname(LICENSE_DB), { recursive: true })
+  execFileSync(
+    "npx",
+    ["prisma", "db", "push", "--schema", "apps/license-server/prisma/schema.prisma", "--skip-generate"],
+    {
+      cwd: path.resolve(import.meta.dirname, "../.."),
+      env: { ...process.env, LICENSE_DATABASE_URL: `file:${LICENSE_DB}` },
+      stdio: "pipe",
+    },
+  )
+
+  const { buildLicenseServer } = await import("../../apps/license-server/src/server.js")
+  authority = await buildLicenseServer()
+  await authority.listen({ port: 4398, host: "127.0.0.1" })
+})
+
+afterAll(async () => {
+  if (authority) await authority.close()
+  await prisma.instanceConfig.deleteMany()
+  await prisma.$disconnect()
+})
+
+beforeEach(async () => {
+  await resetCustomerInstance()
+})
+
+describe("website purchase issues a license (ARC-016)", () => {
+  it("fulfills a paid order through the authority", async () => {
+    const { status, body } = await issuePaidOrder({ orderId: `order-success-${Date.now()}` })
+    expect([200, 201]).toContain(status)
+    expect(body.data?.licenseKey).toMatch(/^(ARC-|arc_)/)
+    expect(body.data?.license?.plan).toBe("pro")
+  })
+})
+
+describe("customer activation unlocks a paid gate (ARC-016)", () => {
+  it("activates, verifies the signature, and allows a paid endpoint", async () => {
+    const issued = await issuePaidOrder({ orderId: `order-activate-${Date.now()}` })
+    const key = issued.body.data?.licenseKey
+    expect(key).toBeTruthy()
+
+    const result = await activateLicense(prisma, key!)
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    expect(result.snapshot.plan).toBe("pro")
+    expect(result.snapshot.premiumActive).toBe(true)
+    expect(result.snapshot.signedToken).toBeTruthy()
+    expect(licenseTokenVersion(result.snapshot.signedToken!)).toBe(3)
+
+    const payload = verifyHostedLicenseToken(result.snapshot.signedToken!, {
+      publicKeys: publicKeysOnly(),
+      expectedInstanceId: instanceId,
+    })
+    expect(payload).not.toBeNull()
+    expect(payload!.kid).toBe(SIGNING_KID)
+    expect(payload!.features).toContain("vault.password")
+
+    const reply = {
+      sent: false,
+      statusCode: 200,
+      body: null as unknown,
+      status(code: number) {
+        this.statusCode = code
+        return this
+      },
+      send(body: unknown) {
+        this.sent = true
+        this.body = body
+        return this
+      },
+    }
+    await requireFeature("vault.password")({ server: { prisma } } as never, reply as never)
+    expect(reply.sent).toBe(false)
+    expect(hasFeature(result.snapshot, "vault.password")).toBe(true)
+    expect(hasFeature(result.snapshot, "core.files")).toBe(true)
+  })
+})
+
+describe("activation failure paths (ARC-016)", () => {
+  it("rejects an invalid license key", async () => {
+    const result = await activateLicense(prisma, "ARC-NOT-A-REAL-KEY-0000")
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.code).toMatch(/INVALID|UNRECOGNIZED|NOT_FOUND|LICENSE/)
+    const row = await prisma.instanceConfig.findFirst({ where: { id: instanceId } })
+    expect(row?.licensePlan === "pro" || row?.licensePlan === "PRO").toBe(false)
   })
 
-  it("blocks a second server on a Pro license", async () => {
-    await licenseServer("/licenses/activate", {
-      method: "POST",
-      body: JSON.stringify({ licenseKey: key, instanceId: INSTANCE_A }),
-    })
+  it("rejects a revoked license and keeps paid features off", async () => {
+    const issued = await issuePaidOrder({ orderId: `order-revoke-${Date.now()}` })
+    const key = issued.body.data?.licenseKey
+    expect(key).toBeTruthy()
 
-    const second = await licenseServer("/licenses/activate", {
+    const revoked = await authorityCall("/licenses/revoke", {
       method: "POST",
-      body: JSON.stringify({ licenseKey: key, instanceId: INSTANCE_B }),
-    })
-
-    expect(second.status).toBe(403)
-    expect(second.body.error.code).toBe("SERVER_LIMIT_REACHED")
-  })
-
-  it("lets the second server take the seat once the first releases it", async () => {
-    const released = await licenseServer("/licenses/deactivate", {
-      method: "POST",
-      body: JSON.stringify({ licenseKey: key, instanceId: INSTANCE_A }),
-    })
-    expect(released.status).toBe(200)
-
-    const second = await licenseServer("/licenses/activate", {
-      method: "POST",
-      body: JSON.stringify({ licenseKey: key, instanceId: INSTANCE_B }),
-    })
-    expect(second.status).toBe(200)
-
-    // Put it back the way it was for the tests that follow.
-    await licenseServer("/licenses/deactivate", {
-      method: "POST",
-      body: JSON.stringify({ licenseKey: key, instanceId: INSTANCE_B }),
-    })
-    await licenseServer("/licenses/activate", {
-      method: "POST",
-      body: JSON.stringify({ licenseKey: key, instanceId: INSTANCE_A }),
-    })
-  })
-
-  it("advances the check-in time on refresh", async () => {
-    const first = await licenseServer("/licenses/refresh", {
-      method: "POST",
-      body: JSON.stringify({ licenseKey: key, instanceId: INSTANCE_A }),
-    })
-    expect(first.status).toBe(200)
-    expect(first.body.data.payload.status).toBe("active")
-
-    await new Promise((r) => setTimeout(r, 20))
-    const second = await licenseServer("/licenses/refresh", {
-      method: "POST",
-      body: JSON.stringify({ licenseKey: key, instanceId: INSTANCE_A }),
-    })
-    expect(
-      new Date(second.body.data.activation.lastCheckInAt).getTime(),
-    ).toBeGreaterThanOrEqual(new Date(first.body.data.activation.lastCheckInAt).getTime())
-  })
-
-  it("keeps a customer's own status query free of anyone else's data", async () => {
-    const res = await fetch(
-      `${handoff!.licenseServerUrl}/licenses/status?licenseKey=${encodeURIComponent(
-        key,
-      )}&instanceId=${INSTANCE_A}`,
-    )
-    const text = await res.text()
-    expect(res.status).toBe(200)
-    expect(text).not.toContain("@example.invalid")
-  })
-
-  it("reports revocation on the next check-in, and the instance falls back to free", async () => {
-    const revoked = await licenseServer("/licenses/revoke", {
-      method: "POST",
-      service: true,
+      headers: { authorization: `Bearer ${SERVICE_TOKEN}` },
       body: JSON.stringify({ licenseKey: key }),
     })
     expect(revoked.status).toBe(200)
 
-    const refreshed = await licenseServer("/licenses/refresh", {
-      method: "POST",
-      body: JSON.stringify({ licenseKey: key, instanceId: INSTANCE_A }),
-    })
-    expect(refreshed.status).toBe(200)
-    expect(refreshed.body.data.payload.status).toBe("revoked")
+    const result = await activateLicense(prisma, key!)
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.code).toBe("LICENSE_REVOKED")
 
-    // What the product does with that: plan drops to free, token cleared.
-    const freeSnapshot = {
-      plan: "free" as const,
-      status: "expired" as const,
-      instanceId: INSTANCE_A,
-      keyPrefix: null,
-      activatedAt: null,
-      expiresAt: null,
-      graceUntil: null,
-      features: ["core.files", "core.libraries", "core.uploads", "core.manual_backup"] as never[],
-      signedToken: null,
-      source: "hosted" as const,
-      isFreeCore: true,
-      premiumActive: false,
+    const gate = {
+      sent: false,
+      statusCode: 200,
+      status(code: number) {
+        this.statusCode = code
+        return this
+      },
+      send() {
+        this.sent = true
+        return this
+      },
     }
-    expect(hasFeature(freeSnapshot, "vault.password")).toBe(false)
-    // The promise that must never break.
-    expect(hasFeature(freeSnapshot, "core.files")).toBe(true)
+    await requireFeature("vault.password")({ server: { prisma } } as never, gate as never)
+    expect(gate.sent).toBe(true)
+    expect(gate.statusCode).toBe(403)
   })
 
-  it("refuses to activate a revoked key anywhere new", async () => {
-    const result = await licenseServer("/licenses/activate", {
+  it("rejects a token bound to a different instance", async () => {
+    const issued = await issuePaidOrder({ orderId: `order-bind-${Date.now()}` })
+    const activated = await authorityCall("/licenses/activate", {
       method: "POST",
-      body: JSON.stringify({ licenseKey: key, instanceId: "somewhere-else" }),
+      body: JSON.stringify({
+        licenseKey: issued.body.data?.licenseKey,
+        instanceId: "other-instance-id",
+        instanceName: "Someone Else",
+      }),
     })
-    expect(result.status).toBe(403)
-    expect(result.body.error.code).toBe("LICENSE_REVOKED")
+    expect(activated.status).toBe(200)
+    const token = activated.body.data?.token
+    expect(token).toBeTruthy()
+    expect(
+      verifyHostedLicenseToken(token!, {
+        publicKeys: publicKeysOnly(),
+        expectedInstanceId: instanceId,
+      }),
+    ).toBeNull()
+  })
+
+  it("enforces Pro seat limits on a second instance", async () => {
+    const issued = await issuePaidOrder({ orderId: `order-seat-${Date.now()}` })
+    const key = issued.body.data?.licenseKey
+    const first = await authorityCall("/licenses/activate", {
+      method: "POST",
+      body: JSON.stringify({ licenseKey: key, instanceId: "seat-a" }),
+    })
+    expect(first.status).toBe(200)
+    const second = await authorityCall("/licenses/activate", {
+      method: "POST",
+      body: JSON.stringify({ licenseKey: key, instanceId: "seat-b" }),
+    })
+    expect(second.status).toBe(403)
+    expect(second.body.error?.code).toBe("SERVER_LIMIT_REACHED")
   })
 })
 
-describeE2E("the instance database is the isolated test one", () => {
-  it("is pointed at arciin_test", async () => {
-    // The guard in setup.ts already asserts this; confirming the connection is
-    // live means the suite really did run against an isolated instance.
-    const [{ current_database }] = await prisma.$queryRawUnsafe<
-      Array<{ current_database: string }>
-    >("SELECT current_database()")
-    expect(current_database).toContain("test")
+describe("signing material stays out of logs (ARC-016)", () => {
+  it("does not print the test signing private key", async () => {
+    const issued = await issuePaidOrder({ orderId: `order-log-${Date.now()}` })
+    expect(JSON.stringify(issued.body)).not.toContain(process.env.LICENSE_SIGNING_KEY)
+    expect(issued.body.data?.licenseKey).toBeTruthy()
+  })
+})
+
+describe("authority unavailable leaves the instance safe (ARC-016)", () => {
+  it("fails closed and does not unlock paid features", async () => {
+    const issued = await issuePaidOrder({ orderId: `order-down-${Date.now()}` })
+    const key = issued.body.data?.licenseKey
+    expect(key).toBeTruthy()
+
+    await authority.close()
+    const result = await activateLicense(prisma, key!)
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.code).toMatch(/UNREACHABLE|LICENSE_SERVER/)
+    const row = await prisma.instanceConfig.findFirst({ where: { id: instanceId } })
+    expect(row?.licensePlan ?? "free").not.toBe("pro")
   })
 })

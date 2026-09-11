@@ -1,51 +1,45 @@
-# Docker vs native install parity
+# Native vs production Docker install parity
 
-Arciin supports two production install paths. Both run the **same application** (web, API, worker, PostgreSQL, Redis); only packaging differs.
+Arciin ships two supported install models:
 
-| Capability | Native (`./install.sh`) | Docker (`./install.sh --docker` or `scripts/docker-setup.sh`) |
-|------------|-------------------------|------------------------------------------------------------------|
-| Web UI | PM2 `arciin-web` (port from `.env`, default 3004) | Container `web` behind Caddy on **:80** |
-| API | PM2 `arciin-api` (loopback, default 4001) | Container `api` (:4000 internal) |
-| Worker | PM2 `arciin-worker` | Container `worker` |
-| PostgreSQL | Host `apt` install | Container `postgres` |
-| Redis | Host `apt` install | Container `redis` |
-| DB migrations + seed | `scripts/arciin-init.sh` during install | Same script in API container entrypoint |
-| File storage | `ARCIIN_DATA_DIR` on host (default `/srv/arciin-storage/arciin`) | `ARCIIN_HOST_DATA_DIR` bind-mounted to `/data/arciin` |
-| Setup token / session secret | Auto-generated in `.env` if missing | Same |
-| Upload limit, rate limit, logs env | `.env.example` keys | `.env.docker.example` (same keys) |
-| Mobile pairing, chat, PDF preview, API keys | Yes | Yes |
-| Cloudflare quick tunnel | `cloudflared` on host (optional apt) | `cloudflared` in API image |
+- **Native:** `install.sh` + PM2 (`arciin-web`, `arciin-api`, `arciin-worker`) + host PostgreSQL/Redis
+- **Production Docker:** `docker-compose.production.yml` (Caddy, web, api, worker, postgres, redis)
 
-## Verify locally
+They do not need to be byte-identical. They must satisfy the same **functional contract**.
 
-```bash
-bash scripts/verify-install-parity.sh
-```
+The verifier is `scripts/verify-install-parity.sh`.
 
-If the UI loads but `/api/*` returns **502**, the API process is down (Docker: `bash scripts/docker-doctor.sh`; see `docs/DOCKER.md` troubleshooting).
+## Shared contract
 
-## Environment files
+Both models must provide:
 
-- **Native:** copy `.env.example` → `.env` (or let `install.sh` create it).
-- **Docker:** copy `.env.docker.example` → `.env` (or use `docker-setup.sh`).
+| Capability | Native | Production Docker |
+|---|---|---|
+| Web UI | PM2 `arciin-web` | `web` image |
+| API | PM2 `arciin-api` / `apps/api/dist/index.js` | `api` image |
+| Worker | PM2 `arciin-worker` / `apps/worker/dist/index.js` | `worker` image |
+| PostgreSQL | host `postgresql` | `postgres` service |
+| Redis | host `redis` | `redis` service |
+| Schema migrations | `scripts/arciin-init.sh` | API entrypoint → `arciin-init.sh` |
+| File storage | `ARCIIN_DATA_DIR` (host path, default `/srv/arciin-storage/arciin`) | bind mount `ARCIIN_HOST_DATA_DIR` → `/data/arciin` |
+| Licensing | `ARCIIN_LICENSE_PUBLIC_KEYS` / hosted activate | same env on api/worker |
+| Worker jobs | BullMQ on Redis | same |
+| Health / readiness | `/api/health`, `/api/health/live` | compose healthchecks calling those endpoints |
+| Worker health | `scripts/worker-healthcheck.mjs` | worker healthcheck |
+| Media runtime | host ffmpeg/ffprobe (install.sh) | baked into worker/api images |
+| Required secrets | `ARCIIN_SETUP_TOKEN`, `SESSION_SECRET`, `DATABASE_URL` | plus `POSTGRES_PASSWORD`, `REDIS_PASSWORD` |
+| Security defaults | setup token, hashed sessions, no public signup | `no-new-privileges`, dropped caps, required DB/Redis passwords |
 
-Compose injects `DATABASE_URL` and `REDIS_URL` for containers; do not point those at `localhost` inside Docker.
+## Intentional differences
 
-## After code updates
+These are **not** parity failures:
 
-**Native:**
+- **Ports:** native binds host `ARCIIN_WEB_PORT` / `API_PORT`; production Docker publishes Caddy `:80` (or `ARCIIN_HTTP_PORT`) and keeps API on the compose network.
+- **Reverse proxy:** production uses Caddy in-compose; native may use none, Caddy, or another host proxy.
+- **Process manager:** PM2 vs `docker compose`.
+- **Storage path:** host `/srv/arciin-storage/arciin` vs container `/data/arciin` (same data via bind mount).
+- **Development compose** (`docker-compose.yml`) is a source-bind prototype and is **not** the production contract.
 
-```bash
-git pull && pnpm install && pnpm exec prisma migrate deploy && pnpm build
-pm2 restart arciin-api arciin-web arciin-worker
-```
+## Drift
 
-**Docker:**
-
-```bash
-git pull
-export ARCIIN_HOST_DATA_DIR=/your/storage/path   # from .env
-docker compose --env-file .env up --build -d
-```
-
-Data in `ARCIIN_HOST_DATA_DIR` / `ARCIIN_DATA_DIR` is preserved across rebuilds.
+The verifier fails (nonzero) when a required production/native assumption is missing: service, healthcheck, storage mount, migration entrypoint, or required environment variable.

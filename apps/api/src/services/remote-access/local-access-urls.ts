@@ -1,6 +1,12 @@
+import fs from "node:fs"
 import os from "node:os"
+import path from "node:path"
 
-import { isSelfHostedLanHostname } from "@arciin/shared"
+import {
+  isUsableLanOverrideHostname,
+  selectLanIpv4Addresses,
+  snapshotOsNetworkInterfaces,
+} from "@arciin/config"
 
 import { apiConfig } from "@/config"
 
@@ -14,18 +20,52 @@ export type LocalAccessUrls = {
   localUrl: string
 }
 
-function getLanIpv4Addresses(): string[] {
-  const ips: string[] = []
-  for (const [name, iface] of Object.entries(os.networkInterfaces())) {
-    if (/^(docker|veth|br-|virbr)/i.test(name)) continue
-    for (const addr of iface ?? []) {
-      if (addr.family !== "IPv4" || addr.internal) continue
-      const ip = addr.address
-      if (ip.startsWith("169.254.")) continue
-      ips.push(ip)
-    }
+function isDockerRuntime(): boolean {
+  if (process.env.ARCIIN_IN_CONTAINER === "1") return true
+  if (path.resolve(apiConfig.dataDir) === "/data/arciin") return true
+  try {
+    return fs.existsSync("/.dockerenv")
+  } catch {
+    return false
   }
-  return [...new Set(ips)]
+}
+
+function hostnameFromMaybeUrl(raw: string | undefined | null): string | null {
+  if (!raw?.trim()) return null
+  const value = raw.trim()
+  try {
+    if (/^https?:\/\//i.test(value)) return new URL(value).hostname
+  } catch {
+    return null
+  }
+  return value.replace(/[:/].*$/, "")
+}
+
+function advertisedLanHostFromValue(raw: string | undefined | null): string | null {
+  const hostname = hostnameFromMaybeUrl(raw)
+  if (!hostname) return null
+  return isUsableLanOverrideHostname(hostname, isDockerRuntime()) ? hostname : null
+}
+
+export function getLanIpv4Addresses(options?: {
+  interfaces?: ReturnType<typeof snapshotOsNetworkInterfaces>
+  inContainer?: boolean
+  advertisedLanHost?: string | null
+  advertisedLanOverride?: string | null
+}): string[] {
+  const inContainer = options?.inContainer ?? isDockerRuntime()
+  const interfaces = options?.interfaces ?? snapshotOsNetworkInterfaces(() => os.networkInterfaces())
+  const advertisedLanOverride =
+    options?.advertisedLanOverride ?? advertisedLanHostFromValue(process.env.ARCIIN_ADVERTISED_LAN)
+  const advertisedLanHost =
+    options?.advertisedLanHost ?? advertisedLanHostFromValue(apiConfig.ARCIIN_PUBLIC_URL)
+  const selection = selectLanIpv4Addresses({
+    interfaces,
+    inContainer,
+    advertisedLanHost,
+    advertisedLanOverride,
+  })
+  return selection.selected
 }
 
 function isApiPort(port: string): boolean {
@@ -74,48 +114,35 @@ export function resolveMobileWebPort(): string {
   return resolveWebPort()
 }
 
+function urlsFromLanIps(ips: string[], webPort: string, preferredHost: string | null): string[] {
+  const lanUrls = new Set<string>()
+  if (preferredHost) {
+    lanUrls.add(`http://${preferredHost}:${webPort}`)
+  }
+  for (const ip of ips) {
+    lanUrls.add(`http://${ip}:${webPort}`)
+  }
+  const preferred = preferredHost ? `http://${preferredHost}:${webPort}` : null
+  return [...lanUrls].sort((a, b) => {
+    if (preferred) {
+      if (a === preferred && b !== preferred) return -1
+      if (b === preferred && a !== preferred) return 1
+    }
+    return a.localeCompare(b, "en")
+  })
+}
+
 export function resolveMobileLocalAccessUrls(): LocalAccessUrls {
   const webPort = resolveMobileWebPort()
   const loopbackUrl = `http://127.0.0.1:${webPort}`
-  const lanUrls = new Set<string>()
-
-  try {
-    const raw = process.env.ARCIIN_MOBILE_PUBLIC_URL?.trim()
-    if (raw) {
-      const u = new URL(raw)
-      if (isSelfHostedLanHostname(u.hostname)) {
-        const port = u.port && !isApiPort(u.port) ? u.port : webPort
-        lanUrls.add(`http://${u.hostname}:${port}`)
-      }
-    }
-  } catch {
-    /* ignore */
-  }
-
-  for (const ip of getLanIpv4Addresses()) {
-    lanUrls.add(`http://${ip}:${webPort}`)
-  }
-
-  const preferredHost = (() => {
-    try {
-      const raw = process.env.ARCIIN_MOBILE_PUBLIC_URL?.trim()
-      if (!raw) return null
-      const u = new URL(raw)
-      return isSelfHostedLanHostname(u.hostname) ? u.hostname : null
-    } catch {
-      return null
-    }
-  })()
-
-  const lanList = [...lanUrls].sort((a, b) => {
-    if (preferredHost) {
-      const ah = new URL(a).hostname
-      const bh = new URL(b).hostname
-      if (ah === preferredHost && bh !== preferredHost) return -1
-      if (bh === preferredHost && ah !== preferredHost) return 1
-    }
-    return a.localeCompare(b)
-  })
+  const preferredHost = advertisedLanHostFromValue(process.env.ARCIIN_MOBILE_PUBLIC_URL)
+  const lanList = urlsFromLanIps(
+    getLanIpv4Addresses({
+      advertisedLanHost: preferredHost,
+    }),
+    webPort,
+    preferredHost,
+  )
   const primaryLanUrl = lanList[0] ?? null
 
   return {
@@ -130,40 +157,12 @@ export function resolveMobileLocalAccessUrls(): LocalAccessUrls {
 export function resolveLocalAccessUrls(): LocalAccessUrls {
   const webPort = resolveWebPort()
   const loopbackUrl = `http://127.0.0.1:${webPort}`
-  const lanUrls = new Set<string>()
-
-  try {
-    const u = new URL(apiConfig.ARCIIN_PUBLIC_URL)
-    if (isSelfHostedLanHostname(u.hostname)) {
-      const port = u.port && !isApiPort(u.port) ? u.port : webPort
-      lanUrls.add(`http://${u.hostname}:${port}`)
-    }
-  } catch {
-    /* ignore */
-  }
-
-  for (const ip of getLanIpv4Addresses()) {
-    lanUrls.add(`http://${ip}:${webPort}`)
-  }
-
-  const preferredHost = (() => {
-    try {
-      const u = new URL(apiConfig.ARCIIN_PUBLIC_URL)
-      return isSelfHostedLanHostname(u.hostname) ? u.hostname : null
-    } catch {
-      return null
-    }
-  })()
-
-  const lanList = [...lanUrls].sort((a, b) => {
-    if (preferredHost) {
-      const ah = new URL(a).hostname
-      const bh = new URL(b).hostname
-      if (ah === preferredHost && bh !== preferredHost) return -1
-      if (bh === preferredHost && ah !== preferredHost) return 1
-    }
-    return a.localeCompare(b)
-  })
+  const preferredHost = advertisedLanHostFromValue(apiConfig.ARCIIN_PUBLIC_URL)
+  const lanList = urlsFromLanIps(
+    getLanIpv4Addresses({ advertisedLanHost: preferredHost }),
+    webPort,
+    preferredHost,
+  )
   const primaryLanUrl = lanList[0] ?? null
 
   return {
