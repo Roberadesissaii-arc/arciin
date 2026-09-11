@@ -91,16 +91,91 @@ export function verifySignedLicenseToken(token: string, expectedInstanceId: stri
   return verifyMockLicenseToken(token, expectedInstanceId)
 }
 
+/** What a verified entitlement token actually entitles this instance to. */
+type VerifiedEntitlement = {
+  plan: LicensePlanId
+  expiresAt: Date | null
+  graceUntil: Date | null
+  keyPrefix: string | null
+}
+
+/**
+ * The entitlement this instance can prove it holds.
+ *
+ * Everything above free core is derived from here, and `null` means free core.
+ * The stored `licensePlan` / `licenseStatus` columns are treated as cache: they
+ * are useful for display and for knowing what the authority last said, but they
+ * cannot grant anything on their own. Before this existed, a single UPDATE
+ * setting `licensePlan = 'business'` alongside any non-empty token string
+ * unlocked every paid gate (ARC-001).
+ *
+ * Verification is asymmetric — this build holds vendor *public* keys only, so
+ * it can check a token but never mint one. A token that is missing, malformed,
+ * signed by another key, issued to a different install, or revoked by the
+ * authority fails closed to free core. Failing closed here costs a customer
+ * their paid features; it must never cost them their files, which is why the
+ * caller keeps free-core entitlements regardless of the outcome.
+ *
+ * A token signed by a key newer than this build also lands here, which is the
+ * intended conservative outcome of key rotation: refresh re-fetches a token
+ * this build can verify, and until then the instance runs as free core.
+ */
+function verifyStoredEntitlement(row: InstanceLicenseRow): VerifiedEntitlement | null {
+  const token = row.licenseSignedToken
+  if (!token) return null
+
+  // Local dev/mock keys carry a v1 token signed with this instance's own
+  // secret. They are still verified — a forged v1 blob is rejected exactly like
+  // a forged hosted one — they simply have a different issuer.
+  if (row.licenseSource !== "hosted" && licenseTokenVersion(token) === null) {
+    const mock = verifyMockLicenseToken(token, row.id)
+    if (!mock) return null
+    return {
+      plan: mock.plan,
+      expiresAt: mock.expiresAt ? new Date(mock.expiresAt) : null,
+      graceUntil: mock.graceUntil ? new Date(mock.graceUntil) : null,
+      keyPrefix: mock.keyPrefix,
+    }
+  }
+
+  const payload = verifyHostedLicenseToken(token, licenseVerifyOptions(row.id))
+  if (!payload) return null
+  if (payload.status === "revoked" || payload.status === "expired" || payload.status === "inactive") {
+    return null
+  }
+
+  return {
+    plan: payload.plan,
+    expiresAt: payload.expiresAt ? new Date(payload.expiresAt) : null,
+    graceUntil: payload.graceUntil ? new Date(payload.graceUntil) : null,
+    keyPrefix: payload.keyPrefix || row.licenseKeyPrefix,
+  }
+}
+
 function rowToSnapshot(row: InstanceLicenseRow | null): LicenseStateSnapshot {
   if (!row) return defaultLicenseSnapshot(null)
+
+  const verified = verifyStoredEntitlement(row)
+  if (!verified) {
+    // No provable entitlement. The key prefix is display-only and grants
+    // nothing, so it survives to keep the licence screen informative.
+    return {
+      ...defaultLicenseSnapshot(row.id),
+      keyPrefix: row.licenseKeyPrefix,
+      activatedAt: row.licenseActivatedAt?.toISOString() ?? null,
+    }
+  }
+
+  // Dates come from the token too: a column claiming a longer runway than the
+  // signed entitlement would otherwise extend a licence for free.
   return evaluateLicenseState({
-    plan: row.licensePlan,
+    plan: verified.plan,
     status: row.licenseStatus,
     instanceId: row.id,
-    keyPrefix: row.licenseKeyPrefix,
+    keyPrefix: verified.keyPrefix,
     activatedAt: row.licenseActivatedAt,
-    expiresAt: row.licenseExpiresAt,
-    graceUntil: row.licenseGraceUntil,
+    expiresAt: verified.expiresAt,
+    graceUntil: verified.graceUntil,
     signedToken: row.licenseSignedToken,
     source: row.licenseSource,
   })
@@ -501,54 +576,22 @@ async function evaluateLocalToken(
   prisma: PrismaClient,
   instance: InstanceLicenseRow,
 ): Promise<LicenseStateSnapshot> {
-  if (instance.licenseSignedToken) {
-    if (
-      instance.licenseSource === "hosted" ||
-      licenseTokenVersion(instance.licenseSignedToken) !== null
-    ) {
-      const payload = verifyHostedLicenseToken(
-        instance.licenseSignedToken,
-        licenseVerifyOptions(instance.id),
-      )
-      if (!payload) {
-        await prisma.instanceConfig.update({
-          where: { id: instance.id },
-          data: {
-            licensePlan: "free",
-            licenseStatus: "expired",
-            licenseSignedToken: null,
-            licenseSource: "default",
-          },
-        })
-        return loadLicenseSnapshot(prisma)
-      }
-      // Trust local timestamps from stored row + token status for revoked
-      if (payload.status === "revoked") {
-        await prisma.instanceConfig.update({
-          where: { id: instance.id },
-          data: {
-            licensePlan: "free",
-            licenseStatus: "expired",
-            licenseSignedToken: null,
-          },
-        })
-        return loadLicenseSnapshot(prisma)
-      }
-    } else {
-      const payload = verifyMockLicenseToken(instance.licenseSignedToken, instance.id)
-      if (!payload) {
-        await prisma.instanceConfig.update({
-          where: { id: instance.id },
-          data: {
-            licensePlan: "free",
-            licenseStatus: "expired",
-            licenseSignedToken: null,
-            licenseSource: "default",
-          },
-        })
-        return loadLicenseSnapshot(prisma)
-      }
-    }
+  // `rowToSnapshot` already refuses to honour a token that does not verify, so
+  // the entitlement is safe either way. Clearing the dead token here is the
+  // housekeeping half: it stops the licence screen advertising a key that can
+  // never be honoured, and it is a write, so it belongs on the refresh path
+  // rather than on every read.
+  if (instance.licenseSignedToken && !verifyStoredEntitlement(instance)) {
+    await prisma.instanceConfig.update({
+      where: { id: instance.id },
+      data: {
+        licensePlan: "free",
+        licenseStatus: "expired",
+        licenseSignedToken: null,
+        licenseSource: instance.licenseSource === "hosted" ? "hosted" : "default",
+      },
+    })
+    return loadLicenseSnapshot(prisma)
   }
 
   const snapshot = rowToSnapshot(instance)

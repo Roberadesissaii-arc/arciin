@@ -22,7 +22,7 @@ import { cn } from "@/lib/utils"
 import type { HealthStatus } from "@/lib/types/models"
 import { RelativeTime } from "@/components/shared/relative-time"
 
-type ServiceId = keyof Omit<HealthStatus, "version" | "timestamp">
+type ServiceId = keyof Omit<HealthStatus, "version" | "timestamp" | "status">
 
 const SERVICE_META: Record<
   ServiceId,

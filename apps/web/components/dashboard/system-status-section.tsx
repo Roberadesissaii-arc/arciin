@@ -6,7 +6,7 @@ import { useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { ArrowUpRight, Database } from "lucide-react"
 
-import { fetchApi } from "@/lib/api/client"
+import { fetchHealth } from "@/lib/api/health"
 import { listAppDatabases } from "@/lib/api/app-databases"
 import { getJobs, getStorageSettings } from "@/lib/api/settings"
 import { queryKeys } from "@/lib/api/query-keys"
@@ -22,7 +22,7 @@ import { formatBytes } from "@/lib/utils/format-bytes"
 import { cn } from "@/lib/utils"
 import type { HealthStatus } from "@/lib/types/models"
 
-const SERVICES: Array<keyof Omit<HealthStatus, "version" | "timestamp">> = [
+const SERVICES: Array<keyof Omit<HealthStatus, "version" | "timestamp" | "status">> = [
   "api",
   "database",
   "redis",
@@ -50,7 +50,9 @@ const SERVICE_DESCRIPTIONS: Record<string, string> = {
 export function SystemStatusSection({ className }: { className?: string }) {
   const healthQuery = useQuery({
     queryKey: ["health"],
-    queryFn: () => fetchApi<HealthStatus>("/health"),
+    // Reads the body on 503 too, so a degraded instance still shows which
+    // service is down rather than collapsing into one generic error.
+    queryFn: ({ signal }) => fetchHealth(signal),
     refetchInterval: 30_000,
   })
 

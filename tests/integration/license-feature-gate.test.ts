@@ -1,6 +1,13 @@
 import type { FastifyReply, FastifyRequest } from "fastify"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 
+import {
+  buildHostedTokenPayload,
+  parseLicensePrivateKey,
+  signHostedLicenseToken,
+  type LicensePlanId,
+} from "@arciin/config"
+
 import { requireFeature } from "../../apps/api/src/services/security/auth"
 
 import { prisma } from "./setup"
@@ -66,20 +73,55 @@ async function runGate(feature: Parameters<typeof requireFeature>[0]) {
   return reply.captured
 }
 
-/** What activating a hosted Pro license writes to the instance. */
-async function activatePro() {
+/**
+ * The vendor's signing key for this suite — see the licensing authority tests.
+ * Its public half is registered through `ARCIIN_LICENSE_PUBLIC_KEYS` by
+ * `vitest.integration.config.ts`, so tokens signed here verify like real ones.
+ */
+const vendorKey = parseLicensePrivateKey("P1L5nJPd7wq0kUwqhU7SbXe0P4H2fT1YtGxWvBoNsRA")
+const VENDOR_KID = "arciin-lic-test"
+
+/**
+ * What activating a hosted Pro license writes to the instance.
+ *
+ * This mints a genuinely signed entitlement rather than a placeholder string.
+ * It used to store `"arclic.v3.stub.stub"` on the reasoning that the gate reads
+ * the persisted plan — which was true, and was the bug (ARC-001): the columns
+ * alone unlocked Pro. Now the token is the authority, so a fixture that wants a
+ * real licence has to hold a real one.
+ */
+async function activatePro(
+  overrides: { plan?: LicensePlanId; expiresAt?: Date; graceUntil?: Date } = {},
+) {
+  const plan = overrides.plan ?? "pro"
+  const expiresAt = overrides.expiresAt ?? new Date(Date.now() + 31 * 86_400_000)
+  const graceUntil = overrides.graceUntil ?? new Date(Date.now() + 38 * 86_400_000)
+
+  const token = signHostedLicenseToken(
+    buildHostedTokenPayload({
+      licenseId: "lic_feature_gate",
+      plan,
+      status: "active",
+      instanceId,
+      serverLimit: 1,
+      keyPrefix: "ARC_PRO…ABCD",
+      expiresAt,
+      graceUntil,
+    }),
+    vendorKey,
+    VENDOR_KID,
+  )
+
   await prisma.instanceConfig.update({
     where: { id: instanceId },
     data: {
-      licensePlan: "pro",
+      licensePlan: plan,
       licenseStatus: "active",
       licenseKeyPrefix: "ARC_PRO…ABCD",
       licenseActivatedAt: new Date(),
-      licenseExpiresAt: new Date(Date.now() + 31 * 86_400_000),
-      licenseGraceUntil: new Date(Date.now() + 38 * 86_400_000),
-      // Any non-null token — the gate reads the persisted plan, and token
-      // verification is covered by the activation suite.
-      licenseSignedToken: "arclic.v3.stub.stub",
+      licenseExpiresAt: expiresAt,
+      licenseGraceUntil: graceUntil,
+      licenseSignedToken: token,
       licenseSource: "hosted",
     },
   })
@@ -177,13 +219,11 @@ describe("after the license is revoked", () => {
 
 describe("during the grace period after expiry", () => {
   beforeEach(async () => {
-    await activatePro()
-    await prisma.instanceConfig.update({
-      where: { id: instanceId },
-      data: {
-        licenseExpiresAt: new Date(Date.now() - 86_400_000),
-        licenseGraceUntil: new Date(Date.now() + 6 * 86_400_000),
-      },
+    // The dates ride inside the signed entitlement, so the fixture issues a
+    // licence that really has expired rather than editing the columns under it.
+    await activatePro({
+      expiresAt: new Date(Date.now() - 86_400_000),
+      graceUntil: new Date(Date.now() + 6 * 86_400_000),
     })
   })
 
@@ -195,13 +235,9 @@ describe("during the grace period after expiry", () => {
 
 describe("once grace has run out", () => {
   beforeEach(async () => {
-    await activatePro()
-    await prisma.instanceConfig.update({
-      where: { id: instanceId },
-      data: {
-        licenseExpiresAt: new Date(Date.now() - 30 * 86_400_000),
-        licenseGraceUntil: new Date(Date.now() - 23 * 86_400_000),
-      },
+    await activatePro({
+      expiresAt: new Date(Date.now() - 30 * 86_400_000),
+      graceUntil: new Date(Date.now() - 23 * 86_400_000),
     })
   })
 

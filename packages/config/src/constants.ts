@@ -86,6 +86,34 @@ export type ArciinClientChannel = (typeof ARCIIN_CLIENT_CHANNELS)[number]
 export const SOCKET_EVENT_CHANNEL = "arciin:events"
 export const WORKER_HEARTBEAT_KEY = "arciin:worker:heartbeat"
 
+/**
+ * Deadlines for every Redis client in the product.
+ *
+ * ioredis defaults to queueing commands while a connection is down and
+ * retrying them forever. Combined with `maxRetriesPerRequest: null` — which
+ * BullMQ requires, and which had been copied onto the API's ordinary command
+ * client — a Redis outage stopped being an error and became an indefinite
+ * wait: sign-in, uploads and `/api/health` all hung until the caller gave up,
+ * so the instance looked frozen rather than degraded (ARC-002).
+ *
+ * A command that cannot reach Redis has to fail, and fail quickly enough that
+ * the caller can say something useful. These are deliberately short: Redis is
+ * either local or one hop away in every supported deployment, so anything
+ * slower than this is a fault, not load.
+ */
+export const REDIS_CONNECT_TIMEOUT_MS = 5_000
+export const REDIS_COMMAND_TIMEOUT_MS = 3_000
+
+/**
+ * Reconnect backoff, capped so recovery stays fast.
+ *
+ * Redis returning has to heal the instance on its own — a self-hosted
+ * appliance has nobody to restart the API by hand.
+ */
+export function redisRetryDelayMs(attempt: number): number {
+  return Math.min(attempt * 200, 2_000)
+}
+
 export const JOB_QUEUE_NAMES = {
   media: "media",
   storage: "storage",

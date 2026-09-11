@@ -3,8 +3,51 @@ import type { FastifyReply, FastifyRequest } from "fastify"
 import { clientIpFromRequest } from "@/services/security/client-ip"
 
 /**
+ * Count one attempt against a window, or report that the store is unreachable.
+ *
+ * `null` means Redis did not answer. Callers must treat that as a refusal, not
+ * as a zero: these counters are the brute-force control on sign-in, and a
+ * store that cannot be read must not quietly become "no limit configured".
+ */
+async function countAttempt(
+  request: FastifyRequest,
+  redisKey: string,
+  windowSec: number,
+): Promise<number | null> {
+  try {
+    const count = await request.server.redis.incr(redisKey)
+    if (count === 1) {
+      await request.server.redis.expire(redisKey, windowSec * 2)
+    }
+    return count
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Refuse a request we cannot rate limit.
+ *
+ * Deliberately vague about the cause: the caller learns the service is
+ * degraded and when to retry, and nothing about the internal topology. The
+ * connection failure itself is logged once, by the Redis plugin, when the
+ * connection drops — not once per rejected request.
+ */
+function replyRateLimiterUnavailable(reply: FastifyReply, windowSec: number): void {
+  reply.status(503).send({
+    error: {
+      code: "RATE_LIMIT_UNAVAILABLE",
+      message: "Arciin is temporarily unable to process this request. Try again in a moment.",
+      details: { retryAfterSeconds: Math.min(windowSec, 30) },
+    },
+  })
+}
+
+/**
  * Enforces a per-IP rate limit for a single endpoint using Redis.
  * Returns true (and sends a 429) if the limit is exceeded — the caller must return early.
+ *
+ * Also returns true, with a 503, when the limit cannot be evaluated at all.
  */
 export async function checkEndpointRateLimit(
   request: FastifyRequest,
@@ -26,9 +69,10 @@ export async function checkEndpointRateLimit(
       ? `arciin:rl:${opts.key}:${bucket}`
       : `arciin:rl:${opts.key}:${clientIpFromRequest(request)}:${bucket}`
 
-  const count = await request.server.redis.incr(redisKey)
-  if (count === 1) {
-    await request.server.redis.expire(redisKey, opts.windowSec * 2)
+  const count = await countAttempt(request, redisKey, opts.windowSec)
+  if (count === null) {
+    replyRateLimiterUnavailable(reply, opts.windowSec)
+    return true
   }
 
   if (count > opts.limit) {
@@ -68,9 +112,10 @@ export async function checkAiRateLimit(
   const bucket = Math.floor(Date.now() / (opts.windowSec * 1_000))
   const redisKey = `arciin:rl:ai:${opts.key}:${identity}:${bucket}`
 
-  const count = await request.server.redis.incr(redisKey)
-  if (count === 1) {
-    await request.server.redis.expire(redisKey, opts.windowSec * 2)
+  const count = await countAttempt(request, redisKey, opts.windowSec)
+  if (count === null) {
+    replyRateLimiterUnavailable(reply, opts.windowSec)
+    return true
   }
 
   if (count > opts.limit) {

@@ -1,6 +1,11 @@
 import { Queue } from "bullmq"
 
-import { DEFAULT_MEDIA_JOB_OPTIONS, JOB_QUEUE_NAMES } from "@arciin/shared"
+import {
+  DEFAULT_MEDIA_JOB_OPTIONS,
+  JOB_QUEUE_NAMES,
+  REDIS_COMMAND_TIMEOUT_MS,
+  REDIS_CONNECT_TIMEOUT_MS,
+} from "@arciin/shared"
 
 import { apiConfig } from "@/config"
 
@@ -15,6 +20,20 @@ const connection = {
   tls: redisUrl.protocol === "rediss:" ? {} : undefined,
   // Required by BullMQ for any connection it manages — see apps/worker/src/index.ts.
   maxRetriesPerRequest: null as null,
+  /**
+   * These are producers, never workers.
+   *
+   * `maxRetriesPerRequest: null` is what keeps a *worker's* blocking job-fetch
+   * from being cancelled, but nothing here blocks — these queues only ever
+   * `add()`. Without a deadline that setting made enqueueing wait forever
+   * whenever Redis was down, which is what hung uploads (ARC-002): the outbox
+   * was ready to defer the job, but `queue.add()` never returned to tell it to.
+   *
+   * A rejection is all the outbox needs; the row stays PENDING and the
+   * reconciler dispatches it once Redis is back.
+   */
+  connectTimeout: REDIS_CONNECT_TIMEOUT_MS,
+  commandTimeout: REDIS_COMMAND_TIMEOUT_MS,
 }
 
 // Retry budget and Redis retention are set once here so every producer

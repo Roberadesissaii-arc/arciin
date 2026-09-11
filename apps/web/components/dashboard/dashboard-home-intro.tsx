@@ -8,13 +8,12 @@ import { useQuery } from "@tanstack/react-query"
 import { PlanBadge } from "@/components/license/plan-badge"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useAuth } from "@/hooks/use-auth"
-import { fetchApi } from "@/lib/api/client"
+import { fetchHealth } from "@/lib/api/health"
 import { getGeneralSettings } from "@/lib/api/settings"
 import { queryKeys } from "@/lib/api/query-keys"
 import { useLicense } from "@/lib/license/use-license"
 import { resolveUserGreeting, welcomeBackPhrase } from "@/lib/user/greeting"
 import { cn } from "@/lib/utils"
-import type { HealthStatus } from "@/lib/types/models"
 
 const INTRO_SLIDES = [
   {
@@ -57,7 +56,7 @@ export function DashboardHomeIntro() {
 
   const healthQuery = useQuery({
     queryKey: ["health"],
-    queryFn: () => fetchApi<HealthStatus>("/health"),
+    queryFn: ({ signal }) => fetchHealth(signal),
     refetchInterval: 30_000,
   })
 

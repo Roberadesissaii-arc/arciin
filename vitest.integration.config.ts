@@ -3,6 +3,8 @@ import path from "node:path"
 import { config as loadEnv } from "dotenv"
 import { defineConfig } from "vitest/config"
 
+import { licensePublicKeyFromPrivate } from "./packages/config/src/license-signing"
+
 /**
  * Integration suite: real PostgreSQL and a real Prisma client, pointed at a
  * dedicated `arciin_test` database and Redis db 15.
@@ -18,6 +20,18 @@ loadEnv({ path: path.resolve(__dirname, ".env"), quiet: true })
 const TEST_DATABASE_NAME = "arciin_test"
 const TEST_REDIS_DB = "15"
 const TEST_DATA_DIR = "/tmp/arciin-integration-storage"
+
+/**
+ * A throwaway licensing authority for the suite.
+ *
+ * Entitlement tokens are now verified on the read path, so a test that needs a
+ * *valid* paid licence has to sign one — which means this run must trust a key
+ * whose private half the tests can hold. The same fixed test key the licensing
+ * suite uses; it signs nothing real, and the production private key exists only
+ * in the license server's environment.
+ */
+const LICENSE_TEST_SIGNING_KEY = "P1L5nJPd7wq0kUwqhU7SbXe0P4H2fT1YtGxWvBoNsRA"
+const LICENSE_TEST_KID = "arciin-lic-test"
 
 function testDatabaseUrl(): string {
   const raw = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL
@@ -80,6 +94,7 @@ export default defineConfig({
       API_PORT: "4100",
       PORT: "3100",
       ARCIIN_QUEUE_PREFIX: "bull_test",
+      ARCIIN_LICENSE_PUBLIC_KEYS: `${LICENSE_TEST_KID}:${licensePublicKeyFromPrivate(LICENSE_TEST_SIGNING_KEY)}`,
     },
   },
 })

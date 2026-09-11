@@ -11,11 +11,16 @@ import {
 
 const EXEMPT_PREFIXES = [
   "/api/health",
+  // Liveness must answer even when the database is unreachable — this hook
+  // reads settings from PostgreSQL, so a probe that ran through it would
+  // return 500 during exactly the outage it exists to survive.
+  "/api/health/live",
   "/api/instance/status",
   "/api/instance/claim",
 ]
 
-function isExempt(url: string): boolean {
+/** Exported so the exemptions can be asserted directly rather than inferred. */
+export function isExempt(url: string): boolean {
   return EXEMPT_PREFIXES.some((p) => url === p || url.startsWith(`${p}?`))
 }
 

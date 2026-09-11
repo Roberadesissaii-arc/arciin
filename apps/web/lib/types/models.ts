@@ -812,6 +812,8 @@ export type HealthStatus = {
   realtime: "online" | "offline"
   worker: "online" | "offline" | "unknown"
   storage: "online" | "offline"
+  /** "degraded" is served with HTTP 503 so supervisors see the outage too. */
+  status?: "ready" | "degraded"
   version: string
   timestamp: string
 }

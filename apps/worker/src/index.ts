@@ -8,7 +8,10 @@ import {
   JOB_TYPES,
   MAINTENANCE_JOB_OPTIONS,
   MAINTENANCE_SCHEDULES,
+  REDIS_COMMAND_TIMEOUT_MS,
+  REDIS_CONNECT_TIMEOUT_MS,
   mediaQueueLimiter,
+  redisRetryDelayMs,
 } from "@arciin/shared"
 
 import { workerConfig } from "@/config"
@@ -43,15 +46,45 @@ const connection = {
 }
 
 async function start() {
+  /**
+   * Heartbeat and realtime publishing only — no blocking reads, so unlike the
+   * BullMQ `connection` above this one gets finite deadlines. Without them a
+   * Redis outage left every `set` and `publish` pending forever and the log
+   * filling with reconnect errors (ARC-002).
+   */
   const redis = new Redis(workerConfig.REDIS_URL, {
-    maxRetriesPerRequest: null,
+    connectTimeout: REDIS_CONNECT_TIMEOUT_MS,
+    commandTimeout: REDIS_COMMAND_TIMEOUT_MS,
+    maxRetriesPerRequest: 1,
+    retryStrategy: redisRetryDelayMs,
   })
 
+  // One line per state change rather than one per failed reconnect.
+  let redisDown = false
+  redis.on("error", (error: Error) => {
+    if (redisDown) return
+    redisDown = true
+    console.error("[worker] Redis connection lost:", error.message)
+  })
+  redis.on("ready", () => {
+    if (!redisDown) return
+    redisDown = false
+    console.log("[worker] Redis connection restored")
+  })
+
+  // Commands can now reject, and an unhandled rejection would take the worker
+  // down over something as recoverable as a missed heartbeat.
+  const writeHeartbeat = () =>
+    redis.set(workerConfig.workerHeartbeatKey, String(Date.now())).catch(() => {
+      // The API reports the worker offline until the next tick succeeds, which
+      // is exactly what an operator should see while Redis is unreachable.
+    })
+
   const heartbeat = setInterval(() => {
-    void redis.set(workerConfig.workerHeartbeatKey, String(Date.now()))
+    void writeHeartbeat()
   }, 15_000)
 
-  await redis.set(workerConfig.workerHeartbeatKey, String(Date.now()))
+  await writeHeartbeat()
 
   const mediaWorker = new Worker(
     JOB_QUEUE_NAMES.media,
