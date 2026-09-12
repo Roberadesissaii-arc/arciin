@@ -84,6 +84,7 @@ services:
       ARCIIN_DATA_DIR: ${ARCIIN_DATA_DIR:-/data/arciin}
       ARCIIN_HOST_DATA_DIR: ${ARCIIN_HOST_DATA_DIR:-/srv/arciin-storage/arciin}
       ARCIIN_PUBLIC_URL: ${ARCIIN_PUBLIC_URL:-http://localhost}
+      ARCIIN_HTTP_PORT: ${ARCIIN_HTTP_PORT:-80}
       ARCIIN_API_URL: ${ARCIIN_API_URL:-http://api:4000}
       NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-/api}
       NEXT_PUBLIC_SOCKET_URL: ${NEXT_PUBLIC_SOCKET_URL:-}

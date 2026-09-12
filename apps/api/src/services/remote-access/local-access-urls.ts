@@ -3,7 +3,10 @@ import os from "node:os"
 import path from "node:path"
 
 import {
+  buildAdvertisedLocalAccessUrls,
   isUsableLanOverrideHostname,
+  resolveAdvertisedHttpPort,
+  resolveAdvertisedMobileHttpPort,
   selectLanIpv4Addresses,
   snapshotOsNetworkInterfaces,
 } from "@arciin/config"
@@ -73,7 +76,10 @@ function isApiPort(port: string): boolean {
   return port === apiPort || port === "4000" || port === "4001"
 }
 
-/** Next.js web UI port — never the Fastify API port. */
+/**
+ * Internal Next.js listen port (tunnel target / process bind).
+ * Customer-facing LAN URLs must use `resolveCustomerFacingHttpPort`.
+ */
 export function resolveWebPort(): string {
   const fromEnv = process.env.ARCIIN_WEB_PORT?.trim() || process.env.PORT?.trim()
   if (fromEnv && !isApiPort(fromEnv)) {
@@ -114,62 +120,41 @@ export function resolveMobileWebPort(): string {
   return resolveWebPort()
 }
 
-function urlsFromLanIps(ips: string[], webPort: string, preferredHost: string | null): string[] {
-  const lanUrls = new Set<string>()
-  if (preferredHost) {
-    lanUrls.add(`http://${preferredHost}:${webPort}`)
+function advertisedPortInput() {
+  return {
+    publicUrl: process.env.ARCIIN_PUBLIC_URL?.trim() || apiConfig.ARCIIN_PUBLIC_URL,
+    mobilePublicUrl: process.env.ARCIIN_MOBILE_PUBLIC_URL,
+    httpPort: process.env.ARCIIN_HTTP_PORT,
+    webPort: process.env.ARCIIN_WEB_PORT,
+    processPort: process.env.PORT,
+    apiPort: apiConfig.API_PORT,
+    inContainer: isDockerRuntime(),
   }
-  for (const ip of ips) {
-    lanUrls.add(`http://${ip}:${webPort}`)
-  }
-  const preferred = preferredHost ? `http://${preferredHost}:${webPort}` : null
-  return [...lanUrls].sort((a, b) => {
-    if (preferred) {
-      if (a === preferred && b !== preferred) return -1
-      if (b === preferred && a !== preferred) return 1
-    }
-    return a.localeCompare(b, "en")
-  })
+}
+
+/** Customer-facing HTTP port (Caddy / published HTTP), not the Next.js listen port. */
+export function resolveCustomerFacingHttpPort(): string {
+  return resolveAdvertisedHttpPort(advertisedPortInput())
 }
 
 export function resolveMobileLocalAccessUrls(): LocalAccessUrls {
-  const webPort = resolveMobileWebPort()
-  const loopbackUrl = `http://127.0.0.1:${webPort}`
+  const webPort = resolveAdvertisedMobileHttpPort(advertisedPortInput())
   const preferredHost = advertisedLanHostFromValue(process.env.ARCIIN_MOBILE_PUBLIC_URL)
-  const lanList = urlsFromLanIps(
-    getLanIpv4Addresses({
-      advertisedLanHost: preferredHost,
-    }),
-    webPort,
+  return buildAdvertisedLocalAccessUrls({
+    lanHosts: getLanIpv4Addresses({ advertisedLanHost: preferredHost }),
     preferredHost,
-  )
-  const primaryLanUrl = lanList[0] ?? null
-
-  return {
-    webPort,
-    loopbackUrl,
-    lanUrls: lanList,
-    primaryLanUrl,
-    localUrl: primaryLanUrl ?? loopbackUrl,
-  }
+    port: webPort,
+  })
 }
 
 export function resolveLocalAccessUrls(): LocalAccessUrls {
-  const webPort = resolveWebPort()
-  const loopbackUrl = `http://127.0.0.1:${webPort}`
-  const preferredHost = advertisedLanHostFromValue(apiConfig.ARCIIN_PUBLIC_URL)
-  const lanList = urlsFromLanIps(
-    getLanIpv4Addresses({ advertisedLanHost: preferredHost }),
-    webPort,
-    preferredHost,
+  const webPort = resolveCustomerFacingHttpPort()
+  const preferredHost = advertisedLanHostFromValue(
+    process.env.ARCIIN_PUBLIC_URL?.trim() || apiConfig.ARCIIN_PUBLIC_URL,
   )
-  const primaryLanUrl = lanList[0] ?? null
-
-  return {
-    webPort,
-    loopbackUrl,
-    lanUrls: lanList,
-    primaryLanUrl,
-    localUrl: primaryLanUrl ?? loopbackUrl,
-  }
+  return buildAdvertisedLocalAccessUrls({
+    lanHosts: getLanIpv4Addresses({ advertisedLanHost: preferredHost }),
+    preferredHost,
+    port: webPort,
+  })
 }

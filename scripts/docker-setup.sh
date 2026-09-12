@@ -150,12 +150,22 @@ if ! grep -q '^ARCIIN_PUID=' "$ENV_FILE"; then
   ok "Pinned container uid/gid to the host user"
 fi
 
+http_port="$(grep -E '^ARCIIN_HTTP_PORT=' "$ENV_FILE" 2>/dev/null | cut -d= -f2- | tr -d '"' || true)"
+http_port="${http_port:-${ARCIIN_HTTP_PORT:-80}}"
+if [[ -z "$http_port" || "$http_port" == "80" ]]; then
+  lan_public_url="http://${LAN_IP}"
+  local_web_url="http://localhost"
+else
+  lan_public_url="http://${LAN_IP}:${http_port}"
+  local_web_url="http://localhost:${http_port}"
+fi
+
 if grep -qE '^ARCIIN_PUBLIC_URL=http://localhost(:3000)?$' "$ENV_FILE" 2>/dev/null; then
   if [[ -t 0 ]]; then
     echo ""
-    read -r -p "  Use LAN URL http://${LAN_IP} for phones/tablets? [Y/n]: " use_lan
+    read -r -p "  Use LAN URL ${lan_public_url} for phones/tablets? [Y/n]: " use_lan
     if [[ ! "$use_lan" =~ ^[Nn] ]]; then
-      _ensure_env_kv "$ENV_FILE" "ARCIIN_PUBLIC_URL" "http://${LAN_IP}"
+      _ensure_env_kv "$ENV_FILE" "ARCIIN_PUBLIC_URL" "${lan_public_url}"
     fi
   fi
 fi
@@ -169,8 +179,6 @@ PUBLIC_URL="$(grep '^ARCIIN_PUBLIC_URL=' "$ENV_FILE" | cut -d= -f2-)"
 if [[ "${ARCIIN_SKIP_FIREWALL:-0}" != "1" ]]; then
   # shellcheck source=scripts/lib/open-firewall-ports.sh
   source "${ROOT_DIR}/scripts/lib/open-firewall-ports.sh"
-  http_port="$(grep -E '^ARCIIN_HTTP_PORT=' "$ENV_FILE" 2>/dev/null | cut -d= -f2- | tr -d '"' || true)"
-  http_port="${http_port:-${ARCIIN_HTTP_PORT:-80}}"
   echo ""
   echo -e "  ${BOLD}Firewall${RESET} ${DIM}(open HTTP so phones/PCs can open the app)${RESET}"
   # Docker customers need Caddy HTTP; also open platform ports if this host runs account/license server
@@ -202,8 +210,8 @@ ${COMPOSE} --env-file "$ENV_FILE" up --build -d
 echo ""
 echo -e "  ${GREEN}${BOLD}Arciin is running in Docker${RESET}"
 echo ""
-echo -e "    ${DIM}Web UI${RESET}       ${BOLD}http://localhost${RESET}  ${DIM}(Caddy :80)${RESET}"
-if [[ "$PUBLIC_URL" != "http://localhost" ]]; then
+echo -e "    ${DIM}Web UI${RESET}       ${BOLD}${local_web_url}${RESET}  ${DIM}(Caddy :${http_port})${RESET}"
+if [[ "$PUBLIC_URL" != "http://localhost" && "$PUBLIC_URL" != "http://localhost:3000" && "$PUBLIC_URL" != "$local_web_url" ]]; then
   echo -e "    ${DIM}LAN URL${RESET}      ${BOLD}${PUBLIC_URL}${RESET}"
 fi
 echo -e "    ${DIM}Your files${RESET}   ${BOLD}${HOST_DATA}${RESET}"

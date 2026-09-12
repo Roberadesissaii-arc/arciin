@@ -3,11 +3,10 @@ import type { FastifyInstance } from "fastify"
 import { recordAndBroadcastActivity } from "@/services/activity/record-and-broadcast-activity"
 import { announcePublicUrlChange } from "@/services/email/notify-public-url"
 import { broadcastInstanceUrlsUpdated } from "@/services/mobile/mobile-server-urls"
+import { formatAdvertisedHttpOrigin } from "@arciin/config"
+
 import { getCloudflareTunnelState } from "@/services/remote-access/cloudflare-tunnel"
-import {
-  resolveLocalAccessUrls,
-  resolveMobileLocalAccessUrls,
-} from "@/services/remote-access/local-access-urls"
+import { resolveMobileWebPort, resolveWebPort } from "@/services/remote-access/local-access-urls"
 
 export type RemoteAccessConfigJson = Record<string, unknown>
 
@@ -39,8 +38,8 @@ export function isCloudflareTunnelAutoStartEnabled(
 function isMobileTunnelTarget(localTarget: string | null | undefined): boolean {
   if (!localTarget?.trim()) return false
   try {
-    const mobileLoopback = resolveMobileLocalAccessUrls().loopbackUrl.replace(/\/+$/, "")
-    const desktopLoopback = resolveLocalAccessUrls().loopbackUrl.replace(/\/+$/, "")
+    const mobileLoopback = formatAdvertisedHttpOrigin("127.0.0.1", resolveMobileWebPort())
+    const desktopLoopback = formatAdvertisedHttpOrigin("127.0.0.1", resolveWebPort())
     const normalized = localTarget.replace(/\/+$/, "")
     // When both apps share a port there is no "mobile-only" tunnel to speak of.
     if (mobileLoopback === desktopLoopback) return false

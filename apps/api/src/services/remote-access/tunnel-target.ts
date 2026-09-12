@@ -1,12 +1,19 @@
-import { resolveLocalAccessUrls, resolveMobileLocalAccessUrls } from "@/services/remote-access/local-access-urls"
+import { formatAdvertisedHttpOrigin } from "@arciin/config"
 
-/** Local origin cloudflared should forward to (Next.js web UI on loopback, never the API port). */
+import { resolveMobileWebPort, resolveWebPort } from "@/services/remote-access/local-access-urls"
+
+/**
+ * Local origin cloudflared should forward to.
+ *
+ * This is the *internal* web listen address (or an explicit
+ * `ARCIIN_TUNNEL_TARGET` such as `http://caddy:80` in Docker), never the
+ * customer-facing advertised LAN URL.
+ */
 export function resolveCloudflareTunnelTarget(): string {
   const explicit = process.env.ARCIIN_TUNNEL_TARGET?.trim()
   if (explicit) return explicit.replace(/\/+$/, "")
 
-  const { loopbackUrl } = resolveLocalAccessUrls()
-  return loopbackUrl
+  return formatAdvertisedHttpOrigin("127.0.0.1", resolveWebPort())
 }
 
 /**
@@ -21,6 +28,5 @@ export function resolveMobileCloudflareTunnelTarget(): string {
   const explicit = process.env.ARCIIN_MOBILE_TUNNEL_TARGET?.trim()
   if (explicit) return explicit.replace(/\/+$/, "")
 
-  const { loopbackUrl } = resolveMobileLocalAccessUrls()
-  return loopbackUrl
+  return formatAdvertisedHttpOrigin("127.0.0.1", resolveMobileWebPort())
 }

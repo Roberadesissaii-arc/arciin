@@ -24,4 +24,19 @@ test("Settings Domain does not advertise a Docker bridge as LAN", async ({ page 
 
   await expect(addresses.getByText("This machine", { exact: true })).toBeVisible()
   await expect(addresses.getByText(/127\.0\.0\.1/).first()).toBeVisible()
+
+  // When the configured public URL has no explicit port (Docker/Caddy :80),
+  // Settings must not invent the Next.js listen port.
+  try {
+    const configured = process.env.ARCIIN_PUBLIC_URL
+    if (configured) {
+      const parsed = new URL(configured)
+      if (!parsed.port) {
+        const text = await addresses.innerText()
+        expect(text, "Docker/Caddy default must not advertise :3000").not.toMatch(/:3000\b/)
+      }
+    }
+  } catch {
+    /* ignore unparseable test public URL */
+  }
 })
