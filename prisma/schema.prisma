@@ -31,6 +31,35 @@ enum UserStatus {
   DISABLED
 }
 
+enum DeviceStatus {
+  ACTIVE
+  REVOKED
+}
+
+enum DevicePairingStatus {
+  PENDING
+  CLAIMED
+  CANCELLED
+  EXPIRED
+}
+
+enum DevicePlatform {
+  WINDOWS
+  MACOS
+  LINUX
+  IOS
+  ANDROID
+  OTHER
+}
+
+enum DeviceType {
+  DESKTOP
+  LAPTOP
+  PHONE
+  TABLET
+  OTHER
+}
+
 enum StorageType {
   LOCAL
 }
@@ -225,6 +254,8 @@ model InstanceConfig {
   /// mock_dev | token | default
   licenseSource      String?
   initializedAt      DateTime
+  /// Public, non-secret UUID advertised by discovery. Not the license instance id.
+  discoveryServerId  String?   @unique
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 }
@@ -256,6 +287,7 @@ model User {
   createdAt          DateTime            @default(now())
   updatedAt          DateTime            @updatedAt
   sessions           Session[]
+  createdDevicePairings DevicePairing[]
   mobilePairingCodes MobilePairingCode[]
   apiKeys            ApiKey[]
   uploads            UploadSession[]
@@ -327,7 +359,11 @@ model Session {
   /// Opaque per-browser id from the long-lived `arciin_device` cookie. Used to
   /// collapse repeat sign-ins from the same browser into one row. Null for
   /// clients that send no cookie (mobile Bearer), which are never collapsed.
+  /// This is NOT a paired Device row — see pairedDeviceId.
   deviceId           String?
+  /// Optional trusted Device this user session was created from (desktop clients).
+  /// Browser sessions stay null. Revoking the Device invalidates these sessions.
+  pairedDeviceId     String?
   expiresAt          DateTime
   /// Mobile Bearer sessions: vault unlock without relying on cross-origin cookies.
   vaultUnlockedUntil DateTime?
@@ -335,10 +371,71 @@ model Session {
   folderUnlocks      Json?
   createdAt          DateTime  @default(now())
   user               User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  pairedDevice       Device?   @relation(fields: [pairedDeviceId], references: [id], onDelete: SetNull)
 
   @@index([userId])
   @@index([expiresAt])
   @@index([userId, deviceId])
+  @@index([pairedDeviceId])
+}
+
+/// A computer or app explicitly approved to connect to this instance.
+/// Pairing does not grant file access — the user still signs in normally.
+model Device {
+  id              String         @id @default(cuid())
+  name            String
+  deviceType      DeviceType     @default(DESKTOP)
+  platform        DevicePlatform @default(OTHER)
+  status          DeviceStatus   @default(ACTIVE)
+  /// SHA-256 of the high-entropy device credential. Raw value is never stored.
+  credentialHash  String         @unique
+  pairedAt        DateTime       @default(now())
+  lastSeenAt      DateTime?
+  revokedAt       DateTime?
+  appVersion      String?
+  protocolVersion Int            @default(1)
+  osVersion       String?
+  architecture    String?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  sessions        Session[]
+  pairings        DevicePairing[]
+  deviceSessions  DeviceSession[]
+
+  @@index([status])
+  @@index([lastSeenAt])
+}
+
+/// Short-lived one-time pairing PIN. At most one PENDING row per instance.
+model DevicePairing {
+  id                String              @id @default(cuid())
+  /// Argon2id of the 6-digit PIN. Never store the PIN in plaintext.
+  codeHash          String
+  status            DevicePairingStatus @default(PENDING)
+  expiresAt         DateTime
+  attemptCount      Int                 @default(0)
+  createdByUserId   String
+  claimedByDeviceId String?
+  createdAt         DateTime            @default(now())
+  claimedAt         DateTime?
+  createdBy         User                @relation(fields: [createdByUserId], references: [id], onDelete: Cascade)
+  claimedByDevice   Device?             @relation(fields: [claimedByDeviceId], references: [id], onDelete: SetNull)
+
+  @@index([status, expiresAt])
+  @@index([createdByUserId])
+}
+
+/// Short-lived trusted-device cookie session. Not user authentication.
+model DeviceSession {
+  id         String   @id @default(cuid())
+  deviceId   String
+  tokenHash  String   @unique
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  device     Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@index([deviceId])
+  @@index([expiresAt])
 }
 
 /// Short-lived codes for pairing the mobile PWA to this instance (hashed at rest).

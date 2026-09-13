@@ -38,6 +38,7 @@ import {
   verifyRecoveryAnswer,
 } from "@/services/security/recovery-answer"
 import { checkEndpointRateLimit } from "@/services/security/endpoint-rate-limit"
+import { resolveTrustedPairedDevice } from "@/services/devices/trusted-device"
 import {
   clearFailedLoginAttempts,
   isLoginLocked,
@@ -245,12 +246,17 @@ export async function registerAuthRoutes(fastify: FastifyInstance) {
     const rememberMe = parsed.data.rememberMe === true
     // Remember me → 30-day session with a persistent cookie. Otherwise the
     // session keeps the configured timeout and the cookie dies with the browser.
+    const trustedDevice = await resolveTrustedPairedDevice(request)
     const { session, rawToken } = await createSession(
       request,
       user.id,
       rememberMe
-        ? { expiresInDays: 30, reply }
-        : { expiresInMinutes: access.sessionTimeoutMinutes, reply },
+        ? { expiresInDays: 30, reply, pairedDeviceId: trustedDevice?.id ?? null }
+        : {
+            expiresInMinutes: access.sessionTimeoutMinutes,
+            reply,
+            pairedDeviceId: trustedDevice?.id ?? null,
+          },
     )
     setSessionCookie(reply, rawToken, session.expiresAt, request, {
       persistent: rememberMe,

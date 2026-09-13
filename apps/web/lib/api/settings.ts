@@ -16,6 +16,9 @@ import type {
   StorageMigrateStatus,
   StorageSettings,
   StorageVolumeOption,
+  DeviceSettingsSnapshot,
+  DevicePairingCodeResult,
+  PairedDevicePublic,
 } from "@/lib/types/models"
 
 export function getGeneralSettings(signal?: AbortSignal) {
@@ -352,4 +355,23 @@ export function clearDiscordSettings() {
 
 export function sendDiscordTest() {
   return fetchApi<{ sent: boolean }>("/settings/discord/test", { method: "POST" })
+}
+
+export function getConnectedDevices(signal?: AbortSignal) {
+  return fetchApi<DeviceSettingsSnapshot>("/settings/devices", { method: "GET", signal })
+}
+
+export function generateDevicePairingCode() {
+  return fetchApi<DevicePairingCodeResult>("/settings/devices/pairing", { method: "POST" })
+}
+
+export function cancelDevicePairing() {
+  return fetchApi<{ cancelled: true }>("/settings/devices/pairing", { method: "DELETE" })
+}
+
+export function revokeConnectedDevice(deviceId: string) {
+  return fetchApi<{ revoked: true; device: PairedDevicePublic }>(
+    `/settings/devices/${deviceId}/revoke`,
+    { method: "POST" },
+  )
 }
