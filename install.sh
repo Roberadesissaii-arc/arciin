@@ -16,6 +16,8 @@ source "${ROOT_DIR}/scripts/lib/host-platform.sh"
 source "${ROOT_DIR}/scripts/lib/storage-defaults.sh"
 # shellcheck source=scripts/lib/db-credentials.sh
 source "${ROOT_DIR}/scripts/lib/db-credentials.sh"
+# shellcheck source=scripts/lib/avahi-discovery.sh
+source "${ROOT_DIR}/scripts/lib/avahi-discovery.sh"
 
 docker_available() {
   command -v docker &>/dev/null && (docker compose version &>/dev/null || command -v docker-compose &>/dev/null)
@@ -71,7 +73,7 @@ DIM="\033[2m"
 WHITE="\033[97m"
 RESET="\033[0m"
 
-TOTAL_STEPS=11
+TOTAL_STEPS=12
 ARCIIN_WEB_PORT="${DEFAULT_WEB_PORT}"
 ARCIIN_API_PORT="${DEFAULT_API_PORT}"
 STEP=0
@@ -1319,13 +1321,17 @@ else
   configure_firewall
 fi
 
+# ── 10. LAN discovery (Avahi, fail-safe) ─────────────────────────────────────
+step "LAN discovery"
+arciin_setup_persistent_mdns "${ARCIIN_WEB_PORT}"
+
 chmod +x "${ROOT_DIR}/start.sh" "${ROOT_DIR}/stop.sh" \
   "${ROOT_DIR}/scripts/start.sh" "${ROOT_DIR}/scripts/stop.sh" \
   "${ROOT_DIR}/scripts/port-status.sh" \
   "${ROOT_DIR}/scripts/run-api-prod.sh" \
   "${ROOT_DIR}/scripts/run-worker-prod.sh" 2>/dev/null || true
 
-# ── 10. Production launch (PM2) ─────────────────────────────────────────────
+# ── 11. Production launch (PM2) ─────────────────────────────────────────────
 step "Production launch"
 
 if [[ "${ARCIIN_SKIP_PM2:-0}" == "1" ]]; then
@@ -1334,7 +1340,7 @@ else
   launch_pm2
 fi
 
-# ── 11. Summary ───────────────────────────────────────────────────────────────
+# ── 12. Summary ───────────────────────────────────────────────────────────────
 step "Ready"
 
 ENV_FILE="${ROOT_DIR}/.env"

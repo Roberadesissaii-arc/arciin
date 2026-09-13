@@ -39,6 +39,7 @@ These are **not** parity failures:
 - **Process manager:** PM2 vs `docker compose`.
 - **Storage path:** host `/srv/arciin-storage/arciin` vs container `/data/arciin` (same data via bind mount).
 - **Development compose** (`docker-compose.yml`) is a source-bind prototype and is **not** the production contract.
+- **LAN mDNS:** both native and Docker installers call the same host helper (`scripts/lib/avahi-discovery.sh`). Avahi stays on the host. Failure is non-fatal.
 
 ## Drift
 
