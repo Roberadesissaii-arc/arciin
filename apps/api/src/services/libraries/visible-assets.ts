@@ -1,6 +1,12 @@
 import type { PrismaClient } from "@prisma/client"
 
 import { resolveHiddenFromAllFilesFolderIds } from "@/services/folders/hidden-from-all-files"
+import {
+  computerLibraryIds,
+  computerOwnerRestriction,
+  mediaTypeForLibraryKind,
+  resolveSmartLibraryScope,
+} from "@/services/libraries/library-view"
 import { buildVisibleAssetWhere } from "@/services/libraries/visible-asset-query"
 
 export * from "@/services/libraries/visible-asset-query"
@@ -11,29 +17,60 @@ export * from "@/services/libraries/visible-asset-query"
  */
 export async function countVisibleAssetsByLibrary(
   prisma: PrismaClient,
+  viewer?: { id: string; role: string },
 ): Promise<Map<string, number>> {
   const hiddenFolderIds = await resolveHiddenFromAllFilesFolderIds(prisma)
-
-  const grouped = await prisma.asset.groupBy({
-    by: ["libraryId"],
-    where: buildVisibleAssetWhere({ scope: { kind: "all" }, hiddenFolderIds }),
-    _count: { _all: true },
+  const libraries = await prisma.library.findMany({
+    select: { id: true, kind: true },
   })
+  const computers = await computerLibraryIds(prisma)
+  const restrictComputerOwnerId = viewer ? computerOwnerRestriction(viewer) : null
+  const map = new Map<string, number>()
 
-  return new Map(grouped.map((row) => [row.libraryId, row._count._all]))
+  await Promise.all(
+    libraries.map(async (library) => {
+      if (library.kind === "COMPUTER") return
+      const mediaType = mediaTypeForLibraryKind(library.kind)
+      const scope =
+        mediaType && computers.length > 0
+          ? {
+              kind: "libraryView" as const,
+              libraryId: library.id,
+              mediaType,
+              computerLibraryIds: computers,
+            }
+          : { kind: "library" as const, libraryId: library.id }
+      const count = await prisma.asset.count({
+        where: buildVisibleAssetWhere({
+          scope,
+          hiddenFolderIds,
+          computerLibraryIds: computers,
+          restrictComputerOwnerId,
+        }),
+      })
+      map.set(library.id, count)
+    }),
+  )
+
+  return map
 }
 
 /** Visible asset total for a single library. */
 export async function countVisibleAssetsForLibrary(
   prisma: PrismaClient,
   libraryId: string,
+  viewer?: { id: string; role: string },
 ): Promise<number> {
   const hiddenFolderIds = await resolveHiddenFromAllFilesFolderIds(prisma)
+  const scope = await resolveSmartLibraryScope(prisma, { libraryId })
+  const computers = await computerLibraryIds(prisma)
 
   return prisma.asset.count({
     where: buildVisibleAssetWhere({
-      scope: { kind: "library", libraryId },
+      scope,
       hiddenFolderIds,
+      computerLibraryIds: computers,
+      restrictComputerOwnerId: viewer ? computerOwnerRestriction(viewer) : null,
     }),
   })
 }

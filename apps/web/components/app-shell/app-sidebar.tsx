@@ -11,6 +11,7 @@ import {
   LogOut,
   MessageSquare,
   Minus,
+  Monitor,
   MonitorDot,
   PackagePlus,
   Settings, ShieldCheck, Terminal, UserCog,
@@ -344,6 +345,58 @@ function AppSidebarInner({ auth }: { auth: AuthSession }) {
                   </Link>
                 )
               })}
+            </div>
+          )}
+        </div>
+
+        <Divider />
+
+        <div>
+          {collapsed ? (
+            <Link
+              href="/computers"
+              data-testid="nav-my-computers"
+              aria-label="My Computers"
+              className="flex w-full items-center justify-center rounded-lg px-0 py-2"
+              style={{ color: isActive(pathname, "/computers") ? TEXT_ON : SECT }}
+            >
+              <Monitor className="h-[15px] w-[15px] shrink-0" />
+            </Link>
+          ) : (
+          <div
+            className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-[11px] font-semibold uppercase tracking-wider select-none"
+            style={{ color: SECT }}
+          >
+            <Monitor className="h-[15px] w-[15px] shrink-0" />
+            <span className="flex-1 text-left">Computers</span>
+            <Minus className="h-3 w-3 shrink-0 opacity-40" />
+          </div>
+          )}
+          {!collapsed && (
+            <div className="mt-0.5 pb-1">
+              <Link
+                href="/computers"
+                data-testid="nav-my-computers"
+                className="flex items-center rounded-lg pl-9 pr-3 py-[7px] text-[13px] font-medium transition-colors select-none"
+                style={{
+                  background: isActive(pathname, "/computers") ? ACTIVE : "transparent",
+                  color: isActive(pathname, "/computers") ? TEXT_ON : TEXT_OFF,
+                }}
+                onMouseEnter={(e) => {
+                  if (!isActive(pathname, "/computers")) {
+                    e.currentTarget.style.background = HOVER
+                    e.currentTarget.style.color = TEXT_ON
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!isActive(pathname, "/computers")) {
+                    e.currentTarget.style.background = "transparent"
+                    e.currentTarget.style.color = TEXT_OFF
+                  }
+                }}
+              >
+                <span className="flex-1 leading-none">My Computers</span>
+              </Link>
             </div>
           )}
         </div>

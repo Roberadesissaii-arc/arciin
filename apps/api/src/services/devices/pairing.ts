@@ -22,6 +22,7 @@ import {
   hashToken,
   verifyPassword,
 } from "@/services/security/auth"
+import { revokeBackupGrantsForDevice } from "@/services/backup/profile"
 
 export class DevicePairingError extends Error {
   constructor(
@@ -405,6 +406,7 @@ export async function revokeDevice(
 
   await prisma.deviceSession.deleteMany({ where: { deviceId: device.id } })
   await prisma.session.deleteMany({ where: { pairedDeviceId: device.id } })
+  await revokeBackupGrantsForDevice(prisma, device.id)
   return updated
 }
 

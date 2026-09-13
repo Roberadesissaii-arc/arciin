@@ -142,6 +142,20 @@ describe("buildVisibleAssetWhere", () => {
     expect(visibilityOnly(listWhere)).toEqual(visibilityOnly(countWhere))
   })
 
+  it("treats kind libraries as smart views over computer-backup files", () => {
+    const where = buildVisibleAssetWhere({
+      scope: {
+        kind: "libraryView",
+        libraryId: "images",
+        mediaType: "IMAGE",
+        computerLibraryIds: ["computers"],
+      },
+    })
+    expect(hasClause(where, (c) => JSON.stringify(c).includes("computers"))).toBe(true)
+    expect(hasClause(where, (c) => JSON.stringify(c).includes("IMAGE"))).toBe(true)
+    expect(where.deletedAt).toBeNull()
+  })
+
   it("returns an empty-library count of zero rather than a broken query", () => {
     const where = buildVisibleAssetWhere({
       scope: { kind: "library", libraryId: "empty-lib" },

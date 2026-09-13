@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto"
 
 import {
   APP_VERSION,
+  ARCIIN_COMPUTER_BACKUP_PROTOCOL_VERSION,
   ARCIIN_DEVICE_PROTOCOL_VERSION,
   ARCIIN_DISCOVERY_SERVICE,
   ARCIIN_MDNS_SERVICE_TYPE,
@@ -76,6 +77,12 @@ export async function buildDiscoveryManifest(
     mdns: {
       serviceType: `${ARCIIN_MDNS_SERVICE_TYPE}.local`,
       advertised: false,
+    },
+    capabilities: {
+      computerBackup: {
+        supported: true,
+        protocolVersion: ARCIIN_COMPUTER_BACKUP_PROTOCOL_VERSION,
+      },
     },
   }
 }

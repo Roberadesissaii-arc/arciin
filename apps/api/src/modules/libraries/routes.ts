@@ -24,8 +24,9 @@ export async function registerLibraryRoutes(fastify: FastifyInstance) {
         ["libraries:read"],
       ),
     },
-    async (_request, reply) => {
+    async (request, reply) => {
       const libraries = await fastify.prisma.library.findMany({
+        where: { kind: { not: "COMPUTER" } },
         include: {
           _count: {
             select: {
@@ -41,7 +42,10 @@ export async function registerLibraryRoutes(fastify: FastifyInstance) {
 
       // Counted with the same rules the library page lists by, so the sidebar
       // number always matches what opening the library shows.
-      const visibleCounts = await countVisibleAssetsByLibrary(fastify.prisma)
+      const visibleCounts = await countVisibleAssetsByLibrary(
+        fastify.prisma,
+        request.auth?.user,
+      )
 
       reply.send({
         data: libraries.map((library) =>
@@ -105,7 +109,7 @@ export async function registerLibraryRoutes(fastify: FastifyInstance) {
       reply.send({
         data: serializeLibrary(
           library,
-          await countVisibleAssetsForLibrary(fastify.prisma, library.id),
+          await countVisibleAssetsForLibrary(fastify.prisma, library.id, request.auth?.user),
         ),
       })
     }
@@ -151,7 +155,7 @@ export async function registerLibraryRoutes(fastify: FastifyInstance) {
       reply.send({
         data: serializeLibrary(
           library,
-          await countVisibleAssetsForLibrary(fastify.prisma, library.id),
+          await countVisibleAssetsForLibrary(fastify.prisma, library.id, request.auth?.user),
         ),
       })
     }

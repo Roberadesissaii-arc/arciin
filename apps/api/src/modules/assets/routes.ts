@@ -23,10 +23,14 @@ import {
 } from "@/services/assets/move-library-assets"
 import { checkEndpointRateLimit } from "@/services/security/endpoint-rate-limit"
 import { resolveHiddenFromAllFilesFolderIds } from "@/services/folders/hidden-from-all-files"
+import { buildVisibleAssetWhere } from "@/services/libraries/visible-assets"
 import {
-  buildVisibleAssetWhere,
-  type AssetScope,
-} from "@/services/libraries/visible-assets"
+  computerLibraryIds,
+  computerOwnerRestriction,
+  resolveSmartLibraryScope,
+} from "@/services/libraries/library-view"
+import { attachAssetSourceContext } from "@/services/backup/source-context"
+import { rejectSyncedAssetHierarchyChange } from "@/services/backup/guards"
 import {
   ASSET_PAGE_ORDER_BY,
   buildAssetPage,
@@ -152,23 +156,6 @@ const assetIdParamsSchema = z.object({ assetId: z.string() })
 
 /** Upper bound on a single asset listing. The UI reports truncation explicitly. */
 const ASSET_LIST_LIMIT = 1000
-
-/** Map the list-query parameters onto the shared visible-asset scopes. */
-function resolveAssetScope(query: {
-  libraryId?: string
-  folderId?: string
-  rootOnly?: boolean
-}): AssetScope {
-  if (query.folderId !== undefined) {
-    return { kind: "folder", folderId: query.folderId }
-  }
-  if (query.libraryId) {
-    return query.rootOnly
-      ? { kind: "libraryRoot", libraryId: query.libraryId }
-      : { kind: "library", libraryId: query.libraryId }
-  }
-  return { kind: "all" }
-}
 
 const deleteAssetPreHandler = requireSessionRolesOrApiKeyScopes(
   ["OWNER", "ADMIN", "MEMBER"],
@@ -322,9 +309,13 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
                   : {}),
             }
           : buildVisibleAssetWhere({
-              scope: resolveAssetScope(query),
+              scope: await resolveSmartLibraryScope(fastify.prisma, query),
               hiddenFolderIds,
               excludeLibraryIds,
+              computerLibraryIds: await computerLibraryIds(fastify.prisma),
+              restrictComputerOwnerId: request.auth
+                ? computerOwnerRestriction(request.auth.user)
+                : null,
               mediaType: query.mediaType,
               category: query.category,
               search: query.search,
@@ -344,7 +335,10 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
         // Batched for the whole page — a request per card would be two hundred
         // requests to draw two hundred badges.
         data: withAiSummaries(
-          assets.map(serializeAsset),
+          await attachAssetSourceContext(
+            fastify.prisma,
+            assets.map(serializeAsset),
+          ),
           await loadAiSummariesForPage(
             fastify,
             assets.map((a) => a.id),
@@ -401,7 +395,7 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
         if (!allowed) return
       }
 
-      const scope = resolveAssetScope(query)
+      const scope = await resolveSmartLibraryScope(fastify.prisma, query)
       const archivedMode = query.archived ?? "exclude"
 
       const hiddenFolderIds =
@@ -431,6 +425,10 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
         scope,
         hiddenFolderIds,
         excludeLibraryIds,
+        computerLibraryIds: await computerLibraryIds(fastify.prisma),
+        restrictComputerOwnerId: request.auth
+          ? computerOwnerRestriction(request.auth.user)
+          : null,
         mediaType: query.mediaType,
         category: query.category,
         search: query.search,
@@ -458,7 +456,10 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
       reply.send({
         data: {
           items: withAiSummaries(
-            page.items.map(serializeAsset),
+            await attachAssetSourceContext(
+              fastify.prisma,
+              page.items.map(serializeAsset),
+            ),
             await loadAiSummariesForPage(
               fastify,
               page.items.map((a) => a.id),
@@ -502,8 +503,11 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
         return
       }
 
+      const [withContext] = await attachAssetSourceContext(fastify.prisma, [
+        serializeAsset(asset),
+      ])
       reply.send({
-        data: serializeAsset(asset),
+        data: withContext,
       })
     }
   )
@@ -542,6 +546,13 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
             message: "Asset not found.",
           },
         })
+        return
+      }
+
+      if (
+        parsed.data.originalFilename !== undefined &&
+        (await rejectSyncedAssetHierarchyChange(fastify.prisma, reply, existing.id))
+      ) {
         return
       }
 
@@ -666,6 +677,10 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
             message: "Asset not found.",
           },
         })
+        return
+      }
+
+      if (await rejectSyncedAssetHierarchyChange(fastify.prisma, reply, current.id)) {
         return
       }
 
@@ -816,6 +831,12 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
           error: { code: "UNAUTHORIZED", message: "Authentication required." },
         })
         return
+      }
+
+      for (const move of parsed.data.moves) {
+        if (await rejectSyncedAssetHierarchyChange(fastify.prisma, reply, move.assetId)) {
+          return
+        }
       }
 
       const result = await moveLibraryAssets({

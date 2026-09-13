@@ -15,6 +15,8 @@ export type SecurityEventMetadata = {
   path?: string
   status?: string
   actorUserId?: string
+  deviceId?: string
+  profileId?: string
 }
 
 type RecordInput = {

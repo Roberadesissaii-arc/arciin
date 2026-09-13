@@ -8,6 +8,7 @@ import {
   FileText,
   Film,
   Inbox,
+  Monitor,
 } from "lucide-react"
 
 import type { LibraryKind, MediaType } from "@/lib/types/models"
@@ -32,6 +33,7 @@ export const libraryKindIcons: Record<LibraryKind | "DEFAULT", LucideIcon> = {
   DOCUMENT: FileText,
   INBOX: Inbox,
   CUSTOM: AppWindow,
+  COMPUTER: Monitor,
   DEFAULT: Inbox,
 }
 
