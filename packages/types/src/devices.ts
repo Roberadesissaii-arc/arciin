@@ -44,6 +44,8 @@ export type PairedDevicePublic = {
   appVersion: string | null
   protocolVersion: number
   backup?: DeviceBackupSummary | null
+  /** Present on Settings → Devices. Derived only from the session's pairedDeviceId. */
+  isCurrentDevice?: boolean
 }
 
 export type DevicePairResult = {
@@ -58,6 +60,8 @@ export type DeviceSessionResult = {
 
 export type DeviceSettingsSnapshot = {
   devices: PairedDevicePublic[]
+  /** Null for a normal browser session that is not bound to a paired Device. */
+  currentDeviceId: string | null
   pairing: {
     expiresAt: string
     createdAt: string
