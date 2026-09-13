@@ -14,6 +14,7 @@ import { ApiProtectionPanel } from "@/components/settings/api-protection-panel"
 import { AppearancePanel } from "@/components/settings/appearance-panel"
 import { AttachedDisksPanel } from "@/components/settings/attached-disks-panel"
 import { ClearDataPanel } from "@/components/settings/clear-data-panel"
+import { DevicesPanel } from "@/components/settings/devices-panel"
 import { DomainPanel } from "@/components/settings/domain-panel"
 import { DiscordPanel } from "@/components/settings/discord-panel"
 import { EmailPanel } from "@/components/settings/email-panel"
@@ -84,6 +85,7 @@ export function SettingsPage() {
     trash: <TrashPanel />,
     "data-reset": <ClearDataPanel />,
     "access-control": <AccessControlPanel />,
+    devices: <DevicesPanel />,
     session: <SessionSecurityPanel />,
     "api-protection": <ApiProtectionPanel />,
     ai: <AiPanel />,
@@ -99,7 +101,7 @@ export function SettingsPage() {
         title="Settings"
         subtitle="Instance · security · intelligence · personalization"
         cornerDecoration={<IntroCornerIcon icon={Settings2} />}
-        description="Storage, domain, license, passwords, trash, sessions, access control, API protection, AI planning, and account-level preferences."
+        description="Storage, domain, license, passwords, trash, devices, sessions, access control, API protection, AI planning, and account-level preferences."
         stats={settingsIntroStats()}
         statsGridClassName="grid-cols-2 xl:grid-cols-4"
       />

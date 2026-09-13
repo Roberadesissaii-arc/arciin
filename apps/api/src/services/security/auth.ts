@@ -113,6 +113,11 @@ export async function createSession(
     expiresInMinutes?: number
     /** Needed to mint the device cookie on a browser's first sign-in. */
     reply?: FastifyReply
+    /**
+     * Trusted Device this user session was created from.
+     * Browser logins omit this. Desktop logins after device bootstrap pass it.
+     */
+    pairedDeviceId?: string | null
   }
 ) {
   const rawToken = generateOpaqueToken()
@@ -126,6 +131,7 @@ export async function createSession(
   const userAgent = request.headers["user-agent"] ?? null
   const ipAddress = normalizeClientIp(clientIpFromRequest(request))
   const deviceId = resolveDeviceId(request, options?.reply)
+  const pairedDeviceId = options?.pairedDeviceId ?? null
 
   const session = await request.server.prisma.session.create({
     data: {
@@ -134,6 +140,7 @@ export async function createSession(
       userAgent,
       ipAddress,
       deviceId,
+      pairedDeviceId,
       expiresAt,
     },
   })
@@ -197,6 +204,23 @@ export function clearSessionCookie(reply: FastifyReply, request?: FastifyRequest
   })
 }
 
+async function sessionIsLive(
+  request: FastifyRequest,
+  session: { expiresAt: Date; pairedDeviceId: string | null; user: { status: string } },
+) {
+  if (session.expiresAt < new Date() || session.user.status !== "ACTIVE") {
+    return false
+  }
+  if (!session.pairedDeviceId) {
+    return true
+  }
+  const trusted = await request.server.prisma.device.findFirst({
+    where: { id: session.pairedDeviceId, status: "ACTIVE", revokedAt: null },
+    select: { id: true },
+  })
+  return Boolean(trusted)
+}
+
 export async function resolveSession(request: FastifyRequest) {
   const token = request.cookies[apiConfig.SESSION_COOKIE_NAME]
 
@@ -213,7 +237,7 @@ export async function resolveSession(request: FastifyRequest) {
     },
   })
 
-  if (!session || session.expiresAt < new Date() || session.user.status !== "ACTIVE") {
+  if (!session || !(await sessionIsLive(request, session))) {
     return null
   }
 
@@ -255,7 +279,7 @@ async function resolveBearerSession(request: FastifyRequest) {
     include: { user: true },
   })
 
-  if (!session || session.expiresAt < new Date() || session.user.status !== "ACTIVE") {
+  if (!session || !(await sessionIsLive(request, session))) {
     return null
   }
 

@@ -938,3 +938,38 @@ export type CreateWebhookEndpointResult = {
 export type UpdateWebhookEndpointInput = Partial<CreateWebhookEndpointInput> & {
   rotateSecret?: boolean
 }
+
+export type PairedDevicePublic = {
+  id: string
+  name: string
+  platform: "WINDOWS" | "MACOS" | "LINUX" | "IOS" | "ANDROID" | "OTHER"
+  deviceType: "DESKTOP" | "LAPTOP" | "PHONE" | "TABLET" | "OTHER"
+  status: "ACTIVE" | "REVOKED"
+  pairedAt: string
+  lastSeenAt: string | null
+  appVersion: string | null
+  protocolVersion: number
+}
+
+export type DeviceSettingsSnapshot = {
+  devices: PairedDevicePublic[]
+  pairing: {
+    expiresAt: string
+    createdAt: string
+  } | null
+  ttlMinutes: number
+  protocolVersion: number
+  instanceName: string
+  localUrl: string | null
+  mdns: {
+    serviceType: string
+    advertised: boolean
+  }
+}
+
+export type DevicePairingCodeResult = {
+  code: string
+  displayCode: string
+  expiresAt: string
+  ttlMinutes: number
+}

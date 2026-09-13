@@ -45,7 +45,10 @@ export async function resetDatabase(): Promise<void> {
     prisma.storageLocation.deleteMany(),
     prisma.job.deleteMany(),
     prisma.activityEvent.deleteMany(),
+    prisma.deviceSession.deleteMany(),
+    prisma.devicePairing.deleteMany(),
     prisma.session.deleteMany(),
+    prisma.device.deleteMany(),
     prisma.user.deleteMany(),
   ])
 }

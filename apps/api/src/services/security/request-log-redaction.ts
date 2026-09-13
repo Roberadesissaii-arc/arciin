@@ -5,6 +5,28 @@ const REDACTED_QUERY_PARAMS = new Set([
   "setup_token",
   "setuptoken",
   "setupToken",
+  "code",
+  "pairing_code",
+  "pairingCode",
+  "credential",
+  "device_token",
+  "deviceToken",
+  "device_credential",
+  "deviceCredential",
+])
+
+const REDACTED_BODY_KEYS = new Set([
+  "code",
+  "pairingcode",
+  "pairing_code",
+  "credential",
+  "devicecredential",
+  "device_credential",
+  "devicetoken",
+  "device_token",
+  "password",
+  "setuptoken",
+  "setup_token",
 ])
 
 const REDACTED_HEADER_NAMES = new Set([
@@ -74,6 +96,22 @@ export function serializeRequestForLog(request: {
     remoteAddress: request.ip,
     remotePort: request.socket?.remotePort,
   }
+}
+
+export function redactSensitiveValue(key: string, value: unknown): unknown {
+  if (REDACTED_BODY_KEYS.has(key.toLowerCase())) return REDACTED
+  return value
+}
+
+export function redactSensitiveObject(
+  input: Record<string, unknown> | null | undefined,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  if (!input) return out
+  for (const [key, value] of Object.entries(input)) {
+    out[key] = redactSensitiveValue(key, value)
+  }
+  return out
 }
 
 export function logContainsSecret(serialized: unknown, secret: string): boolean {
