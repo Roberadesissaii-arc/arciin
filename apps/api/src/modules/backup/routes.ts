@@ -8,7 +8,7 @@ import {
   BACKUP_SYNC_RATE_LIMIT,
   BACKUP_UPLOAD_RATE_LIMIT,
 } from "@arciin/config"
-import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify"
+import type { FastifyInstance, FastifyReply } from "fastify"
 import { z } from "zod"
 
 import { recordSecurityEvent } from "@/services/security/security-events"

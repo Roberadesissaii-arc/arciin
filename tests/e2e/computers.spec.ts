@@ -7,13 +7,7 @@ const IMAGE_FIXTURE = path.resolve(__dirname, "../fixtures/e2e-image-fixture.png
 const PDF_FIXTURE = path.resolve(__dirname, "../fixtures/e2e-doc-fixture.pdf")
 const VIDEO_FIXTURE = path.resolve(__dirname, "../fixtures/e2e-video-transcript-fixture.mp4")
 
-const OWNER_EMAIL = "e2e@arciin.invalid"
-const PASSWORD_FILE = "/tmp/arciin-e2e-pw"
 const ROLE_FILE = "/tmp/arciin-e2e-role-users.json"
-
-function ownerPassword() {
-  return readFileSync(PASSWORD_FILE, "utf8").trim()
-}
 
 function roleCreds(): { member: { email: string; password: string } } {
   return JSON.parse(readFileSync(ROLE_FILE, "utf8")) as {
