@@ -81,14 +81,26 @@ mDNS is convenience only. Clients must always support a manual address:
 - `arciin.local`
 - `https://arciin.example.com`
 
-Host-side helper (optional, fail-safe):
+On Debian/Ubuntu, `install.sh` and `scripts/docker-setup.sh` install Avahi
+when sudo/apt are available and write a persistent host service file:
 
-```bash
-bash scripts/advertise-arciin-mdns.sh
+```txt
+/etc/avahi/services/arciin.service
 ```
 
+That advertisement survives reboot. Re-run the helper after the customer-facing
+HTTP port changes:
+
+```bash
+bash scripts/advertise-arciin-mdns.sh [port]
+```
+
+Docker: advertise `ARCIIN_HTTP_PORT` (default 80). Native: advertise the
+configured web port. Never advertise API port 4000.
+
 Docker bridge networking does not reliably propagate multicast. Do not switch
-production Compose to host networking for this. If Avahi is missing, Arciin
+production Compose to host networking for this. Avahi runs on the host, not
+inside the API container. If Avahi is missing or cannot be installed, Arciin
 still starts and manual connection still works.
 
 ## 4. Pairing request

@@ -15,6 +15,8 @@ source "${ROOT_DIR}/scripts/lib/host-platform.sh"
 source "${ROOT_DIR}/scripts/lib/storage-defaults.sh"
 # shellcheck source=scripts/lib/docker-build-context.sh
 source "${ROOT_DIR}/scripts/lib/docker-build-context.sh"
+# shellcheck source=scripts/lib/avahi-discovery.sh
+source "${ROOT_DIR}/scripts/lib/avahi-discovery.sh"
 
 BOLD="\033[1m"
 GREEN="\033[32m"
@@ -206,6 +208,10 @@ trap _arciin_docker_build_cleanup EXIT
 arciin_docker_stash_repo_media "$ROOT_DIR" || true
 
 ${COMPOSE} --env-file "$ENV_FILE" up --build -d
+
+echo ""
+echo -e "  ${BOLD}LAN discovery${RESET} ${DIM}(Avahi on the host — fail-safe)${RESET}"
+arciin_setup_persistent_mdns "$http_port"
 
 echo ""
 echo -e "  ${GREEN}${BOLD}Arciin is running in Docker${RESET}"
