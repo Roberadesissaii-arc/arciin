@@ -474,6 +474,7 @@ export function libraryAcceptsMediaType(
       return mediaType === "DOCUMENT"
     case "INBOX":
     case "CUSTOM":
+    case "COMPUTER":
       return true
     default:
       // Unknown kind: don't reroute on a guess.

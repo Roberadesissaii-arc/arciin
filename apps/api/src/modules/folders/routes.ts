@@ -12,6 +12,7 @@ import { setFolderHideFromAllFilesCascade } from "@/services/folders/hidden-from
 import { requireSessionRolesOrApiKeyScopes } from "@/services/security/auth"
 import { serializeFolder } from "@/services/serializers"
 import { slugify } from "@/services/slug"
+import { rejectComputerFolderMutation } from "@/services/backup/guards"
 
 const folderCredentialSchema = z
   .object({
@@ -133,6 +134,10 @@ export async function registerFolderRoutes(fastify: FastifyInstance) {
         return
       }
 
+      if (await rejectComputerFolderMutation(fastify.prisma, reply, params.libraryId)) {
+        return
+      }
+
       const parent = parsed.data.parentFolderId
         ? await fastify.prisma.folder.findUnique({
             where: {
@@ -212,6 +217,10 @@ export async function registerFolderRoutes(fastify: FastifyInstance) {
         return
       }
 
+      if (await rejectComputerFolderMutation(fastify.prisma, reply, existing.libraryId)) {
+        return
+      }
+
       const nextName = parsed.data.name?.trim()
       const renameRequested = nextName !== undefined && nextName !== existing.name
 
@@ -285,6 +294,10 @@ export async function registerFolderRoutes(fastify: FastifyInstance) {
           message: "Folder not found.",
         },
       })
+      return
+    }
+
+    if (await rejectComputerFolderMutation(fastify.prisma, reply, existing.libraryId)) {
       return
     }
 

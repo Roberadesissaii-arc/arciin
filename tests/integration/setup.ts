@@ -37,6 +37,10 @@ export async function removeTestStorageRoot(): Promise<void> {
  */
 export async function resetDatabase(): Promise<void> {
   await prisma.$transaction([
+    prisma.syncEntry.deleteMany(),
+    prisma.syncRoot.deleteMany(),
+    prisma.deviceBackupGrant.deleteMany(),
+    prisma.deviceBackupProfile.deleteMany(),
     prisma.uploadSession.deleteMany(),
     prisma.asset.deleteMany(),
     prisma.folder.deleteMany(),
@@ -77,6 +81,7 @@ export async function seedBaseFixtures(root: string) {
     ["Music", "music", "AUDIO"],
     ["Documents", "documents", "DOCUMENT"],
     ["Inbox", "inbox", "INBOX"],
+    ["Computers", "computers", "COMPUTER"],
   ] as const
 
   const libraries: Record<string, { id: string; kind: string }> = {}

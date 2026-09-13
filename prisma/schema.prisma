@@ -60,6 +60,48 @@ enum DeviceType {
   OTHER
 }
 
+enum DeviceBackupStatus {
+  ENABLED
+  DISABLED
+}
+
+enum DeviceBackupHealth {
+  UP_TO_DATE
+  SYNCING
+  PAUSED
+  OFFLINE
+  ERROR
+  DISABLED
+}
+
+enum SyncRootKind {
+  DESKTOP
+  DOCUMENTS
+  PICTURES
+  VIDEOS
+  MUSIC
+  DOWNLOADS
+  CUSTOM
+}
+
+enum SyncRootStatus {
+  PROTECTED
+  SYNCING
+  PAUSED
+  ERROR
+  DISABLED
+}
+
+enum SyncEntryType {
+  FILE
+  FOLDER
+}
+
+enum SyncEntryState {
+  ACTIVE
+  TOMBSTONED
+}
+
 enum StorageType {
   LOCAL
 }
@@ -71,6 +113,8 @@ enum LibraryKind {
   DOCUMENT
   INBOX
   CUSTOM
+  /// Canonical computer-backup trees. Not a user-facing sidebar library.
+  COMPUTER
 }
 
 enum MediaType {
@@ -298,6 +342,9 @@ model User {
   shareLinks         ShareLink[]
   fileRequests       FileRequest[]
   bookRuns           BookRun[]
+  backupProfiles     DeviceBackupProfile[]
+  backupGrants       DeviceBackupGrant[]
+  syncRoots          SyncRoot[]
 }
 
 /// Logical app database for API/automation: metadata + JSON in PostgreSQL (not library file storage).
@@ -401,6 +448,9 @@ model Device {
   sessions        Session[]
   pairings        DevicePairing[]
   deviceSessions  DeviceSession[]
+  backupProfiles  DeviceBackupProfile[]
+  backupGrants    DeviceBackupGrant[]
+  syncRoots       SyncRoot[]
 
   @@index([status])
   @@index([lastSeenAt])
@@ -436,6 +486,111 @@ model DeviceSession {
 
   @@index([deviceId])
   @@index([expiresAt])
+}
+
+/// User-authorized computer backup on a paired Device. Pairing alone is not enough.
+model DeviceBackupProfile {
+  id              String             @id @default(cuid())
+  deviceId        String
+  userId          String
+  folderId        String
+  status          DeviceBackupStatus @default(ENABLED)
+  health          DeviceBackupHealth @default(OFFLINE)
+  lastSyncAt      DateTime?
+  lastHeartbeatAt DateTime?
+  lastError       String?
+  fileCount       Int                @default(0)
+  folderCount     Int                @default(0)
+  byteCount       BigInt             @default(0)
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  device          Device             @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  user            User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  folder          Folder             @relation("ComputerDeviceFolder", fields: [folderId], references: [id], onDelete: Restrict)
+  roots           SyncRoot[]
+  grants          DeviceBackupGrant[]
+
+  @@unique([deviceId, userId])
+  @@index([userId])
+  @@index([status])
+  @@index([folderId])
+}
+
+/// Scoped background-sync credential. Raw secret is returned once; only the hash is stored.
+model DeviceBackupGrant {
+  id             String              @id @default(cuid())
+  profileId      String
+  deviceId       String
+  userId         String
+  credentialHash String              @unique
+  issuedAt       DateTime            @default(now())
+  lastUsedAt     DateTime?
+  revokedAt      DateTime?
+  createdAt      DateTime            @default(now())
+  profile        DeviceBackupProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  device         Device              @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  user           User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([deviceId, revokedAt])
+  @@index([profileId])
+  @@index([userId])
+}
+
+/// A protected source folder on one computer (Desktop, Documents, custom, …).
+model SyncRoot {
+  id                   String          @id @default(cuid())
+  profileId            String
+  deviceId             String
+  userId               String
+  kind                 SyncRootKind
+  displayName          String
+  /// Opaque client identifier. Not a Windows filesystem path.
+  sourcePathIdentifier String
+  folderId             String
+  status               SyncRootStatus  @default(PROTECTED)
+  fileCount            Int             @default(0)
+  folderCount          Int             @default(0)
+  byteCount            BigInt          @default(0)
+  lastSyncAt           DateTime?
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
+  profile              DeviceBackupProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  device               Device              @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  user                 User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  folder               Folder              @relation("SyncRootFolder", fields: [folderId], references: [id], onDelete: Restrict)
+  entries              SyncEntry[]
+
+  @@unique([profileId, sourcePathIdentifier])
+  @@index([deviceId])
+  @@index([userId])
+  @@index([folderId])
+}
+
+/// Durable mapping from a client-tracked source entry to an Arciin folder or asset.
+model SyncEntry {
+  id               String         @id @default(cuid())
+  syncRootId       String
+  clientEntryId    String
+  relativePath     String
+  entryType        SyncEntryType
+  assetId          String?
+  folderId         String?
+  sizeBytes        BigInt?
+  contentHash      String?
+  modifiedAtClient DateTime?
+  syncState        SyncEntryState @default(ACTIVE)
+  deletedAt        DateTime?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  syncRoot         SyncRoot       @relation(fields: [syncRootId], references: [id], onDelete: Cascade)
+  asset            Asset?         @relation(fields: [assetId], references: [id], onDelete: SetNull)
+  folder           Folder?        @relation(fields: [folderId], references: [id], onDelete: SetNull)
+
+  @@unique([syncRootId, clientEntryId])
+  @@index([syncRootId, relativePath])
+  @@index([assetId])
+  @@index([folderId])
+  @@index([syncState])
 }
 
 /// Short-lived codes for pairing the mobile PWA to this instance (hashed at rest).
@@ -522,6 +677,9 @@ model Folder {
   uploadSessions   UploadSession[]
   shareLinks       ShareLink[]
   fileRequests     FileRequest[]
+  computerProfiles DeviceBackupProfile[] @relation("ComputerDeviceFolder")
+  syncRoots        SyncRoot[]            @relation("SyncRootFolder")
+  syncEntries      SyncEntry[]
 
   @@unique([libraryId, pathCache])
   @@index([libraryId])
@@ -614,6 +772,7 @@ model Asset {
   // it collected. The owner keeps the uploads; only the provenance link goes.
   fileRequest             FileRequest?           @relation(fields: [fileRequestId], references: [id], onDelete: SetNull)
   fileRequestSubmission   FileRequestSubmission? @relation(fields: [fileRequestSubmissionId], references: [id], onDelete: SetNull)
+  syncEntries             SyncEntry[]
 
   @@index([fileRequestId])
   @@index([fileRequestSubmissionId])

@@ -21,6 +21,17 @@ export type AssetScope =
   | { kind: "folder"; folderId: string }
   /** Across every library (All Files). */
   | { kind: "all" }
+  /**
+   * Kind library plus computer-backup files of the same media type.
+   * Used so Images/Videos/Music/Documents act as smart views.
+   */
+  | {
+      kind: "libraryView"
+      libraryId: string
+      mediaType: "VIDEO" | "IMAGE" | "AUDIO" | "DOCUMENT"
+      computerLibraryIds: string[]
+      rootOnly?: boolean
+    }
 
 export type VisibleAssetQueryInput = {
   scope: AssetScope
@@ -49,6 +60,12 @@ export type VisibleAssetQueryInput = {
   archived?: "exclude" | "only" | "include"
   /** Keyset condition from `buildCursorWhere`, when paginating. */
   cursor?: Prisma.AssetWhereInput | null
+  /**
+   * When set, computer-backup assets belonging to other users are hidden.
+   * OWNER/ADMIN pass null to see every computer file.
+   */
+  restrictComputerOwnerId?: string | null
+  computerLibraryIds?: string[]
 }
 
 /**
@@ -80,6 +97,19 @@ export function buildVisibleAssetWhere(
       and.push({ folderId: input.scope.folderId })
       break
     case "all":
+      break
+    case "libraryView":
+      and.push({
+        OR: [
+          input.scope.rootOnly
+            ? { libraryId: input.scope.libraryId, folderId: null }
+            : { libraryId: input.scope.libraryId },
+          {
+            libraryId: { in: input.scope.computerLibraryIds },
+            mediaType: input.scope.mediaType,
+          },
+        ],
+      })
       break
   }
 
@@ -167,6 +197,15 @@ export function buildVisibleAssetWhere(
     and.push({ archivedAt: { not: null } })
   } else if (archivedMode === "exclude") {
     and.push({ archivedAt: null })
+  }
+
+  if (input.restrictComputerOwnerId && input.computerLibraryIds?.length) {
+    and.push({
+      OR: [
+        { libraryId: { notIn: input.computerLibraryIds } },
+        { ownerId: input.restrictComputerOwnerId },
+      ],
+    })
   }
 
   if (input.cursor) {

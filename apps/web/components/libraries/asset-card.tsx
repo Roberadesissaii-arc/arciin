@@ -347,7 +347,13 @@ function AiStatusPill({ asset }: { asset: AssetSummary }) {
   )
 }
 
-export function AssetCard({ asset }: { asset: AssetSummary }) {
+export function AssetCard({
+  asset,
+  readOnly = false,
+}: {
+  asset: AssetSummary
+  readOnly?: boolean
+}) {
   const selection = useAssetSelection()
   const viewer = useAssetViewerOptional()
   const panelIntent = useAssetPanelIntent()
@@ -361,6 +367,7 @@ export function AssetCard({ asset }: { asset: AssetSummary }) {
   const metaLine = `${formatBytes(asset.sizeBytes)} · ${formatCardRelativeTime(asset.createdAt)}`
   const [hover, setHover] = useState(false)
   const isArchived = Boolean(asset.archivedAt)
+  const hierarchyLocked = readOnly || Boolean(asset.sourceContext)
 
   /** Single click = select (bulk bar). Double-click = open preview. */
   const onCardClick = (event: React.MouseEvent) => {
@@ -483,6 +490,14 @@ export function AssetCard({ asset }: { asset: AssetSummary }) {
         >
           {asset.originalFilename}
         </p>
+        {asset.sourceContext ? (
+          <p
+            className="mt-0.5 truncate text-[11px] text-zinc-500"
+            title={asset.sourceContext.breadcrumbs.join(" › ")}
+          >
+            {asset.sourceContext.breadcrumbs.slice(0, -1).join(" › ")}
+          </p>
+        ) : null}
 
         <div className="mt-1 flex items-center justify-between gap-2">
           <p className="truncate text-[11px] tabular-nums text-zinc-400" suppressHydrationWarning>
@@ -552,6 +567,7 @@ export function AssetCard({ asset }: { asset: AssetSummary }) {
                 ) : null}
               </span>
             </ContextMenuItem>
+            {hierarchyLocked ? null : (
             <ContextMenuItem
               className={libraryGlassContextMenuItem}
               onSelect={() => openAt("edit")}
@@ -560,8 +576,9 @@ export function AssetCard({ asset }: { asset: AssetSummary }) {
               <PencilLine />
               Rename
             </ContextMenuItem>
+            )}
           </>
-        ) : (
+        ) : hierarchyLocked ? null : (
           <ContextMenuItem
             className={libraryGlassContextMenuItem}
             onSelect={() => openAt("edit")}
@@ -572,6 +589,7 @@ export function AssetCard({ asset }: { asset: AssetSummary }) {
           </ContextMenuItem>
         )}
         <ContextMenuSeparator className="-mx-0.5 my-1" />
+        {hierarchyLocked ? null : (
         <ContextMenuItem
           className={libraryGlassContextMenuItem}
           onSelect={() => openAt("move")}
@@ -580,6 +598,7 @@ export function AssetCard({ asset }: { asset: AssetSummary }) {
           <ArrowRightLeft />
           Move
         </ContextMenuItem>
+        )}
         <ContextMenuItem
           className={libraryGlassContextMenuItem}
           onSelect={() => openAt("share")}
@@ -588,6 +607,8 @@ export function AssetCard({ asset }: { asset: AssetSummary }) {
           <Share2 />
           Share
         </ContextMenuItem>
+        {readOnly ? null : (
+        <>
         <ContextMenuSeparator className="-mx-0.5 my-1" />
         {isArchived ? (
           <ContextMenuItem
@@ -631,6 +652,8 @@ export function AssetCard({ asset }: { asset: AssetSummary }) {
             <Archive />
             Archive
           </ContextMenuItem>
+        )}
+        </>
         )}
       </ContextMenuContent>
     </ContextMenu>

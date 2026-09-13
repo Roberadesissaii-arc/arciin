@@ -11,6 +11,7 @@ export type LibraryKind =
   | "DOCUMENT"
   | "INBOX"
   | "CUSTOM"
+  | "COMPUTER"
 
 export type MediaType =
   | "VIDEO"
@@ -290,6 +291,13 @@ export type AssetSummary = {
   archivedAt?: string | null
   /** Absent on responses that predate the summary, or on single-asset reads. */
   ai?: AssetAiSummary
+  sourceContext?: {
+    deviceId: string
+    deviceName: string
+    rootDisplayName: string
+    relativePath: string
+    breadcrumbs: string[]
+  } | null
 }
 
 export type ShareResourceType = "ASSET" | "ASSETS" | "FOLDER"
@@ -949,6 +957,15 @@ export type PairedDevicePublic = {
   lastSeenAt: string | null
   appVersion: string | null
   protocolVersion: number
+  backup?: {
+    profileId: string
+    enabled: boolean
+    health: "UP_TO_DATE" | "SYNCING" | "PAUSED" | "OFFLINE" | "ERROR" | "DISABLED"
+    rootCount: number
+    fileCount: number
+    byteCount: number
+    lastSyncAt: string | null
+  } | null
 }
 
 export type DeviceSettingsSnapshot = {

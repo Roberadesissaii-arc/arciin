@@ -246,3 +246,6 @@ Errors never disclose partial PIN matches.
 - Do not set `Access-Control-Allow-Origin: *` on the API
 - Native HTTP clients do not need browser CORS
 - Device auth never grants file access by itself
+
+Computer folder backup is a separate protocol. See `docs/DESKTOP-SYNC-PROTOCOL.md`.
+Pairing version stays `1` when backup is added.

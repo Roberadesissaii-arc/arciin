@@ -66,6 +66,10 @@ export const queryKeys = {
   apiProtectionStatus: ["settings", "api-protection", "status"] as const,
   adminUsers: ["settings", "users"] as const,
   connectedDevices: ["settings", "devices"] as const,
+  computers: ["computers"] as const,
+  computer: (deviceId: string) => ["computers", deviceId] as const,
+  computerBrowse: (deviceId: string, folderId?: string | null) =>
+    ["computers", deviceId, "browse", folderId ?? "root"] as const,
   accessControlStatus: ["settings", "access-control", "status"] as const,
   logsOverview: ["logs", "overview"] as const,
   logFiles: ["logs", "files"] as const,

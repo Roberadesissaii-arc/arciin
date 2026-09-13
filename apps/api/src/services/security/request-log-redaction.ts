@@ -13,6 +13,8 @@ const REDACTED_QUERY_PARAMS = new Set([
   "deviceToken",
   "device_credential",
   "deviceCredential",
+  "sync_credential",
+  "syncCredential",
 ])
 
 const REDACTED_BODY_KEYS = new Set([

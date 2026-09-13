@@ -1,6 +1,6 @@
 import { PrismaClient, IntegrationType } from "@prisma/client"
 
-import { DEFAULT_LIBRARY_DEFINITIONS } from "@arciin/shared"
+import { COMPUTERS_LIBRARY_DEFINITION, DEFAULT_LIBRARY_DEFINITIONS } from "@arciin/shared"
 
 const prisma = new PrismaClient()
 
@@ -13,7 +13,7 @@ async function main() {
   })
 
   if (instance && defaultStorage) {
-    for (const library of DEFAULT_LIBRARY_DEFINITIONS) {
+    for (const library of [...DEFAULT_LIBRARY_DEFINITIONS, COMPUTERS_LIBRARY_DEFINITION]) {
       await prisma.library.upsert({
         where: {
           slug: library.slug,

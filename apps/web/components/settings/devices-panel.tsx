@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import Link from "next/link"
 import { Laptop, Monitor, Smartphone, Tablet } from "lucide-react"
 import { toast } from "@/lib/notifications/arciin-toast"
 
@@ -31,6 +32,7 @@ import {
   getConnectedDevices,
   revokeConnectedDevice,
 } from "@/lib/api/settings"
+import { disableComputerBackup } from "@/lib/api/computers"
 import { queryKeys } from "@/lib/api/query-keys"
 import { useAuth } from "@/hooks/use-auth"
 import type { DevicePairingCodeResult, PairedDevicePublic } from "@/lib/types/models"
@@ -75,6 +77,13 @@ function PlatformIcon({ platform }: { platform: PairedDevicePublic["platform"] }
   return <Monitor className={className} />
 }
 
+function formatBytesLabel(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`
+}
+
 function formatRelative(iso: string | null) {
   if (!iso) return "Never"
   const then = new Date(iso).getTime()
@@ -115,6 +124,7 @@ export function DevicesPanel() {
   const [activeCode, setActiveCode] = useState<DevicePairingCodeResult | null>(null)
   const [now, setNow] = useState(() => Date.now())
   const [revokeTarget, setRevokeTarget] = useState<PairedDevicePublic | null>(null)
+  const [disableTarget, setDisableTarget] = useState<PairedDevicePublic | null>(null)
 
   const devicesQuery = useQuery({
     queryKey: queryKeys.connectedDevices,
@@ -156,6 +166,24 @@ export function DevicesPanel() {
     },
     onError: (err) => {
       toast.error("Could not cancel pairing", {
+        description: err instanceof Error ? err.message : "Try again.",
+      })
+    },
+  })
+
+  const disableBackupMutation = useMutation({
+    mutationFn: async (device: PairedDevicePublic) => {
+      if (!device.backup?.profileId) throw new Error("Backup profile not found.")
+      return disableComputerBackup(device.backup.profileId)
+    },
+    onSuccess: (_data, device) => {
+      setDisableTarget(null)
+      void queryClient.invalidateQueries({ queryKey: queryKeys.connectedDevices })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.computers })
+      toast.success(`Computer backup disabled for ${device.name}`)
+    },
+    onError: (err) => {
+      toast.error("Could not disable computer backup", {
         description: err instanceof Error ? err.message : "Try again.",
       })
     },
@@ -266,14 +294,48 @@ export function DevicesPanel() {
                   <p className="text-[12px] text-zinc-500">
                     Last seen {formatRelative(device.lastSeenAt)} · Paired {formatPairedDate(device.pairedAt)}
                   </p>
+                  {device.backup ? (
+                    <div className="pt-1 text-[12px] text-zinc-500" data-testid="device-backup-summary">
+                      <p className="font-medium text-foreground">Computer Backup</p>
+                      <p>
+                        {device.backup.enabled
+                          ? `${device.backup.rootCount} folders protected · ${formatBytesLabel(device.backup.byteCount)}`
+                          : "Not enabled"}
+                      </p>
+                      {device.backup.enabled ? (
+                        <p>
+                          {device.backup.health.replaceAll("_", " ").toLowerCase()} · Last sync{" "}
+                          {formatRelative(device.backup.lastSyncAt)}
+                        </p>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <p className="pt-1 text-[12px] text-zinc-500">Computer Backup is not enabled on this device.</p>
+                  )}
                 </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setRevokeTarget(device)}
-                >
-                  Revoke
-                </Button>
+                <div className="flex flex-wrap gap-2">
+                  {device.backup?.enabled ? (
+                    <>
+                      <Button asChild variant="outline">
+                        <Link href={`/computers/${device.id}`}>Manage Backup</Link>
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => setDisableTarget(device)}
+                      >
+                        Disable Backup
+                      </Button>
+                    </>
+                  ) : null}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setRevokeTarget(device)}
+                  >
+                    Revoke
+                  </Button>
+                </div>
               </div>
             ))
           )}
@@ -348,13 +410,34 @@ export function DevicesPanel() {
         )}
       </SettingsCard>
 
+      <AlertDialog open={Boolean(disableTarget)} onOpenChange={(open) => !open && setDisableTarget(null)}>
+        <AlertDialogContent className="border-border bg-card text-foreground">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Disable backup on {disableTarget?.name}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This revokes the background-sync credential and stops computer backup.
+              The computer stays paired, and files already stored in Arciin are not
+              deleted. Local files on the computer are not deleted.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => disableTarget && disableBackupMutation.mutate(disableTarget)}
+            >
+              Disable Backup
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       <AlertDialog open={Boolean(revokeTarget)} onOpenChange={(open) => !open && setRevokeTarget(null)}>
         <AlertDialogContent className="border-border bg-card text-foreground">
           <AlertDialogHeader>
             <AlertDialogTitle>Revoke {revokeTarget?.name}?</AlertDialogTitle>
             <AlertDialogDescription>
-              This device will no longer be trusted and any sessions associated with it will be
-              signed out.
+              This device will no longer be trusted. Associated sessions and computer-backup
+              credentials will be revoked. Local files on the computer are not deleted.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
