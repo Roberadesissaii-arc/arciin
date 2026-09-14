@@ -29,6 +29,8 @@ async function freshContext(browser: Browser, baseURL: string | undefined) {
   return { context, page }
 }
 
+test.describe.configure({ mode: "serial" })
+
 test.describe("My Computers", () => {
   test("sidebar has one My Computers entry and an empty state", async ({ page }) => {
     const existing = await page.request.get("/api/settings/devices")
@@ -53,8 +55,69 @@ test.describe("My Computers", () => {
     await expect(
       empty.getByText("Protect Desktop, Documents, Pictures and other important folders with Arciin Desktop."),
     ).toBeVisible()
-    await expect(page.getByRole("link", { name: "Set up computer backup" })).toBeVisible()
+    await expect(page.getByRole("button", { name: "Set up computer backup" })).toBeVisible()
     await expect(empty.getByText("Open Arciin Desktop to protect folders.")).toBeVisible()
+  })
+
+  test("Set up computer backup falls back to Devices settings in a browser", async ({ page }) => {
+    const existing = await page.request.get("/api/settings/devices")
+    if (existing.ok()) {
+      const snapshot = (await existing.json()) as { data: { devices: { id: string }[] } }
+      for (const device of snapshot.data.devices) {
+        await page.request.post(`/api/settings/devices/${device.id}/revoke`)
+      }
+    }
+
+    await page.goto("/computers")
+    await expect(page.getByTestId("setup-computer-backup")).toBeVisible()
+    await page.getByTestId("setup-computer-backup").click()
+    await expect(page).toHaveURL(/\/settings\?tab=devices/)
+    await expect(page.getByRole("button", { name: "Generate Pairing Code" })).toBeVisible()
+  })
+
+  test("Set up computer backup posts OPEN_COMPUTER_BACKUP_SETUP in WebView2", async ({
+    page,
+  }) => {
+    const existing = await page.request.get("/api/settings/devices")
+    if (existing.ok()) {
+      const snapshot = (await existing.json()) as { data: { devices: { id: string }[] } }
+      for (const device of snapshot.data.devices) {
+        await page.request.post(`/api/settings/devices/${device.id}/revoke`)
+      }
+    }
+
+    await page.addInitScript(() => {
+      const posted: unknown[] = []
+      Object.defineProperty(window, "__arciinNativeMessages", {
+        configurable: true,
+        get() {
+          return posted
+        },
+      })
+      Object.defineProperty(window, "chrome", {
+        configurable: true,
+        value: {
+          webview: {
+            postMessage(message: unknown) {
+              posted.push(message)
+            },
+          },
+        },
+      })
+    })
+    await page.goto("/computers")
+    await expect(page.getByTestId("setup-computer-backup")).toBeVisible()
+    await page.getByTestId("setup-computer-backup").click()
+    await expect(page).toHaveURL(/\/computers/)
+    const messages = await page.evaluate(() => (window as Window & { __arciinNativeMessages?: unknown[] }).__arciinNativeMessages)
+    expect(messages).toEqual([
+      {
+        type: "ARCIIN_NATIVE_ACTION",
+        version: 1,
+        action: "OPEN_COMPUTER_BACKUP_SETUP",
+      },
+    ])
+    expect(JSON.stringify(messages)).not.toMatch(/credential|cookie|token|path|password/i)
   })
 
   test("MEMBER can open My Computers and cannot manage devices", async ({ browser, baseURL }) => {
@@ -67,6 +130,14 @@ test.describe("My Computers", () => {
       await expect(page.getByRole("heading", { name: "My Computers" })).toBeVisible()
       const listed = await page.request.get("/api/settings/devices")
       expect(listed.status()).toBe(403)
+      const me = await page.request.get("/api/auth/me")
+      expect(me.ok()).toBeTruthy()
+      const body = (await me.json()) as { data: { session: { pairedDeviceId: string | null } | null } }
+      expect(body.data.session?.pairedDeviceId).toBeNull()
+      const spoof = await page.request.get("/api/auth/me?pairedDeviceId=spoofed-device")
+      expect(spoof.ok()).toBeTruthy()
+      const spoofed = (await spoof.json()) as { data: { session: { pairedDeviceId: string | null } | null } }
+      expect(spoofed.data.session?.pairedDeviceId).toBeNull()
     } finally {
       await context.close()
     }
@@ -195,6 +266,7 @@ test.describe("My Computers", () => {
 
       await page.goto("/computers")
       await expect(page.getByTestId("computer-card")).toHaveCount(1)
+      await expect(page.getByTestId("setup-computer-backup")).toHaveCount(0)
       await expect(page.getByRole("heading", { name: "Robera Desktop" })).toBeVisible()
       await expect(page.getByText("Desktop", { exact: true }).first()).toBeVisible()
       await page.getByRole("link", { name: "Open Files" }).click()

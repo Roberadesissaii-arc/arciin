@@ -548,6 +548,140 @@ describe("user login and revocation", () => {
   })
 })
 
+describe("GET /api/auth/me session device binding", () => {
+  type MeBody = {
+    data: {
+      user: { id: string; role: string }
+      session: { pairedDeviceId: string | null } | null
+    }
+  }
+
+  it("returns null pairedDeviceId for a normal browser session", async () => {
+    const token = await sessionToken(ownerId)
+    const app = await buildApp()
+    try {
+      const res = await app.inject({
+        method: "GET",
+        url: "/api/auth/me",
+        cookies: { arciin_session: token },
+      })
+      expect(res.statusCode).toBe(200)
+      expect((res.json() as MeBody).data.session?.pairedDeviceId).toBeNull()
+    } finally {
+      await app.close()
+    }
+  })
+
+  it("returns the bound Device.id for a device-bound session", async () => {
+    const created = await createDevicePairing(prisma, ownerId)
+    const claimed = await claimDevicePairing(prisma, {
+      code: created.code,
+      name: "Bound Me",
+      platform: "windows",
+      deviceType: "desktop",
+      protocolVersion: 1,
+    })
+    const token = await sessionToken(ownerId, claimed.device.id)
+    const app = await buildApp()
+    try {
+      const res = await app.inject({
+        method: "GET",
+        url: "/api/auth/me",
+        cookies: { arciin_session: token },
+      })
+      expect(res.statusCode).toBe(200)
+      expect((res.json() as MeBody).data.session?.pairedDeviceId).toBe(claimed.device.id)
+    } finally {
+      await app.close()
+    }
+  })
+
+  it("lets a MEMBER read their own session binding", async () => {
+    const created = await createDevicePairing(prisma, ownerId)
+    const claimed = await claimDevicePairing(prisma, {
+      code: created.code,
+      name: "Member Desktop",
+      platform: "windows",
+      deviceType: "desktop",
+      protocolVersion: 1,
+    })
+    const unbound = await sessionToken(memberId)
+    const bound = await sessionToken(memberId, claimed.device.id)
+    const app = await buildApp()
+    try {
+      const forbidden = await app.inject({
+        method: "GET",
+        url: "/api/settings/devices",
+        cookies: { arciin_session: bound },
+      })
+      expect(forbidden.statusCode).toBe(403)
+
+      const browserMe = await app.inject({
+        method: "GET",
+        url: "/api/auth/me",
+        cookies: { arciin_session: unbound },
+      })
+      expect(browserMe.statusCode).toBe(200)
+      const browserBody = browserMe.json() as MeBody
+      expect(browserBody.data.user.role).toBe("MEMBER")
+      expect(browserBody.data.session?.pairedDeviceId).toBeNull()
+
+      const boundMe = await app.inject({
+        method: "GET",
+        url: "/api/auth/me",
+        cookies: { arciin_session: bound },
+      })
+      expect(boundMe.statusCode).toBe(200)
+      expect((boundMe.json() as MeBody).data.session?.pairedDeviceId).toBe(claimed.device.id)
+    } finally {
+      await app.close()
+    }
+  })
+
+  it("ignores client-supplied pairedDeviceId, User-Agent, and hostname", async () => {
+    const token = await sessionToken(ownerId)
+    const spoofId = "dev_client_supplied_should_be_ignored"
+    const app = await buildApp()
+    try {
+      const res = await app.inject({
+        method: "GET",
+        url: `/api/auth/me?pairedDeviceId=${spoofId}`,
+        headers: {
+          "user-agent": "ArciinDesktop/1.0 (DESKTOP-SPOOF)",
+          "x-paired-device-id": spoofId,
+          "x-device-id": spoofId,
+          "x-arciin-device-id": spoofId,
+          "x-forwarded-host": "desktop-spoof.local",
+        },
+        cookies: { arciin_session: token },
+      })
+      expect(res.statusCode).toBe(200)
+      const body = res.json() as MeBody
+      expect(body.data.session?.pairedDeviceId).toBeNull()
+      expect(JSON.stringify(body)).not.toContain(spoofId)
+
+      const owner = await prisma.user.findUniqueOrThrow({ where: { id: ownerId } })
+      await prisma.session.deleteMany()
+      const login = await app.inject({
+        method: "POST",
+        url: "/api/auth/login",
+        payload: {
+          email: owner.email,
+          password: "TestPass123!",
+          pairedDeviceId: spoofId,
+          currentDeviceId: spoofId,
+        },
+      })
+      expect(login.statusCode).toBe(200)
+      expect(login.json().data.session.pairedDeviceId).toBeNull()
+      const stored = await prisma.session.findFirstOrThrow()
+      expect(stored.pairedDeviceId).toBeNull()
+    } finally {
+      await app.close()
+    }
+  })
+})
+
 describe("current paired device on Settings → Devices", () => {
   async function pairNamed(name: string) {
     const created = await createDevicePairing(prisma, ownerId)

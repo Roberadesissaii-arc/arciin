@@ -74,6 +74,12 @@ export function serializeSession(session: Session) {
     userId: session.userId,
     expiresAt: session.expiresAt.toISOString(),
     createdAt: session.createdAt.toISOString(),
+    /**
+     * Bound Device for this user session, taken only from Session.pairedDeviceId.
+     * Null in a normal browser. Desktop should re-login (user session only) when
+     * this is null or does not match its own Device.id — never revoke or re-pair.
+     */
+    pairedDeviceId: session.pairedDeviceId ?? null,
   }
 }
 

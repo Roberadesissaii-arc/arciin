@@ -55,6 +55,8 @@ export type SessionSummary = {
   userId: string
   expiresAt: string
   createdAt: string
+  /** Null unless this cookie session was created with a trusted Device. */
+  pairedDeviceId: string | null
 }
 
 export type AuthSession = {

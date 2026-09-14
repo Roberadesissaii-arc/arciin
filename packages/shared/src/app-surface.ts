@@ -78,6 +78,7 @@ export type SurfaceDecision = {
     | "asset-follows-page"
     | "query-override"
     | "view-cookie"
+    | "view-heals-surface"
     | "user-agent"
 }
 
@@ -168,6 +169,20 @@ export function decideAppSurface(input: SurfaceInput): SurfaceDecision {
   // the rule that keeps a desktop-served share page working on a phone.
   if (!input.isDocumentRequest && isAssetPath(input.pathname)) {
     const recorded = parseSurface(input.surfaceCookie)
+    const explicitView = parseSurface(input.queryOverride) ?? parseSurface(input.viewCookie)
+    // Desktop WebView can arrive with a leftover mobile surface cookie. An
+    // explicit desktop view heals that so /_next assets are not proxied away.
+    // view=mobile must not override a recorded desktop surface — that is the
+    // share-on-phone blank-page bug.
+    if (explicitView === "desktop" && recorded !== "desktop") {
+      return {
+        surface: "desktop",
+        proxyToMobile: false,
+        setViewCookie: null,
+        setSurfaceCookie: null,
+        reason: "view-heals-surface",
+      }
+    }
     if (recorded) {
       return {
         surface: recorded,

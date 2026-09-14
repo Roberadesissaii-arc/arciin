@@ -1,8 +1,10 @@
 "use client"
 
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { useQuery } from "@tanstack/react-query"
 import { Monitor } from "lucide-react"
+import { requestNativeComputerBackupSetup } from "@arciin/shared"
 
 import { ComputersPageIntro } from "@/components/computers/computers-page-intro"
 import { Button } from "@/components/ui/button"
@@ -55,7 +57,17 @@ function platformLabel(platform: ComputerCard["platform"]) {
   }
 }
 
+function handleSetupComputerBackup(onBrowserFallback: () => void) {
+  try {
+    if (requestNativeComputerBackupSetup()) return
+  } catch {
+    // A missing or broken WebView bridge must never throw in a browser.
+  }
+  onBrowserFallback()
+}
+
 export function MyComputersPage() {
+  const router = useRouter()
   const query = useQuery({
     queryKey: queryKeys.computers,
     queryFn: ({ signal }) => listComputers(signal),
@@ -103,8 +115,12 @@ export function MyComputersPage() {
             </EmptyDescription>
           </EmptyHeader>
           <EmptyContent className="max-w-xl">
-            <Button asChild>
-              <Link href="/settings?tab=devices">Set up computer backup</Link>
+            <Button
+              type="button"
+              data-testid="setup-computer-backup"
+              onClick={() => handleSetupComputerBackup(() => router.push("/settings?tab=devices"))}
+            >
+              Set up computer backup
             </Button>
             <div className="mt-4 space-y-1 text-center">
               <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">

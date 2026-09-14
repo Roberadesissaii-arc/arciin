@@ -286,6 +286,70 @@ describe("assets follow their page, not the device (the blank-share-page bug)", 
     ).toBe("desktop")
   })
 
+  it("re-establishes a desktop surface cookie when desktop view is explicit", () => {
+    const decision = decideAppSurface({
+      ...base,
+      pathname: "/dashboard",
+      userAgent: MAC,
+      viewCookie: "desktop",
+      surfaceCookie: "mobile",
+    })
+    expect(decision).toMatchObject({
+      surface: "desktop",
+      proxyToMobile: false,
+      setSurfaceCookie: "desktop",
+      reason: "view-cookie",
+    })
+  })
+
+  it("does not let a stale mobile surface cookie poison desktop assets", () => {
+    const decision = decideAppSurface({
+      ...asset,
+      pathname: "/_next/static/chunks/main.js",
+      userAgent: MAC,
+      viewCookie: "desktop",
+      surfaceCookie: "mobile",
+    })
+    expect(decision).toMatchObject({
+      surface: "desktop",
+      proxyToMobile: false,
+      reason: "view-heals-surface",
+    })
+  })
+
+  it("heals desktop assets when ?view=desktop is explicit", () => {
+    expect(
+      decideAppSurface({
+        ...asset,
+        pathname: "/_next/static/chunks/main.js",
+        userAgent: MAC,
+        queryOverride: "desktop",
+        surfaceCookie: "mobile",
+      }),
+    ).toMatchObject({
+      surface: "desktop",
+      proxyToMobile: false,
+      reason: "view-heals-surface",
+    })
+  })
+
+  it("still follows a recorded desktop surface when view is mobile", () => {
+    // Share-on-phone: HTML came from desktop; leftover view=mobile must not
+    // yank /_next bundles over to the mobile app.
+    expect(
+      decideAppSurface({
+        ...asset,
+        pathname: "/_next/static/chunks/main.js",
+        userAgent: IPHONE,
+        viewCookie: "mobile",
+        surfaceCookie: "desktop",
+      }),
+    ).toMatchObject({
+      surface: "desktop",
+      reason: "asset-follows-page",
+    })
+  })
+
   it("falls back to the user agent for assets when no surface was recorded", () => {
     // First paint, or a client that blocks cookies.
     expect(
