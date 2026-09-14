@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from "react"
 import { useQuery } from "@tanstack/react-query"
+import { useRouter, useSearchParams } from "next/navigation"
 import { Search } from "lucide-react"
 
 import { PageHeader } from "@/components/app-shell/page-header"
@@ -10,6 +11,7 @@ import { AssetGrid } from "@/components/libraries/asset-grid"
 import { VideoEditProvider } from "@/components/libraries/video-edit-context"
 import { AssetTable } from "@/components/libraries/asset-table"
 import { CreateFolderDialog } from "@/components/libraries/create-folder-dialog"
+import { ComputerSourceBrowser } from "@/components/libraries/computer-source-browser"
 import {
   FolderGrid,
   FolderViewMoreButton,
@@ -32,7 +34,9 @@ import { useUploadStore } from "@/lib/stores/upload-store"
 import { listComputers } from "@/lib/api/computers"
 import { queryKeys } from "@/lib/api/query-keys"
 import {
+  SOURCE_ALL,
   collectSourceFilterOptions,
+  filesSourceHref,
   GRID_PAGE_SIZE,
   LIST_PAGE_SIZE,
   parseComputerSourceDeviceId,
@@ -59,11 +63,13 @@ export function LibraryBrowser({
     setView,
     kindFilter,
     setKindFilter,
-    sourceFilter,
-    setSourceFilter,
+    sourceFilter: localSourceFilter,
+    setSourceFilter: setLocalSourceFilter,
     page,
     setPage,
   } = useLibraryBrowserFilters()
+  const router = useRouter()
+  const searchParams = useSearchParams()
   /**
    * Root only by default.
    *
@@ -79,6 +85,17 @@ export function LibraryBrowser({
     [librariesQuery.data, librarySlug]
   )
   const isAllFiles = !librarySlug
+  const sourceFilter = isAllFiles
+    ? (searchParams.get("source") ?? SOURCE_ALL)
+    : localSourceFilter
+  const computerFolderId = isAllFiles ? searchParams.get("folder") : null
+
+  const setSourceFilter = (value: typeof sourceFilter) => {
+    setLocalSourceFilter(value)
+    setPage(1)
+    if (!isAllFiles) return
+    router.replace(filesSourceHref(value), { scroll: false })
+  }
 
   useEffect(() => {
     if (library?.id) {
@@ -154,7 +171,10 @@ export function LibraryBrowser({
     [rawAssets, computersQuery.data, computersQuery.isError, computersQuery.isSuccess],
   )
   const computerDeviceId = parseComputerSourceDeviceId(sourceFilter)
-  const browseComputerHref = computerDeviceId ? `/computers/${computerDeviceId}` : null
+  const browsingComputer = Boolean(isAllFiles && computerDeviceId)
+  useEffect(() => {
+    setPage(1)
+  }, [computerFolderId, setPage])
   const assets = useMemo(
     () =>
       pipelineLibraryAssets(rawAssets, {
@@ -221,14 +241,14 @@ export function LibraryBrowser({
       ) : null}
 
       <section className={cn("space-y-3 pb-4", librarySlug && "pt-4")}>
-        <BrowserSectionHeading>Assets</BrowserSectionHeading>
+        {browsingComputer ? null : <BrowserSectionHeading>Assets</BrowserSectionHeading>}
 
         <LibraryBrowserToolbar
           search={search}
           onSearchChange={setSearch}
           view={view}
           onViewChange={setView}
-          resultCount={assets.length}
+          resultCount={browsingComputer ? undefined : assets.length}
           showKindChips={isAllFiles}
           kindFilter={kindFilter}
           onKindFilterChange={setKindFilter}
@@ -238,14 +258,25 @@ export function LibraryBrowser({
           sourceFilter={sourceFilter}
           onSourceFilterChange={setSourceFilter}
           sourceOptions={sourceOptions}
-          browseComputerHref={browseComputerHref}
           placeholder="Search files and metadata"
         />
 
-        {/* Same hierarchy hairline as Folders / Assets section titles */}
-        <div className="border-b border-zinc-200/90" aria-hidden />
+        {browsingComputer ? null : (
+          <div className="border-b border-zinc-200/90" aria-hidden />
+        )}
 
-        {assetsBootLoading ? (
+        {browsingComputer && computerDeviceId ? (
+          <ComputerSourceBrowser
+            deviceId={computerDeviceId}
+            folderId={computerFolderId}
+            sourceValue={sourceFilter}
+            kindFilter={kindFilter}
+            search={search}
+            view={view}
+            page={page}
+            onPageChange={setPage}
+          />
+        ) : assetsBootLoading ? (
           view === "table" ? (
             <AssetTableSkeleton />
           ) : (

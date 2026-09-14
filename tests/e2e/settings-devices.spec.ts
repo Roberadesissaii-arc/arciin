@@ -98,9 +98,11 @@ test.describe("Settings → Devices", () => {
       await expect(page.getByText("Windows · Desktop")).toBeVisible()
       await expect(page.getByTestId("device-card-other")).toBeVisible()
       await expect(page.getByRole("button", { name: "Revoke", exact: true })).toHaveCount(0)
-      await expect(page.getByRole("button", { name: "Revoke access" })).toBeVisible()
+      await expect(page.getByRole("button", { name: "Revoke access" })).toHaveCount(0)
+      await page.getByTestId("other-device-menu").click()
+      await expect(page.getByTestId("revoke-access")).toBeVisible()
 
-      await page.getByRole("button", { name: "Revoke access" }).click()
+      await page.getByTestId("revoke-access").click()
       await expect(page.getByRole("heading", { name: /Revoke access for Robera Desktop/ })).toBeVisible()
       await page.getByRole("button", { name: "Revoke Access" }).click()
       await expect(page.getByText("No trusted devices yet.")).toBeVisible({ timeout: 30_000 })
@@ -240,6 +242,8 @@ test.describe("Settings → Devices", () => {
       await expect(currentEnabled.getByText("Computer Backup")).toBeVisible()
       await expect(currentEnabled.getByText(/1 folder protected/)).toBeVisible()
       await expect(currentEnabled.getByText(/Last backup/)).toBeVisible()
+      await expect(currentEnabled.getByText("Open Arciin Desktop to manage protected folders.")).toBeVisible()
+      await expect(currentEnabled.getByRole("button", { name: "Disable Backup" })).toHaveCount(0)
       await currentEnabled.getByTestId("manage-backup").click()
       await expect(desktopPage).toHaveURL(/\/settings/)
       expect(
