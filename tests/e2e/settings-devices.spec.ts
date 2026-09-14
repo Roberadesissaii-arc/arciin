@@ -199,8 +199,66 @@ test.describe("Settings → Devices", () => {
       await expect(currentCard).toBeVisible()
       await expect(currentCard.getByText("This device")).toBeVisible()
       await expect(currentCard.getByText("Connected")).toBeVisible()
+      await expect(currentCard.getByTestId("turn-on-backup")).toBeVisible()
+      await expect(currentCard.getByText("Not enabled")).toBeVisible()
+      await expect(currentCard.getByText("Open Arciin Desktop to turn on backup.")).toBeVisible()
+      await currentCard.getByTestId("turn-on-backup").click()
+      await expect(desktopPage).toHaveURL(/\/settings/)
+      expect(
+        await desktopPage.evaluate(
+          () => (window as Window & { __arciinNativeBackupSetupIntent?: string }).__arciinNativeBackupSetupIntent,
+        ),
+      ).toBeUndefined()
+
+      await desktopPage.evaluate(() => {
+        Object.defineProperty(window, "chrome", {
+          configurable: true,
+          value: { webview: {} },
+        })
+      })
+      await currentCard.getByTestId("turn-on-backup").click()
+      await expect(desktopPage).toHaveURL(/\/settings/)
+      expect(
+        await desktopPage.evaluate(
+          () => (window as Window & { __arciinNativeBackupSetupIntent?: string }).__arciinNativeBackupSetupIntent,
+        ),
+      ).toBe("arciin-native://backup/setup")
       await expect(desktopPage.getByRole("button", { name: "Revoke", exact: true })).toHaveCount(0)
       await expect(desktopPage.getByRole("button", { name: "Revoke access" })).toHaveCount(0)
+
+      const enabled = await desktopPage.request.post("/api/backup/profiles", {
+        data: {
+          deviceId: paired.data.device.id,
+          roots: [{ kind: "DESKTOP", displayName: "Desktop", sourcePathIdentifier: "desktop-root" }],
+        },
+      })
+      expect(enabled.ok()).toBeTruthy()
+      await desktopPage.reload()
+      const currentEnabled = desktopPage.getByTestId("device-card-current")
+      await expect(currentEnabled.getByTestId("manage-backup")).toBeVisible()
+      await expect(currentEnabled.getByTestId("turn-on-backup")).toHaveCount(0)
+      await expect(currentEnabled.getByText("Computer Backup")).toBeVisible()
+      await expect(currentEnabled.getByText(/1 folder protected/)).toBeVisible()
+      await expect(currentEnabled.getByText(/Last backup/)).toBeVisible()
+      await currentEnabled.getByTestId("manage-backup").click()
+      await expect(desktopPage).toHaveURL(/\/settings/)
+      expect(
+        await desktopPage.evaluate(
+          () => (window as Window & { __arciinNativeBackupSetupIntent?: string }).__arciinNativeBackupSetupIntent,
+        ),
+      ).toBeUndefined()
+      await desktopPage.evaluate(() => {
+        Object.defineProperty(window, "chrome", {
+          configurable: true,
+          value: { webview: {} },
+        })
+      })
+      await currentEnabled.getByTestId("manage-backup").click()
+      expect(
+        await desktopPage.evaluate(
+          () => (window as Window & { __arciinNativeBackupSetupIntent?: string }).__arciinNativeBackupSetupIntent,
+        ),
+      ).toBe("arciin-native://backup/setup")
 
       await desktopPage.getByTestId("current-device-menu").click()
       await expect(desktopPage.getByTestId("disconnect-this-computer")).toBeVisible()

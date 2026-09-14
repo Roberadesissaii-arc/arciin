@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState, type ReactNode } from "react"
+import { useQuery } from "@tanstack/react-query"
 import { Search } from "lucide-react"
 
 import { PageHeader } from "@/components/app-shell/page-header"
@@ -28,10 +29,13 @@ import { useAssetsPage } from "@/hooks/use-assets"
 import { useLibraryBrowserFilters } from "@/hooks/use-library-browser-filters"
 import { useFolders, useLibraries } from "@/hooks/use-libraries"
 import { useUploadStore } from "@/lib/stores/upload-store"
+import { listComputers } from "@/lib/api/computers"
+import { queryKeys } from "@/lib/api/query-keys"
 import {
   collectSourceFilterOptions,
   GRID_PAGE_SIZE,
   LIST_PAGE_SIZE,
+  parseComputerSourceDeviceId,
   pipelineLibraryAssets,
 } from "@/lib/utils/library-asset-pipeline"
 import { cn } from "@/lib/utils"
@@ -132,7 +136,25 @@ export function LibraryBrowser({
     () => assetsQuery.data?.pages.flatMap((page) => page.items) ?? [],
     [assetsQuery.data],
   )
-  const sourceOptions = useMemo(() => collectSourceFilterOptions(rawAssets), [rawAssets])
+  const computersQuery = useQuery({
+    queryKey: queryKeys.computers,
+    queryFn: ({ signal }) => listComputers(signal),
+    retry: false,
+  })
+  const sourceOptions = useMemo(
+    () =>
+      collectSourceFilterOptions(
+        rawAssets,
+        computersQuery.isSuccess
+          ? computersQuery.data ?? []
+          : computersQuery.isError
+            ? undefined
+            : [],
+      ),
+    [rawAssets, computersQuery.data, computersQuery.isError, computersQuery.isSuccess],
+  )
+  const computerDeviceId = parseComputerSourceDeviceId(sourceFilter)
+  const browseComputerHref = computerDeviceId ? `/computers/${computerDeviceId}` : null
   const assets = useMemo(
     () =>
       pipelineLibraryAssets(rawAssets, {
@@ -216,6 +238,7 @@ export function LibraryBrowser({
           sourceFilter={sourceFilter}
           onSourceFilterChange={setSourceFilter}
           sourceOptions={sourceOptions}
+          browseComputerHref={browseComputerHref}
           placeholder="Search files and metadata"
         />
 
