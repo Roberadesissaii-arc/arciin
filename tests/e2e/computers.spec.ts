@@ -56,7 +56,8 @@ test.describe("My Computers", () => {
       empty.getByText("Protect Desktop, Documents, Pictures and other important folders with Arciin Desktop."),
     ).toBeVisible()
     await expect(page.getByRole("button", { name: "Set up computer backup" })).toBeVisible()
-    await expect(empty.getByText("Open Arciin Desktop to protect folders.")).toBeVisible()
+    await expect(empty.getByTestId("computer-backup-hint")).toHaveText("Open Arciin Desktop to protect folders.")
+    await expect(empty.getByText("Open Arciin Desktop")).toBeVisible()
   })
 
   test("Set up computer backup falls back to Devices settings in a browser", async ({ page }) => {
@@ -75,7 +76,7 @@ test.describe("My Computers", () => {
     await expect(page.getByRole("button", { name: "Generate Pairing Code" })).toBeVisible()
   })
 
-  test("Set up computer backup posts OPEN_COMPUTER_BACKUP_SETUP in WebView2", async ({
+  test("Set up computer backup uses the native sentinel inside Arciin Desktop", async ({
     page,
   }) => {
     const existing = await page.request.get("/api/settings/devices")
@@ -87,37 +88,24 @@ test.describe("My Computers", () => {
     }
 
     await page.addInitScript(() => {
-      const posted: unknown[] = []
-      Object.defineProperty(window, "__arciinNativeMessages", {
-        configurable: true,
-        get() {
-          return posted
-        },
-      })
       Object.defineProperty(window, "chrome", {
         configurable: true,
-        value: {
-          webview: {
-            postMessage(message: unknown) {
-              posted.push(message)
-            },
-          },
-        },
+        value: { webview: {} },
       })
     })
     await page.goto("/computers")
     await expect(page.getByTestId("setup-computer-backup")).toBeVisible()
+    await expect(page.getByTestId("computer-backup-hint")).toHaveText(
+      "Choose which folders to protect from this PC.",
+    )
+    await expect(page.getByTestId("computers-empty-state").getByText("Open Arciin Desktop")).toHaveCount(0)
     await page.getByTestId("setup-computer-backup").click()
     await expect(page).toHaveURL(/\/computers/)
-    const messages = await page.evaluate(() => (window as Window & { __arciinNativeMessages?: unknown[] }).__arciinNativeMessages)
-    expect(messages).toEqual([
-      {
-        type: "ARCIIN_NATIVE_ACTION",
-        version: 1,
-        action: "OPEN_COMPUTER_BACKUP_SETUP",
-      },
-    ])
-    expect(JSON.stringify(messages)).not.toMatch(/credential|cookie|token|path|password/i)
+    const intent = await page.evaluate(
+      () => (window as Window & { __arciinNativeBackupSetupIntent?: string }).__arciinNativeBackupSetupIntent,
+    )
+    expect(intent).toBe("arciin-native://backup/setup")
+    expect(intent).not.toMatch(/credential|cookie|token|password|[?#@]/)
   })
 
   test("MEMBER can open My Computers and cannot manage devices", async ({ browser, baseURL }) => {

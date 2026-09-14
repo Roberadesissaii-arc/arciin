@@ -1,45 +1,78 @@
 import { describe, expect, it, vi } from "vitest"
 
 import {
-  ARCIIN_NATIVE_ACTIONS,
-  ARCIIN_NATIVE_MESSAGE_TYPE,
-  ARCIIN_NATIVE_PROTOCOL_VERSION,
-  OPEN_COMPUTER_BACKUP_SETUP,
-  createComputerBackupSetupAction,
-  nativeMessageHasSecrets,
+  ARCIIN_NATIVE_BACKUP_SETUP_URL,
+  COMPUTER_BACKUP_BROWSER_HINT,
+  COMPUTER_BACKUP_DESKTOP_HINT,
+  computerBackupEmptyHint,
+  isArciinDesktopWebView,
   requestNativeComputerBackupSetup,
 } from "@arciin/shared"
 
-describe("Arciin Desktop native bridge", () => {
-  it("emits only the allowlisted computer-backup intent", () => {
-    const message = createComputerBackupSetupAction()
-    expect(message).toEqual({
-      type: ARCIIN_NATIVE_MESSAGE_TYPE,
-      version: ARCIIN_NATIVE_PROTOCOL_VERSION,
-      action: OPEN_COMPUTER_BACKUP_SETUP,
+describe("Arciin Desktop native backup sentinel", () => {
+  it("is exactly arciin-native://backup/setup with no extras", () => {
+    expect(ARCIIN_NATIVE_BACKUP_SETUP_URL).toBe("arciin-native://backup/setup")
+    expect(ARCIIN_NATIVE_BACKUP_SETUP_URL).not.toMatch(/[?#@]/)
+    expect(ARCIIN_NATIVE_BACKUP_SETUP_URL).not.toMatch(/credential|cookie|token|password/i)
+    expect(ARCIIN_NATIVE_BACKUP_SETUP_URL).not.toMatch(/[A-Za-z]:\\|\/home\/|\/Users\/|\\\\/)
+    const parsed = new URL(ARCIIN_NATIVE_BACKUP_SETUP_URL)
+    expect(parsed.protocol).toBe("arciin-native:")
+    expect(parsed.hostname).toBe("backup")
+    expect(parsed.pathname).toBe("/setup")
+    expect(parsed.search).toBe("")
+    expect(parsed.hash).toBe("")
+    expect(parsed.username).toBe("")
+    expect(parsed.password).toBe("")
+    expect(parsed.port).toBe("")
+  })
+
+  it("does not accept arbitrary URLs or actions", () => {
+    expect(requestNativeComputerBackupSetup.length).toBe(0)
+    const assign = vi.fn()
+    vi.stubGlobal("window", {
+      chrome: { webview: {} },
+      location: { assign },
     })
-    expect(ARCIIN_NATIVE_ACTIONS).toEqual([OPEN_COMPUTER_BACKUP_SETUP])
-    expect(nativeMessageHasSecrets(message)).toBe(false)
-    expect(JSON.stringify(message)).not.toMatch(/credential|cookie|token|path|password/i)
+    const spoofed = requestNativeComputerBackupSetup as (input?: unknown) => boolean
+    expect(spoofed("arciin-native://backup/other")).toBe(true)
+    expect(spoofed({ action: "SHELL", url: "https://evil.example" })).toBe(true)
+    expect(assign.mock.calls).toEqual([
+      [ARCIIN_NATIVE_BACKUP_SETUP_URL],
+      [ARCIIN_NATIVE_BACKUP_SETUP_URL],
+    ])
+    vi.unstubAllGlobals()
   })
 
-  it("does not introduce unknown native actions", () => {
-    expect(ARCIIN_NATIVE_ACTIONS).toHaveLength(1)
-    expect(createComputerBackupSetupAction().action).toBe("OPEN_COMPUTER_BACKUP_SETUP")
-  })
-
-  it("posts the intent when a WebView2 bridge exists", () => {
-    const postMessage = vi.fn()
-    vi.stubGlobal("window", { chrome: { webview: { postMessage } } })
+  it("navigates to the sentinel inside Arciin Desktop", () => {
+    const assign = vi.fn()
+    vi.stubGlobal("window", {
+      chrome: { webview: {} },
+      location: { assign },
+    })
+    expect(isArciinDesktopWebView()).toBe(true)
     expect(requestNativeComputerBackupSetup()).toBe(true)
-    expect(postMessage).toHaveBeenCalledTimes(1)
-    expect(postMessage).toHaveBeenCalledWith(createComputerBackupSetupAction())
+    expect(assign).toHaveBeenCalledTimes(1)
+    expect(assign).toHaveBeenCalledWith("arciin-native://backup/setup")
+    expect(
+      (window as Window & { __arciinNativeBackupSetupIntent?: string }).__arciinNativeBackupSetupIntent,
+    ).toBe(ARCIIN_NATIVE_BACKUP_SETUP_URL)
+    expect(assign).not.toHaveBeenCalledWith(expect.stringMatching(/postMessage|OPEN_COMPUTER_BACKUP_SETUP/))
     vi.unstubAllGlobals()
   })
 
-  it("falls back without throwing when no WebView2 bridge exists", () => {
-    vi.stubGlobal("window", {})
+  it("returns false in a normal browser and does not navigate", () => {
+    const assign = vi.fn()
+    vi.stubGlobal("window", { location: { assign } })
+    expect(isArciinDesktopWebView()).toBe(false)
     expect(requestNativeComputerBackupSetup()).toBe(false)
+    expect(assign).not.toHaveBeenCalled()
     vi.unstubAllGlobals()
+  })
+
+  it("uses Desktop copy inside WebView and Desktop-required copy in a browser", () => {
+    expect(computerBackupEmptyHint(true)).toBe(COMPUTER_BACKUP_DESKTOP_HINT)
+    expect(computerBackupEmptyHint(true)).not.toMatch(/Open Arciin Desktop/)
+    expect(computerBackupEmptyHint(false)).toBe(COMPUTER_BACKUP_BROWSER_HINT)
+    expect(computerBackupEmptyHint(false)).toContain("Open Arciin Desktop")
   })
 })

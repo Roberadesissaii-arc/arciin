@@ -2,9 +2,14 @@
 
 import Link from "next/link"
 import { useRouter } from "next/navigation"
+import { useSyncExternalStore } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Monitor } from "lucide-react"
-import { requestNativeComputerBackupSetup } from "@arciin/shared"
+import {
+  computerBackupEmptyHint,
+  isArciinDesktopWebView,
+  requestNativeComputerBackupSetup,
+} from "@arciin/shared"
 
 import { ComputersPageIntro } from "@/components/computers/computers-page-intro"
 import { Button } from "@/components/ui/button"
@@ -61,13 +66,22 @@ function handleSetupComputerBackup(onBrowserFallback: () => void) {
   try {
     if (requestNativeComputerBackupSetup()) return
   } catch {
-    // A missing or broken WebView bridge must never throw in a browser.
+    // A missing or broken WebView must never throw in a browser.
   }
   onBrowserFallback()
 }
 
+function useArciinDesktopWebView() {
+  return useSyncExternalStore(
+    () => () => {},
+    isArciinDesktopWebView,
+    () => false,
+  )
+}
+
 export function MyComputersPage() {
   const router = useRouter()
+  const inDesktop = useArciinDesktopWebView()
   const query = useQuery({
     queryKey: queryKeys.computers,
     queryFn: ({ signal }) => listComputers(signal),
@@ -126,8 +140,8 @@ export function MyComputersPage() {
               <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">
                 How computer backup works
               </p>
-              <p className="text-sm text-zinc-600">
-                Open Arciin Desktop to protect folders.
+              <p className="text-sm text-zinc-600" data-testid="computer-backup-hint">
+                {computerBackupEmptyHint(inDesktop)}
               </p>
             </div>
           </EmptyContent>
