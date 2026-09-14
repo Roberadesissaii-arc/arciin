@@ -204,8 +204,8 @@ test.describe("My Computers", () => {
       await expect(page.getByText("photo.jpg")).toBeVisible()
       await page.getByRole("link", { name: "WebProject" }).click()
       await expect(page.getByRole("link", { name: "public" })).toBeVisible()
-      await expect(page.getByText("package.json")).toBeVisible()
-      await expect(page.getByText("demo.mp4")).toBeVisible()
+      await expect(page.getByText("package.json").first()).toBeVisible()
+      await expect(page.getByTitle("demo.mp4", { exact: true })).toBeVisible()
 
       await page.goto("/images")
       await expect(page.getByText("logo.png").first()).toBeVisible()
