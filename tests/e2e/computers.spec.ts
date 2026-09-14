@@ -47,13 +47,14 @@ test.describe("My Computers", () => {
     await page.getByTestId("nav-my-computers").click()
     await expect(page).toHaveURL(/\/computers/)
     await expect(page.getByRole("heading", { name: "My Computers" })).toBeVisible()
-    await expect(page.getByTestId("computers-empty-state")).toBeVisible()
-    await expect(page.getByText("No protected computers yet")).toBeVisible()
+    const empty = page.getByTestId("computers-empty-state")
+    await expect(empty).toBeVisible()
+    await expect(empty.getByText("No protected computers yet")).toBeVisible()
     await expect(
-      page.getByText("Protect Desktop, Documents, Pictures and other important folders with Arciin Desktop."),
+      empty.getByText("Protect Desktop, Documents, Pictures and other important folders with Arciin Desktop."),
     ).toBeVisible()
     await expect(page.getByRole("link", { name: "Set up computer backup" })).toBeVisible()
-    await expect(page.getByText("Open Arciin Desktop to protect folders.")).toBeVisible()
+    await expect(empty.getByText("Open Arciin Desktop to protect folders.")).toBeVisible()
   })
 
   test("MEMBER can open My Computers and cannot manage devices", async ({ browser, baseURL }) => {
