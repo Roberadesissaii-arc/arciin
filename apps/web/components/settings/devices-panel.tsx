@@ -1,9 +1,9 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import Link from "next/link"
-import { EllipsisVertical, Laptop, Monitor, Smartphone, Tablet } from "lucide-react"
+import { Check, CircleCheck, Copy, EllipsisVertical, Laptop, Monitor, Smartphone, Tablet } from "lucide-react"
 import { toast } from "@/lib/notifications/arciin-toast"
 
 import { Button } from "@/components/ui/button"
@@ -45,6 +45,8 @@ import { useAuth } from "@/hooks/use-auth"
 import type { DevicePairingCodeResult, PairedDevicePublic } from "@/lib/types/models"
 import { ApiError } from "@/lib/api/errors"
 import { devicePresenceLabel, resolveDevicePresence } from "@arciin/shared"
+import { cn } from "@/lib/utils"
+import { copyToClipboard } from "@/lib/utils/clipboard"
 
 function platformLabel(platform: PairedDevicePublic["platform"]) {
   switch (platform) {
@@ -113,6 +115,46 @@ function formatCountdown(expiresAt: string) {
   const minutes = String(Math.floor(totalSeconds / 60)).padStart(2, "0")
   const seconds = String(totalSeconds % 60).padStart(2, "0")
   return { label: `${minutes}:${seconds}`, expired: remaining <= 0 }
+}
+
+function PairingMetaTile({
+  label,
+  value,
+  mono,
+  onCopy,
+}: {
+  label: string
+  value: string
+  mono?: boolean
+  onCopy?: () => void
+}) {
+  return (
+    <div className="flex items-start justify-between gap-2 rounded-xl border border-zinc-200 bg-zinc-50 px-3.5 py-3">
+      <div className="min-w-0">
+        <p className="text-[10px] font-medium uppercase tracking-[0.16em] text-zinc-500">{label}</p>
+        <p
+          className={cn(
+            "mt-1 break-all text-[13px] text-zinc-900",
+            mono && "font-mono text-[12px] tracking-tight",
+          )}
+        >
+          {value}
+        </p>
+      </div>
+      {onCopy ? (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          className="shrink-0 text-zinc-500 hover:text-zinc-900"
+          onClick={onCopy}
+        >
+          <Copy className="size-3.5" />
+          <span className="sr-only">Copy {label}</span>
+        </Button>
+      ) : null}
+    </div>
+  )
 }
 
 function backupHealthLabel(health: NonNullable<PairedDevicePublic["backup"]>["health"]) {
@@ -270,15 +312,19 @@ export function DevicesPanel() {
   const canManage = role === "OWNER" || role === "ADMIN"
 
   const [activeCode, setActiveCode] = useState<DevicePairingCodeResult | null>(null)
+  const [pairedSuccess, setPairedSuccess] = useState<PairedDevicePublic | null>(null)
   const [now, setNow] = useState(() => Date.now())
   const [revokeTarget, setRevokeTarget] = useState<PairedDevicePublic | null>(null)
   const [disconnectTarget, setDisconnectTarget] = useState<PairedDevicePublic | null>(null)
   const [disableTarget, setDisableTarget] = useState<PairedDevicePublic | null>(null)
+  const [codeCopied, setCodeCopied] = useState(false)
+  const knownDeviceIdsRef = useRef<Set<string>>(new Set())
 
   const devicesQuery = useQuery({
     queryKey: queryKeys.connectedDevices,
     queryFn: ({ signal }) => getConnectedDevices(signal),
     enabled: canManage,
+    refetchInterval: activeCode ? 2_000 : false,
   })
 
   useEffect(() => {
@@ -287,15 +333,42 @@ export function DevicesPanel() {
     return () => window.clearInterval(timer)
   }, [activeCode])
 
+  useEffect(() => {
+    if (!codeCopied) return
+    const timer = window.setTimeout(() => setCodeCopied(false), 2_000)
+    return () => window.clearTimeout(timer)
+  }, [codeCopied])
+
   const countdown = useMemo(() => {
     if (!activeCode) return null
     void now
     return formatCountdown(activeCode.expiresAt)
   }, [activeCode, now])
 
+  useEffect(() => {
+    if (!activeCode || !devicesQuery.data) return
+    if (knownDeviceIdsRef.current.size === 0) return
+    const connected = devicesQuery.data.devices.find(
+      (device) => !knownDeviceIdsRef.current.has(device.id),
+    )
+    if (connected) {
+      setPairedSuccess(connected)
+      setActiveCode(null)
+      setCodeCopied(false)
+      toast.success(`${connected.name} is connected`, {
+        description: "The pairing code was used and will not work again.",
+      })
+    }
+  }, [activeCode, devicesQuery.data])
+
   const generateMutation = useMutation({
     mutationFn: generateDevicePairingCode,
     onSuccess: (data) => {
+      knownDeviceIdsRef.current = new Set(
+        (devicesQuery.data?.devices ?? []).map((device) => device.id),
+      )
+      setPairedSuccess(null)
+      setCodeCopied(false)
       setActiveCode(data)
       void queryClient.invalidateQueries({ queryKey: queryKeys.connectedDevices })
     },
@@ -310,6 +383,7 @@ export function DevicesPanel() {
     mutationFn: cancelDevicePairing,
     onSuccess: () => {
       setActiveCode(null)
+      setCodeCopied(false)
       void queryClient.invalidateQueries({ queryKey: queryKeys.connectedDevices })
       toast.success("Pairing cancelled")
     },
@@ -343,6 +417,7 @@ export function DevicesPanel() {
     onSuccess: (_data, device) => {
       setRevokeTarget(null)
       setDisconnectTarget(null)
+      if (pairedSuccess?.id === device.id) setPairedSuccess(null)
       void queryClient.invalidateQueries({ queryKey: queryKeys.connectedDevices })
       void queryClient.invalidateQueries({ queryKey: queryKeys.computers })
       toast.success(
@@ -395,6 +470,13 @@ export function DevicesPanel() {
   const expired = countdown?.expired === true
   const currentDevices = devices.filter((device) => device.isCurrentDevice)
   const otherDevices = devices.filter((device) => !device.isCurrentDevice)
+  const localAddress = snapshot.localUrl ?? "Unavailable"
+
+  async function copyPairingCode() {
+    if (!activeCode || expired) return
+    const ok = await copyToClipboard(activeCode.code, "Pairing code")
+    if (ok) setCodeCopied(true)
+  }
 
   return (
     <div className="space-y-4">
@@ -475,33 +557,77 @@ export function DevicesPanel() {
           description="Use Arciin Desktop to discover this server, then enter a temporary pairing code."
         />
 
-        {activeCode ? (
-          <div className="mt-4 space-y-4" data-testid="device-pairing-code">
-            <p className="text-[13px] text-muted-foreground">
-              Enter this code in Arciin Desktop:
-            </p>
-            <p className="text-center font-mono text-4xl tracking-[0.35em] text-foreground">
-              {expired ? "—— ——" : activeCode.displayCode}
-            </p>
-            {expired ? (
-              <p className="text-center text-sm text-zinc-500">Pairing code expired.</p>
-            ) : (
-              <p className="text-center text-sm text-zinc-500">
-                Expires in <span className="font-mono text-foreground">{countdown?.label}</span>
-              </p>
-            )}
-            <div className="grid gap-2 text-[13px] sm:grid-cols-2">
-              <div>
-                <p className="text-[11px] uppercase tracking-wider text-muted-foreground">Server</p>
-                <p className="text-foreground">{snapshot.instanceName}</p>
-              </div>
-              <div>
-                <p className="text-[11px] uppercase tracking-wider text-muted-foreground">
-                  Local address
+        {pairedSuccess ? (
+          <div
+            className="mt-4 rounded-xl border border-emerald-500/25 bg-emerald-50 px-4 py-5"
+            data-testid="device-pairing-success"
+          >
+            <div className="flex items-start gap-3">
+              <CircleCheck className="mt-0.5 size-5 shrink-0 text-emerald-600" />
+              <div className="min-w-0 space-y-1">
+                <p className="text-[14px] font-medium text-zinc-900">{pairedSuccess.name} is connected</p>
+                <p className="text-[13px] leading-relaxed text-zinc-500">
+                  {platformLabel(pairedSuccess.platform)} · {typeLabel(pairedSuccess.deviceType)}.
+                  The pairing code was used and will not appear again.
                 </p>
-                <p className="break-all text-foreground">{snapshot.localUrl ?? "Unavailable"}</p>
               </div>
             </div>
+            <Button
+              type="button"
+              variant="outline"
+              className="mt-4"
+              onClick={() => generateMutation.mutate()}
+              disabled={generateMutation.isPending}
+            >
+              Pair another device
+            </Button>
+          </div>
+        ) : activeCode ? (
+          <div className="mt-4 space-y-3" data-testid="device-pairing-code">
+            <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-4 sm:p-5">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-[10px] font-medium uppercase tracking-[0.16em] text-zinc-500">
+                  Pairing code
+                </p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 border-zinc-200"
+                  onClick={() => void copyPairingCode()}
+                  disabled={expired}
+                >
+                  {codeCopied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+                  {codeCopied ? "Copied" : "Copy"}
+                </Button>
+              </div>
+              <p className="mt-5 text-center font-mono text-4xl tracking-[0.35em] text-zinc-900">
+                {expired ? "—— ——" : activeCode.displayCode}
+              </p>
+              <p className="mt-3 text-center text-[12px] text-zinc-500">
+                Enter this code in Arciin Desktop. It can be used once.
+              </p>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-3">
+              <PairingMetaTile
+                label="Expires in"
+                value={expired ? "Expired" : countdown?.label ?? "—"}
+                mono
+              />
+              <PairingMetaTile label="Server" value={snapshot.instanceName} />
+              <PairingMetaTile
+                label="Local address"
+                value={localAddress}
+                mono
+                onCopy={
+                  snapshot.localUrl
+                    ? () => void copyToClipboard(snapshot.localUrl!, "Local address")
+                    : undefined
+                }
+              />
+            </div>
+
             <div className="flex flex-wrap gap-2">
               {expired ? (
                 <Button

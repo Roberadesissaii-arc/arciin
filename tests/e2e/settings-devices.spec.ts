@@ -59,6 +59,7 @@ test.describe("Settings → Devices", () => {
       await page.getByRole("button", { name: "Generate Pairing Code" }).click()
       const codePanel = page.getByTestId("device-pairing-code")
       await expect(codePanel).toBeVisible()
+      await expect(codePanel.getByRole("button", { name: "Copy" })).toBeVisible()
       const display = await codePanel.locator("p.font-mono").first().textContent()
       expect(display?.replace(/\s+/g, "")).toMatch(/^\d{6}$/)
       await expect(codePanel.getByText(/Expires in/)).toBeVisible()
