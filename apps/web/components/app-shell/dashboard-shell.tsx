@@ -1,4 +1,5 @@
 import { LoginWelcomeToast } from "@/components/auth/login-welcome-toast"
+import { WindowsDesktopPromo } from "@/components/app-shell/windows-desktop-promo"
 import { AppSidebar } from "@/components/app-shell/app-sidebar"
 import { IdleLogoutWatcher } from "@/components/app-shell/idle-logout-watcher"
 import { MobileWebUnavailable } from "@/components/app-shell/mobile-web-unavailable"
@@ -24,6 +25,7 @@ export function DashboardShell({
       <div className="dashboard-shell-canvas relative hidden h-[100dvh] max-h-[100dvh] min-h-0 w-full flex-col overflow-hidden bg-white md:flex">
       <IdleLogoutWatcher />
       <LoginWelcomeToast />
+      <WindowsDesktopPromo />
       <TooltipProvider delayDuration={0}>
         <SidebarProvider
           defaultOpen
