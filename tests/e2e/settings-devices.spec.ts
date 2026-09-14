@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs"
 
 import { expect, test, type Browser, type Page } from "@playwright/test"
 
-import { suppressWindowsDesktopPromo } from "./desktop-promo"
+import { newUnauthedContext } from "./desktop-promo"
 
 const OWNER_EMAIL = "e2e@arciin.invalid"
 const PASSWORD_FILE = "/tmp/arciin-e2e-pw"
@@ -29,8 +29,7 @@ async function login(page: Page, email: string, password: string) {
 }
 
 async function freshContext(browser: Browser, baseURL: string | undefined) {
-  const context = await browser.newContext({ storageState: undefined, baseURL })
-  await suppressWindowsDesktopPromo(context)
+  const context = await newUnauthedContext(browser, { baseURL })
   const page = await context.newPage()
   return { context, page }
 }
@@ -42,7 +41,7 @@ test.describe("Settings → Devices", () => {
 
   test("OWNER can pair, see, and revoke a device", async ({ browser, baseURL }) => {
     const { context, page } = await freshContext(browser, baseURL)
-    const desktop = await browser.newContext({ storageState: undefined, baseURL })
+    const desktop = await newUnauthedContext(browser, { baseURL })
 
     try {
       await login(page, OWNER_EMAIL, ownerPassword())
@@ -140,7 +139,7 @@ test.describe("Settings → Devices", () => {
     baseURL,
   }) => {
     const { context: ownerContext, page: ownerPage } = await freshContext(browser, baseURL)
-    const desktop = await browser.newContext({ storageState: undefined, baseURL })
+    const desktop = await newUnauthedContext(browser, { baseURL })
     const desktopPage = await desktop.newPage()
     try {
       await login(ownerPage, OWNER_EMAIL, ownerPassword())

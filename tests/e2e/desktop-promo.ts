@@ -1,4 +1,4 @@
-import type { BrowserContext } from "@playwright/test"
+import type { Browser, BrowserContext } from "@playwright/test"
 
 /** Same key the app persists. Keep the string here so e2e does not import app modules. */
 export const DESKTOP_PROMO_DISMISSED_KEY = "arciin:desktop-promo-dismissed:v1"
@@ -17,4 +17,13 @@ export async function suppressWindowsDesktopPromo(context: BrowserContext) {
       // Private mode in tests still needs the rest of the suite to run.
     }
   }, DESKTOP_PROMO_DISMISSED_KEY)
+}
+
+export async function newUnauthedContext(
+  browser: Browser,
+  options: { baseURL?: string },
+): Promise<BrowserContext> {
+  const context = await browser.newContext({ storageState: undefined, baseURL: options.baseURL })
+  await suppressWindowsDesktopPromo(context)
+  return context
 }
