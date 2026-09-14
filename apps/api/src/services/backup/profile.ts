@@ -112,6 +112,7 @@ export async function enableBackupProfile(
   const existing = await prisma.deviceBackupProfile.findUnique({
     where: { deviceId_userId: { deviceId: device.id, userId: input.userId } },
   })
+  const wasDisabled = existing?.status === "DISABLED"
 
   const profile = existing
     ? await prisma.deviceBackupProfile.update({
@@ -153,7 +154,7 @@ export async function enableBackupProfile(
   })
 
   let credential: string | null = null
-  if (!activeGrant || input.rotateCredential) {
+  if (!activeGrant || input.rotateCredential || wasDisabled) {
     credential = await issueGrant(prisma, {
       profileId: profile.id,
       deviceId: device.id,
@@ -174,10 +175,78 @@ export async function disableBackupProfile(prisma: PrismaClient, profileId: stri
     throw new BackupError("BACKUP_NOT_FOUND", "Backup profile not found.", 404)
   }
   await revokeBackupGrantsForProfile(prisma, profileId)
+  await prisma.syncRoot.updateMany({
+    where: { profileId, status: { not: "DISABLED" } },
+    data: { status: "DISABLED" },
+  })
   return prisma.deviceBackupProfile.update({
     where: { id: profileId },
     data: { status: "DISABLED", health: "DISABLED" },
   })
+}
+
+export async function reenableBackupProfile(
+  prisma: PrismaClient,
+  input: {
+    profileId: string
+    roots?: Array<{
+      kind: string
+      displayName?: string
+      sourcePathIdentifier: string
+    }>
+  },
+) {
+  const profile = await prisma.deviceBackupProfile.findUnique({ where: { id: input.profileId } })
+  if (!profile) {
+    throw new BackupError("BACKUP_NOT_FOUND", "Backup profile not found.", 404)
+  }
+  return enableBackupProfile(prisma, {
+    userId: profile.userId,
+    deviceId: profile.deviceId,
+    rotateCredential: true,
+    roots: input.roots,
+  })
+}
+
+export async function disableSyncRoot(prisma: PrismaClient, rootId: string) {
+  const root = await prisma.syncRoot.findUnique({ where: { id: rootId } })
+  if (!root) {
+    throw new BackupError("BACKUP_ROOT_NOT_FOUND", "Protected folder not found.", 404)
+  }
+  if (root.status === "DISABLED") return root
+  return prisma.syncRoot.update({
+    where: { id: rootId },
+    data: { status: "DISABLED" },
+  })
+}
+
+export async function enableSyncRoot(prisma: PrismaClient, rootId: string) {
+  const root = await prisma.syncRoot.findUnique({
+    where: { id: rootId },
+    include: { profile: true },
+  })
+  if (!root) {
+    throw new BackupError("BACKUP_ROOT_NOT_FOUND", "Protected folder not found.", 404)
+  }
+  if (root.profile.status === "DISABLED") {
+    throw new BackupError("BACKUP_DISABLED", "Enable computer backup before protecting this folder.", 403)
+  }
+  if (root.status !== "DISABLED") return root
+  return prisma.syncRoot.update({
+    where: { id: rootId },
+    data: { status: "PROTECTED" },
+  })
+}
+
+export async function loadSyncRoot(prisma: PrismaClient, rootId: string) {
+  const root = await prisma.syncRoot.findUnique({
+    where: { id: rootId },
+    include: { profile: true },
+  })
+  if (!root) {
+    throw new BackupError("BACKUP_ROOT_NOT_FOUND", "Protected folder not found.", 404)
+  }
+  return root
 }
 
 export async function rotateBackupCredential(prisma: PrismaClient, profileId: string) {
@@ -231,9 +300,17 @@ export async function heartbeatBackupProfile(
   profile: DeviceBackupProfile,
   input: { health?: string; lastError?: string | null },
 ) {
-  const health = input.health ? input.health.trim().toUpperCase() : profile.health
-  if (health && !HEALTH_VALUES.has(health as DeviceBackupHealth)) {
+  const requested = input.health ? input.health.trim().toUpperCase() : profile.health
+  if (requested && !HEALTH_VALUES.has(requested as DeviceBackupHealth)) {
     throw new BackupError("VALIDATION_ERROR", "Unsupported backup health.", 400)
+  }
+
+  let health = (requested || profile.health) as DeviceBackupHealth
+  if (health === "UP_TO_DATE") {
+    const protectedCount = await prisma.syncRoot.count({
+      where: { profileId: profile.id, status: { not: "DISABLED" } },
+    })
+    if (protectedCount === 0) health = "OFFLINE"
   }
 
   const now = Date.now()

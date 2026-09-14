@@ -8,7 +8,7 @@ import {
   BACKUP_SYNC_RATE_LIMIT,
   BACKUP_UPLOAD_RATE_LIMIT,
 } from "@arciin/config"
-import type { FastifyInstance, FastifyReply } from "fastify"
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify"
 import { z } from "zod"
 
 import { recordSecurityEvent } from "@/services/security/security-events"
@@ -16,16 +16,20 @@ import { checkEndpointRateLimit } from "@/services/security/endpoint-rate-limit"
 import { requireSessionRole } from "@/services/security/auth"
 import { serializeAsset, serializeFolder } from "@/services/serializers"
 import { attachAssetSourceContext } from "@/services/backup/source-context"
-import { assertBackupOwner, requireBackupGrant } from "@/services/backup/auth"
+import { assertBackupOwner, requireBackupGrant, assertBoundDeviceMatch } from "@/services/backup/auth"
 import { BackupError } from "@/services/backup/errors"
 import { ingestBackupFile } from "@/services/backup/ingest"
 import {
   disableBackupProfile,
+  disableSyncRoot,
   enableBackupProfile,
+  enableSyncRoot,
   heartbeatBackupProfile,
   listBackupProfilesForViewer,
   loadBackupProfile,
+  loadSyncRoot,
   parseSyncRootKind,
+  reenableBackupProfile,
   rotateBackupCredential,
   upsertSyncRoot,
 } from "@/services/backup/profile"
@@ -160,6 +164,36 @@ const readBackup = {
   preHandler: requireSessionRole(["OWNER", "ADMIN", "MEMBER", "VIEWER"]),
 }
 
+async function requireSessionOrBackupGrant(request: FastifyRequest, reply: FastifyReply) {
+  const header = request.headers.authorization
+  if (typeof header === "string" && /^ArciinSync\s+/i.test(header)) {
+    await requireBackupGrant()(request, reply)
+    return
+  }
+  await requireSessionRole(["OWNER", "ADMIN", "MEMBER"])(request, reply)
+}
+
+async function authorizeRootControl(
+  request: FastifyRequest,
+  rootId: string,
+  fastify: FastifyInstance,
+) {
+  const root = await loadSyncRoot(fastify.prisma, rootId)
+  const grant = request.backupGrant
+  if (grant) {
+    if (grant.profile.id !== root.profileId || grant.device.id !== root.deviceId) {
+      throw new BackupError("BACKUP_FORBIDDEN", "This credential cannot change that folder.", 403)
+    }
+    return root
+  }
+  if (!request.auth) {
+    throw new BackupError("BACKUP_UNAUTHORIZED", "Sign in to manage protected folders.", 401)
+  }
+  assertBackupOwner(request.auth.user, root.userId)
+  assertBoundDeviceMatch(request.auth.session, root.deviceId)
+  return root
+}
+
 export async function registerBackupRoutes(fastify: FastifyInstance) {
   fastify.post("/backup/profiles", manageBackup, async (request, reply) => {
     if (!request.auth) return
@@ -180,6 +214,7 @@ export async function registerBackupRoutes(fastify: FastifyInstance) {
       return
     }
     try {
+      assertBoundDeviceMatch(request.auth.session, parsed.data.deviceId)
       const result = await enableBackupProfile(fastify.prisma, {
         userId: request.auth.user.id,
         deviceId: parsed.data.deviceId,
@@ -249,6 +284,7 @@ export async function registerBackupRoutes(fastify: FastifyInstance) {
     try {
       const profile = await loadBackupProfile(fastify.prisma, params.profileId)
       assertBackupOwner(request.auth.user, profile.userId)
+      assertBoundDeviceMatch(request.auth.session, profile.deviceId)
       const result = await rotateBackupCredential(fastify.prisma, profile.id)
       await recordSecurityEvent(fastify, {
         userId: request.auth.user.id,
@@ -262,6 +298,52 @@ export async function registerBackupRoutes(fastify: FastifyInstance) {
           profile: serializeBackupProfile(result.profile),
           credential: result.credential,
           credentialIssued: true,
+        },
+      })
+    } catch (error) {
+      if (!sendBackupError(reply, error)) throw error
+    }
+  })
+
+  fastify.post("/backup/profiles/:profileId/enable", manageBackup, async (request, reply) => {
+    if (!request.auth) return
+    if (
+      await checkEndpointRateLimit(request, reply, {
+        key: `backup-enable:${request.auth.user.id}`,
+        ...BACKUP_ENABLE_RATE_LIMIT,
+        perIp: false,
+      })
+    ) {
+      return
+    }
+    const params = z.object({ profileId: z.string() }).parse(request.params)
+    const parsed = enableSchema.pick({ roots: true }).safeParse(request.body ?? {})
+    if (!parsed.success) {
+      reply.status(400).send({
+        error: { code: "VALIDATION_ERROR", message: "Invalid backup payload.", details: parsed.error.flatten() },
+      })
+      return
+    }
+    try {
+      const profile = await loadBackupProfile(fastify.prisma, params.profileId)
+      assertBackupOwner(request.auth.user, profile.userId)
+      assertBoundDeviceMatch(request.auth.session, profile.deviceId)
+      const result = await reenableBackupProfile(fastify.prisma, {
+        profileId: profile.id,
+        roots: parsed.data.roots,
+      })
+      await recordSecurityEvent(fastify, {
+        userId: request.auth.user.id,
+        type: "security.backup_enabled",
+        title: "Computer backup enabled",
+        message: `Backup re-authorized for ${result.profile.device.name}.`,
+        metadata: { deviceId: result.profile.deviceId, profileId: result.profile.id },
+      })
+      reply.status(201).send({
+        data: {
+          profile: serializeBackupProfile(result.profile),
+          credential: result.credential,
+          credentialIssued: result.credentialIssued,
         },
       })
     } catch (error) {
@@ -410,6 +492,30 @@ export async function registerBackupRoutes(fastify: FastifyInstance) {
         deviceFolderId: profile.folderId,
       })
       reply.status(201).send({ data: serializeBackupRoot(root) })
+    } catch (error) {
+      if (!sendBackupError(reply, error)) throw error
+    }
+  })
+
+  const rootControl = { preHandler: requireSessionOrBackupGrant }
+
+  fastify.post("/backup/roots/:rootId/disable", rootControl, async (request, reply) => {
+    const params = z.object({ rootId: z.string() }).parse(request.params)
+    try {
+      const root = await authorizeRootControl(request, params.rootId, fastify)
+      const updated = await disableSyncRoot(fastify.prisma, root.id)
+      reply.send({ data: serializeBackupRoot(updated) })
+    } catch (error) {
+      if (!sendBackupError(reply, error)) throw error
+    }
+  })
+
+  fastify.post("/backup/roots/:rootId/enable", rootControl, async (request, reply) => {
+    const params = z.object({ rootId: z.string() }).parse(request.params)
+    try {
+      const root = await authorizeRootControl(request, params.rootId, fastify)
+      const updated = await enableSyncRoot(fastify.prisma, root.id)
+      reply.send({ data: serializeBackupRoot(updated) })
     } catch (error) {
       if (!sendBackupError(reply, error)) throw error
     }

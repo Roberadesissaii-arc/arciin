@@ -33,7 +33,7 @@ export async function getOwnedRoot(
     throw new BackupError("BACKUP_ROOT_NOT_FOUND", "Protected folder not found.", 404)
   }
   if (root.status === "DISABLED") {
-    throw new BackupError("BACKUP_DISABLED", "This protected folder is disabled.", 403)
+    throw new BackupError("SYNC_ROOT_DISABLED", "This protected folder is no longer backing up.", 403)
   }
   return root
 }

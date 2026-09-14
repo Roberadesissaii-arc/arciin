@@ -312,6 +312,27 @@ test.describe("My Computers", () => {
 
       await page.goto("/settings?tab=devices")
       await expect(page.getByTestId("device-backup-summary")).toBeVisible()
+      await expect(page.getByText(/1 folder protected/)).toBeVisible()
+      const computers = (await (await page.request.get("/api/computers")).json()) as {
+        data: Array<{ roots: Array<{ id: string }> }>
+      }
+      const rootId = computers.data[0]?.roots[0]?.id
+      expect(rootId).toBeTruthy()
+      const disabledRoot = await page.request.post(`/api/backup/roots/${rootId}/disable`)
+      expect(disabledRoot.ok()).toBeTruthy()
+      await page.reload()
+      await expect(page.getByText(/0 folders protected/)).toBeVisible()
+      await expect(page.getByTestId("view-backup")).toBeVisible()
+      await page.goto("/files")
+      await expect(page.getByTitle("photo.jpg", { exact: true }).first()).toBeVisible()
+      await page.getByTestId("source-filter").click()
+      await page.getByRole("listbox", { name: "Source filter" }).getByRole("option", { name: "Robera Desktop", exact: true }).click()
+      await expect(page.getByTestId("computer-source-header")).toContainText("0 protected folders")
+      await page.getByTestId("computer-folder-card").filter({ hasText: "Desktop" }).click()
+      await expect(page.getByTitle("photo.jpg", { exact: true })).toBeVisible()
+
+      await page.goto("/settings?tab=devices")
+      await expect(page.getByTestId("device-backup-summary")).toBeVisible()
       const otherDevice = page.getByTestId("device-card-other")
       await expect(otherDevice.getByTestId("view-backup")).toBeVisible()
       await expect(otherDevice.getByRole("link", { name: "View Backup" })).toBeVisible()

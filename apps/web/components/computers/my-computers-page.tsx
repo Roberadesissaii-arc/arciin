@@ -165,7 +165,10 @@ export function MyComputersPage() {
                     </div>
                     <p className="text-[13px] text-zinc-600">{platformLabel(computer.platform)}</p>
                     <p className="text-[13px] text-zinc-600">
-                      {computer.roots.length} protected {computer.roots.length === 1 ? "folder" : "folders"}
+                      {computer.roots.filter((root) => root.status !== "DISABLED").length} protected{" "}
+                      {computer.roots.filter((root) => root.status !== "DISABLED").length === 1
+                        ? "folder"
+                        : "folders"}
                       {computer.byteCount > 0 ? ` · ${formatBytes(computer.byteCount)}` : ""}
                       {computer.fileCount > 0 ? ` · ${computer.fileCount.toLocaleString()} files` : ""}
                     </p>

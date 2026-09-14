@@ -7,6 +7,7 @@ export class BackupError extends Error {
       | "BACKUP_DEVICE_UNPAIRED"
       | "BACKUP_FORBIDDEN"
       | "BACKUP_DISABLED"
+      | "SYNC_ROOT_DISABLED"
       | "BACKUP_NOT_FOUND"
       | "BACKUP_ROOT_NOT_FOUND"
       | "BACKUP_ENTRY_NOT_FOUND"

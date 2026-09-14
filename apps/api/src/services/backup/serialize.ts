@@ -28,6 +28,24 @@ export function serializeBackupEntry(entry: SyncEntry): BackupEntryPublic {
   }
 }
 
+export function isProtectedRootStatus(status: string): boolean {
+  return status !== "DISABLED"
+}
+
+export function countProtectedRoots(roots: Array<{ status: string }>): number {
+  return roots.filter((root) => isProtectedRootStatus(root.status)).length
+}
+
+export function presentedBackupHealth(input: {
+  profileStatus: string
+  health: ComputerCardPublic["health"]
+  roots: Array<{ status: string }>
+}): ComputerCardPublic["health"] {
+  if (input.profileStatus === "DISABLED") return "DISABLED"
+  if (countProtectedRoots(input.roots) === 0 && input.health === "UP_TO_DATE") return "OFFLINE"
+  return input.health
+}
+
 export function serializeBackupRoot(root: SyncRoot): BackupRootPublic {
   return {
     id: root.id,
@@ -52,7 +70,11 @@ export function serializeBackupProfile(
     userId: profile.userId,
     folderId: profile.folderId,
     status: profile.status,
-    health: profile.health,
+    health: presentedBackupHealth({
+      profileStatus: profile.status,
+      health: profile.health,
+      roots: profile.roots,
+    }),
     lastSyncAt: profile.lastSyncAt?.toISOString() ?? null,
     lastHeartbeatAt: profile.lastHeartbeatAt?.toISOString() ?? null,
     lastError: profile.lastError,
@@ -76,7 +98,11 @@ export function serializeComputerCard(
     profileId: profile.id,
     name: profile.device.name,
     platform: profile.device.platform,
-    health: profile.health,
+    health: presentedBackupHealth({
+      profileStatus: profile.status,
+      health: profile.health,
+      roots: profile.roots,
+    }),
     lastSyncAt: profile.lastSyncAt?.toISOString() ?? null,
     lastHeartbeatAt: profile.lastHeartbeatAt?.toISOString() ?? null,
     fileCount: profile.fileCount,
@@ -104,8 +130,12 @@ export function serializeDeviceBackupSummary(
   return {
     profileId: profile.id,
     enabled: true,
-    health: profile.health,
-    rootCount: profile.roots.length,
+    health: presentedBackupHealth({
+      profileStatus: profile.status,
+      health: profile.health,
+      roots: profile.roots,
+    }),
+    rootCount: countProtectedRoots(profile.roots),
     fileCount: profile.fileCount,
     byteCount: Number(profile.byteCount),
     lastSyncAt: profile.lastSyncAt?.toISOString() ?? null,
