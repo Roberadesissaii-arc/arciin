@@ -1,9 +1,7 @@
 "use client"
 
-import Link from "next/link"
 import { Grid3X3, List, Search } from "lucide-react"
 
-import { Button } from "@/components/ui/button"
 import {
   FilterDropdown,
   type FilterDropdownOption,
@@ -99,7 +97,6 @@ export function LibraryBrowserToolbar({
   sourceFilter = "all",
   onSourceFilterChange,
   sourceOptions = [],
-  browseComputerHref,
   placeholder = "Search files and metadata",
 }: {
   search: string
@@ -116,7 +113,6 @@ export function LibraryBrowserToolbar({
   sourceFilter?: SourceFilterValue
   onSourceFilterChange?: (value: SourceFilterValue) => void
   sourceOptions?: FilterDropdownOption[]
-  browseComputerHref?: string | null
   placeholder?: string
 }) {
   const sourceDropdownOptions: FilterDropdownOption[] =
@@ -208,13 +204,6 @@ export function LibraryBrowserToolbar({
                 options={sourceDropdownOptions}
                 minWidthClass="min-w-[9.5rem]"
               />
-              {browseComputerHref ? (
-                <Button asChild variant="outline" size="sm">
-                  <Link href={browseComputerHref} data-testid="browse-computer">
-                    Browse computer
-                  </Link>
-                </Button>
-              ) : null}
             </div>
           ) : null}
           <div

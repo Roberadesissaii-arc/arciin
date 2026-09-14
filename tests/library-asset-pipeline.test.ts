@@ -7,7 +7,9 @@ import {
   SOURCE_COMPUTER,
   SOURCE_MANUAL,
   collectSourceFilterOptions,
+  computerBrowseCrumbs,
   computerSourceValue,
+  filesSourceHref,
   filterAssetsBySource,
   parseComputerSourceDeviceId,
   pipelineLibraryAssets,
@@ -154,5 +156,38 @@ describe("All Files source filter", () => {
     expect(parseComputerSourceDeviceId("all")).toBeNull()
     expect(parseComputerSourceDeviceId("manual")).toBeNull()
     expect(filterAssetsBySource([desktopPhoto], "This PC")).toEqual([desktopPhoto])
+  })
+
+  it("builds All Files computer source URLs and folder crumbs", () => {
+    expect(filesSourceHref(SOURCE_ALL)).toBe("/files")
+    expect(filesSourceHref(SOURCE_MANUAL)).toBe("/files?source=manual")
+    expect(filesSourceHref(computerSourceValue("dev-desktop"))).toBe(
+      "/files?source=computer:dev-desktop",
+    )
+    expect(filesSourceHref(computerSourceValue("dev-desktop"), "folder-1")).toBe(
+      "/files?source=computer:dev-desktop&folder=folder-1",
+    )
+    expect(
+      computerBrowseCrumbs({
+        computerName: "DESKTOP-S8FBLDB",
+        folderPathCache: "device-abc",
+        atRoot: true,
+      }),
+    ).toEqual(["DESKTOP-S8FBLDB"])
+    expect(
+      computerBrowseCrumbs({
+        computerName: "DESKTOP-S8FBLDB",
+        folderPathCache: "device-abc/TestBackup/WebProject",
+        atRoot: false,
+      }),
+    ).toEqual(["DESKTOP-S8FBLDB", "TestBackup", "WebProject"])
+    expect(
+      computerBrowseCrumbs({
+        computerName: "DESKTOP-S8FBLDB",
+        folderPathCache: "device-abc/desktop/webproject",
+        currentFolderName: "WebProject",
+        atRoot: false,
+      }),
+    ).toEqual(["DESKTOP-S8FBLDB", "desktop", "WebProject"])
   })
 })

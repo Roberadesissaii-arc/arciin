@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import Link from "next/link"
 import { Check, CircleCheck, Copy, EllipsisVertical, Laptop, Monitor, Smartphone, Tablet } from "lucide-react"
@@ -41,6 +41,7 @@ import {
 } from "@/lib/api/settings"
 import { disableComputerBackup } from "@/lib/api/computers"
 import { queryKeys } from "@/lib/api/query-keys"
+import { computerSourceValue, filesSourceHref } from "@/lib/utils/library-asset-pipeline"
 import { useAuth } from "@/hooks/use-auth"
 import type { DevicePairingCodeResult, PairedDevicePublic } from "@/lib/types/models"
 import { ApiError } from "@/lib/api/errors"
@@ -193,6 +194,32 @@ function requestBackupSetup(browserMessage: string) {
     toast.info(browserMessage)
 }
 
+function DeviceOverflowMenu({
+  testId,
+  children,
+}: {
+  testId: string
+  children: ReactNode
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          className="text-zinc-500 hover:text-zinc-900"
+          aria-label="More device actions"
+          data-testid={testId}
+        >
+          <EllipsisVertical className="size-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">{children}</DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+
 function DeviceCard({
   device,
   inDesktop,
@@ -212,6 +239,8 @@ function DeviceCard({
     lastSeenAt: device.lastSeenAt,
   })
   const backup = device.backup
+  const backupEnabled = Boolean(backup?.enabled)
+  const viewBackupHref = filesSourceHref(computerSourceValue(device.id))
 
   return (
     <div
@@ -224,113 +253,26 @@ function DeviceCard({
         </div>
 
         <div className="min-w-0 flex-1">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0 flex-1 space-y-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <p className="truncate text-[14px] font-medium text-zinc-900">{device.name}</p>
-                {isCurrent ? (
-                  <Badge variant="outline" className="border-[#FF4F12]/30 bg-[#FF4F12]/10 text-[#FF4F12]">
-                    This device
-                  </Badge>
-                ) : null}
-                <Badge variant="secondary">{devicePresenceLabel(presence)}</Badge>
-              </div>
-              <p className="text-[13px] text-zinc-500">
-                {platformLabel(device.platform)} · {typeLabel(device.deviceType)}
-              </p>
-              <p className="text-[13px] text-zinc-500">Last seen {formatRelative(device.lastSeenAt)}</p>
-            </div>
-
-            <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
-              {isCurrent && !backup?.enabled ? (
-                <Button
-                  type="button"
-                  size="sm"
-                  data-testid="turn-on-backup"
-                  onClick={() => requestBackupSetup("Open Arciin Desktop to turn on backup.")}
-                >
-                  Turn On Backup
-                </Button>
-              ) : null}
-
-              {isCurrent && backup?.enabled ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  data-testid="manage-backup"
-                  onClick={() => requestBackupSetup("Open Arciin Desktop to manage backup.")}
-                >
-                  Manage Backup
-                </Button>
-              ) : null}
-
-              {!isCurrent && backup?.enabled ? (
-                <Button asChild variant="outline" size="sm">
-                  <Link href={`/computers/${device.id}`} data-testid="manage-backup-remote">
-                    Manage Backup
-                  </Link>
-                </Button>
-              ) : null}
-
-              {isCurrent ? (
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="icon-sm"
-                      aria-label="More device actions"
-                      data-testid="current-device-menu"
-                    >
-                      <EllipsisVertical className="size-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    {backup?.enabled ? (
-                      <>
-                        <DropdownMenuItem onSelect={() => onDisableBackup(device)}>
-                          Disable Backup
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                      </>
-                    ) : null}
-                    <DropdownMenuItem
-                      variant="destructive"
-                      data-testid="disconnect-this-computer"
-                      onSelect={() => onDisconnect(device)}
-                    >
-                      Disconnect this computer
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              ) : (
-                <>
-                  {backup?.enabled ? (
-                    <Button type="button" variant="outline" size="sm" onClick={() => onDisableBackup(device)}>
-                      Disable Backup
-                    </Button>
-                  ) : null}
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    data-testid="revoke-access"
-                    onClick={() => onRevoke(device)}
-                  >
-                    Revoke access
-                  </Button>
-                </>
-              )}
-            </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="truncate text-[14px] font-medium text-zinc-900">{device.name}</p>
+            {isCurrent ? (
+              <Badge variant="outline" className="border-[#FF4F12]/30 bg-[#FF4F12]/10 text-[#FF4F12]">
+                This device
+              </Badge>
+            ) : null}
+            <Badge variant="secondary">{devicePresenceLabel(presence)}</Badge>
           </div>
+          <p className="mt-1 text-[13px] text-zinc-500">
+            {platformLabel(device.platform)} · {typeLabel(device.deviceType)}
+          </p>
+          <p className="text-[13px] text-zinc-500">Last seen {formatRelative(device.lastSeenAt)}</p>
 
           <div
             className="mt-3 border-t border-zinc-200/80 pt-3 text-[13px] text-zinc-500"
             data-testid="device-backup-summary"
           >
             <p className="font-medium text-zinc-900">Computer Backup</p>
-            {backup?.enabled ? (
+            {backupEnabled && backup ? (
               <div className="mt-1 space-y-0.5">
                 <p>{backupHealthLabel(backup.health)}</p>
                 <p>
@@ -338,6 +280,9 @@ function DeviceCard({
                 </p>
                 {backup.byteCount > 0 ? <p>{formatBytesLabel(backup.byteCount)}</p> : null}
                 <p>Last backup {formatRelative(backup.lastSyncAt)}</p>
+                {isCurrent && !inDesktop ? (
+                  <p>Open Arciin Desktop to manage protected folders.</p>
+                ) : null}
               </div>
             ) : (
               <div className="mt-1 space-y-0.5">
@@ -346,6 +291,81 @@ function DeviceCard({
                   <p>Open Arciin Desktop to turn on backup.</p>
                 ) : null}
               </div>
+            )}
+          </div>
+
+          <div className="mt-3 flex items-center justify-end gap-1">
+            {isCurrent && !backupEnabled ? (
+              <Button
+                type="button"
+                size="sm"
+                data-testid="turn-on-backup"
+                onClick={() => requestBackupSetup("Open Arciin Desktop to turn on backup.")}
+              >
+                Turn On Backup
+              </Button>
+            ) : null}
+
+            {isCurrent && backupEnabled ? (
+              <Button
+                type="button"
+                size="sm"
+                data-testid="manage-backup"
+                onClick={() =>
+                  requestBackupSetup("Open Arciin Desktop to manage protected folders.")
+                }
+              >
+                Manage Backup
+              </Button>
+            ) : null}
+
+            {!isCurrent && backupEnabled ? (
+              <Button asChild size="sm">
+                <Link href={viewBackupHref} data-testid="view-backup">
+                  View Backup
+                </Link>
+              </Button>
+            ) : null}
+
+            {isCurrent ? (
+              <DeviceOverflowMenu testId="current-device-menu">
+                {backupEnabled ? (
+                  <>
+                    <DropdownMenuItem
+                      data-testid="disable-backup"
+                      onSelect={() => onDisableBackup(device)}
+                    >
+                      Disable Backup
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                  </>
+                ) : null}
+                <DropdownMenuItem
+                  variant="destructive"
+                  data-testid="disconnect-this-computer"
+                  onSelect={() => onDisconnect(device)}
+                >
+                  Disconnect this computer
+                </DropdownMenuItem>
+              </DeviceOverflowMenu>
+            ) : (
+              <DeviceOverflowMenu testId="other-device-menu">
+                {backupEnabled ? (
+                  <DropdownMenuItem
+                    data-testid="disable-backup"
+                    onSelect={() => onDisableBackup(device)}
+                  >
+                    Disable Backup
+                  </DropdownMenuItem>
+                ) : null}
+                <DropdownMenuItem
+                  variant="destructive"
+                  data-testid="revoke-access"
+                  onSelect={() => onRevoke(device)}
+                >
+                  Revoke access
+                </DropdownMenuItem>
+              </DeviceOverflowMenu>
             )}
           </div>
         </div>

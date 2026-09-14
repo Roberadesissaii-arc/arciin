@@ -107,5 +107,33 @@ export function pipelineLibraryAssets(
   return filterAssetsBySource(next, options.sourceFilter)
 }
 
+/** All Files query string for a source (and optional computer folder). */
+export function filesSourceHref(source: SourceFilterValue, folderId?: string | null): string {
+  const params: string[] = []
+  if (source && source !== SOURCE_ALL) params.push(`source=${source}`)
+  if (folderId) params.push(`folder=${encodeURIComponent(folderId)}`)
+  return params.length > 0 ? `/files?${params.join("&")}` : "/files"
+}
+
+/**
+ * Breadcrumb labels for a computer browse path.
+ * Drops the internal `device-…` path prefix used on disk.
+ */
+export function computerBrowseCrumbs(input: {
+  computerName: string
+  folderPathCache: string
+  atRoot: boolean
+  currentFolderName?: string
+}): string[] {
+  if (input.atRoot) return [input.computerName]
+  const pathSegments = input.folderPathCache.split("/").filter(Boolean)
+  const withoutDevice = pathSegments[0]?.startsWith("device-") ? pathSegments.slice(1) : pathSegments
+  const crumbs = [input.computerName, ...withoutDevice]
+  if (input.currentFolderName && crumbs.length > 1) {
+    crumbs[crumbs.length - 1] = input.currentFolderName
+  }
+  return crumbs
+}
+
 export const GRID_PAGE_SIZE = 30
 export const LIST_PAGE_SIZE = 10

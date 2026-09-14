@@ -26,6 +26,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton"
 import { listComputers, type ComputerCard, type ComputerRoot } from "@/lib/api/computers"
 import { queryKeys } from "@/lib/api/query-keys"
+import { computerSourceValue, filesSourceHref } from "@/lib/utils/library-asset-pipeline"
 import { formatBytes } from "@/lib/utils/format-bytes"
 import { formatCardRelativeTime } from "@/lib/utils/format-card-relative-time"
 
@@ -173,7 +174,7 @@ export function MyComputersPage() {
                     </p>
                   </div>
                   <Button asChild>
-                    <Link href={`/computers/${computer.deviceId}`}>Open Files</Link>
+                    <Link href={filesSourceHref(computerSourceValue(computer.deviceId))}>Open Files</Link>
                   </Button>
                 </div>
                 <div className="space-y-2">
