@@ -47,10 +47,14 @@ test.describe("My Computers", () => {
     await page.getByTestId("nav-my-computers").click()
     await expect(page).toHaveURL(/\/computers/)
     await expect(page.getByRole("heading", { name: "My Computers" })).toBeVisible()
+    const empty = page.getByTestId("computers-empty-state")
+    await expect(empty).toBeVisible()
+    await expect(empty.getByText("No protected computers yet")).toBeVisible()
     await expect(
-      page.getByText("Protect important folders from your computers with Arciin Desktop."),
+      empty.getByText("Protect Desktop, Documents, Pictures and other important folders with Arciin Desktop."),
     ).toBeVisible()
-    await expect(page.getByRole("link", { name: "Learn how to connect a computer" })).toBeVisible()
+    await expect(page.getByRole("link", { name: "Set up computer backup" })).toBeVisible()
+    await expect(empty.getByText("Open Arciin Desktop to protect folders.")).toBeVisible()
   })
 
   test("MEMBER can open My Computers and cannot manage devices", async ({ browser, baseURL }) => {
@@ -193,15 +197,15 @@ test.describe("My Computers", () => {
       await expect(page.getByTestId("computer-card")).toHaveCount(1)
       await expect(page.getByRole("heading", { name: "Robera Desktop" })).toBeVisible()
       await expect(page.getByText("Desktop", { exact: true }).first()).toBeVisible()
-      await page.getByRole("link", { name: "Open Computer" }).click()
+      await page.getByRole("link", { name: "Open Files" }).click()
       await expect(page.getByRole("heading", { name: "Robera Desktop" })).toBeVisible()
-      await page.getByRole("link", { name: "Desktop", exact: true }).click()
+      await page.locator('a[href*="folder="]').filter({ hasText: "Desktop" }).click()
       await expect(page.getByRole("link", { name: "WebProject" })).toBeVisible()
       await expect(page.getByText("photo.jpg")).toBeVisible()
       await page.getByRole("link", { name: "WebProject" }).click()
       await expect(page.getByRole("link", { name: "public" })).toBeVisible()
-      await expect(page.getByText("package.json")).toBeVisible()
-      await expect(page.getByText("demo.mp4")).toBeVisible()
+      await expect(page.getByText("package.json").first()).toBeVisible()
+      await expect(page.getByTitle("demo.mp4", { exact: true })).toBeVisible()
 
       await page.goto("/images")
       await expect(page.getByText("logo.png").first()).toBeVisible()
@@ -214,15 +218,16 @@ test.describe("My Computers", () => {
       await expect(page.getByTestId("device-backup-summary")).toBeVisible()
       await expect(page.getByRole("link", { name: "Manage Backup" })).toBeVisible()
       await expect(page.getByRole("button", { name: "Disable Backup" })).toBeVisible()
-      await expect(page.getByRole("button", { name: "Revoke" })).toBeVisible()
+      await expect(page.getByRole("button", { name: "Revoke", exact: true })).toHaveCount(0)
+      await expect(page.getByRole("button", { name: "Revoke access" })).toBeVisible()
 
       await page.getByRole("button", { name: "Disable Backup" }).click()
       await page.getByRole("button", { name: "Disable Backup" }).last().click()
-      await expect(page.getByText("Not enabled")).toBeVisible({ timeout: 30_000 })
+      await expect(page.getByText(/Not enabled/)).toBeVisible({ timeout: 30_000 })
       await expect(page.getByRole("button", { name: "Disable Backup" })).toHaveCount(0)
 
-      await page.getByRole("button", { name: "Revoke" }).click()
-      await page.getByRole("button", { name: "Revoke Device" }).click()
+      await page.getByRole("button", { name: "Revoke access" }).click()
+      await page.getByRole("button", { name: "Revoke Access" }).click()
       await expect(page.getByText("No trusted devices yet.")).toBeVisible({ timeout: 30_000 })
     } finally {
       await desktop.close()

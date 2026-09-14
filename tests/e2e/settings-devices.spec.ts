@@ -95,11 +95,13 @@ test.describe("Settings → Devices", () => {
       await page.reload()
       await expect(page.getByText("Robera Desktop")).toBeVisible({ timeout: 30_000 })
       await expect(page.getByText("Windows · Desktop")).toBeVisible()
-      await expect(page.getByText("Active").first()).toBeVisible()
+      await expect(page.getByTestId("device-card-other")).toBeVisible()
+      await expect(page.getByRole("button", { name: "Revoke", exact: true })).toHaveCount(0)
+      await expect(page.getByRole("button", { name: "Revoke access" })).toBeVisible()
 
-      await page.getByRole("button", { name: "Revoke" }).click()
-      await expect(page.getByRole("heading", { name: /Revoke Robera Desktop/ })).toBeVisible()
-      await page.getByRole("button", { name: "Revoke Device" }).click()
+      await page.getByRole("button", { name: "Revoke access" }).click()
+      await expect(page.getByRole("heading", { name: /Revoke access for Robera Desktop/ })).toBeVisible()
+      await page.getByRole("button", { name: "Revoke Access" }).click()
       await expect(page.getByText("No trusted devices yet.")).toBeVisible({ timeout: 30_000 })
 
       const meAfter = await desktop.request.get("/api/auth/me")
@@ -124,6 +126,84 @@ test.describe("Settings → Devices", () => {
       expect(listed.status()).toBe(403)
     } finally {
       await context.close()
+    }
+  })
+
+  test("device-bound session marks This device and hides generic Revoke", async ({
+    browser,
+    baseURL,
+  }) => {
+    const { context: ownerContext, page: ownerPage } = await freshContext(browser, baseURL)
+    const desktop = await browser.newContext({ storageState: undefined, baseURL })
+    const desktopPage = await desktop.newPage()
+    try {
+      await login(ownerPage, OWNER_EMAIL, ownerPassword())
+      const existing = await ownerPage.request.get("/api/settings/devices")
+      if (existing.ok()) {
+        const snapshot = (await existing.json()) as { data: { devices: { id: string }[] } }
+        for (const device of snapshot.data.devices) {
+          await ownerPage.request.post(`/api/settings/devices/${device.id}/revoke`)
+        }
+      }
+
+      await ownerPage.goto("/settings?tab=devices")
+      await expect(ownerPage.getByRole("button", { name: "Generate Pairing Code" })).toBeVisible()
+      await ownerPage.getByRole("button", { name: "Generate Pairing Code" }).click()
+      const display = await ownerPage.getByTestId("device-pairing-code").locator("p.font-mono").first().textContent()
+      const code = display?.replace(/\D/g, "") ?? ""
+      const pair = await desktop.request.post("/api/devices/pair", {
+        data: {
+          code,
+          name: "Robera Desktop",
+          platform: "windows",
+          deviceType: "desktop",
+          protocolVersion: 1,
+          appVersion: "0.1.0",
+        },
+      })
+      expect(pair.ok()).toBeTruthy()
+      const paired = (await pair.json()) as { data: { credential: string; device: { id: string } } }
+
+      const bootstrap = await desktop.request.post("/api/devices/session", {
+        headers: { Authorization: `Device ${paired.data.credential}` },
+      })
+      expect(bootstrap.ok()).toBeTruthy()
+
+      await login(desktopPage, OWNER_EMAIL, ownerPassword())
+
+      const listed = await desktopPage.request.get("/api/settings/devices")
+      expect(listed.ok()).toBeTruthy()
+      const snapshot = (await listed.json()) as {
+        data: { currentDeviceId: string | null; devices: Array<{ id: string; isCurrentDevice: boolean }> }
+      }
+      expect(snapshot.data.currentDeviceId).toBe(paired.data.device.id)
+      expect(snapshot.data.devices[0]?.isCurrentDevice).toBe(true)
+
+      await desktopPage.goto("/settings?tab=devices")
+      const currentCard = desktopPage.getByTestId("device-card-current")
+      await expect(currentCard).toBeVisible()
+      await expect(currentCard.getByText("This device")).toBeVisible()
+      await expect(currentCard.getByText("Connected")).toBeVisible()
+      await expect(desktopPage.getByRole("button", { name: "Revoke", exact: true })).toHaveCount(0)
+      await expect(desktopPage.getByRole("button", { name: "Revoke access" })).toHaveCount(0)
+
+      await desktopPage.getByTestId("current-device-menu").click()
+      await expect(desktopPage.getByTestId("disconnect-this-computer")).toBeVisible()
+      await desktopPage.getByTestId("disconnect-this-computer").click()
+      await expect(desktopPage.getByRole("heading", { name: /Disconnect Robera Desktop/ })).toBeVisible()
+      const [revokeRes] = await Promise.all([
+        desktopPage.waitForResponse(
+          (response) =>
+            response.url().includes("/revoke") && response.request().method() === "POST",
+        ),
+        desktopPage.getByRole("button", { name: "Disconnect Computer" }).click(),
+      ])
+      expect(revokeRes.ok()).toBeTruthy()
+      const me = await desktopPage.request.get("/api/auth/me")
+      expect(me.status()).toBe(401)
+    } finally {
+      await desktop.close()
+      await ownerContext.close()
     }
   })
 })

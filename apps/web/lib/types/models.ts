@@ -966,10 +966,12 @@ export type PairedDevicePublic = {
     byteCount: number
     lastSyncAt: string | null
   } | null
+  isCurrentDevice?: boolean
 }
 
 export type DeviceSettingsSnapshot = {
   devices: PairedDevicePublic[]
+  currentDeviceId: string | null
   pairing: {
     expiresAt: string
     createdAt: string

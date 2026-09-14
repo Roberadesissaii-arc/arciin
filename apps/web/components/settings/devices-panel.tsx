@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import Link from "next/link"
-import { Laptop, Monitor, Smartphone, Tablet } from "lucide-react"
+import { EllipsisVertical, Laptop, Monitor, Smartphone, Tablet } from "lucide-react"
 import { toast } from "@/lib/notifications/arciin-toast"
 
 import { Button } from "@/components/ui/button"
@@ -21,6 +21,13 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import {
   SectionHeader,
   SettingsCard,
   SettingsHint,
@@ -37,6 +44,7 @@ import { queryKeys } from "@/lib/api/query-keys"
 import { useAuth } from "@/hooks/use-auth"
 import type { DevicePairingCodeResult, PairedDevicePublic } from "@/lib/types/models"
 import { ApiError } from "@/lib/api/errors"
+import { devicePresenceLabel, resolveDevicePresence } from "@arciin/shared"
 
 function platformLabel(platform: PairedDevicePublic["platform"]) {
   switch (platform) {
@@ -71,7 +79,7 @@ function typeLabel(type: PairedDevicePublic["deviceType"]) {
 }
 
 function PlatformIcon({ platform }: { platform: PairedDevicePublic["platform"] }) {
-  const className = "size-4 shrink-0 text-muted-foreground"
+  const className = "size-5 shrink-0 text-zinc-600"
   if (platform === "IOS" || platform === "ANDROID") return <Smartphone className={className} />
   if (platform === "MACOS") return <Laptop className={className} />
   return <Monitor className={className} />
@@ -99,20 +107,160 @@ function formatRelative(iso: string | null) {
   })
 }
 
-function formatPairedDate(iso: string) {
-  return new Date(iso).toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  })
-}
-
 function formatCountdown(expiresAt: string) {
   const remaining = Math.max(0, new Date(expiresAt).getTime() - Date.now())
   const totalSeconds = Math.floor(remaining / 1000)
   const minutes = String(Math.floor(totalSeconds / 60)).padStart(2, "0")
   const seconds = String(totalSeconds % 60).padStart(2, "0")
   return { label: `${minutes}:${seconds}`, expired: remaining <= 0 }
+}
+
+function backupHealthLabel(health: NonNullable<PairedDevicePublic["backup"]>["health"]) {
+  switch (health) {
+    case "UP_TO_DATE":
+      return "Up to date"
+    case "SYNCING":
+      return "Backing up"
+    case "PAUSED":
+      return "Paused"
+    case "OFFLINE":
+      return "Offline"
+    case "ERROR":
+      return "Error"
+    case "DISABLED":
+      return "Disabled"
+    default:
+      return health
+  }
+}
+
+function DeviceCard({
+  device,
+  onDisableBackup,
+  onDisconnect,
+  onRevoke,
+}: {
+  device: PairedDevicePublic
+  onDisableBackup: (device: PairedDevicePublic) => void
+  onDisconnect: (device: PairedDevicePublic) => void
+  onRevoke: (device: PairedDevicePublic) => void
+}) {
+  const isCurrent = device.isCurrentDevice === true
+  const presence = resolveDevicePresence({
+    isCurrentDevice: isCurrent,
+    lastSeenAt: device.lastSeenAt,
+  })
+  const backup = device.backup
+
+  return (
+    <div
+      className="rounded-xl border border-zinc-200 bg-white p-4"
+      data-testid={isCurrent ? "device-card-current" : "device-card-other"}
+    >
+      <div className="flex items-start gap-3">
+        <div className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-zinc-200 bg-zinc-50">
+          <PlatformIcon platform={device.platform} />
+        </div>
+
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0 flex-1 space-y-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="truncate text-[14px] font-medium text-zinc-900">{device.name}</p>
+                {isCurrent ? (
+                  <Badge variant="outline" className="border-[#FF4F12]/30 bg-[#FF4F12]/10 text-[#FF4F12]">
+                    This device
+                  </Badge>
+                ) : null}
+                <Badge variant="secondary">{devicePresenceLabel(presence)}</Badge>
+              </div>
+              <p className="text-[13px] text-zinc-500">
+                {platformLabel(device.platform)} · {typeLabel(device.deviceType)}
+              </p>
+              <p className="text-[13px] text-zinc-500">Last seen {formatRelative(device.lastSeenAt)}</p>
+            </div>
+
+            <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+              {backup?.enabled ? (
+                <Button asChild variant="outline" size="sm">
+                  <Link href={`/computers/${device.id}`}>Manage Backup</Link>
+                </Button>
+              ) : null}
+
+              {isCurrent ? (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon-sm"
+                      aria-label="More device actions"
+                      data-testid="current-device-menu"
+                    >
+                      <EllipsisVertical className="size-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    {backup?.enabled ? (
+                      <>
+                        <DropdownMenuItem onSelect={() => onDisableBackup(device)}>
+                          Disable Backup
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                      </>
+                    ) : null}
+                    <DropdownMenuItem
+                      variant="destructive"
+                      data-testid="disconnect-this-computer"
+                      onSelect={() => onDisconnect(device)}
+                    >
+                      Disconnect this computer
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              ) : (
+                <>
+                  {backup?.enabled ? (
+                    <Button type="button" variant="outline" size="sm" onClick={() => onDisableBackup(device)}>
+                      Disable Backup
+                    </Button>
+                  ) : null}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    data-testid="revoke-access"
+                    onClick={() => onRevoke(device)}
+                  >
+                    Revoke access
+                  </Button>
+                </>
+              )}
+            </div>
+          </div>
+
+          <div
+            className="mt-3 border-t border-zinc-200/80 pt-3 text-[13px] text-zinc-500"
+            data-testid="device-backup-summary"
+          >
+            <p className="font-medium text-zinc-900">Computer Backup</p>
+            {backup?.enabled ? (
+              <div className="mt-1 space-y-0.5">
+                <p>{backupHealthLabel(backup.health)}</p>
+                <p>
+                  {backup.rootCount} protected {backup.rootCount === 1 ? "folder" : "folders"}
+                  {backup.byteCount > 0 ? ` · ${formatBytesLabel(backup.byteCount)}` : ""}
+                </p>
+                <p>Last backup {formatRelative(backup.lastSyncAt)}</p>
+              </div>
+            ) : (
+              <p className="mt-1">Not enabled. Pairing stays; only background backup is off.</p>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 export function DevicesPanel() {
@@ -124,6 +272,7 @@ export function DevicesPanel() {
   const [activeCode, setActiveCode] = useState<DevicePairingCodeResult | null>(null)
   const [now, setNow] = useState(() => Date.now())
   const [revokeTarget, setRevokeTarget] = useState<PairedDevicePublic | null>(null)
+  const [disconnectTarget, setDisconnectTarget] = useState<PairedDevicePublic | null>(null)
   const [disableTarget, setDisableTarget] = useState<PairedDevicePublic | null>(null)
 
   const devicesQuery = useQuery({
@@ -193,11 +342,15 @@ export function DevicesPanel() {
     mutationFn: (device: PairedDevicePublic) => revokeConnectedDevice(device.id),
     onSuccess: (_data, device) => {
       setRevokeTarget(null)
+      setDisconnectTarget(null)
       void queryClient.invalidateQueries({ queryKey: queryKeys.connectedDevices })
-      toast.success(`${device.name} revoked`)
+      void queryClient.invalidateQueries({ queryKey: queryKeys.computers })
+      toast.success(
+        device.isCurrentDevice ? `${device.name} disconnected` : `Access revoked for ${device.name}`,
+      )
     },
     onError: (err) => {
-      toast.error("Could not revoke device", {
+      toast.error("Could not update this device", {
         description: err instanceof Error ? err.message : "Try again.",
       })
     },
@@ -240,6 +393,8 @@ export function DevicesPanel() {
   const snapshot = devicesQuery.data
   const devices = snapshot.devices
   const expired = countdown?.expired === true
+  const currentDevices = devices.filter((device) => device.isCurrentDevice)
+  const otherDevices = devices.filter((device) => !device.isCurrentDevice)
 
   return (
     <div className="space-y-4">
@@ -269,75 +424,46 @@ export function DevicesPanel() {
               : `${devices.length} trusted ${devices.length === 1 ? "device" : "devices"}`
           }
         />
-        <div className="mt-4 space-y-3">
+        <div className="mt-4 space-y-5">
           {devices.length === 0 ? (
             <p className="text-sm text-zinc-500">
               Generate a pairing code below after installing Arciin Desktop.
             </p>
           ) : (
-            devices.map((device) => (
-              <div
-                key={device.id}
-                className="flex flex-col gap-3 rounded-xl border border-border px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
-              >
-                <div className="min-w-0 space-y-1">
-                  <div className="flex items-center gap-2">
-                    <PlatformIcon platform={device.platform} />
-                    <p className="truncate text-[13px] font-medium text-foreground">{device.name}</p>
-                    <Badge variant="secondary" className="capitalize">
-                      Active
-                    </Badge>
-                  </div>
-                  <p className="text-[12px] text-zinc-500">
-                    {platformLabel(device.platform)} · {typeLabel(device.deviceType)}
-                  </p>
-                  <p className="text-[12px] text-zinc-500">
-                    Last seen {formatRelative(device.lastSeenAt)} · Paired {formatPairedDate(device.pairedAt)}
-                  </p>
-                  {device.backup ? (
-                    <div className="pt-1 text-[12px] text-zinc-500" data-testid="device-backup-summary">
-                      <p className="font-medium text-foreground">Computer Backup</p>
-                      <p>
-                        {device.backup.enabled
-                          ? `${device.backup.rootCount} folders protected · ${formatBytesLabel(device.backup.byteCount)}`
-                          : "Not enabled"}
-                      </p>
-                      {device.backup.enabled ? (
-                        <p>
-                          {device.backup.health.replaceAll("_", " ").toLowerCase()} · Last sync{" "}
-                          {formatRelative(device.backup.lastSyncAt)}
-                        </p>
-                      ) : null}
-                    </div>
-                  ) : (
-                    <p className="pt-1 text-[12px] text-zinc-500">Computer Backup is not enabled on this device.</p>
-                  )}
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {device.backup?.enabled ? (
-                    <>
-                      <Button asChild variant="outline">
-                        <Link href={`/computers/${device.id}`}>Manage Backup</Link>
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={() => setDisableTarget(device)}
-                      >
-                        Disable Backup
-                      </Button>
-                    </>
-                  ) : null}
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => setRevokeTarget(device)}
-                  >
-                    Revoke
-                  </Button>
-                </div>
-              </div>
-            ))
+            <>
+              {currentDevices.length > 0 ? (
+                <section className="space-y-3">
+                  <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    This device
+                  </h3>
+                  {currentDevices.map((device) => (
+                    <DeviceCard
+                      key={device.id}
+                      device={device}
+                      onDisableBackup={setDisableTarget}
+                      onDisconnect={setDisconnectTarget}
+                      onRevoke={setRevokeTarget}
+                    />
+                  ))}
+                </section>
+              ) : null}
+              {otherDevices.length > 0 ? (
+                <section className="space-y-3">
+                  <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    Other devices
+                  </h3>
+                  {otherDevices.map((device) => (
+                    <DeviceCard
+                      key={device.id}
+                      device={device}
+                      onDisableBackup={setDisableTarget}
+                      onDisconnect={setDisconnectTarget}
+                      onRevoke={setRevokeTarget}
+                    />
+                  ))}
+                </section>
+              ) : null}
+            </>
           )}
         </div>
       </SettingsCard>
@@ -415,9 +541,9 @@ export function DevicesPanel() {
           <AlertDialogHeader>
             <AlertDialogTitle>Disable backup on {disableTarget?.name}?</AlertDialogTitle>
             <AlertDialogDescription>
-              This revokes the background-sync credential and stops computer backup.
-              The computer stays paired, and files already stored in Arciin are not
-              deleted. Local files on the computer are not deleted.
+              This stops Computer Backup only. The ArciinSync credential is revoked, but this
+              computer stays paired. Files already stored in Arciin remain. Files on the computer
+              are not deleted.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -431,21 +557,49 @@ export function DevicesPanel() {
         </AlertDialogContent>
       </AlertDialog>
 
-      <AlertDialog open={Boolean(revokeTarget)} onOpenChange={(open) => !open && setRevokeTarget(null)}>
+      <AlertDialog
+        open={Boolean(disconnectTarget)}
+        onOpenChange={(open) => !open && setDisconnectTarget(null)}
+      >
         <AlertDialogContent className="border-border bg-card text-foreground">
           <AlertDialogHeader>
-            <AlertDialogTitle>Revoke {revokeTarget?.name}?</AlertDialogTitle>
+            <AlertDialogTitle>Disconnect {disconnectTarget?.name}?</AlertDialogTitle>
             <AlertDialogDescription>
-              This device will no longer be trusted. Associated sessions and computer-backup
-              credentials will be revoked. Local files on the computer are not deleted.
+              This will remove this computer&apos;s trusted connection to this Arciin server.
+              Computer Backup will stop and this computer will need to be paired again before
+              reconnecting. Files already backed up to Arciin will remain on the server. Files on
+              this computer will NOT be deleted.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
+              data-testid="confirm-disconnect-computer"
+              onClick={() => disconnectTarget && revokeMutation.mutate(disconnectTarget)}
+            >
+              Disconnect Computer
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={Boolean(revokeTarget)} onOpenChange={(open) => !open && setRevokeTarget(null)}>
+        <AlertDialogContent className="border-border bg-card text-foreground">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Revoke access for {revokeTarget?.name}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This device will no longer be able to connect to this Arciin server until it is
+              paired again. Computer Backup on that device will stop. Server backups already stored
+              in Arciin will remain. Local files will not be deleted.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              data-testid="confirm-revoke-access"
               onClick={() => revokeTarget && revokeMutation.mutate(revokeTarget)}
             >
-              Revoke Device
+              Revoke Access
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

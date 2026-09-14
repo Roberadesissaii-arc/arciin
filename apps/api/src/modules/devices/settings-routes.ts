@@ -8,6 +8,8 @@ import {
 import type { FastifyInstance } from "fastify"
 import { z } from "zod"
 
+import { resolveCurrentDeviceId } from "@arciin/shared"
+
 import { resolveLocalAccessUrls } from "@/services/remote-access/local-access-urls"
 import {
   DevicePairingError,
@@ -50,13 +52,19 @@ export async function registerDeviceSettingsRoutes(fastify: FastifyInstance) {
       }
     }
     const local = resolveLocalAccessUrls()
+    const currentDeviceId = resolveCurrentDeviceId(
+      request.auth.session?.pairedDeviceId,
+      devices.map((device) => device.id),
+    )
 
     reply.send({
       data: {
         devices: devices.map((device) => ({
           ...serializePairedDevice(device),
           backup: serializeDeviceBackupSummary(profileByDevice.get(device.id) ?? null),
+          isCurrentDevice: device.id === currentDeviceId,
         })),
+        currentDeviceId,
         pairing: pairing
           ? {
               expiresAt: pairing.expiresAt.toISOString(),

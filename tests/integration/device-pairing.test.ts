@@ -547,3 +547,78 @@ describe("user login and revocation", () => {
     }
   })
 })
+
+describe("current paired device on Settings → Devices", () => {
+  async function pairNamed(name: string) {
+    const created = await createDevicePairing(prisma, ownerId)
+    return claimDevicePairing(prisma, {
+      code: created.code,
+      name,
+      platform: "windows",
+      deviceType: "desktop",
+      protocolVersion: 1,
+    })
+  }
+
+  it("identifies the session device and leaves a browser session without one", async () => {
+    const current = await pairNamed("Robera Desktop")
+    const other = await pairNamed("Office Laptop")
+    const bound = await sessionToken(ownerId, current.device.id)
+    const browser = await sessionToken(ownerId)
+    const app = await buildApp()
+    try {
+      const fromDesktop = await app.inject({
+        method: "GET",
+        url: "/api/settings/devices",
+        cookies: { arciin_session: bound },
+      })
+      expect(fromDesktop.statusCode).toBe(200)
+      const desktopData = fromDesktop.json().data as {
+        currentDeviceId: string | null
+        devices: Array<{ id: string; name: string; isCurrentDevice: boolean }>
+      }
+      expect(desktopData.currentDeviceId).toBe(current.device.id)
+      expect(desktopData.devices.find((device) => device.id === current.device.id)?.isCurrentDevice).toBe(true)
+      expect(desktopData.devices.find((device) => device.id === other.device.id)?.isCurrentDevice).toBe(false)
+
+      const fromBrowser = await app.inject({
+        method: "GET",
+        url: "/api/settings/devices",
+        cookies: { arciin_session: browser },
+      })
+      expect(fromBrowser.statusCode).toBe(200)
+      const browserData = fromBrowser.json().data as {
+        currentDeviceId: string | null
+        devices: Array<{ isCurrentDevice: boolean }>
+      }
+      expect(browserData.currentDeviceId).toBeNull()
+      expect(browserData.devices.every((device) => device.isCurrentDevice === false)).toBe(true)
+    } finally {
+      await app.close()
+    }
+  })
+
+  it("revoking the current device leaves an unrelated device trusted", async () => {
+    const current = await pairNamed("Robera Desktop")
+    const other = await pairNamed("Office Laptop")
+    const bound = await sessionToken(ownerId, current.device.id)
+    const app = await buildApp()
+    try {
+      const revoked = await app.inject({
+        method: "POST",
+        url: `/api/settings/devices/${current.device.id}/revoke`,
+        cookies: { arciin_session: bound },
+      })
+      expect(revoked.statusCode).toBe(200)
+
+      const after = await prisma.device.findMany({
+        where: { id: { in: [current.device.id, other.device.id] } },
+        select: { id: true, status: true },
+      })
+      expect(after.find((device) => device.id === current.device.id)?.status).toBe("REVOKED")
+      expect(after.find((device) => device.id === other.device.id)?.status).toBe("ACTIVE")
+    } finally {
+      await app.close()
+    }
+  })
+})

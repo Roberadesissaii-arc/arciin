@@ -303,7 +303,7 @@ function AppSidebarInner({ auth }: { auth: AuthSession }) {
 
         <Divider />
 
-        {/* Libraries section */}
+        {/* Libraries + Computers — one nav section, no divider between them */}
         <div>
           <div
             className={cn(
@@ -321,7 +321,7 @@ function AppSidebarInner({ auth }: { auth: AuthSession }) {
             )}
           </div>
           {!collapsed && (
-            <div className="mt-0.5 pb-1">
+            <div className="mt-0.5">
               {libraryItems.map((item) => {
                 const active = isActive(pathname, item.href)
                 return (
@@ -347,11 +347,7 @@ function AppSidebarInner({ auth }: { auth: AuthSession }) {
               })}
             </div>
           )}
-        </div>
 
-        <Divider />
-
-        <div>
           {collapsed ? (
             <Link
               href="/computers"
@@ -363,14 +359,14 @@ function AppSidebarInner({ auth }: { auth: AuthSession }) {
               <Monitor className="h-[15px] w-[15px] shrink-0" />
             </Link>
           ) : (
-          <div
-            className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-[11px] font-semibold uppercase tracking-wider select-none"
-            style={{ color: SECT }}
-          >
-            <Monitor className="h-[15px] w-[15px] shrink-0" />
-            <span className="flex-1 text-left">Computers</span>
-            <Minus className="h-3 w-3 shrink-0 opacity-40" />
-          </div>
+            <div
+              className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-[11px] font-semibold uppercase tracking-wider select-none"
+              style={{ color: SECT }}
+            >
+              <Monitor className="h-[15px] w-[15px] shrink-0" />
+              <span className="flex-1 text-left">Computers</span>
+              <Minus className="h-3 w-3 shrink-0 opacity-40" />
+            </div>
           )}
           {!collapsed && (
             <div className="mt-0.5 pb-1">

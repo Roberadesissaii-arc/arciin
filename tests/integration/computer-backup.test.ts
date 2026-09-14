@@ -33,12 +33,13 @@ function stubRedis() {
   }
 }
 
-async function sessionToken(userId: string) {
+async function sessionToken(userId: string, pairedDeviceId?: string) {
   const raw = `sess_${userId}_${crypto.randomUUID()}`
   await prisma.session.create({
     data: {
       userId,
       tokenHash: hashToken(raw),
+      pairedDeviceId: pairedDeviceId ?? null,
       expiresAt: new Date(Date.now() + 86_400_000),
     },
   })
@@ -256,7 +257,7 @@ describe("computer backup authorization", () => {
     const enabled = await enableBackupProfile(prisma, { userId: ownerId, deviceId: paired.device.id })
     const app = await buildApp()
     try {
-      const token = await sessionToken(ownerId)
+      const token = await sessionToken(ownerId, paired.device.id)
       const res = await app.inject({
         method: "POST",
         url: `/api/backup/profiles/${enabled.profile.id}/disable`,
@@ -265,6 +266,19 @@ describe("computer backup authorization", () => {
       expect(res.statusCode).toBe(200)
       const device = await prisma.device.findUnique({ where: { id: paired.device.id } })
       expect(device?.status).toBe("ACTIVE")
+      const listed = await app.inject({
+        method: "GET",
+        url: "/api/settings/devices",
+        cookies: { arciin_session: token },
+      })
+      expect(listed.statusCode).toBe(200)
+      const snapshot = listed.json().data as {
+        currentDeviceId: string | null
+        devices: Array<{ id: string; status: string; backup: { enabled: boolean } | null }>
+      }
+      expect(snapshot.currentDeviceId).toBe(paired.device.id)
+      expect(snapshot.devices).toHaveLength(1)
+      expect(snapshot.devices[0]?.backup?.enabled).toBe(false)
       const denied = await app.inject({
         method: "GET",
         url: "/api/backup/me",
