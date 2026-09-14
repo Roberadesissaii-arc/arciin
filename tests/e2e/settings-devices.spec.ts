@@ -172,6 +172,20 @@ test.describe("Settings → Devices", () => {
 
       await login(desktopPage, OWNER_EMAIL, ownerPassword())
 
+      const desktopMe = await desktopPage.request.get("/api/auth/me")
+      expect(desktopMe.ok()).toBeTruthy()
+      const desktopSession = (await desktopMe.json()) as {
+        data: { session: { pairedDeviceId: string | null } | null }
+      }
+      expect(desktopSession.data.session?.pairedDeviceId).toBe(paired.data.device.id)
+
+      const ownerMe = await ownerPage.request.get("/api/auth/me")
+      expect(ownerMe.ok()).toBeTruthy()
+      const ownerSession = (await ownerMe.json()) as {
+        data: { session: { pairedDeviceId: string | null } | null }
+      }
+      expect(ownerSession.data.session?.pairedDeviceId).toBeNull()
+
       const listed = await desktopPage.request.get("/api/settings/devices")
       expect(listed.ok()).toBeTruthy()
       const snapshot = (await listed.json()) as {

@@ -1,6 +1,13 @@
 /**
  * Current paired Device is always taken from the authenticated session.
  * Never trust a client-supplied device id, IP, User-Agent, or hostname.
+ *
+ * Desktop self-heal: after this Desktop has bootstrapped its trusted Device and
+ * the user has a valid session, compare GET /api/auth/me session.pairedDeviceId
+ * to this Desktop Device.id. Match → session is correct. Null or a different id
+ * → clear only the user session cookie and sign in again. Do not revoke the
+ * Device, delete its credential, or re-pair. The next login already has the
+ * trusted-device cookie, so the new session becomes device-bound.
  */
 
 export const DEVICE_RECENTLY_SEEN_MS = 10 * 60 * 1000

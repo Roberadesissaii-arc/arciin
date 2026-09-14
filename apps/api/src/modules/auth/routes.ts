@@ -120,6 +120,9 @@ export async function registerAuthRoutes(fastify: FastifyInstance) {
         return
       }
 
+      // pairedDeviceId is server-derived from the Session row. Query/body values
+      // are ignored. MEMBER and VIEWER can read their own binding here; they
+      // cannot call GET /api/settings/devices.
       reply.send({
         data: {
           user: serializeUser(request.auth.user),
