@@ -201,10 +201,10 @@ test.describe("My Computers", () => {
       await expect(page.getByRole("heading", { name: "Robera Desktop" })).toBeVisible()
       await page.locator('a[href*="folder="]').filter({ hasText: "Desktop" }).click()
       await expect(page.getByRole("link", { name: "WebProject" })).toBeVisible()
-      await expect(page.getByText("photo.jpg")).toBeVisible()
+      await expect(page.getByTitle("photo.jpg", { exact: true })).toBeVisible()
       await page.getByRole("link", { name: "WebProject" }).click()
       await expect(page.getByRole("link", { name: "public" })).toBeVisible()
-      await expect(page.getByText("package.json").first()).toBeVisible()
+      await expect(page.getByTitle("package.json", { exact: true })).toBeVisible()
       await expect(page.getByTitle("demo.mp4", { exact: true })).toBeVisible()
 
       await page.goto("/images")
