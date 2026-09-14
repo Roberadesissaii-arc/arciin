@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs"
 
 import { expect, test } from "@playwright/test"
 
+import { newUnauthedContext } from "./desktop-promo"
+
 /**
  * Signing in, end to end, in a browser that starts signed out.
  *
@@ -27,7 +29,7 @@ test("signing in stores a session and leaves the login page", async ({ browser, 
 
   // A context of its own: the project injects a saved session, which would
   // mean never testing the login at all.
-  const context = await browser.newContext({ storageState: undefined, baseURL })
+  const context = await newUnauthedContext(browser, { baseURL })
   const page = await context.newPage()
 
   try {

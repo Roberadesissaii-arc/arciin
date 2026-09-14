@@ -32,6 +32,7 @@ import {
   SettingsCard,
   SettingsHint,
 } from "@/components/settings/settings-panel-primitives"
+import { WindowsDesktopDownloadCard } from "@/components/settings/windows-desktop-download-card"
 import { SettingsPanelError } from "@/components/settings/settings-panel-error"
 import {
   cancelDevicePairing,
@@ -565,6 +566,8 @@ export function DevicesPanel() {
           </SettingsHint>
         </CardContent>
       </Card>
+
+      <WindowsDesktopDownloadCard />
 
       <SettingsCard>
         <SectionHeader

@@ -3,6 +3,8 @@ import path from "node:path"
 
 import { expect, test, type Browser, type Page } from "@playwright/test"
 
+import { newUnauthedContext } from "./desktop-promo"
+
 const IMAGE_FIXTURE = path.resolve(__dirname, "../fixtures/e2e-image-fixture.png")
 const PDF_FIXTURE = path.resolve(__dirname, "../fixtures/e2e-doc-fixture.pdf")
 const VIDEO_FIXTURE = path.resolve(__dirname, "../fixtures/e2e-video-transcript-fixture.mp4")
@@ -24,7 +26,7 @@ async function login(page: Page, email: string, password: string) {
 }
 
 async function freshContext(browser: Browser, baseURL: string | undefined) {
-  const context = await browser.newContext({ storageState: undefined, baseURL })
+  const context = await newUnauthedContext(browser, { baseURL })
   const page = await context.newPage()
   return { context, page }
 }
@@ -140,7 +142,7 @@ test.describe("My Computers", () => {
     page,
   }) => {
     test.setTimeout(240_000)
-    const desktop = await browser.newContext({ storageState: undefined, baseURL })
+    const desktop = await newUnauthedContext(browser, { baseURL })
     try {
       const existing = await page.request.get("/api/settings/devices")
       if (existing.ok()) {

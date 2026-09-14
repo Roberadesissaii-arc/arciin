@@ -4,6 +4,8 @@ import path from "node:path"
 
 import { expect, test, type Browser, type Page } from "@playwright/test"
 
+import { newUnauthedContext } from "./desktop-promo"
+
 const OWNER_EMAIL = "e2e@arciin.invalid"
 const PASSWORD_FILE = "/tmp/arciin-e2e-pw"
 const ROLE_FILE = "/tmp/arciin-e2e-role-users.json"
@@ -37,7 +39,7 @@ async function login(page: Page, email: string, password: string) {
 }
 
 async function freshContext(browser: Browser, baseURL: string | undefined) {
-  const context = await browser.newContext({ storageState: undefined, baseURL })
+  const context = await newUnauthedContext(browser, { baseURL })
   const page = await context.newPage()
   const consoleErrors: string[] = []
   const failedRequests: string[] = []
