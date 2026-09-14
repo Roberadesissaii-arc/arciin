@@ -79,7 +79,7 @@ function typeLabel(type: PairedDevicePublic["deviceType"]) {
 }
 
 function PlatformIcon({ platform }: { platform: PairedDevicePublic["platform"] }) {
-  const className = "size-5 shrink-0 text-muted-foreground"
+  const className = "size-5 shrink-0 text-zinc-600"
   if (platform === "IOS" || platform === "ANDROID") return <Smartphone className={className} />
   if (platform === "MACOS") return <Laptop className={className} />
   return <Monitor className={className} />
@@ -154,105 +154,109 @@ function DeviceCard({
 
   return (
     <div
-      className="rounded-xl border border-border bg-zinc-950/40 px-4 py-4"
+      className="rounded-xl border border-zinc-200 bg-white p-4"
       data-testid={isCurrent ? "device-card-current" : "device-card-other"}
     >
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div className="min-w-0 space-y-2">
-          <div className="flex items-start gap-3">
-            <div className="mt-0.5 flex size-9 items-center justify-center rounded-lg border border-border bg-zinc-900">
-              <PlatformIcon platform={device.platform} />
-            </div>
-            <div className="min-w-0 space-y-1.5">
+      <div className="flex items-start gap-3">
+        <div className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-zinc-200 bg-zinc-50">
+          <PlatformIcon platform={device.platform} />
+        </div>
+
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0 flex-1 space-y-1">
               <div className="flex flex-wrap items-center gap-2">
-                <p className="truncate text-[14px] font-medium text-foreground">{device.name}</p>
+                <p className="truncate text-[14px] font-medium text-zinc-900">{device.name}</p>
                 {isCurrent ? (
-                  <Badge variant="outline" className="border-[#FF4F12]/40 bg-[#FF4F12]/10 text-white">
+                  <Badge variant="outline" className="border-[#FF4F12]/30 bg-[#FF4F12]/10 text-[#FF4F12]">
                     This device
                   </Badge>
                 ) : null}
                 <Badge variant="secondary">{devicePresenceLabel(presence)}</Badge>
               </div>
-              <p className="text-[12px] text-zinc-500">
+              <p className="text-[13px] text-zinc-500">
                 {platformLabel(device.platform)} · {typeLabel(device.deviceType)}
               </p>
-              <p className="text-[12px] text-zinc-500">Last seen {formatRelative(device.lastSeenAt)}</p>
+              <p className="text-[13px] text-zinc-500">Last seen {formatRelative(device.lastSeenAt)}</p>
+            </div>
+
+            <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+              {backup?.enabled ? (
+                <Button asChild variant="outline" size="sm">
+                  <Link href={`/computers/${device.id}`}>Manage Backup</Link>
+                </Button>
+              ) : null}
+
+              {isCurrent ? (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon-sm"
+                      aria-label="More device actions"
+                      data-testid="current-device-menu"
+                    >
+                      <EllipsisVertical className="size-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    {backup?.enabled ? (
+                      <>
+                        <DropdownMenuItem onSelect={() => onDisableBackup(device)}>
+                          Disable Backup
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                      </>
+                    ) : null}
+                    <DropdownMenuItem
+                      variant="destructive"
+                      data-testid="disconnect-this-computer"
+                      onSelect={() => onDisconnect(device)}
+                    >
+                      Disconnect this computer
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              ) : (
+                <>
+                  {backup?.enabled ? (
+                    <Button type="button" variant="outline" size="sm" onClick={() => onDisableBackup(device)}>
+                      Disable Backup
+                    </Button>
+                  ) : null}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    data-testid="revoke-access"
+                    onClick={() => onRevoke(device)}
+                  >
+                    Revoke access
+                  </Button>
+                </>
+              )}
             </div>
           </div>
 
-          <div className="pt-1 text-[12px] text-zinc-500" data-testid="device-backup-summary">
-            <p className="font-medium text-foreground">Computer Backup</p>
+          <div
+            className="mt-3 border-t border-zinc-200/80 pt-3 text-[13px] text-zinc-500"
+            data-testid="device-backup-summary"
+          >
+            <p className="font-medium text-zinc-900">Computer Backup</p>
             {backup?.enabled ? (
-              <>
+              <div className="mt-1 space-y-0.5">
                 <p>{backupHealthLabel(backup.health)}</p>
                 <p>
                   {backup.rootCount} protected {backup.rootCount === 1 ? "folder" : "folders"}
                   {backup.byteCount > 0 ? ` · ${formatBytesLabel(backup.byteCount)}` : ""}
                 </p>
                 <p>Last backup {formatRelative(backup.lastSyncAt)}</p>
-              </>
+              </div>
             ) : (
-              <p>Not enabled. Pairing stays; only background backup is off.</p>
+              <p className="mt-1">Not enabled. Pairing stays; only background backup is off.</p>
             )}
           </div>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          {backup?.enabled ? (
-            <Button asChild variant="outline" size="sm">
-              <Link href={`/computers/${device.id}`}>Manage Backup</Link>
-            </Button>
-          ) : null}
-
-          {isCurrent ? (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon-sm"
-                  aria-label="More device actions"
-                  data-testid="current-device-menu"
-                >
-                  <EllipsisVertical className="size-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                {backup?.enabled ? (
-                  <>
-                    <DropdownMenuItem onSelect={() => onDisableBackup(device)}>
-                      Disable Backup
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                  </>
-                ) : null}
-                <DropdownMenuItem
-                  variant="destructive"
-                  data-testid="disconnect-this-computer"
-                  onSelect={() => onDisconnect(device)}
-                >
-                  Disconnect this computer
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          ) : (
-            <>
-              {backup?.enabled ? (
-                <Button type="button" variant="outline" size="sm" onClick={() => onDisableBackup(device)}>
-                  Disable Backup
-                </Button>
-              ) : null}
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                data-testid="revoke-access"
-                onClick={() => onRevoke(device)}
-              >
-                Revoke access
-              </Button>
-            </>
-          )}
         </div>
       </div>
     </div>
