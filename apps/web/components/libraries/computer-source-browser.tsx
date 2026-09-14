@@ -182,7 +182,10 @@ export function ComputerSourceBrowser({
           <p className="truncate text-[12px] text-zinc-500">
             {platformLabel(computer.platform)}
             {" · "}
-            {computer.roots.length} protected {computer.roots.length === 1 ? "folder" : "folders"}
+            {computer.roots.filter((root) => root.status !== "DISABLED").length} protected{" "}
+            {computer.roots.filter((root) => root.status !== "DISABLED").length === 1
+              ? "folder"
+              : "folders"}
             {" · "}
             {healthLabel(computer.health)}
           </p>

@@ -82,6 +82,8 @@ export type AssetSourceContext = {
   rootDisplayName: string
   relativePath: string
   breadcrumbs: string[]
+  /** Present so All Files can later label a retired root without dropping the file. */
+  rootStatus?: SyncRootStatus
 }
 
 export type ComputerCardPublic = {

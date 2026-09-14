@@ -31,6 +31,7 @@ export async function loadAssetSourceContexts(
       rootDisplayName: entry.syncRoot.displayName,
       relativePath: entry.relativePath,
       breadcrumbs,
+      rootStatus: entry.syncRoot.status,
     })
   }
   return map

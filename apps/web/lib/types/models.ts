@@ -299,6 +299,7 @@ export type AssetSummary = {
     rootDisplayName: string
     relativePath: string
     breadcrumbs: string[]
+    rootStatus?: "PROTECTED" | "SYNCING" | "PAUSED" | "ERROR" | "DISABLED"
   } | null
 }
 

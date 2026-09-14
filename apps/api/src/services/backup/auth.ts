@@ -108,3 +108,17 @@ export function assertBackupOwner(
   if (actor.id === userId) return
   throw new BackupError("BACKUP_FORBIDDEN", "You cannot access another user's backup.", 403)
 }
+
+export function assertBoundDeviceMatch(
+  session: { pairedDeviceId: string | null } | null | undefined,
+  deviceId: string,
+) {
+  if (!session?.pairedDeviceId) return
+  if (session.pairedDeviceId !== deviceId) {
+    throw new BackupError(
+      "BACKUP_FORBIDDEN",
+      "This session is bound to a different computer.",
+      403,
+    )
+  }
+}

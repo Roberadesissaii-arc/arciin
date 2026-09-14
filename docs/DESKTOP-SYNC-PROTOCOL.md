@@ -234,14 +234,81 @@ Device last-seen / pairing health is independent of backup health.
 
 Pairing sessions for that device are also ended (existing pairing behavior).
 
-## 16. Backup disable
+## 16. Backup disable (stop computer backup)
 
 `POST /api/backup/profiles/:id/disable`
 
-- leaves the Device paired
-- revokes backup grants
-- keeps the canonical files in Arciin
+This stops **the whole profile**. It is not the same as removing one folder.
+
+- marks the profile `DISABLED`
+- marks every sync root `DISABLED` (records stay; they can be chosen again later)
+- revokes every backup grant for that profile
+- rejects later `ArciinSync` requests (`BACKUP_DISABLED` / `BACKUP_CREDENTIAL_INVALID`)
+- leaves the Device paired (`ACTIVE`)
+- leaves the user session valid
+- keeps canonical files and source metadata in Arciin
+- never deletes Windows folders
+- never deletes server files
 - desktop must drop the stored sync credential
+
+Protected-folder counts become 0 while the profile is disabled.
+
+## 16a. Re-enable an existing profile
+
+`POST /api/backup/profiles/:id/enable`
+
+Also: `POST /api/backup/profiles` with the same `deviceId` after disable.
+
+- reuses the existing `DeviceBackupProfile` (`@@unique([deviceId, userId])`)
+- does not create another Device or another profile
+- requires a signed-in user who owns the profile (or OWNER/ADMIN)
+- Device must still be `ACTIVE`
+- if the session is bound to a Device, it must match this profile's device
+- issues a **new** one-time `ArciinSync` credential
+- stores only the hash
+- previous grants stay revoked; credential A remains dead
+- roots stay `DISABLED` until the client re-protects them (body `roots` and/or
+  `POST /api/backup/roots` with the same `sourcePathIdentifier`)
+
+`POST /api/backup/profiles/:id/rotate` still requires an **enabled** profile.
+After Stop Backup, use enable, not rotate.
+
+## 16b. Remove one protected folder (retire a sync root)
+
+`POST /api/backup/roots/:rootId/disable`
+
+Session cookie **or** `Authorization: ArciinSync` for that profile.
+
+This is **not** Stop Backup.
+
+- that `SyncRoot` becomes `DISABLED`
+- the profile stays `ENABLED`
+- other roots keep syncing
+- new writes to the retired root are rejected (`SYNC_ROOT_DISABLED`)
+- heartbeat/`UP_TO_DATE` is not presented as if that folder were still protected
+- Settings protected-folder count excludes `DISABLED` roots
+- already-backed-up files stay stored and stay in All Files with
+  `sourceContext` (`deviceName`, `rootDisplayName`, optional `rootStatus`)
+- Windows folder is never deleted
+- Device pairing is unchanged
+
+Re-protect the same source with the same opaque `sourcePathIdentifier`
+(`POST /api/backup/roots` or `POST /api/backup/roots/:rootId/enable`).
+The existing SyncRoot row and folder mapping are reused. Files are not
+duplicated.
+
+## 16c. Watcher implications (desktop)
+
+The filesystem watcher (not in this repo) must treat server status as
+authoritative:
+
+- do not enqueue writes for a `DISABLED` root
+- after Remove Folder, call `POST /api/backup/roots/:id/disable` — local-only
+  stop is not enough
+- after Stop Backup, call profile disable and drop the credential
+- after Turn On Backup, call profile enable, store credential B, then
+  re-enable selected roots before watching them again
+- never delete local folders because a root or profile was disabled
 
 ## 17. Errors
 
@@ -259,6 +326,7 @@ Standard Arciin envelope:
 | `BACKUP_DEVICE_UNPAIRED` | Device is missing or revoked |
 | `BACKUP_FORBIDDEN` | Cross-user or cross-device |
 | `BACKUP_DISABLED` | Profile is disabled |
+| `SYNC_ROOT_DISABLED` | That protected folder was retired; the profile may still be active |
 | `BACKUP_READ_ONLY` | Server-side hierarchy mutation is not allowed in V1 |
 | `PATH_TRAVERSAL` | Relative path escaped the root |
 | `PATH_INVALID` | Bad/reserved/empty segment |
