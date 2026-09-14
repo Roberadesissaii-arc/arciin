@@ -36,18 +36,31 @@ export function isWindowsBrowserPlatform(input: {
   userAgentDataPlatform?: string | null
   userAgent?: string | null
 }): boolean {
+  const ua = input.userAgent ?? ""
+  // A concrete non-Windows UA wins over Client Hints. Playwright on Linux can
+  // still report platform "Windows" while a test sets a Linux/macOS UA.
+  if (ua) {
+    if (/windows phone|iemobile/i.test(ua)) return false
+    if (/\b(android|iphone|ipod|ipad)\b/i.test(ua)) return false
+    if (/\b(macintosh|mac os x)\b/i.test(ua)) return false
+    if (/\b(x11|linux|cros)\b/i.test(ua) && !/windows/i.test(ua)) return false
+  }
+
   const hinted = normalize(input.userAgentDataPlatform)
   if (hinted) {
-    if (hinted === "android" || hinted === "ios" || hinted.includes("iphone")) {
+    if (
+      hinted === "android" ||
+      hinted === "ios" ||
+      hinted.includes("iphone") ||
+      hinted === "macos" ||
+      hinted === "linux"
+    ) {
       return false
     }
     return hinted === "windows" || hinted === "win32"
   }
 
-  const ua = input.userAgent ?? ""
   if (!ua) return false
-  if (/windows phone|iemobile/i.test(ua)) return false
-  if (/\b(android|iphone|ipod|ipad)\b/i.test(ua)) return false
   return /windows nt|win64|wow64|\bwindows\b/i.test(ua)
 }
 

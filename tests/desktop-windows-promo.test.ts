@@ -37,17 +37,31 @@ describe("canonical Windows Desktop download URL", () => {
 })
 
 describe("isWindowsBrowserPlatform", () => {
-  it("prefers Client Hints over the user agent", () => {
+  it("prefers Client Hints when the user agent is absent or also Windows", () => {
+    expect(
+      isWindowsBrowserPlatform({
+        userAgentDataPlatform: "Windows",
+        userAgent: WINDOWS_UA,
+      }),
+    ).toBe(true)
+    expect(
+      isWindowsBrowserPlatform({
+        userAgentDataPlatform: "Windows",
+      }),
+    ).toBe(true)
+  })
+
+  it("does not let Windows Client Hints override a Linux or macOS user agent", () => {
     expect(
       isWindowsBrowserPlatform({
         userAgentDataPlatform: "Windows",
         userAgent: LINUX_UA,
       }),
-    ).toBe(true)
+    ).toBe(false)
     expect(
       isWindowsBrowserPlatform({
-        userAgentDataPlatform: "macOS",
-        userAgent: WINDOWS_UA,
+        userAgentDataPlatform: "Windows",
+        userAgent: MAC_UA,
       }),
     ).toBe(false)
   })

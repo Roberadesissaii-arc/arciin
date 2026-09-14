@@ -1,7 +1,9 @@
 import { readFileSync } from "node:fs"
 import path from "node:path"
 
-import { expect, test as setup } from "@playwright/test"
+import { expect, test as setup, type Page } from "@playwright/test"
+
+import { DESKTOP_PROMO_DISMISSED_KEY, suppressWindowsDesktopPromo } from "./desktop-promo"
 
 /**
  * Sign in once and save the session for the browser suite.
@@ -33,6 +35,7 @@ const PASSWORD_FILE = "/tmp/arciin-e2e-pw"
 
 setup("authenticate against the isolated dev instance", async ({ page, context }) => {
   const password = readFileSync(PASSWORD_FILE, "utf8").trim()
+  await suppressWindowsDesktopPromo(context)
 
   await page.goto("/login")
 
@@ -48,6 +51,7 @@ setup("authenticate against the isolated dev instance", async ({ page, context }
     .catch(() => !page.url().includes("/login"))
 
   if (alreadySignedIn) {
+    await persistDesktopPromoDismissal(page)
     await context.storageState({ path: STORAGE_STATE })
     return
   }
@@ -62,5 +66,12 @@ setup("authenticate against the isolated dev instance", async ({ page, context }
   await page.waitForURL((url) => !url.pathname.startsWith("/login"), { timeout: 30_000 })
   expect(page.url(), "login should leave /login").not.toContain("/login")
 
+  await persistDesktopPromoDismissal(page)
   await context.storageState({ path: STORAGE_STATE })
 })
+
+async function persistDesktopPromoDismissal(page: Page) {
+  await page.evaluate((key) => {
+    window.localStorage.setItem(key, "1")
+  }, DESKTOP_PROMO_DISMISSED_KEY)
+}

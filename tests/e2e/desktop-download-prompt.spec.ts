@@ -20,6 +20,8 @@ function ownerPassword() {
 async function loginAsOwner(browser: Browser, baseURL: string | undefined, userAgent: string, extras?: {
   initScript?: string
 }) {
+  // Intentionally does not call suppressWindowsDesktopPromo — this spec is the
+  // opt-in coverage for the Windows prompt.
   const context = await browser.newContext({
     storageState: undefined,
     baseURL,

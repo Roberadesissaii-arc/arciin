@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs"
 
 import { expect, test, type Browser, type Page } from "@playwright/test"
 
+import { suppressWindowsDesktopPromo } from "./desktop-promo"
+
 const OWNER_EMAIL = "e2e@arciin.invalid"
 const PASSWORD_FILE = "/tmp/arciin-e2e-pw"
 const ROLE_FILE = "/tmp/arciin-e2e-role-users.json"
@@ -28,6 +30,7 @@ async function login(page: Page, email: string, password: string) {
 
 async function freshContext(browser: Browser, baseURL: string | undefined) {
   const context = await browser.newContext({ storageState: undefined, baseURL })
+  await suppressWindowsDesktopPromo(context)
   const page = await context.newPage()
   return { context, page }
 }
