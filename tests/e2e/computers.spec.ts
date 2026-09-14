@@ -32,7 +32,15 @@ async function freshContext(browser: Browser, baseURL: string | undefined) {
 test.describe.configure({ mode: "serial" })
 
 test.describe("My Computers", () => {
-  test("sidebar has one My Computers entry and an empty state", async ({ page }) => {
+  test("sidebar has no Computers section; All Files remains the file home", async ({ page }) => {
+    await page.goto("/dashboard")
+    await expect(page.getByTestId("nav-my-computers")).toHaveCount(0)
+    await expect(page.getByRole("link", { name: "My Computers" })).toHaveCount(0)
+    await expect(page.getByRole("navigation").getByText("Computers", { exact: true })).toHaveCount(0)
+    await expect(page.getByRole("link", { name: "All Files" })).toBeVisible()
+  })
+
+  test("empty computer route still explains Desktop backup", async ({ page }) => {
     const existing = await page.request.get("/api/settings/devices")
     if (existing.ok()) {
       const snapshot = (await existing.json()) as { data: { devices: { id: string }[] } }
@@ -41,12 +49,7 @@ test.describe("My Computers", () => {
       }
     }
 
-    await page.goto("/dashboard")
-    await expect(page.getByTestId("nav-my-computers")).toHaveCount(1)
-    await expect(page.getByRole("link", { name: "Desktop" })).toHaveCount(0)
-    await expect(page.getByRole("link", { name: "Pictures" })).toHaveCount(0)
-
-    await page.getByTestId("nav-my-computers").click()
+    await page.goto("/computers")
     await expect(page).toHaveURL(/\/computers/)
     await expect(page.getByRole("heading", { name: "My Computers" })).toBeVisible()
     const empty = page.getByTestId("computers-empty-state")
@@ -113,8 +116,8 @@ test.describe("My Computers", () => {
     try {
       const member = roleCreds().member
       await login(page, member.email, member.password)
-      await expect(page.getByTestId("nav-my-computers")).toHaveCount(1)
-      await page.getByTestId("nav-my-computers").click()
+      await expect(page.getByTestId("nav-my-computers")).toHaveCount(0)
+      await page.goto("/computers")
       await expect(page.getByRole("heading", { name: "My Computers" })).toBeVisible()
       const listed = await page.request.get("/api/settings/devices")
       expect(listed.status()).toBe(403)
@@ -267,6 +270,29 @@ test.describe("My Computers", () => {
       await expect(page.getByTitle("package.json", { exact: true })).toBeVisible()
       await expect(page.getByTitle("demo.mp4", { exact: true })).toBeVisible()
 
+      await page.goto("/files")
+      await expect(page.getByTestId("source-filter")).toBeVisible()
+      await page.getByTestId("source-filter").click()
+      const sourceMenu = page.getByRole("listbox", { name: "Source filter" })
+      await expect(sourceMenu.getByRole("option", { name: "All sources", exact: true })).toBeVisible()
+      await expect(sourceMenu.getByRole("option", { name: "Manual uploads", exact: true })).toBeVisible()
+      await expect(sourceMenu.getByRole("option", { name: "Computer backups", exact: true })).toBeVisible()
+      await expect(sourceMenu.getByRole("option", { name: "Robera Desktop", exact: true })).toHaveCount(1)
+      await sourceMenu.getByRole("option", { name: "Computer backups", exact: true }).click()
+      await expect(page.getByTitle("photo.jpg", { exact: true }).first()).toBeVisible()
+      await expect(page.getByTestId("browse-computer")).toHaveCount(0)
+      await page.getByTestId("source-filter").click()
+      await sourceMenu.getByRole("option", { name: "Robera Desktop", exact: true }).click()
+      await expect(page.getByTestId("browse-computer")).toBeVisible()
+      await expect(page.getByTitle("photo.jpg", { exact: true })).toHaveCount(1)
+      await page.getByRole("toolbar", { name: "Search, filter, and view assets" }).getByRole("button", { name: "Images", exact: true }).click()
+      await expect(page.getByTitle("photo.jpg", { exact: true })).toHaveCount(1)
+      await expect(page.getByTitle("logo.png", { exact: true })).toHaveCount(1)
+      await expect(page.getByTitle("invoice.pdf", { exact: true })).toHaveCount(0)
+      await page.getByTestId("browse-computer").click()
+      await expect(page).toHaveURL(/\/computers\//)
+      await expect(page.getByRole("heading", { name: "Robera Desktop" })).toBeVisible()
+
       await page.goto("/images")
       await expect(page.getByText("logo.png").first()).toBeVisible()
       await expect(page.getByText(/Robera Desktop › Desktop › WebProject/).first()).toBeVisible()
@@ -276,7 +302,9 @@ test.describe("My Computers", () => {
 
       await page.goto("/settings?tab=devices")
       await expect(page.getByTestId("device-backup-summary")).toBeVisible()
+      await expect(page.getByTestId("manage-backup-remote")).toBeVisible()
       await expect(page.getByRole("link", { name: "Manage Backup" })).toBeVisible()
+      await expect(page.getByTestId("turn-on-backup")).toHaveCount(0)
       await expect(page.getByRole("button", { name: "Disable Backup" })).toBeVisible()
       await expect(page.getByRole("button", { name: "Revoke", exact: true })).toHaveCount(0)
       await expect(page.getByRole("button", { name: "Revoke access" })).toBeVisible()

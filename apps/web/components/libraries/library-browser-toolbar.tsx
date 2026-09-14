@@ -1,7 +1,9 @@
 "use client"
 
+import Link from "next/link"
 import { Grid3X3, List, Search } from "lucide-react"
 
+import { Button } from "@/components/ui/button"
 import {
   FilterDropdown,
   type FilterDropdownOption,
@@ -13,6 +15,7 @@ import {
   type SourceFilterValue,
 } from "@/hooks/use-library-browser-filters"
 import type { LibraryAssetScope } from "@/components/libraries/library-scope-switch"
+import { SOURCE_ALL } from "@/lib/utils/library-asset-pipeline"
 import { cn } from "@/lib/utils"
 
 function ViewModeButton({
@@ -96,6 +99,7 @@ export function LibraryBrowserToolbar({
   sourceFilter = "all",
   onSourceFilterChange,
   sourceOptions = [],
+  browseComputerHref,
   placeholder = "Search files and metadata",
 }: {
   search: string
@@ -112,16 +116,15 @@ export function LibraryBrowserToolbar({
   sourceFilter?: SourceFilterValue
   onSourceFilterChange?: (value: SourceFilterValue) => void
   sourceOptions?: FilterDropdownOption[]
+  browseComputerHref?: string | null
   placeholder?: string
 }) {
   const sourceDropdownOptions: FilterDropdownOption[] =
     sourceOptions.length > 0
       ? sourceOptions
       : [
-          { value: "all", label: "All sources" },
-          { value: "This PC", label: "This PC" },
-          { value: "Downloads", label: "Downloads" },
-          { value: "NAS", label: "NAS" },
+          { value: SOURCE_ALL, label: "All sources" },
+          { value: "manual", label: "Manual uploads" },
         ]
 
   return (
@@ -154,16 +157,21 @@ export function LibraryBrowserToolbar({
       {/* Row B — left chips · right Source + Grid/List */}
       <div className="flex flex-wrap items-center justify-between gap-3 px-3 py-2.5 sm:px-4">
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1 sm:gap-1.5">
-          {showKindChips && onKindFilterChange
-            ? KIND_CHIP_OPTIONS.map((chip) => (
+          {showKindChips && onKindFilterChange ? (
+            <div className="flex min-w-0 flex-wrap items-center gap-1 sm:gap-1.5" role="group" aria-label="Type">
+              <span className="mr-1 hidden text-[11px] font-semibold uppercase tracking-wider text-zinc-500 sm:inline">
+                Type
+              </span>
+              {KIND_CHIP_OPTIONS.map((chip) => (
                 <SoftChip
                   key={chip.value}
                   active={kindFilter === chip.value}
                   label={chip.label}
                   onClick={() => onKindFilterChange(chip.value)}
                 />
-              ))
-            : null}
+              ))}
+            </div>
+          ) : null}
 
           {showScopeChips && onScopeChange ? (
             <div
@@ -189,13 +197,25 @@ export function LibraryBrowserToolbar({
 
         <div className="flex shrink-0 flex-wrap items-center gap-2 sm:gap-2.5">
           {onSourceFilterChange ? (
-            <FilterDropdown
-              ariaLabel="Source filter"
-              value={sourceFilter}
-              onValueChange={(v) => onSourceFilterChange(v as SourceFilterValue)}
-              options={sourceDropdownOptions}
-              minWidthClass="min-w-[9.5rem]"
-            />
+            <div className="flex min-w-0 items-center gap-2">
+              <span className="hidden text-[11px] font-semibold uppercase tracking-wider text-zinc-500 sm:inline">
+                Source
+              </span>
+              <FilterDropdown
+                ariaLabel="Source filter"
+                value={sourceFilter}
+                onValueChange={(v) => onSourceFilterChange(v as SourceFilterValue)}
+                options={sourceDropdownOptions}
+                minWidthClass="min-w-[9.5rem]"
+              />
+              {browseComputerHref ? (
+                <Button asChild variant="outline" size="sm">
+                  <Link href={browseComputerHref} data-testid="browse-computer">
+                    Browse computer
+                  </Link>
+                </Button>
+              ) : null}
+            </div>
           ) : null}
           <div
             className="flex shrink-0 items-center gap-1 rounded-lg border border-zinc-200/80 bg-zinc-50/60 p-1"

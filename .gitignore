@@ -87,6 +87,7 @@ apps/web/.next-e2e/
 apps/web/.next-verify-backup/
 apps/web/.next-verify-desktop-bridge/
 apps/web/.next-verify-backup-sentinel/
+apps/web/.next-verify-backup-ux/
 
 # Playwright shared auth state (outside outputDir so Playwright cannot sweep it)
 .playwright-auth/

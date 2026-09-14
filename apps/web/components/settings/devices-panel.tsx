@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import Link from "next/link"
 import { Check, CircleCheck, Copy, EllipsisVertical, Laptop, Monitor, Smartphone, Tablet } from "lucide-react"
@@ -44,7 +44,7 @@ import { queryKeys } from "@/lib/api/query-keys"
 import { useAuth } from "@/hooks/use-auth"
 import type { DevicePairingCodeResult, PairedDevicePublic } from "@/lib/types/models"
 import { ApiError } from "@/lib/api/errors"
-import { devicePresenceLabel, resolveDevicePresence } from "@arciin/shared"
+import { devicePresenceLabel, isArciinDesktopWebView, requestNativeComputerBackupSetup, resolveDevicePresence } from "@arciin/shared"
 import { cn } from "@/lib/utils"
 import { copyToClipboard } from "@/lib/utils/clipboard"
 
@@ -176,13 +176,32 @@ function backupHealthLabel(health: NonNullable<PairedDevicePublic["backup"]>["he
   }
 }
 
+function useArciinDesktopWebView() {
+  return useSyncExternalStore(
+    () => () => {},
+    isArciinDesktopWebView,
+    () => false,
+  )
+}
+
+function requestBackupSetup(browserMessage: string) {
+  try {
+    if (requestNativeComputerBackupSetup()) return
+  } catch {
+    // Missing WebView must never throw in a browser.
+  }
+    toast.info(browserMessage)
+}
+
 function DeviceCard({
   device,
+  inDesktop,
   onDisableBackup,
   onDisconnect,
   onRevoke,
 }: {
   device: PairedDevicePublic
+  inDesktop: boolean
   onDisableBackup: (device: PairedDevicePublic) => void
   onDisconnect: (device: PairedDevicePublic) => void
   onRevoke: (device: PairedDevicePublic) => void
@@ -223,9 +242,34 @@ function DeviceCard({
             </div>
 
             <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
-              {backup?.enabled ? (
+              {isCurrent && !backup?.enabled ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  data-testid="turn-on-backup"
+                  onClick={() => requestBackupSetup("Open Arciin Desktop to turn on backup.")}
+                >
+                  Turn On Backup
+                </Button>
+              ) : null}
+
+              {isCurrent && backup?.enabled ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  data-testid="manage-backup"
+                  onClick={() => requestBackupSetup("Open Arciin Desktop to manage backup.")}
+                >
+                  Manage Backup
+                </Button>
+              ) : null}
+
+              {!isCurrent && backup?.enabled ? (
                 <Button asChild variant="outline" size="sm">
-                  <Link href={`/computers/${device.id}`}>Manage Backup</Link>
+                  <Link href={`/computers/${device.id}`} data-testid="manage-backup-remote">
+                    Manage Backup
+                  </Link>
                 </Button>
               ) : null}
 
@@ -290,13 +334,18 @@ function DeviceCard({
               <div className="mt-1 space-y-0.5">
                 <p>{backupHealthLabel(backup.health)}</p>
                 <p>
-                  {backup.rootCount} protected {backup.rootCount === 1 ? "folder" : "folders"}
-                  {backup.byteCount > 0 ? ` · ${formatBytesLabel(backup.byteCount)}` : ""}
+                  {backup.rootCount} {backup.rootCount === 1 ? "folder" : "folders"} protected
                 </p>
+                {backup.byteCount > 0 ? <p>{formatBytesLabel(backup.byteCount)}</p> : null}
                 <p>Last backup {formatRelative(backup.lastSyncAt)}</p>
               </div>
             ) : (
-              <p className="mt-1">Not enabled. Pairing stays; only background backup is off.</p>
+              <div className="mt-1 space-y-0.5">
+                <p>Not enabled</p>
+                {isCurrent && !inDesktop ? (
+                  <p>Open Arciin Desktop to turn on backup.</p>
+                ) : null}
+              </div>
             )}
           </div>
         </div>
@@ -310,6 +359,7 @@ export function DevicesPanel() {
   const authQuery = useAuth()
   const role = authQuery.data?.user.role
   const canManage = role === "OWNER" || role === "ADMIN"
+  const inDesktop = useArciinDesktopWebView()
 
   const [activeCode, setActiveCode] = useState<DevicePairingCodeResult | null>(null)
   const [pairedSuccess, setPairedSuccess] = useState<PairedDevicePublic | null>(null)
@@ -522,6 +572,7 @@ export function DevicesPanel() {
                     <DeviceCard
                       key={device.id}
                       device={device}
+                      inDesktop={inDesktop}
                       onDisableBackup={setDisableTarget}
                       onDisconnect={setDisconnectTarget}
                       onRevoke={setRevokeTarget}
@@ -538,6 +589,7 @@ export function DevicesPanel() {
                     <DeviceCard
                       key={device.id}
                       device={device}
+                      inDesktop={inDesktop}
                       onDisableBackup={setDisableTarget}
                       onDisconnect={setDisconnectTarget}
                       onRevoke={setRevokeTarget}

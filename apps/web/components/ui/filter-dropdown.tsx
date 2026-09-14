@@ -10,6 +10,8 @@ export type FilterDropdownOption = {
   label: string
   /** Optional color dot (e.g. badge filter). */
   color?: string
+  /** Nested under a parent option, e.g. a specific computer. */
+  indent?: boolean
 }
 
 /**
@@ -68,6 +70,7 @@ export function FilterDropdown({
           open &&
             "border-[rgba(255,79,18,0.45)] ring-2 ring-[rgba(255,79,18,0.15)]",
         )}
+        data-testid="source-filter"
       >
         <span className="flex min-w-0 items-center gap-2 truncate">
           {selected?.color ? (
@@ -105,8 +108,10 @@ export function FilterDropdown({
               <li key={option.value} role="option" aria-selected={isSelected}>
                 <button
                   type="button"
+                  data-source-value={option.value}
                   className={cn(
-                    "flex w-full items-center gap-2 px-3 py-2 text-left text-[13px] font-medium transition-colors",
+                    "flex w-full items-center gap-2 py-2 text-left text-[13px] font-medium transition-colors",
+                    option.indent ? "pl-7 pr-3" : "px-3",
                     isSelected
                       ? "bg-[color-mix(in_srgb,#FF4F12_10%,transparent)] text-[#FF4F12]"
                       : "text-zinc-700 hover:bg-zinc-50",

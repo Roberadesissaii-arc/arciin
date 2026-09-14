@@ -8,23 +8,62 @@ import { inferDestinationLabel } from "@/lib/utils/media-type"
 import type { AssetSummary } from "@/lib/types/models"
 import type { FilterDropdownOption } from "@/components/ui/filter-dropdown"
 
+export const SOURCE_ALL = "all"
+export const SOURCE_MANUAL = "manual"
+export const SOURCE_COMPUTER = "computer"
+
+export function computerSourceValue(deviceId: string): string {
+  return `computer:${deviceId}`
+}
+
+export function parseComputerSourceDeviceId(source: string): string | null {
+  if (!source.startsWith("computer:")) return null
+  const id = source.slice("computer:".length).trim()
+  return id || null
+}
+
 export function assetSourceLabel(asset: AssetSummary): string {
   const badge = resolveAssetBadge(asset)
   if (badge?.label) return badge.label
   return inferDestinationLabel(asset.mimeType, asset.originalFilename)
 }
 
-export function collectSourceFilterOptions(assets: AssetSummary[]): FilterDropdownOption[] {
-  const seen = new Map<string, FilterDropdownOption>()
-  for (const asset of assets) {
-    const label = assetSourceLabel(asset)
-    if (!label || seen.has(label)) continue
-    seen.set(label, { value: label, label })
+export function collectSourceFilterOptions(
+  assets: AssetSummary[],
+  computers?: Array<{ deviceId: string; name: string }> | null,
+): FilterDropdownOption[] {
+  const byId = new Map<string, string>()
+  const listed = Array.isArray(computers)
+  if (listed) {
+    for (const computer of computers) {
+      if (!computer.deviceId) continue
+      byId.set(computer.deviceId, computer.name)
+    }
+  } else {
+    for (const asset of assets) {
+      const ctx = asset.sourceContext
+      if (!ctx?.deviceId) continue
+      if (!byId.has(ctx.deviceId)) byId.set(ctx.deviceId, ctx.deviceName)
+    }
   }
-  return [
-    { value: "all", label: "All sources" },
-    ...[...seen.values()].sort((a, b) => a.label.localeCompare(b.label)),
+
+  const hasBackupAssets = assets.some((asset) => Boolean(asset.sourceContext))
+  const options: FilterDropdownOption[] = [
+    { value: SOURCE_ALL, label: "All sources" },
+    { value: SOURCE_MANUAL, label: "Manual uploads" },
   ]
+  if (byId.size === 0 && !hasBackupAssets) return options
+
+  options.push({ value: SOURCE_COMPUTER, label: "Computer backups" })
+  const named = [...byId.entries()].sort((a, b) => a[1].localeCompare(b[1], undefined, { sensitivity: "base" }))
+  for (const [deviceId, name] of named) {
+    options.push({
+      value: computerSourceValue(deviceId),
+      label: name,
+      indent: true,
+    })
+  }
+  return options
 }
 
 export function filterAssetsByKind(
@@ -42,8 +81,14 @@ export function filterAssetsBySource(
   assets: AssetSummary[],
   source: SourceFilterValue,
 ): AssetSummary[] {
-  if (source === "all") return assets
-  return assets.filter((a) => assetSourceLabel(a) === source)
+  if (source === SOURCE_ALL) return assets
+  if (source === SOURCE_MANUAL) return assets.filter((asset) => !asset.sourceContext)
+  if (source === SOURCE_COMPUTER) return assets.filter((asset) => Boolean(asset.sourceContext))
+  const deviceId = parseComputerSourceDeviceId(source)
+  if (deviceId) {
+    return assets.filter((asset) => asset.sourceContext?.deviceId === deviceId)
+  }
+  return assets
 }
 
 export function pipelineLibraryAssets(
