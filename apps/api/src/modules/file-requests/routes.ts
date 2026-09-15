@@ -45,7 +45,7 @@ import { requireSessionRole } from "@/services/security/auth"
 import { resolveEffectiveStorageRoot } from "@/services/storage/effective-storage-root"
 import {
   createObjectStoragePath,
-  moveTempToObject,
+  placeCanonicalOriginal,
   removeTempFile,
   writeMultipartToTemp,
 } from "@/services/storage/local-storage"
@@ -696,28 +696,38 @@ export async function registerFileRequestRoutes(fastify: FastifyInstance) {
             checksumSha256: tempResult.checksumSha256,
             storageLocationId: fileRequest.destinationLibrary.storageLocationId,
           },
-          select: { id: true },
+          select: { id: true, objectKey: true, physicalPath: true },
         })
 
-        let objectKey = ""
-        let physicalPath = ""
+        const objectPath = existingObject?.objectKey
+          ? {
+              objectKey: existingObject.objectKey,
+              physicalPath: path.join(storageRoot, existingObject.objectKey),
+            }
+          : createObjectStoragePath(
+              tempResult.checksumSha256,
+              analysis.extension || path.extname(admission.safeFilename),
+              storageRoot,
+            )
 
-        if (existingObject) {
-          // Content-addressed storage: the bytes are already there, and the
-          // temp copy is redundant. Deleting the *object* would corrupt the
-          // asset that already references it — only the temp file goes.
-          await removeTempFile(tempResult.tempPath)
-          tempPath = null
-        } else {
-          const objectPath = createObjectStoragePath(
-            tempResult.checksumSha256,
-            analysis.extension || path.extname(admission.safeFilename),
-            storageRoot,
-          )
-          await moveTempToObject(tempResult.tempPath, objectPath.physicalPath)
-          tempPath = null
-          objectKey = objectPath.objectKey
-          physicalPath = objectPath.physicalPath
+        const placed = await placeCanonicalOriginal({
+          tempPath: tempResult.tempPath,
+          destinationPath: objectPath.physicalPath,
+          expectedSizeBytes: tempResult.sizeBytes,
+        })
+        tempPath = null
+        const objectKey = objectPath.objectKey
+        const physicalPath = objectPath.physicalPath
+
+        if (existingObject && (placed === "written" || existingObject.physicalPath !== physicalPath)) {
+          await fastify.prisma.storageObject.update({
+            where: { id: existingObject.id },
+            data: {
+              physicalPath,
+              sizeBytes: BigInt(tempResult.sizeBytes),
+              mimeType: analysis.mimeType,
+            },
+          })
         }
 
         const committed = await commitUpload(fastify.prisma, {
