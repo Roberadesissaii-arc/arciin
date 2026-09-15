@@ -17,6 +17,18 @@ describe("backup protected-root accounting", () => {
     ).toBe(3)
   })
 
+  it("reports 3 folders protected when 3 roots are PROTECTED and 2 are DISABLED", () => {
+    expect(
+      countProtectedRoots([
+        { status: "PROTECTED" },
+        { status: "PROTECTED" },
+        { status: "PROTECTED" },
+        { status: "DISABLED" },
+        { status: "DISABLED" },
+      ]),
+    ).toBe(3)
+  })
+
   it("does not present Up to date when nothing is protected", () => {
     expect(
       presentedBackupHealth({
