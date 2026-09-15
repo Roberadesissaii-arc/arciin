@@ -155,66 +155,67 @@ export function ComputerSourceBrowser({
   const parentFolderId = query.data.folder.parentFolderId
   const nestedCrumbs = crumbs.slice(1)
 
-  return (
-    <div className="space-y-5">
-      <div className="flex items-center gap-2.5" data-testid="computer-source-header">
-        <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-zinc-100">
-          <Monitor className="size-3.5 text-zinc-600" />
-        </div>
-        <div className="min-w-0">
-          <p className="truncate text-[13px] font-semibold text-zinc-900">{computer.name}</p>
-          <p className="truncate text-[12px] text-zinc-500">
-            {platformLabel(computer.platform)}
-            {" · "}
-            {computer.roots.filter((root) => root.status !== "DISABLED").length} protected{" "}
-            {computer.roots.filter((root) => root.status !== "DISABLED").length === 1
-              ? "folder"
-              : "folders"}
-            {" · "}
-            {computerHealthLabel(computer)}
-          </p>
-        </div>
-      </div>
+  const showFilesSection = !(atRoot && folders.length > 0 && files.length === 0)
+  const protectedCount = computer.roots.filter((root) => root.status !== "DISABLED").length
+  const statusLabel = `${platformLabel(computer.platform)} · ${protectedCount} protected ${
+    protectedCount === 1 ? "folder" : "folders"
+  } · ${computerHealthLabel(computer)}`
 
+  const folderTitle =
+    atRoot || nestedCrumbs.length === 0 ? (
+      "Folders"
+    ) : (
       <nav
-        className="flex flex-wrap items-center gap-1 text-[13px] text-zinc-500"
-        aria-label="Computer path"
+        className="flex min-w-0 flex-wrap items-center gap-1 normal-case tracking-normal"
+        aria-label="Folder path"
         data-testid="computer-source-breadcrumbs"
       >
-        <Link href="/files" className="font-medium text-zinc-700 hover:text-zinc-900">
-          All Files
+        <Link
+          href={rootHref}
+          className="uppercase tracking-[0.14em] text-zinc-500 hover:text-zinc-700"
+        >
+          Folders
         </Link>
-        <ChevronRight className="size-3.5" />
-        {atRoot ? (
-          <span className="font-medium text-zinc-900">{computer.name}</span>
-        ) : (
-          <Link href={rootHref} className="hover:text-zinc-900">
-            {computer.name}
-          </Link>
-        )}
         {nestedCrumbs.map((crumb, index) => {
           const isLast = index === nestedCrumbs.length - 1
           const isImmediateParent = !isLast && index === nestedCrumbs.length - 2 && parentFolderId
           return (
             <span key={`${index}-${crumb}`} className="flex items-center gap-1">
-              <ChevronRight className="size-3.5" />
+              <ChevronRight className="size-3 text-zinc-400" />
               {isLast ? (
-                <span className="font-medium text-zinc-900">{crumb}</span>
+                <span className="font-semibold text-zinc-600">{crumb}</span>
               ) : isImmediateParent && parentFolderId ? (
-                <Link href={folderHref(parentFolderId)} className="hover:text-zinc-900">
+                <Link href={folderHref(parentFolderId)} className="text-zinc-500 hover:text-zinc-700">
                   {crumb}
                 </Link>
               ) : (
-                <span>{crumb}</span>
+                <span className="text-zinc-500">{crumb}</span>
               )}
             </span>
           )
         })}
       </nav>
+    )
 
-      {folders.length > 0 ? (
-        <section className="space-y-2">
-          <BrowserSectionHeading>Folders</BrowserSectionHeading>
+  return (
+    <div className="space-y-3">
+      <section className="space-y-2">
+        <BrowserSectionHeading
+          end={
+            <div
+              className="flex max-w-[min(100%,20rem)] items-center justify-end gap-1.5 text-[11px] font-medium text-zinc-500"
+              data-testid="computer-source-header"
+              aria-label={`${computer.name}, ${statusLabel}`}
+            >
+              <span className="sr-only">{computer.name}</span>
+              <Monitor className="size-3 shrink-0 text-zinc-400" aria-hidden />
+              <p className="truncate">{statusLabel}</p>
+            </div>
+          }
+        >
+          {folderTitle}
+        </BrowserSectionHeading>
+        {folders.length > 0 ? (
           <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 sm:gap-2 md:grid-cols-3 lg:grid-cols-4">
             {folders.map((folder) => (
               <ComputerFolderTile
@@ -225,48 +226,50 @@ export function ComputerSourceBrowser({
               />
             ))}
           </div>
-        </section>
-      ) : null}
-
-      <section className="space-y-3">
-        <BrowserSectionHeading>Files</BrowserSectionHeading>
-        {files.length === 0 ? (
-          <div
-            className={cn(
-              "flex min-h-40 flex-col items-center justify-center rounded-2xl",
-              "border border-dashed border-zinc-300/90 px-4 py-8 text-center",
-            )}
-          >
-            <Search className="size-10 text-zinc-300" strokeWidth={1.5} aria-hidden />
-            <p className="mt-3 text-sm font-semibold text-zinc-900">
-              {atRoot && folders.length > 0 ? "Choose a folder to browse its files." : "No files in this folder"}
-            </p>
-            <p className="mt-1 max-w-md text-sm text-zinc-500">
-              {kindFilter !== "all"
-                ? "Folders stay available so you can keep browsing this computer."
-                : "This folder has no files yet."}
-            </p>
-          </div>
-        ) : (
-          <SelectableAssetsContainer assets={files} defaultLibraryId={query.data.folder.libraryId}>
-            {view === "grid" ? (
-              <AssetGrid assets={pageFiles} readOnly />
-            ) : (
-              <AssetTable
-                assets={pageFiles}
-                title="Files"
-                totalCount={files.length}
-                page={safePage}
-                totalPages={totalPages}
-                onPageChange={onPageChange}
-              />
-            )}
-          </SelectableAssetsContainer>
-        )}
-        {view === "grid" && files.length > 0 ? (
-          <GridPaginationBar page={safePage} totalPages={totalPages} onPageChange={onPageChange} />
         ) : null}
       </section>
+
+      {showFilesSection ? (
+        <section className="space-y-3">
+          <BrowserSectionHeading>Files</BrowserSectionHeading>
+          {files.length === 0 ? (
+            <div
+              className={cn(
+                "flex min-h-40 flex-col items-center justify-center rounded-2xl",
+                "border border-dashed border-zinc-300/90 px-4 py-8 text-center",
+              )}
+            >
+              <Search className="size-10 text-zinc-300" strokeWidth={1.5} aria-hidden />
+              <p className="mt-3 text-sm font-semibold text-zinc-900">
+                {atRoot && folders.length > 0 ? "Choose a folder to browse its files." : "No files in this folder"}
+              </p>
+              <p className="mt-1 max-w-md text-sm text-zinc-500">
+                {kindFilter !== "all"
+                  ? "Folders stay available so you can keep browsing this computer."
+                  : "This folder has no files yet."}
+              </p>
+            </div>
+          ) : (
+            <SelectableAssetsContainer assets={files} defaultLibraryId={query.data.folder.libraryId}>
+              {view === "grid" ? (
+                <AssetGrid assets={pageFiles} readOnly />
+              ) : (
+                <AssetTable
+                  assets={pageFiles}
+                  title="Files"
+                  totalCount={files.length}
+                  page={safePage}
+                  totalPages={totalPages}
+                  onPageChange={onPageChange}
+                />
+              )}
+            </SelectableAssetsContainer>
+          )}
+          {view === "grid" && files.length > 0 ? (
+            <GridPaginationBar page={safePage} totalPages={totalPages} onPageChange={onPageChange} />
+          ) : null}
+        </section>
+      ) : null}
     </div>
   )
 }

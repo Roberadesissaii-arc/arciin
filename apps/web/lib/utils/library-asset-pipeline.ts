@@ -50,17 +50,22 @@ export function collectSourceFilterOptions(
   const hasBackupAssets = assets.some((asset) => Boolean(asset.sourceContext))
   const options: FilterDropdownOption[] = [
     { value: SOURCE_ALL, label: "All sources" },
-    { value: SOURCE_MANUAL, label: "Manual uploads" },
+    { value: SOURCE_MANUAL, label: "Manual uploads", group: "Manual uploads" },
   ]
   if (byId.size === 0 && !hasBackupAssets) return options
 
-  options.push({ value: SOURCE_COMPUTER, label: "Computer backups" })
+  options.push({
+    value: SOURCE_COMPUTER,
+    label: "Computer backups",
+    group: "Computer backups",
+  })
   const named = [...byId.entries()].sort((a, b) => a[1].localeCompare(b[1], undefined, { sensitivity: "base" }))
   for (const [deviceId, name] of named) {
     options.push({
       value: computerSourceValue(deviceId),
       label: name,
-      indent: true,
+      group: "Computer backups",
+      child: true,
     })
   }
   return options

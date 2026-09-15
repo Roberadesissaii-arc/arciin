@@ -68,14 +68,24 @@ describe("All Files source filter", () => {
   it("lists All sources, Manual uploads, and computers when backups exist", () => {
     expect(collectSourceFilterOptions([manualImage])).toEqual([
       { value: SOURCE_ALL, label: "All sources" },
-      { value: SOURCE_MANUAL, label: "Manual uploads" },
+      { value: SOURCE_MANUAL, label: "Manual uploads", group: "Manual uploads" },
     ])
     expect(collectSourceFilterOptions([desktopPhoto, laptopDoc, manualImage])).toEqual([
       { value: SOURCE_ALL, label: "All sources" },
-      { value: SOURCE_MANUAL, label: "Manual uploads" },
-      { value: SOURCE_COMPUTER, label: "Computer backups" },
-      { value: computerSourceValue("dev-desktop"), label: "DESKTOP-S8FBLDB", indent: true },
-      { value: computerSourceValue("dev-laptop"), label: "Office Laptop", indent: true },
+      { value: SOURCE_MANUAL, label: "Manual uploads", group: "Manual uploads" },
+      { value: SOURCE_COMPUTER, label: "Computer backups", group: "Computer backups" },
+      {
+        value: computerSourceValue("dev-desktop"),
+        label: "DESKTOP-S8FBLDB",
+        group: "Computer backups",
+        child: true,
+      },
+      {
+        value: computerSourceValue("dev-laptop"),
+        label: "Office Laptop",
+        group: "Computer backups",
+        child: true,
+      },
     ])
   })
 
