@@ -14,7 +14,7 @@ import {
 import { AiSummaryLinks } from "@/components/libraries/ai-summary-links"
 import { Button } from "@/components/ui/button"
 import { friendlyAiError } from "@/lib/ai/friendly-ai-error"
-import { isPdfAsset, requestDocumentSummary, type DocumentInsight } from "@/lib/api/documents"
+import { isTextAssistAsset, requestDocumentSummary, type DocumentInsight } from "@/lib/api/documents"
 import { queryKeys } from "@/lib/api/query-keys"
 import { toast } from "@/lib/notifications/arciin-toast"
 import type { AssetSummary } from "@/lib/types/models"
@@ -37,7 +37,7 @@ function aboutKindLabel(kind: string): string {
 }
 
 /**
- * Assist → Summarize for PDFs.
+ * Assist → Summarize for PDFs and source files.
  *
  * Simpler than video Assist: one job, no transcript prerequisite. Result lives
  * on Asset.documentInsight so closing the panel keeps it.
@@ -99,13 +99,13 @@ export function DocumentAiSummarize({
     },
   })
 
-  if (!isPdfAsset(asset)) {
+  if (!isTextAssistAsset(asset)) {
     return (
       <div className="mt-3 rounded-lg border border-dashed border-border px-4 py-5 text-center">
         <Sparkles className="mx-auto size-5 text-primary" />
         <p className="mt-2 text-[13px] font-medium text-foreground">Summarize</p>
         <p className="mx-auto mt-1 max-w-[38ch] text-[12.5px] text-muted-foreground">
-          Assist summarize is available for PDF documents.
+          Assist summarize is available for PDFs and source files.
         </p>
       </div>
     )
@@ -126,7 +126,7 @@ export function DocumentAiSummarize({
           <TextQuote className="mx-auto size-5 text-primary" />
           <p className="mt-2 text-[13px] font-medium text-foreground">Summarize</p>
           <p className="mx-auto mt-1 max-w-[38ch] text-[12.5px] text-muted-foreground">
-            Get a short synopsis, topics, and keywords from this PDF. Gemini reads extracted text,
+            Get a short synopsis, topics, and keywords from this file. Gemini reads the text,
             not the file again after that.
           </p>
           <Button

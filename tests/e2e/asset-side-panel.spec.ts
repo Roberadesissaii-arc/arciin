@@ -378,9 +378,12 @@ test.describe("asset type decides the sections", () => {
     await expectMenuSections(
       page,
       card,
-      ["overview", "edit", "move", "share"],
-      ["ai"],
+      ["overview", "ai", "move", "share"],
+      ["edit"],
     )
+    await card.click({ button: "right" })
+    await expect(page.getByTestId("asset-menu-rename")).toBeVisible()
+    await page.mouse.click(8, 8)
 
     // Reading the menu closes the panel, so reopen it before asserting on its
     // contents. Without this the transcript check below passes on an absent
@@ -400,7 +403,7 @@ test.describe("asset type decides the sections", () => {
     console.log(`[panel] image screenshot: ${shot}`)
   })
 
-  test("a video offers AI; other types do not", async ({ page }) => {
+  test("every library type shares Overview, Rename, Move, and Share", async ({ page }) => {
     await openVideos(page)
     const videoCard = page.locator(`[data-asset-id="${VIDEO_FIXTURE}"]`)
     await expectMenuSections(page, videoCard, ["overview", "ai", "move", "share"], ["edit"])
@@ -433,18 +436,19 @@ test.describe("asset type decides the sections", () => {
     // A PDF has no transcript — Assist reads the document itself.
     await expect(panel(page).getByTestId("video-transcript")).toHaveCount(0)
     await expectMenuSections(page, pdf, ["overview", "ai", "move", "share"], ["edit"])
+    await pdf.click({ button: "right" })
+    await expect(page.getByTestId("asset-menu-rename")).toBeVisible()
+    await page.mouse.click(8, 8)
 
-    /**
-     * An image cannot be offered either, and that is the half of the original
-     * claim that still holds. The seeded image fixture keeps it deterministic
-     * rather than depending on whatever the library happens to list first.
-     */
     await page.goto("/images")
     const image = page.locator(`[data-asset-id="${IMAGE_FIXTURE}"]`)
     await expect(image).toBeVisible({ timeout: 60_000 })
     await image.click()
     await expect(panel(page)).toBeVisible({ timeout: 15_000 })
     await expect(panel(page).getByTestId("video-transcript")).toHaveCount(0)
-    await expectMenuSections(page, image, ["overview", "edit", "move", "share"], ["ai"])
+    await expectMenuSections(page, image, ["overview", "ai", "move", "share"], ["edit"])
+    await image.click({ button: "right" })
+    await expect(page.getByTestId("asset-menu-rename")).toBeVisible()
+    await page.mouse.click(8, 8)
   })
 })

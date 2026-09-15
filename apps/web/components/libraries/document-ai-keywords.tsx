@@ -6,7 +6,7 @@ import { Hash, Loader2, Sparkles, Tag } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { friendlyAiError } from "@/lib/ai/friendly-ai-error"
-import { isPdfAsset, requestDocumentSummary, type DocumentInsight } from "@/lib/api/documents"
+import { isTextAssistAsset, requestDocumentSummary, type DocumentInsight } from "@/lib/api/documents"
 import { queryKeys } from "@/lib/api/query-keys"
 import { toast } from "@/lib/notifications/arciin-toast"
 import type { AssetSummary } from "@/lib/types/models"
@@ -65,13 +65,13 @@ export function DocumentAiKeywords({
     },
   })
 
-  if (!isPdfAsset(asset)) {
+  if (!isTextAssistAsset(asset)) {
     return (
       <div className="mt-3 rounded-lg border border-dashed border-border px-4 py-5 text-center">
         <Hash className="mx-auto size-5 text-primary" />
         <p className="mt-2 text-[13px] font-medium text-foreground">Keywords</p>
         <p className="mx-auto mt-1 max-w-[38ch] text-[12.5px] text-muted-foreground">
-          Keywords are available for PDF documents.
+          Keywords are available for PDFs and source files.
         </p>
       </div>
     )

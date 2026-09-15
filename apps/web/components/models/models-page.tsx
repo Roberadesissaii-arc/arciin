@@ -219,7 +219,7 @@ const PROVIDERS: ProviderMeta[] = [
 function ModelChip({ name }: { name: string }) {
   return (
     <span
-      className="max-w-[9.5rem] shrink-0 truncate rounded-lg border border-border bg-muted/30 px-2 py-0.5 font-mono text-[10px] text-muted-foreground"
+      className="min-w-0 flex-1 truncate rounded-lg border border-border bg-muted/30 px-2 py-0.5 text-center font-mono text-[10px] text-muted-foreground"
       title={name}
     >
       {name}
@@ -268,8 +268,8 @@ function ProviderCard({
       }
     >
       {/* Top */}
-      <div className="flex items-start justify-between gap-3 p-4 pb-3">
-        <div className="flex items-center gap-3">
+      <div className="flex items-start gap-3 p-4 pb-3">
+        <div className="flex min-w-0 flex-1 items-center gap-3">
           <div
             className="flex size-10 shrink-0 items-center justify-center rounded-xl border"
             style={meta.logoBg
@@ -287,31 +287,36 @@ function ProviderCard({
               className="size-6 object-contain"
             />
           </div>
-          <div>
-            <div className="flex items-center gap-1.5">
-              <p className="text-[13px] font-semibold text-foreground">{meta.name}</p>
+          <div className="min-w-0 flex-1">
+            <div className="flex min-w-0 items-center gap-1.5">
+              <p className="truncate text-[13px] font-semibold text-foreground">{meta.name}</p>
               {meta.badge && (
-                <span className="rounded-md bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                <span className="shrink-0 rounded-md bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
                   {meta.badge}
                 </span>
               )}
               {profile?.isDefault && (
-                <span className="rounded-md bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 ring-1 ring-amber-200">
+                <span className="shrink-0 rounded-md bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 ring-1 ring-amber-200">
                   Default
                 </span>
               )}
             </div>
-            <div className="mt-0.5 flex items-center gap-1.5">
+            <div className="mt-0.5 flex min-w-0 items-center gap-1.5 pr-1">
               <span
                 className="size-1.5 shrink-0 rounded-full"
                 style={{ background: connected ? "#22c55e" : "#d4d4d8", boxShadow: connected ? "0 0 5px #22c55e80" : undefined }}
               />
-              <p className="text-[11px] text-zinc-500">{connected ? (profile?.defaultModel ?? "Connected") : "Not connected"}</p>
+              <p
+                className="min-w-0 truncate text-[11px] text-zinc-500"
+                title={connected ? (profile?.defaultModel ?? "Connected") : "Not connected"}
+              >
+                {connected ? (profile?.defaultModel ?? "Connected") : "Not connected"}
+              </p>
             </div>
           </div>
         </div>
         {connected && (
-          <CheckCircle2 className="size-4 shrink-0 text-emerald-500" />
+          <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-emerald-500" />
         )}
       </div>
 
@@ -321,7 +326,7 @@ function ProviderCard({
       </p>
 
       {meta.suggestedModels.length > 0 ? (
-        <div className="mt-3 flex flex-nowrap items-center gap-1.5 overflow-hidden px-4 pb-4">
+        <div className="mt-3 flex min-w-0 items-center gap-1.5 px-4 pb-4">
           {modelPreview.map((m) => (
             <ModelChip key={m} name={m} />
           ))}

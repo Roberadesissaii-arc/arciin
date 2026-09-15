@@ -99,15 +99,18 @@ export function buildVisibleAssetWhere(
     case "all":
       break
     case "libraryView":
+      /**
+       * Smart views are one media type — Documents is PDFs/Office, not every
+       * file that happens to sit in that library. A leftover .py used to
+       * appear here because the documents-library branch had no type filter.
+       */
+      and.push({ mediaType: input.scope.mediaType })
       and.push({
         OR: [
           input.scope.rootOnly
             ? { libraryId: input.scope.libraryId, folderId: null }
             : { libraryId: input.scope.libraryId },
-          {
-            libraryId: { in: input.scope.computerLibraryIds },
-            mediaType: input.scope.mediaType,
-          },
+          { libraryId: { in: input.scope.computerLibraryIds } },
         ],
       })
       break

@@ -8,14 +8,14 @@ import { titleToFilename } from "@/components/libraries/video-ai-title"
 import { Button } from "@/components/ui/button"
 import { useUpdateAsset } from "@/hooks/use-assets"
 import { friendlyAiError } from "@/lib/ai/friendly-ai-error"
-import { isPdfAsset, requestDocumentTitleSuggestions } from "@/lib/api/documents"
+import { isTextAssistAsset, requestDocumentTitleSuggestions } from "@/lib/api/documents"
 import { notifyFileUpdated } from "@/lib/notifications/toast-actions"
 import { toast } from "@/lib/notifications/arciin-toast"
 import type { AssetSummary } from "@/lib/types/models"
 import { cn } from "@/lib/utils"
 
 /**
- * AI title for a PDF — same short 1–2 word suggestions as video, from document text.
+ * AI title for a PDF or source file — same short 1–2 word suggestions as video.
  */
 export function DocumentAiTitle({ asset }: { asset: AssetSummary }) {
   const [titles, setTitles] = useState<string[]>([])
@@ -57,13 +57,13 @@ export function DocumentAiTitle({ asset }: { asset: AssetSummary }) {
     }
   }
 
-  if (!isPdfAsset(asset)) {
+  if (!isTextAssistAsset(asset)) {
     return (
       <div className="mt-3 rounded-lg border border-dashed border-border px-4 py-5 text-center">
         <Wand2 className="mx-auto size-5 text-primary" />
         <p className="mt-2 text-[13px] font-medium text-foreground">AI title</p>
         <p className="mx-auto mt-1 max-w-[38ch] text-[12.5px] text-muted-foreground">
-          Title suggestions are available for PDF documents.
+          Title suggestions are available for PDFs and source files.
         </p>
       </div>
     )
@@ -79,7 +79,7 @@ export function DocumentAiTitle({ asset }: { asset: AssetSummary }) {
           <Wand2 className="mx-auto size-5 text-primary" />
           <p className="mt-2 text-[13px] font-medium text-foreground">AI title</p>
           <p className="mx-auto mt-1 max-w-[38ch] text-[12.5px] text-muted-foreground">
-            Suggest a short name from what this PDF says. One or two words — like a library label.
+            Suggest a short name from what this file is. One or two words — like a library label.
           </p>
           <Button
             type="button"

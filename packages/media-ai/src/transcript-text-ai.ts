@@ -247,19 +247,57 @@ export function buildTitlePrompt(transcriptText: string, count = 3): string {
   ].join("\n")
 }
 
+export function buildCodeTitlePrompt(
+  sourceText: string,
+  filename?: string,
+  count = 3,
+): string {
+  return [
+    "Suggest a short recommended name for this source file from its contents.",
+    filename ? `Current filename: ${filename}` : "",
+    "",
+    `Return JSON with "titles": ${count} short library labels.`,
+    "",
+    "Hard rule — each title MUST be ONE or TWO words only. Never three or more.",
+    "Think recommended filenames without the extension, not commit messages.",
+    "",
+    "Each title MUST:",
+    "- be ONE or TWO words only",
+    "- name what the file is or does",
+    "- be distinct from the other suggestions",
+    "",
+    'Examples of good titles: "Sort demo", "Auth helper", "Invoice parse"',
+    'Examples of bad titles: "Python script that sorts a list", "helper.py", "Untitled"',
+    "",
+    "Never use quotation marks, emoji, or a file extension.",
+    "",
+    "Source:",
+    sourceText.slice(0, 16_000),
+  ]
+    .filter(Boolean)
+    .join("\n")
+}
+
 export type SuggestTitlesInput = {
   config: GeminiMediaConfig
   transcriptText: string
   count?: number
   signal?: AbortSignal
+  /** Video titles use the transcript prompt; code/text uses a filename prompt. */
+  kind?: "video" | "code"
+  filename?: string
 }
 
 export async function suggestTitles(
   input: SuggestTitlesInput,
 ): Promise<{ titles: string[]; work: IdentifiedWork | null; model: string }> {
+  const prompt =
+    input.kind === "code"
+      ? buildCodeTitlePrompt(input.transcriptText, input.filename, input.count ?? 3)
+      : buildTitlePrompt(input.transcriptText, input.count ?? 3)
   const { text, model } = await runGeminiText(
     input.config,
-    buildTitlePrompt(input.transcriptText, input.count ?? 3),
+    prompt,
     TITLE_RESPONSE_SCHEMA as unknown as Record<string, unknown>,
     input.signal,
   )
@@ -471,19 +509,51 @@ export function buildDocumentSummaryPrompt(documentText: string, filename?: stri
     .join("\n")
 }
 
+export function buildCodeSummaryPrompt(sourceText: string, filename?: string): string {
+  return [
+    "Explain what this source file is and what it does.",
+    filename ? `Filename: ${filename}` : "",
+    "",
+    "Return JSON with:",
+    '- "summary": 2–4 short paragraphs: language, purpose, main functions or classes, and what a reader should know',
+    '- "keywords": 6–14 concrete keywords (language, libraries, APIs, domain terms)',
+    '- "links": every URL or domain clearly present in the text (empty array if none)',
+    '- "topics": 2–6 short topic labels for browsing',
+    '- "about": when the file is clearly ABOUT a specific product, library, or topic, set:',
+    '    { "kind": one of person|product|event|topic|other,',
+    '      "title": the best name,',
+    '      "note": optional short extras }',
+    "  If nothing specific is identifiable, omit about.",
+    "",
+    "Rules:",
+    "- Prefer facts grounded in the source; do not invent APIs or behavior that is not in the file",
+    "- Keywords and topics should help someone find this file later in a library",
+    "",
+    "Source:",
+    sourceText.slice(0, 24_000),
+  ]
+    .filter(Boolean)
+    .join("\n")
+}
+
 export type SuggestDocumentSummaryInput = {
   config: GeminiMediaConfig
   documentText: string
   filename?: string
   signal?: AbortSignal
+  kind?: "document" | "code"
 }
 
 export async function suggestDocumentSummary(
   input: SuggestDocumentSummaryInput,
 ): Promise<VideoSummaryResult> {
+  const prompt =
+    input.kind === "code"
+      ? buildCodeSummaryPrompt(input.documentText, input.filename)
+      : buildDocumentSummaryPrompt(input.documentText, input.filename)
   const { text, model } = await runGeminiText(
     input.config,
-    buildDocumentSummaryPrompt(input.documentText, input.filename),
+    prompt,
     SUMMARY_RESPONSE_SCHEMA as unknown as Record<string, unknown>,
     input.signal,
   )
@@ -502,7 +572,7 @@ function cleanTitleText(entry: string): string {
     // Surrounding quotes, straight or curly.
     .replace(/^\s*["'“”‘’]+|["'“”‘’]+\s*$/g, "")
     // A trailing extension the model added anyway.
-    .replace(/\.(mp4|mov|mkv|webm|avi|m4v|mp3|wav|m4a)\s*$/i, "")
+    .replace(/\.(mp4|mov|mkv|webm|avi|m4v|mp3|wav|m4a|py|js|ts|tsx|jsx|json)\s*$/i, "")
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, 80)

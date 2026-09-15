@@ -2,6 +2,8 @@
  * Document Assist API — PDF metadata backfill + summarize.
  */
 
+import { isCodeFilename } from "@arciin/shared"
+
 import { fetchApi } from "@/lib/api/client"
 import type { AssetSummary } from "@/lib/types/models"
 
@@ -41,4 +43,13 @@ export function isPdfAsset(asset: Pick<AssetSummary, "originalFilename" | "mimeT
   if (asset.mediaType !== "DOCUMENT") return false
   if (/\.pdf$/i.test(asset.originalFilename)) return true
   return (asset.mimeType ?? "").toLowerCase() === "application/pdf"
+}
+
+/** PDFs and source files — summarize + recommended title in Assist. */
+export function isTextAssistAsset(
+  asset: Pick<AssetSummary, "originalFilename" | "mimeType" | "mediaType">,
+) {
+  if (isPdfAsset(asset)) return true
+  if (asset.mediaType === "CODE") return true
+  return isCodeFilename(asset.originalFilename)
 }

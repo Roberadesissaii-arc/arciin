@@ -5,6 +5,7 @@ import { Download, Files, Pencil, Trash2 } from "lucide-react"
 import { toast } from "@/lib/notifications/arciin-toast"
 
 import { AssetBadgeCell } from "@/components/libraries/asset-badge-cell"
+import { AssetContextMenu } from "@/components/libraries/asset-context-menu"
 import { useAssetSelection } from "@/components/libraries/asset-selection"
 import { notifyDeleted } from "@/lib/notifications/toast-actions"
 import { MoveAssetDialog } from "@/components/libraries/move-asset-dialog"
@@ -100,7 +101,7 @@ function AssetRowActions({ asset }: { asset: AssetSummary }) {
   )
 }
 
-function AssetTableRow({ asset }: { asset: AssetSummary }) {
+function AssetTableRow({ asset, readOnly = false }: { asset: AssetSummary; readOnly?: boolean }) {
   const selection = useAssetSelection()
   const selected = selection?.isSelected(asset.id) ?? false
 
@@ -121,6 +122,7 @@ function AssetTableRow({ asset }: { asset: AssetSummary }) {
   }
 
   return (
+    <AssetContextMenu asset={asset} readOnly={readOnly}>
     <TableRow
       data-asset-id={asset.id}
       data-asset-selectable
@@ -178,12 +180,14 @@ function AssetTableRow({ asset }: { asset: AssetSummary }) {
         <AssetRowActions asset={asset} />
       </TableCell>
     </TableRow>
+    </AssetContextMenu>
   )
 }
 
 export function AssetTable({
   assets,
   title = "Files",
+  readOnly = false,
   /** When provided with page/totalPages, parent owns pagination (list view page size 10). */
   totalCount,
   page: controlledPage,
@@ -192,6 +196,7 @@ export function AssetTable({
 }: {
   assets: AssetSummary[]
   title?: string
+  readOnly?: boolean
   totalCount?: number
   page?: number
   totalPages?: number
@@ -266,7 +271,7 @@ export function AssetTable({
         </TableHeader>
         <TableBody>
           {pageAssets.map((asset) => (
-            <AssetTableRow key={asset.id} asset={asset} />
+            <AssetTableRow key={asset.id} asset={asset} readOnly={readOnly} />
           ))}
         </TableBody>
       </Table>

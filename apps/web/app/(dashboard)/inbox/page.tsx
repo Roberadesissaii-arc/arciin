@@ -5,7 +5,7 @@ export default function InboxPage() {
   return (
     <LibraryBrowser
       title="Inbox"
-      description="Unclassified files land here automatically. Review, move, or organise them into the right library."
+      description="Code, archives, installers, and anything that has no dedicated library. Documents is for PDFs and Office files — not scripts."
       librarySlug="inbox"
       intro={<InboxPageIntro />}
     />

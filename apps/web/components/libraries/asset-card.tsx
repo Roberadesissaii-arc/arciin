@@ -3,10 +3,8 @@
 import { createElement, useEffect, useRef, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import {
-  ArrowRightLeft,
   AlertTriangle,
   Archive,
-  ArchiveRestore,
   Code2,
   File,
   FileText,
@@ -14,13 +12,8 @@ import {
   Loader2,
   MinusCircle,
   Music,
-  Pencil,
-  PencilLine,
   Play,
   Video,
-  Info,
-  Share2,
-  Sparkles,
   type LucideIcon,
 } from "lucide-react"
 import { assetSupportsDocumentThumbnail, DEFAULT_USER_PREFERENCES } from "@arciin/shared"
@@ -36,24 +29,10 @@ import {
   AssetAiIndicator,
   AssetAiMetadata,
 } from "@/components/libraries/asset-ai-activity"
+import { AssetContextMenu } from "@/components/libraries/asset-context-menu"
 import { useAssetPanelIntent } from "@/components/libraries/asset-panel-intent"
 import { useAssistLicense } from "@/components/libraries/assist-license-gate"
 import { useVideoEditor } from "@/components/libraries/video-edit-context"
-import { useArchiveAsset, useUnarchiveAsset } from "@/hooks/use-assets"
-import { toast } from "@/lib/notifications/arciin-toast"
-import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuLabel,
-  ContextMenuSeparator,
-  ContextMenuTrigger,
-} from "@/components/ui/context-menu"
-import {
-  libraryContextMenuLabel,
-  libraryGlassContextMenu,
-  libraryGlassContextMenuItem,
-} from "@/lib/library-glass-sheet"
 import { formatCardRelativeTime } from "@/lib/utils/format-card-relative-time"
 import { inferDestinationLabel } from "@/lib/utils/media-type"
 import { cn } from "@/lib/utils"
@@ -358,16 +337,12 @@ export function AssetCard({
   const viewer = useAssetViewerOptional()
   const panelIntent = useAssetPanelIntent()
   const videoEditor = useVideoEditor()
-  const { locked: assistLocked, planLabel: assistPlanLabel } = useAssistLicense()
-  const archiveMutation = useArchiveAsset()
-  const unarchiveMutation = useUnarchiveAsset()
+  const { locked: assistLocked } = useAssistLicense()
   const selected = selection?.isSelected(asset.id) ?? false
   const canOpen = isViewableAsset(asset) && Boolean(viewer?.canOpen(asset))
   const source = sourceChipLabel(asset)
   const metaLine = `${formatBytes(asset.sizeBytes)} · ${formatCardRelativeTime(asset.createdAt)}`
   const [hover, setHover] = useState(false)
-  const isArchived = Boolean(asset.archivedAt)
-  const hierarchyLocked = readOnly || Boolean(asset.sourceContext)
 
   /** Single click = select (bulk bar). Double-click = open preview. */
   const onCardClick = (event: React.MouseEvent) => {
@@ -404,31 +379,16 @@ export function AssetCard({
   /**
    * Right-click goes straight to a section.
    *
-   * Clicking a card always lands on Overview. For videos, Edit and AI were the
-   * same workspace — keep AI only (opens the video AI drawer). Rename covers
-   * the filename form. Other files still use Edit for rename.
+   * Clicking a card always lands on Overview. Video and music open the same
+   * Assist workspace. Images open the preview chat. PDFs stay in the panel.
+   * Rename / Move / Share / Archive are on every library page.
    */
   const openAt = (section: "overview" | "edit" | "ai" | "move" | "share") => {
     panelIntent?.open({ assetId: asset.id, section })
   }
 
-  const openAi = () => {
-    // Free plan: open the Assist section so they see the same Pro lock card
-    // as AI Chat — never the real tools or the video drawer.
-    if (assistLocked) {
-      openAt("ai")
-      return
-    }
-    if (videoEditor?.canEdit(asset)) {
-      videoEditor.openEditor(asset)
-      return
-    }
-    openAt("ai")
-  }
-
   return (
-    <ContextMenu>
-      <ContextMenuTrigger asChild>
+    <AssetContextMenu asset={asset} readOnly={readOnly}>
     <article
       data-asset-id={asset.id}
       data-asset-selectable
@@ -521,141 +481,6 @@ export function AssetCard({
         <AiStatusPill asset={asset} />
       </div>
     </article>
-      </ContextMenuTrigger>
-
-      <ContextMenuContent className={libraryGlassContextMenu} data-testid="asset-card-menu">
-        <ContextMenuLabel className={libraryContextMenuLabel} title={asset.originalFilename}>
-          {asset.originalFilename}
-        </ContextMenuLabel>
-        <ContextMenuSeparator className="-mx-0.5 my-1" />
-        <ContextMenuItem
-          className={libraryGlassContextMenuItem}
-          onSelect={() => openAt("overview")}
-          data-testid="asset-menu-overview"
-        >
-          <Info />
-          Overview
-        </ContextMenuItem>
-        {asset.mediaType === "VIDEO" ||
-        (asset.mediaType === "DOCUMENT" &&
-          (/\.pdf$/i.test(asset.originalFilename) ||
-            asset.mimeType.toLowerCase() === "application/pdf")) ? (
-          <>
-            <ContextMenuItem
-              className={libraryGlassContextMenuItem}
-              onSelect={
-                asset.mediaType === "VIDEO" ? openAi : () => openAt("ai")
-              }
-              data-testid="asset-menu-ai"
-            >
-              <Sparkles />
-              <span className="flex min-w-0 flex-1 items-center justify-between gap-2">
-                <span>Assist</span>
-                {assistLocked ? (
-                  <span
-                    className="shrink-0 rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide"
-                    style={{
-                      color: "var(--arciin-accent, #ff4f12)",
-                      background:
-                        "color-mix(in srgb, var(--arciin-accent, #ff4f12) 12%, transparent)",
-                      border:
-                        "1px solid color-mix(in srgb, var(--arciin-accent, #ff4f12) 28%, transparent)",
-                    }}
-                  >
-                    {assistPlanLabel}
-                  </span>
-                ) : null}
-              </span>
-            </ContextMenuItem>
-            {hierarchyLocked ? null : (
-            <ContextMenuItem
-              className={libraryGlassContextMenuItem}
-              onSelect={() => openAt("edit")}
-              data-testid="asset-menu-rename"
-            >
-              <PencilLine />
-              Rename
-            </ContextMenuItem>
-            )}
-          </>
-        ) : hierarchyLocked ? null : (
-          <ContextMenuItem
-            className={libraryGlassContextMenuItem}
-            onSelect={() => openAt("edit")}
-            data-testid="asset-menu-edit"
-          >
-            <Pencil />
-            Edit
-          </ContextMenuItem>
-        )}
-        <ContextMenuSeparator className="-mx-0.5 my-1" />
-        {hierarchyLocked ? null : (
-        <ContextMenuItem
-          className={libraryGlassContextMenuItem}
-          onSelect={() => openAt("move")}
-          data-testid="asset-menu-move"
-        >
-          <ArrowRightLeft />
-          Move
-        </ContextMenuItem>
-        )}
-        <ContextMenuItem
-          className={libraryGlassContextMenuItem}
-          onSelect={() => openAt("share")}
-          data-testid="asset-menu-share"
-        >
-          <Share2 />
-          Share
-        </ContextMenuItem>
-        {readOnly ? null : (
-        <>
-        <ContextMenuSeparator className="-mx-0.5 my-1" />
-        {isArchived ? (
-          <ContextMenuItem
-            className={libraryGlassContextMenuItem}
-            disabled={unarchiveMutation.isPending}
-            onSelect={() => {
-              unarchiveMutation.mutate(asset.id, {
-                onSuccess: () =>
-                  toast.success("Restored from Archives", {
-                    description: asset.originalFilename,
-                  }),
-                onError: () =>
-                  toast.error("Could not unarchive", {
-                    description: "Try again in a moment.",
-                  }),
-              })
-            }}
-            data-testid="asset-menu-unarchive"
-          >
-            <ArchiveRestore />
-            Unarchive
-          </ContextMenuItem>
-        ) : (
-          <ContextMenuItem
-            className={libraryGlassContextMenuItem}
-            disabled={archiveMutation.isPending}
-            onSelect={() => {
-              archiveMutation.mutate(asset.id, {
-                onSuccess: () =>
-                  toast.success("Moved to Archives", {
-                    description: "Find it under All Files → Archives.",
-                  }),
-                onError: () =>
-                  toast.error("Could not archive", {
-                    description: "Try again in a moment.",
-                  }),
-              })
-            }}
-            data-testid="asset-menu-archive"
-          >
-            <Archive />
-            Archive
-          </ContextMenuItem>
-        )}
-        </>
-        )}
-      </ContextMenuContent>
-    </ContextMenu>
+    </AssetContextMenu>
   )
 }

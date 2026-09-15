@@ -23,9 +23,9 @@ type VideoEditContextValue = {
 
 const VideoEditContext = createContext<VideoEditContextValue | null>(null)
 
-/** Video today; audio reuses the same transcript panel the moment it is wanted. */
+/** Video and music share the same transcript Assist workspace. */
 export function assetHasVideoEditor(asset: AssetSummary): boolean {
-  return asset.mediaType === "VIDEO"
+  return asset.mediaType === "VIDEO" || asset.mediaType === "AUDIO"
 }
 
 export function VideoEditProvider({ children }: { children: React.ReactNode }) {

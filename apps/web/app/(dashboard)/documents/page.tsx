@@ -4,7 +4,7 @@ export default function DocumentsPage() {
   return (
     <LibraryBrowser
       title="Documents"
-      description="Receipts, notes, PDFs, and structured documents routed into the archive."
+      description="PDFs, Office files, and notes. Scripts and other unclassified types go to Inbox."
       librarySlug="documents"
     />
   )

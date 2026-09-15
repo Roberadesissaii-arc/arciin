@@ -156,6 +156,19 @@ describe("buildVisibleAssetWhere", () => {
     expect(where.deletedAt).toBeNull()
   })
 
+  it("keeps Documents on DOCUMENT files only, even inside that library", () => {
+    const where = buildVisibleAssetWhere({
+      scope: {
+        kind: "libraryView",
+        libraryId: "documents",
+        mediaType: "DOCUMENT",
+        computerLibraryIds: ["computers"],
+      },
+    })
+    expect(hasClause(where, (c) => c.mediaType === "DOCUMENT")).toBe(true)
+    expect(hasClause(where, (c) => JSON.stringify(c).includes("documents"))).toBe(true)
+  })
+
   it("returns an empty-library count of zero rather than a broken query", () => {
     const where = buildVisibleAssetWhere({
       scope: { kind: "library", libraryId: "empty-lib" },

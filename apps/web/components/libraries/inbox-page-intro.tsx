@@ -20,9 +20,9 @@ export function InboxPageIntro() {
   return (
     <DashboardPageIntro
       title="Inbox"
-      subtitle="Unclassified files land here first"
+      subtitle="Code and unclassified files land here first"
       cornerDecoration={<IntroCornerIcon icon={Inbox} />}
-      description="Files Arciin couldn't confidently route land here automatically. Review, move, or organize them into the right library — nothing sits in Inbox forever unless you leave it there."
+      description="Python, other scripts, archives, and files Arciin couldn't route land here. Documents is for PDFs and Office files — not source code. Review, move, or leave files here."
       stats={[
         { label: "Files waiting", value: loading ? "…" : assets.length.toLocaleString() },
         { label: "Videos", value: loading ? "…" : videos.toLocaleString() },

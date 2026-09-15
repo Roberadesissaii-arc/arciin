@@ -202,7 +202,7 @@ export function LibraryBrowserToolbar({
                 value={sourceFilter}
                 onValueChange={(v) => onSourceFilterChange(v as SourceFilterValue)}
                 options={sourceDropdownOptions}
-                minWidthClass="min-w-[9.5rem]"
+                minWidthClass="min-w-[12.5rem]"
               />
             </div>
           ) : null}

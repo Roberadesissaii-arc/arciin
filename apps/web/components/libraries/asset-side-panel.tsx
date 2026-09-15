@@ -12,13 +12,14 @@ import {
   useAssistLicense,
 } from "@/components/libraries/assist-license-gate"
 import { DocumentAssistSection } from "@/components/libraries/document-assist-section"
-import { isPdfAsset } from "@/lib/api/documents"
+import { isTextAssistAsset } from "@/lib/api/documents"
 import { VideoTranscriptSection } from "@/components/libraries/video-edit-drawer"
 import { useAssetPanelIntent } from "@/components/libraries/asset-panel-intent"
 import { AssetOverviewContent } from "@/components/libraries/asset-overview-content"
 import { useAssetSelection } from "@/components/libraries/asset-selection"
 import { useAssetViewerOptional } from "@/components/libraries/asset-viewer-context"
 import { useVideoEditor } from "@/components/libraries/video-edit-context"
+import { assetOffersAssist, assetOffersMediaAssist } from "@/lib/utils/asset-assist"
 import { isViewableAsset } from "@/lib/utils/viewable-asset"
 import {
   AlertDialog,
@@ -68,7 +69,7 @@ const SECTION_LABELS: Record<Section, string> = {
 
 function sectionsFor(asset: AssetSummary): Section[] {
   const base: Section[] = ["overview", "edit"]
-  if (asset.mediaType === "VIDEO" || isPdfAsset(asset)) base.push("ai")
+  if (assetOffersAssist(asset)) base.push("ai")
   return [...base, "move", "share"]
 }
 
@@ -338,14 +339,18 @@ function PanelSections({
               : undefined
           }
           onOpenAi={
-            asset.mediaType === "VIDEO" || isPdfAsset(asset)
+            assetOffersAssist(asset)
               ? () => {
                   if (assistLocked) {
                     setSection("ai")
                     return
                   }
-                  if (asset.mediaType === "VIDEO" && videoEditor?.canEdit(asset)) {
+                  if (assetOffersMediaAssist(asset) && videoEditor?.canEdit(asset)) {
                     videoEditor.openEditor(asset)
+                    return
+                  }
+                  if (asset.mediaType === "IMAGE" && viewer?.canOpen(asset) && isViewableAsset(asset)) {
+                    viewer.openViewer(asset.id)
                     return
                   }
                   setSection("ai")
@@ -362,13 +367,13 @@ function PanelSections({
       {active === "ai" ? (
         assistLocked ? (
           <AssistLockedPanel />
-        ) : asset.mediaType === "VIDEO" ? (
+        ) : assetOffersMediaAssist(asset) ? (
           <VideoTranscriptSection
             asset={asset}
             showDetails={false}
             initialTab={aiTab}
           />
-        ) : (
+        ) : isTextAssistAsset(asset) ? (
           <DocumentAssistSection
             asset={asset}
             onDownload={() => downloadAsset(asset.id)}
@@ -379,7 +384,23 @@ function PanelSections({
                 : undefined
             }
           />
-        )
+        ) : asset.mediaType === "IMAGE" ? (
+          <div className="flex min-h-0 flex-1 flex-col items-start justify-center gap-3 px-4 py-8">
+            <p className="text-[13px] font-semibold text-zinc-900">Image Assist</p>
+            <p className="max-w-sm text-[12.5px] leading-relaxed text-zinc-500">
+              Describe the picture, find text, and mark subjects in the full preview.
+            </p>
+            {viewer?.canOpen(asset) ? (
+              <Button
+                size="sm"
+                className="h-8 bg-primary px-3 text-[12px] text-white hover:bg-primary/90"
+                onClick={() => viewer.openViewer(asset.id)}
+              >
+                Open preview
+              </Button>
+            ) : null}
+          </div>
+        ) : null
       ) : null}
       {active === "move" ? (
         <AssetMoveContent asset={asset} onDone={() => selection?.clear()} />
@@ -405,6 +426,8 @@ function assetKindLabel(asset: AssetSummary): string {
       return "Audio"
     case "DOCUMENT":
       return "Document"
+    case "CODE":
+      return "Code"
     default:
       return "File"
   }

@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest"
 
 import {
   applyTranslation,
+  buildCodeSummaryPrompt,
+  buildCodeTitlePrompt,
   buildSummaryPrompt,
   buildTitlePrompt,
   buildTranslationPrompt,
@@ -272,10 +274,25 @@ describe("video summary metadata", () => {
   })
 })
 
+describe("code file assist prompts", () => {
+  it("asks what the source file is and a short recommended name", () => {
+    const summary = buildCodeSummaryPrompt("def sort_list(items):\n    return sorted(items)\n", "sort.py")
+    expect(summary).toMatch(/source file/i)
+    expect(summary).toContain("sort.py")
+    expect(summary).toMatch(/language/i)
+
+    const titles = buildCodeTitlePrompt("def sort_list(items):\n    return sorted(items)\n", "sort.py")
+    expect(titles).toMatch(/recommended name/i)
+    expect(titles).toContain("sort.py")
+    expect(titles).toMatch(/ONE or TWO words/i)
+  })
+})
+
 describe("applying a title to a filename", () => {
   it("keeps the original extension", () => {
     expect(titleToFilename("Classroom chat", "7492908407147073536.mp4")).toBe("Classroom chat.mp4")
     expect(titleToFilename("Quiet morning", "IMG_9274920381.mov")).toBe("Quiet morning.mov")
+    expect(titleToFilename("Sort demo", "untitled.py")).toBe("Sort demo.py")
   })
 
   it("never lets a title change the extension", () => {

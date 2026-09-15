@@ -17,7 +17,7 @@ import { cn } from "@/lib/utils"
 type DocAiTab = "summary" | "title" | "keywords"
 
 /**
- * Assist workspace for PDFs — same shell as video Assist:
+ * Assist workspace for PDFs and source files — same shell as video Assist:
  * preview on top, three tabs, content, then Open / Download / Delete.
  */
 export function DocumentAssistSection({

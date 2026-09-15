@@ -31,11 +31,15 @@ export const libraryGlassContextMenu =
 
 /** Menu rows — flat icon + label, no chip tiles. */
 export const libraryGlassContextMenuItem =
-  "gap-2.5 rounded-lg px-2.5 py-2 text-[12px] font-medium text-zinc-200 " +
-  "focus:bg-white/[0.08] focus:text-white data-[variant=destructive]:text-red-400 " +
+  "cursor-pointer gap-2.5 rounded-lg px-2.5 py-2 text-[12px] font-medium text-zinc-200 " +
+  "transition-colors hover:bg-white/[0.08] hover:text-white " +
+  "focus:bg-white/[0.08] focus:text-white " +
+  "data-[highlighted]:bg-white/[0.08] data-[highlighted]:text-white " +
+  "data-[variant=destructive]:text-red-400 " +
+  "data-[variant=destructive]:hover:bg-red-500/15 data-[variant=destructive]:hover:text-red-300 " +
   "data-[variant=destructive]:focus:bg-red-500/15 data-[variant=destructive]:focus:text-red-300 " +
   "[&_svg]:size-3.5 [&_svg]:shrink-0 [&_svg]:text-zinc-400 " +
-  "focus:[&_svg]:text-zinc-200"
+  "hover:[&_svg]:text-zinc-200 focus:[&_svg]:text-zinc-200 data-[highlighted]:[&_svg]:text-zinc-200"
 
 /** Filename header inside the menu — always truncates inside the fixed width. */
 export const libraryContextMenuLabel =

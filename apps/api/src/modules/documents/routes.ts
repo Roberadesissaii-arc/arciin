@@ -5,6 +5,7 @@ import { z } from "zod"
 
 import {
   extractPdfMetadataFromBytes,
+  isCodeFilename,
   isPdfFilenameOrMime,
 } from "@arciin/shared"
 import {
@@ -16,6 +17,7 @@ import {
 
 import { friendlyGeminiErrorMessage } from "@/services/ai/friendly-gemini-error"
 import { readPdfAssetContent } from "@/services/chat/read-pdf-asset"
+import { readTextAssetContent } from "@/services/chat/read-text-asset"
 import { assertAssetFolderAccess } from "@/services/folders/folder-lock"
 import { AI_RATE_LIMITS, checkAiRateLimit } from "@/services/security/endpoint-rate-limit"
 import { requireFeature, requireSessionRole } from "@/services/security/auth"
@@ -55,6 +57,102 @@ export async function registerDocumentRoutes(fastify: FastifyInstance) {
       return null
     }
     return asset
+  }
+
+  function isPdfAssistAsset(asset: {
+    mediaType: string
+    originalFilename: string
+    mimeType: string | null
+  }) {
+    return (
+      asset.mediaType === "DOCUMENT" &&
+      isPdfFilenameOrMime(asset.originalFilename, asset.mimeType)
+    )
+  }
+
+  function isCodeAssistAsset(asset: {
+    mediaType: string
+    originalFilename: string
+  }) {
+    return asset.mediaType === "CODE" || isCodeFilename(asset.originalFilename)
+  }
+
+  type AssistSource =
+    | { ok: true; kind: "pdf" | "code"; text: string; numPages: number | null }
+    | { ok: false }
+
+  async function loadAssistSource(
+    reply: FastifyReply,
+    asset: {
+      id: string
+      mediaType: string
+      originalFilename: string
+      mimeType: string | null
+    },
+    limits: { maxChars: number; maxPages: number },
+  ): Promise<AssistSource> {
+    if (isPdfAssistAsset(asset)) {
+      const pdf = await readPdfAssetContent(fastify.prisma, {
+        assetId: asset.id,
+        maxChars: limits.maxChars,
+        maxPages: limits.maxPages,
+      })
+      if ("error" in pdf && pdf.error) {
+        reply.status(409).send({
+          error: {
+            code: String(pdf.error).toUpperCase(),
+            message: typeof pdf.message === "string" ? pdf.message : "Could not read PDF text.",
+          },
+        })
+        return { ok: false }
+      }
+      const text = typeof pdf.content === "string" ? pdf.content : ""
+      if (!text.trim()) {
+        reply.status(409).send({
+          error: { code: "NO_TEXT", message: "No extractable text was found in this PDF." },
+        })
+        return { ok: false }
+      }
+      return {
+        ok: true,
+        kind: "pdf",
+        text,
+        numPages: typeof pdf.num_pages === "number" ? pdf.num_pages : null,
+      }
+    }
+
+    if (isCodeAssistAsset(asset)) {
+      const source = await readTextAssetContent(fastify.prisma, {
+        assetId: asset.id,
+        maxChars: limits.maxChars,
+      })
+      if ("error" in source && source.error) {
+        reply.status(409).send({
+          error: {
+            code: String(source.error).toUpperCase(),
+            message:
+              typeof source.message === "string" ? source.message : "Could not read this file.",
+          },
+        })
+        return { ok: false }
+      }
+      const text = typeof source.content === "string" ? source.content : ""
+      if (!text.trim()) {
+        reply.status(409).send({
+          error: { code: "NO_TEXT", message: "No readable text was found in this file." },
+        })
+        return { ok: false }
+      }
+      return { ok: true, kind: "code", text, numPages: null }
+    }
+
+    reply.status(409).send({
+      error: {
+        code: "NOT_ASSISTABLE",
+        message: "Summarize and titles are available for PDFs and source files.",
+      },
+    })
+    return { ok: false }
   }
 
   /**
@@ -140,37 +238,8 @@ export async function registerDocumentRoutes(fastify: FastifyInstance) {
       const asset = await loadAccessibleAsset(request, reply, assetId)
       if (!asset) return
 
-      if (
-        asset.mediaType !== "DOCUMENT" ||
-        !isPdfFilenameOrMime(asset.originalFilename, asset.mimeType)
-      ) {
-        reply.status(409).send({
-          error: { code: "NOT_PDF", message: "Title suggestions are available for PDFs." },
-        })
-        return
-      }
-
-      const pdf = await readPdfAssetContent(fastify.prisma, {
-        assetId,
-        maxChars: 16_000,
-        maxPages: 20,
-      })
-      if ("error" in pdf && pdf.error) {
-        reply.status(409).send({
-          error: {
-            code: String(pdf.error).toUpperCase(),
-            message: typeof pdf.message === "string" ? pdf.message : "Could not read PDF text.",
-          },
-        })
-        return
-      }
-      const text = typeof pdf.content === "string" ? pdf.content : ""
-      if (!text.trim()) {
-        reply.status(409).send({
-          error: { code: "NO_TEXT", message: "No extractable text was found in this PDF." },
-        })
-        return
-      }
+      const source = await loadAssistSource(reply, asset, { maxChars: 16_000, maxPages: 20 })
+      if (!source.ok) return
 
       let config
       try {
@@ -194,8 +263,10 @@ export async function registerDocumentRoutes(fastify: FastifyInstance) {
       try {
         const result = await suggestTitles({
           config,
-          transcriptText: text,
+          transcriptText: source.text,
           count: body.success ? body.data.count : undefined,
+          kind: source.kind === "code" ? "code" : "video",
+          filename: asset.originalFilename,
         })
         reply.send({ data: { titles: result.titles, model: result.model } })
       } catch (error) {
@@ -224,50 +295,13 @@ export async function registerDocumentRoutes(fastify: FastifyInstance) {
       const asset = await loadAccessibleAsset(request, reply, assetId)
       if (!asset) return
 
-      if (
-        asset.mediaType !== "DOCUMENT" ||
-        !isPdfFilenameOrMime(asset.originalFilename, asset.mimeType)
-      ) {
-        reply.status(409).send({
-          error: {
-            code: "NOT_PDF",
-            message: "Summarize is available for PDF documents.",
-          },
-        })
-        return
-      }
+      const source = await loadAssistSource(reply, asset, { maxChars: 24_000, maxPages: 40 })
+      if (!source.ok) return
 
-      const pdf = await readPdfAssetContent(fastify.prisma, {
-        assetId,
-        maxChars: 24_000,
-        maxPages: 40,
-      })
-      if ("error" in pdf && pdf.error) {
-        reply.status(409).send({
-          error: {
-            code: String(pdf.error).toUpperCase(),
-            message: typeof pdf.message === "string" ? pdf.message : "Could not read PDF text.",
-          },
-        })
-        return
-      }
-
-      const text = typeof pdf.content === "string" ? pdf.content : ""
-      if (!text.trim()) {
-        reply.status(409).send({
-          error: {
-            code: "NO_TEXT",
-            message: "No extractable text was found in this PDF.",
-          },
-        })
-        return
-      }
-
-      const numPages = typeof pdf.num_pages === "number" ? pdf.num_pages : null
-      if (asset.pageCount == null && numPages != null) {
+      if (asset.pageCount == null && source.numPages != null) {
         await fastify.prisma.asset.update({
           where: { id: assetId },
-          data: { pageCount: numPages },
+          data: { pageCount: source.numPages },
         })
       }
 
@@ -293,8 +327,9 @@ export async function registerDocumentRoutes(fastify: FastifyInstance) {
       try {
         const result = await suggestDocumentSummary({
           config,
-          documentText: text,
+          documentText: source.text,
           filename: asset.originalFilename,
+          kind: source.kind === "code" ? "code" : "document",
         })
         const generatedAt = new Date().toISOString()
         const documentInsight = {

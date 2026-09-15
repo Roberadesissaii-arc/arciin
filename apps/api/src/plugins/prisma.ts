@@ -71,7 +71,7 @@ export async function registerPrisma(fastify: FastifyInstance) {
     }
     const reclassifiedCode = await reclassifyCodeAssets(prisma)
     if (reclassifiedCode > 0) {
-      fastify.log.info({ count: reclassifiedCode }, "Reclassified source files to CODE")
+      fastify.log.info({ count: reclassifiedCode }, "Reclassified source files to CODE / Inbox")
     }
     const removedAppsLibrary = await removeLegacyApplicationsLibrary(prisma)
     if (removedAppsLibrary) {
