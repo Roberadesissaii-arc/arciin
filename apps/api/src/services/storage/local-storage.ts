@@ -1,11 +1,12 @@
 import { createHash } from "node:crypto"
 import fs from "node:fs"
-import { mkdir, access, rename, stat, readdir, statfs } from "node:fs/promises"
+import { mkdir, access, rename, stat, readdir, statfs, copyFile, rm, unlink } from "node:fs/promises"
 import path from "node:path"
 import { pipeline } from "node:stream/promises"
 
 import type { MultipartFile } from "@fastify/multipart"
 import { buildObjectKey } from "@arciin/storage"
+import { canonicalOriginalIsUsable } from "@arciin/shared"
 
 import { apiConfig } from "@/config"
 import { getUploadLimits, UploadTooLargeError } from "@/services/config/upload-limits"
@@ -106,18 +107,85 @@ export function createObjectStoragePath(
   }
 }
 
-export async function moveTempToObject(tempPath: string, destinationPath: string) {
+export async function canonicalOriginalExists(
+  physicalPath: string,
+  expectedSizeBytes: number,
+): Promise<boolean> {
+  try {
+    const fileStat = await stat(physicalPath)
+    return canonicalOriginalIsUsable(
+      {
+        exists: true,
+        isFile: fileStat.isFile(),
+        sizeBytes: Number(fileStat.size),
+      },
+      expectedSizeBytes,
+    )
+  } catch {
+    return false
+  }
+}
+
+export async function moveTempToObject(
+  tempPath: string,
+  destinationPath: string,
+  options?: { overwrite?: boolean },
+) {
   await mkdir(path.dirname(destinationPath), {
     recursive: true,
   })
 
   try {
-    await access(destinationPath)
-    return destinationPath
+    const destStat = await stat(destinationPath)
+    const reusable = destStat.isFile() && destStat.size > 0
+    if (reusable && !options?.overwrite) {
+      await removeTempFile(tempPath)
+      return destinationPath
+    }
+    if (destStat.isFile()) {
+      await unlink(destinationPath)
+    } else {
+      await rm(destinationPath, { recursive: true, force: true })
+    }
   } catch {
-    await rename(tempPath, destinationPath)
-    return destinationPath
+    // Destination missing — rename into place below.
   }
+
+  try {
+    await rename(tempPath, destinationPath)
+  } catch (error) {
+    const code = error && typeof error === "object" && "code" in error ? error.code : null
+    if (code !== "EXDEV") throw error
+    await copyFile(tempPath, destinationPath)
+    await unlink(tempPath).catch(() => {})
+  }
+  return destinationPath
+}
+
+/**
+ * Put the uploaded bytes at the canonical object path, or keep an existing
+ * original when it is already the right size.
+ *
+ * Never delete the temp file until the destination is known to be usable.
+ * That is what used to drop Computer Backup bytes when a ghost StorageObject
+ * row matched the checksum.
+ */
+export async function placeCanonicalOriginal(input: {
+  tempPath: string
+  destinationPath: string
+  expectedSizeBytes: number
+}): Promise<"reused" | "written"> {
+  if (await canonicalOriginalExists(input.destinationPath, input.expectedSizeBytes)) {
+    await removeTempFile(input.tempPath)
+    return "reused"
+  }
+
+  await moveTempToObject(input.tempPath, input.destinationPath, { overwrite: true })
+
+  if (!(await canonicalOriginalExists(input.destinationPath, input.expectedSizeBytes))) {
+    throw new Error("Failed to persist the canonical original on disk.")
+  }
+  return "written"
 }
 
 export async function removeTempFile(tempPath: string) {

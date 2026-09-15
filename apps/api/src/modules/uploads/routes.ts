@@ -43,7 +43,7 @@ import { resolveEffectiveStorageRoot } from "@/services/storage/effective-storag
 import { resolveClientChannel } from "@/services/security/client-channel"
 import {
   createObjectStoragePath,
-  moveTempToObject,
+  placeCanonicalOriginal,
   removeTempFile,
   writeMultipartToTemp,
 } from "@/services/storage/local-storage"
@@ -267,32 +267,41 @@ export async function registerUploadRoutes(fastify: FastifyInstance) {
           checksumSha256: tempResult.checksumSha256,
           storageLocationId: targetLibrary.storageLocationId,
         },
-        select: { id: true },
+        select: { id: true, objectKey: true, physicalPath: true },
       })
 
-      // The bytes are moved into place here, but the StorageObject *row* is
-      // created inside the commit transaction below. Writing the row first was
-      // how a failed asset insert left an object nothing referenced.
-      let objectKey = ""
-      let physicalPath = ""
+      const objectPath = existingStorageObject?.objectKey
+        ? {
+            objectKey: existingStorageObject.objectKey,
+            physicalPath: path.join(storageRoot, existingStorageObject.objectKey),
+          }
+        : createObjectStoragePath(
+            tempResult.checksumSha256,
+            analysis.extension || path.extname(file.filename),
+            storageRoot,
+          )
 
-      if (!existingStorageObject) {
-        const objectPath = createObjectStoragePath(
-          tempResult.checksumSha256,
-          analysis.extension || path.extname(file.filename),
-          storageRoot
-        )
+      const placed = await placeCanonicalOriginal({
+        tempPath: tempResult.tempPath,
+        destinationPath: objectPath.physicalPath,
+        expectedSizeBytes: tempResult.sizeBytes,
+      })
+      tempPath = null
+      const objectKey = objectPath.objectKey
+      const physicalPath = objectPath.physicalPath
 
-        await moveTempToObject(tempResult.tempPath, objectPath.physicalPath)
-        tempPath = null
-        objectKey = objectPath.objectKey
-        physicalPath = objectPath.physicalPath
-      } else {
-        // Content-addressed: identical bytes are already stored under this
-        // checksum. Only the redundant temp copy is removed — never the object,
-        // which existing assets reference.
-        await removeTempFile(tempResult.tempPath)
-        tempPath = null
+      if (
+        existingStorageObject &&
+        (placed === "written" || existingStorageObject.physicalPath !== physicalPath)
+      ) {
+        await fastify.prisma.storageObject.update({
+          where: { id: existingStorageObject.id },
+          data: {
+            physicalPath,
+            sizeBytes: BigInt(tempResult.sizeBytes),
+            mimeType: analysis.mimeType,
+          },
+        })
       }
 
       const resolvedFolderId = await resolveUploadFolderId(

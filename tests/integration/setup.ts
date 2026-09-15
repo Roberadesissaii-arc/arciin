@@ -37,6 +37,7 @@ export async function removeTestStorageRoot(): Promise<void> {
  */
 export async function resetDatabase(): Promise<void> {
   await prisma.$transaction([
+    prisma.uploadOutbox.deleteMany(),
     prisma.syncEntry.deleteMany(),
     prisma.syncRoot.deleteMany(),
     prisma.deviceBackupGrant.deleteMany(),

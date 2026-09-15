@@ -9,12 +9,13 @@ import type { FastifyBaseLogger } from "fastify"
 import { analyzeStoredFile } from "@/services/classification/media-classification"
 import { commitUpload } from "@/services/uploads/commit-upload"
 import { dispatchPendingForUpload } from "@/services/uploads/outbox-dispatch"
+import { scheduleAssetProcessing } from "@/services/uploads/schedule-asset-processing"
 import { mediaQueue } from "@/services/jobs/queues"
 import { loadUserPreferences } from "@/services/user/preferences"
 import { resolveEffectiveStorageRoot } from "@/services/storage/effective-storage-root"
 import {
   createObjectStoragePath,
-  moveTempToObject,
+  placeCanonicalOriginal,
   removeTempFile,
   writeMultipartToTemp,
 } from "@/services/storage/local-storage"
@@ -73,9 +74,80 @@ export async function ingestBackupFile(
       input.log,
     )
 
+    const existingStorageObject = await prisma.storageObject.findFirst({
+      where: {
+        checksumSha256: tempResult.checksumSha256,
+        storageLocationId: library.storageLocationId,
+      },
+      select: { id: true, objectKey: true, physicalPath: true },
+    })
+
+    const objectPath = existingStorageObject?.objectKey
+      ? {
+          objectKey: existingStorageObject.objectKey,
+          physicalPath: path.join(storageRoot, existingStorageObject.objectKey),
+        }
+      : createObjectStoragePath(
+          tempResult.checksumSha256,
+          analysis.extension || path.extname(name),
+          storageRoot,
+        )
+
+    const placed = await placeCanonicalOriginal({
+      tempPath: tempResult.tempPath,
+      destinationPath: objectPath.physicalPath,
+      expectedSizeBytes: tempResult.sizeBytes,
+    })
+    tempPath = null
+
+    if (
+      existingStorageObject &&
+      (placed === "written" || existingStorageObject.physicalPath !== objectPath.physicalPath)
+    ) {
+      await prisma.storageObject.update({
+        where: { id: existingStorageObject.id },
+        data: {
+          physicalPath: objectPath.physicalPath,
+          sizeBytes: BigInt(tempResult.sizeBytes),
+          mimeType: analysis.mimeType,
+        },
+      })
+    }
+
+    const prefs = await loadUserPreferences(prisma, input.userId)
+    const wantsDocumentThumbnail =
+      !requiresWorkerProcessing(analysis.mediaType) &&
+      prefs.media.documentThumbnails &&
+      assetSupportsDocumentThumbnail(
+        analysis.mediaType,
+        analysis.mimeType,
+        analysis.extension,
+        name,
+      )
+
     if (existing?.assetId && existing.contentHash === tempResult.checksumSha256) {
-      await removeTempFile(tempResult.tempPath)
-      tempPath = null
+      const asset = await prisma.asset.findUnique({
+        where: { id: existing.assetId },
+        select: { status: true, mediaType: true },
+      })
+      const needsProcessing =
+        placed === "written" ||
+        asset?.status === "FAILED" ||
+        asset?.status === "PROCESSING"
+      if (needsProcessing) {
+        await scheduleAssetProcessing(prisma, {
+          assetId: existing.assetId,
+          userId: input.userId,
+          mediaType: analysis.mediaType,
+          wantsDocumentThumbnail,
+          log: input.log,
+        })
+      } else {
+        await prisma.asset.update({
+          where: { id: existing.assetId },
+          data: { folderId, originalFilename: name, deletedAt: null, status: "READY" },
+        })
+      }
       const unchanged = await prisma.syncEntry.update({
         where: { id: existing.id },
         data: {
@@ -87,47 +159,14 @@ export async function ingestBackupFile(
           deletedAt: null,
         },
       })
-      await prisma.asset.update({
-        where: { id: existing.assetId },
-        data: { folderId, originalFilename: name, deletedAt: null, status: "READY" },
-      })
+      await refreshBackupCounters(prisma, input.root.profileId)
       return unchanged
     }
 
-    const existingStorageObject = await prisma.storageObject.findFirst({
-      where: {
-        checksumSha256: tempResult.checksumSha256,
-        storageLocationId: library.storageLocationId,
-      },
-      select: { id: true, objectKey: true, physicalPath: true },
-    })
-
-    let objectKey = existingStorageObject?.objectKey ?? ""
-    let physicalPath = existingStorageObject?.physicalPath ?? ""
-    if (!existingStorageObject) {
-      const objectPath = createObjectStoragePath(
-        tempResult.checksumSha256,
-        analysis.extension || path.extname(name),
-        storageRoot,
-      )
-      await moveTempToObject(tempResult.tempPath, objectPath.physicalPath)
-      tempPath = null
-      objectKey = objectPath.objectKey
-      physicalPath = objectPath.physicalPath
-    } else {
-      await removeTempFile(tempResult.tempPath)
-      tempPath = null
-    }
+    const objectKey = objectPath.objectKey
+    const physicalPath = objectPath.physicalPath
 
     if (existing?.assetId) {
-      const storageObject =
-        existingStorageObject ??
-        (await prisma.storageObject.findFirst({
-          where: { checksumSha256: tempResult.checksumSha256, storageLocationId: library.storageLocationId },
-        }))
-      if (!storageObject && !existingStorageObject) {
-        // Row is created by commitUpload for new objects; for updates create it here.
-      }
       const storageObjectId =
         existingStorageObject?.id ??
         (
@@ -156,9 +195,17 @@ export async function ingestBackupFile(
           sizeBytes: BigInt(tempResult.sizeBytes),
           checksumSha256: tempResult.checksumSha256,
           deletedAt: null,
-          status: "READY",
+          status: requiresWorkerProcessing(analysis.mediaType) ? "PROCESSING" : "READY",
           uploadClient: "backup",
         },
+      })
+
+      await scheduleAssetProcessing(prisma, {
+        assetId: existing.assetId,
+        userId: input.userId,
+        mediaType: analysis.mediaType,
+        wantsDocumentThumbnail,
+        log: input.log,
       })
 
       const updated = await prisma.syncEntry.update({
@@ -176,17 +223,6 @@ export async function ingestBackupFile(
       await refreshBackupCounters(prisma, input.root.profileId)
       return updated
     }
-
-    const prefs = await loadUserPreferences(prisma, input.userId)
-    const wantsDocumentThumbnail =
-      !requiresWorkerProcessing(analysis.mediaType) &&
-      prefs.media.documentThumbnails &&
-      assetSupportsDocumentThumbnail(
-        analysis.mediaType,
-        analysis.mimeType,
-        analysis.extension,
-        name,
-      )
 
     const committed = await commitUpload(prisma, {
       storage: {
