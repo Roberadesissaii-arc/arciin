@@ -32,17 +32,76 @@ export function isProtectedRootStatus(status: string): boolean {
   return status !== "DISABLED"
 }
 
-export function countProtectedRoots(roots: Array<{ status: string }>): number {
-  return roots.filter((root) => isProtectedRootStatus(root.status)).length
+/** A root as the protection rules need to see it. */
+type CountableRoot = { status: string; acknowledgedAt?: Date | string | null }
+
+/**
+ * Whether a root counts as actively protected.
+ *
+ * Two regimes, chosen by whether this computer has ever reported ownership:
+ *
+ * - **Legacy** (`ownershipObserved` false) — status alone, exactly as before.
+ *   The Desktop installed in production predates ownership reporting, and
+ *   demanding an acknowledgement it cannot yet send would strip protection
+ *   from folders it is genuinely backing up.
+ * - **Ownership-aware** — the computer must also have claimed the root. This
+ *   is what stops a root the server invented, that no computer holds, from
+ *   counting toward a protection promise.
+ *
+ * `fileCount` is deliberately absent from both. An empty protected folder is
+ * normal, and inferring protection from contents is the bug this replaces.
+ */
+export function isProtectedRoot(root: CountableRoot, ownershipObserved: boolean): boolean {
+  if (!isProtectedRootStatus(root.status)) return false
+  if (!ownershipObserved) return true
+  return Boolean(root.acknowledgedAt)
+}
+
+export function countProtectedRoots(
+  roots: CountableRoot[],
+  ownershipObserved = false,
+): number {
+  return roots.filter((root) => isProtectedRoot(root, ownershipObserved)).length
+}
+
+/**
+ * Which roots a present ownership statement withdraws.
+ *
+ * Pure on purpose: the decision is the part worth testing, and keeping it out
+ * of the Prisma shell keeps it out of reach of anything that could quietly turn
+ * "we heard nothing" into "it owns nothing".
+ *
+ * Only a root the computer once acknowledged can be withdrawn. One it never
+ * claimed was never owned, so there is nothing to take away — it simply keeps
+ * failing the acknowledgement test in the count. Identifiers naming no known
+ * root are ignored: a heartbeat may not conjure roots.
+ */
+export function rootsToWithdraw<T extends { id: string; sourcePathIdentifier: string; status: string; acknowledgedAt?: Date | string | null }>(
+  activeRoots: T[],
+  ownedRootSourceIdentifiers: string[],
+): T[] {
+  const owned = new Set(ownedRootSourceIdentifiers.map((id) => id.trim()).filter(Boolean))
+  return activeRoots.filter(
+    (root) =>
+      isProtectedRootStatus(root.status) &&
+      Boolean(root.acknowledgedAt) &&
+      !owned.has(root.sourcePathIdentifier),
+  )
 }
 
 export function presentedBackupHealth(input: {
   profileStatus: string
   health: ComputerCardPublic["health"]
-  roots: Array<{ status: string }>
+  roots: CountableRoot[]
+  ownershipObserved?: boolean
 }): ComputerCardPublic["health"] {
   if (input.profileStatus === "DISABLED") return "DISABLED"
-  if (countProtectedRoots(input.roots) === 0 && input.health === "UP_TO_DATE") return "OFFLINE"
+  if (
+    countProtectedRoots(input.roots, input.ownershipObserved ?? false) === 0 &&
+    input.health === "UP_TO_DATE"
+  ) {
+    return "OFFLINE"
+  }
   return input.health
 }
 
@@ -54,6 +113,7 @@ export function serializeBackupRoot(root: SyncRoot): BackupRootPublic {
     sourcePathIdentifier: root.sourcePathIdentifier,
     folderId: root.folderId,
     status: root.status,
+    acknowledgedAt: root.acknowledgedAt?.toISOString() ?? null,
     fileCount: root.fileCount,
     folderCount: root.folderCount,
     byteCount: Number(root.byteCount),
@@ -74,6 +134,7 @@ export function serializeBackupProfile(
       profileStatus: profile.status,
       health: profile.health,
       roots: profile.roots,
+      ownershipObserved: Boolean(profile.rootOwnershipObservedAt),
     }),
     lastSyncAt: profile.lastSyncAt?.toISOString() ?? null,
     lastHeartbeatAt: profile.lastHeartbeatAt?.toISOString() ?? null,
@@ -134,8 +195,9 @@ export function serializeDeviceBackupSummary(
       profileStatus: profile.status,
       health: profile.health,
       roots: profile.roots,
+      ownershipObserved: Boolean(profile.rootOwnershipObservedAt),
     }),
-    rootCount: countProtectedRoots(profile.roots),
+    rootCount: countProtectedRoots(profile.roots, Boolean(profile.rootOwnershipObservedAt)),
     fileCount: profile.fileCount,
     byteCount: Number(profile.byteCount),
     lastSyncAt: profile.lastSyncAt?.toISOString() ?? null,

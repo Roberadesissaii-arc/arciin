@@ -178,7 +178,7 @@ export function MyComputersPage() {
                           className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 text-[13px]"
                         >
                           <span className="text-zinc-900">{root.displayName}</span>
-                          <span className="text-zinc-500">{computerRootStatusLabel(root)}</span>
+                          <span className="text-zinc-500">{computerRootStatusLabel(root, computer.health)}</span>
                         </li>
                       ))}
                     </ul>

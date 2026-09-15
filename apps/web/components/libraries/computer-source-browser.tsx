@@ -48,10 +48,12 @@ function ComputerFolderTile({
   folder,
   href,
   root,
+  computerHealth,
 }: {
   folder: FolderSummary
   href: string
   root?: ComputerRoot
+  computerHealth: string
 }) {
   return (
     <Link
@@ -77,7 +79,7 @@ function ComputerFolderTile({
           </span>
           <div className="truncate text-[13px] font-semibold text-zinc-900">{folder.name}</div>
           <div className="mt-0.5 text-[11px] font-medium text-zinc-500">
-            {root ? computerRootStatusLabel(root) : "Folder"}
+            {root ? computerRootStatusLabel(root, computerHealth) : "Folder"}
           </div>
         </div>
       </div>
@@ -223,6 +225,7 @@ export function ComputerSourceBrowser({
                 folder={folder}
                 href={folderHref(folder.id)}
                 root={rootByFolderId.get(folder.id)}
+                computerHealth={computer.health}
               />
             ))}
           </div>

@@ -29,6 +29,8 @@ export type BackupRootPublic = {
   sourcePathIdentifier: string
   folderId: string
   status: SyncRootStatus
+  /** When the computer claimed this root; null if no computer ever has. */
+  acknowledgedAt: string | null
   fileCount: number
   folderCount: number
   byteCount: number

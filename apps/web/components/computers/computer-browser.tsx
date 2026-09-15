@@ -109,7 +109,7 @@ export function ComputerBrowser({
                     <p className="truncate text-[14px] font-medium">{item.name}</p>
                     {root ? (
                       <div className="flex flex-wrap items-center gap-2">
-                        <Badge variant="secondary">{computerRootStatusLabel(root)}</Badge>
+                        <Badge variant="secondary">{computerRootStatusLabel(root, computer.health)}</Badge>
                         <span className="text-[12px] text-muted-foreground">
                           {root.fileCount.toLocaleString()} files
                           {root.byteCount > 0 ? ` · ${formatBytes(root.byteCount)}` : ""}
