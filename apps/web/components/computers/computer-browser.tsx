@@ -8,7 +8,8 @@ import { PageHeader } from "@/components/app-shell/page-header"
 import { AssetGrid } from "@/components/libraries/asset-grid"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
-import { browseComputer, type ComputerCard, type ComputerRoot } from "@/lib/api/computers"
+import { browseComputer, type ComputerCard } from "@/lib/api/computers"
+import { computerRootStatusLabel } from "@/lib/utils/computer-root-status"
 import { queryKeys } from "@/lib/api/query-keys"
 import { formatCardRelativeTime } from "@/lib/utils/format-card-relative-time"
 import { formatBytes } from "@/lib/utils/format-bytes"
@@ -23,23 +24,6 @@ function platformLabel(platform: ComputerCard["platform"]) {
       return "Linux"
     default:
       return "Other"
-  }
-}
-
-function rootStatusLabel(status: ComputerRoot["status"]) {
-  switch (status) {
-    case "PROTECTED":
-      return "Up to date"
-    case "SYNCING":
-      return "Backing up"
-    case "PAUSED":
-      return "Paused"
-    case "ERROR":
-      return "Error"
-    case "DISABLED":
-      return "Disabled"
-    default:
-      return status
   }
 }
 
@@ -125,7 +109,7 @@ export function ComputerBrowser({
                     <p className="truncate text-[14px] font-medium">{item.name}</p>
                     {root ? (
                       <div className="flex flex-wrap items-center gap-2">
-                        <Badge variant="secondary">{rootStatusLabel(root.status)}</Badge>
+                        <Badge variant="secondary">{computerRootStatusLabel(root)}</Badge>
                         <span className="text-[12px] text-muted-foreground">
                           {root.fileCount.toLocaleString()} files
                           {root.byteCount > 0 ? ` · ${formatBytes(root.byteCount)}` : ""}
