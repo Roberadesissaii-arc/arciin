@@ -21,14 +21,17 @@ import {
  * folders, fileCount 0, lastSyncAt null, and no local root on the computer —
  * presented to the user as fully protected and up to date.
  *
- * `lastSyncAt` is the only server-written evidence that real sync work has
- * happened for a root, so it is what "Up to date" must rest on.
+ * The evidence is `fileCount`, recomputed by the server from the root's ACTIVE
+ * FILE entries. `SyncRoot.lastSyncAt` is the obvious candidate and is useless:
+ * nothing writes it, so it is null on every root in production — including
+ * TestBackup, api and avater, which hold 7, 14 and 80 files. Resting the label
+ * on it would have called three genuinely backed-up folders "waiting".
  */
 
-/** The Games root exactly as production held it. */
-const serverOnlyRoot = { status: "PROTECTED", lastSyncAt: null }
-/** A root that has genuinely backed up. */
-const syncedRoot = { status: "PROTECTED", lastSyncAt: "2026-09-15T01:59:28.587Z" }
+/** The Games root exactly as production held it: protected, and holding nothing. */
+const serverOnlyRoot = { status: "PROTECTED", lastSyncAt: null, fileCount: 0 }
+/** avater, as production holds it: protected, 80 files, and no lastSyncAt — like every root. */
+const syncedRoot = { status: "PROTECTED", lastSyncAt: null, fileCount: 80 }
 
 describe("CASE 1 — server root the computer never acknowledged", () => {
   it("is recognised as awaiting its first sync", () => {
@@ -57,7 +60,7 @@ describe("CASE 2 — disabled roots", () => {
   })
 
   it("read as Disabled, never as waiting or up to date", () => {
-    const disabled = { status: "DISABLED", lastSyncAt: null }
+    const disabled = { status: "DISABLED", lastSyncAt: null, fileCount: 0 }
     expect(isAwaitingFirstSync(disabled)).toBe(false)
     expect(computerRootStatusLabel(disabled)).toBe("Disabled")
   })
@@ -69,9 +72,9 @@ describe("CASE 3 — a normal protected root that has synced", () => {
   })
 
   it("does not regress the other statuses", () => {
-    expect(computerRootStatusLabel({ status: "SYNCING", lastSyncAt: null })).toBe("Backing up")
-    expect(computerRootStatusLabel({ status: "PAUSED", lastSyncAt: null })).toBe("Paused")
-    expect(computerRootStatusLabel({ status: "ERROR", lastSyncAt: null })).toBe("Error")
+    expect(computerRootStatusLabel({ status: "SYNCING", lastSyncAt: null, fileCount: 0 })).toBe("Backing up")
+    expect(computerRootStatusLabel({ status: "PAUSED", lastSyncAt: null, fileCount: 0 })).toBe("Paused")
+    expect(computerRootStatusLabel({ status: "ERROR", lastSyncAt: null, fileCount: 0 })).toBe("Error")
   })
 })
 
@@ -99,7 +102,7 @@ describe("CASE 4 — a computer carrying a server-only orphan root", () => {
   it("a disabled orphan no longer holds the computer back", () => {
     const afterDisable = {
       health: "UP_TO_DATE",
-      roots: [syncedRoot, syncedRoot, syncedRoot, { status: "DISABLED", lastSyncAt: null }],
+      roots: [syncedRoot, syncedRoot, syncedRoot, { status: "DISABLED", lastSyncAt: null, fileCount: 0 }],
     }
     expect(computerIsUpToDate(afterDisable)).toBe(true)
     expect(computerHealthLabel(afterDisable)).toBe("Up to date")
@@ -108,6 +111,33 @@ describe("CASE 4 — a computer carrying a server-only orphan root", () => {
   it("never overrides a health that was already unhealthy", () => {
     expect(computerHealthLabel({ health: "ERROR", roots: [serverOnlyRoot] })).toBe("Error")
     expect(computerHealthLabel({ health: "OFFLINE", roots: [serverOnlyRoot] })).toBe("Offline")
+  })
+})
+
+describe("the real roots on DESKTOP-S8FBLDB keep saying 'Up to date'", () => {
+  // Resting this on lastSyncAt downgraded all three of these to "waiting",
+  // because nothing writes SyncRoot.lastSyncAt. fileCount is what separates them.
+  it.each([
+    ["TestBackup", 7],
+    ["api", 14],
+    ["avater", 80],
+  ])("%s (%i files)", (_name, fileCount) => {
+    const root = { status: "PROTECTED", lastSyncAt: null, fileCount }
+    expect(isAwaitingFirstSync(root)).toBe(false)
+    expect(computerRootStatusLabel(root)).toBe("Up to date")
+  })
+
+  it("and the computer they belong to is up to date once Games is disabled", () => {
+    const computer = {
+      health: "UP_TO_DATE",
+      roots: [
+        { status: "PROTECTED", lastSyncAt: null, fileCount: 7 },
+        { status: "PROTECTED", lastSyncAt: null, fileCount: 14 },
+        { status: "PROTECTED", lastSyncAt: null, fileCount: 80 },
+        { status: "DISABLED", lastSyncAt: null, fileCount: 0 },
+      ],
+    }
+    expect(computerHealthLabel(computer)).toBe("Up to date")
   })
 })
 

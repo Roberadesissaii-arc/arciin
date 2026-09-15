@@ -23,9 +23,13 @@ import type { ComputerRoot } from "@/lib/api/computers"
  */
 export const NEVER_SYNCED_ROOT_LABEL = "Waiting for this computer"
 
-/** A root that is designated protected but has never completed a sync. */
-export function isAwaitingFirstSync(root: Pick<ComputerRoot, "status" | "lastSyncAt">): boolean {
-  return root.status === "PROTECTED" && !root.lastSyncAt
+/** A root that is designated protected but holds nothing the server can point to. */
+export function isAwaitingFirstSync(
+  root: Pick<ComputerRoot, "status" | "lastSyncAt" | "fileCount">,
+): boolean {
+  if (root.status !== "PROTECTED") return false
+  if (root.lastSyncAt) return false
+  return root.fileCount === 0
 }
 
 /**
@@ -35,7 +39,7 @@ export function isAwaitingFirstSync(root: Pick<ComputerRoot, "status" | "lastSyn
  * should keep using `backupHealthLabel`; this is for per-root display.
  */
 export function computerRootStatusLabel(
-  root: Pick<ComputerRoot, "status" | "lastSyncAt">,
+  root: Pick<ComputerRoot, "status" | "lastSyncAt" | "fileCount">,
 ): string {
   if (isAwaitingFirstSync(root)) return NEVER_SYNCED_ROOT_LABEL
   switch (root.status) {
@@ -78,12 +82,12 @@ function plainHealthLabel(health: string): string {
  * Whether a computer as a whole may be presented as up to date.
  *
  * A computer with a root that has never synced is not up to date, however
- * healthy the profile row looks — the profile's own `lastSyncAt` is refreshed
- * by activity on *any* root, so it cannot speak for a root that has never run.
+ * healthy the profile row looks — the profile's counters aggregate *every* root,
+ * so they cannot speak for one that holds nothing.
  */
 export function computerIsUpToDate(input: {
   health: string
-  roots: Array<Pick<ComputerRoot, "status" | "lastSyncAt">>
+  roots: Array<Pick<ComputerRoot, "status" | "lastSyncAt" | "fileCount">>
 }): boolean {
   if (input.health !== "UP_TO_DATE") return false
   return !input.roots.some(isAwaitingFirstSync)
@@ -92,7 +96,7 @@ export function computerIsUpToDate(input: {
 /** Status label for a whole computer, qualified by its roots. */
 export function computerHealthLabel(input: {
   health: string
-  roots: Array<Pick<ComputerRoot, "status" | "lastSyncAt">>
+  roots: Array<Pick<ComputerRoot, "status" | "lastSyncAt" | "fileCount">>
 }): string {
   if (input.health === "UP_TO_DATE" && !computerIsUpToDate(input)) {
     return NEVER_SYNCED_ROOT_LABEL
