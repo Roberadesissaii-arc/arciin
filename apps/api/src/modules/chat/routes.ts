@@ -17,6 +17,7 @@ import {
   parseAiSecurityConfig,
   sanitizeOutboundChatText,
 } from "@arciin/shared"
+import { resolveDesktopChatGate } from "@/services/desktop-tools/access"
 import {
   isCloudChatProvider,
   resolveLocalOllamaProfile,
@@ -81,6 +82,12 @@ const chatSchema = z.object({
   focusAsset: focusAssetSchema.optional(),
   /** This turn writes a Canvas document — see CANVAS_WITHHELD_TOOLS. */
   canvas: z.boolean().optional(),
+  desktopContext: z
+    .object({
+      enabled: z.boolean(),
+      deviceId: z.string().min(1).max(64),
+    })
+    .optional(),
 })
 
 /**
@@ -1158,6 +1165,7 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
 
       const { profileId, model: modelOverride, messages, focusAsset } = parsed.data
       const canvasTurn = parsed.data.canvas === true
+      const desktopContext = parsed.data.desktopContext
 
       let profile = profileId
         ? await fastify.prisma.modelProfile.findUnique({ where: { id: profileId } })
@@ -1249,6 +1257,20 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
         const aiCfg = (instance?.aiConfig as Record<string, unknown> | null) ?? {}
         const aiSettings = parseAiConfig(aiCfg)
         const security = parseAiSecurityConfig(aiCfg.security)
+        const desktopGate = await resolveDesktopChatGate({
+          prisma: fastify.prisma,
+          userId: request.auth!.user.id,
+          desktopComputerAccess: security.desktopComputerAccess,
+          desktopContext,
+        })
+        const withheldTools = new Set<string>([
+          ...(canvasTurn ? CANVAS_WITHHELD_TOOLS : []),
+          ...desktopGate.withheldTools,
+        ])
+        const desktopToolCtx = {
+          desktopDeviceId: desktopGate.expose ? desktopGate.deviceId : null,
+          conversationId: null as string | null,
+        }
         const vaultSnapshot = await getPasswordVaultAiSnapshot(fastify.prisma, {
           queryHint: passwordRelatedTurn ? vaultConversationText : undefined,
           listAll:
@@ -1271,6 +1293,12 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
         if (focusAsset) {
           systemAppend += await buildFocusAssetSystemAppend(fastify.prisma, focusAsset)
         }
+        if (desktopGate.expose) {
+          systemAppend += `
+
+## This PC
+This PC metadata tools may be available. Use opaque scopeId plus a root-relative path only. Never invent or request Windows absolute paths. If a tool returns DESKTOP_OFFLINE, say you cannot reach this PC right now.`
+        }
 
         const safeText = sanitizeMessagesForProvider(messagesTextOnly(messages), security)
 
@@ -1289,7 +1317,7 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
             model,
             apiKey: profile.apiKey,
             disableTools: Boolean(focusAsset),
-            ...(canvasTurn ? { withheldTools: CANVAS_WITHHELD_TOOLS } : {}),
+            withheldTools,
             messages: ollamaMessages,
             toolCtx: {
               prisma: fastify.prisma,
@@ -1300,6 +1328,7 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
               userId: request.auth!.user.id,
               libraryToolAccess: security.libraryToolAccess,
               publishRealtimeEvent: fastify.publishRealtimeEvent,
+              ...desktopToolCtx,
               // Bound to this instance's configured destinations. The tool
               // schema has no recipient argument on purpose — see
               // packages/shared/src/delivery-policy.ts.
@@ -1376,7 +1405,7 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
                   (t) =>
                     t.function.name !== "vision_search_library" &&
                     t.function.name !== "organize_images_library" &&
-                    !(canvasTurn && CANVAS_WITHHELD_TOOLS.has(t.function.name)),
+                    !withheldTools.has(t.function.name),
                 ),
             toolCtx: {
               prisma: fastify.prisma,
@@ -1387,6 +1416,7 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
               userId: request.auth!.user.id,
               libraryToolAccess: security.libraryToolAccess,
               publishRealtimeEvent: fastify.publishRealtimeEvent,
+              ...desktopToolCtx,
               // Bound to this instance's configured destinations. The tool
               // schema has no recipient argument on purpose — see
               // packages/shared/src/delivery-policy.ts.

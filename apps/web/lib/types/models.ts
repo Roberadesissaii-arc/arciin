@@ -757,6 +757,7 @@ export type AiSecuritySettings = {
     notes: boolean
   }
   passwordQueriesLocalAiOnly: boolean
+  desktopComputerAccess: "off" | "metadata_only"
 }
 
 export type ModelProvider =

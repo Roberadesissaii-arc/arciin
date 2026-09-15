@@ -22,12 +22,18 @@ export function libraryAllowsDeletion(access: AiLibraryToolAccess): boolean {
 }
 
 import {
+  AI_DESKTOP_COMPUTER_ACCESS_LEVELS,
+  type AiDesktopComputerAccess,
+} from "./desktop-ai-tools"
+import {
   DEFAULT_PASSWORD_VAULT_AI_SHARE,
   PASSWORD_VAULT_AI_ACCESS_LEVELS,
   type PasswordVaultAiAccessLevel,
   type PasswordVaultAiShareSettings,
   parsePasswordVaultAiShare,
 } from "./password-vault-ai"
+
+export type { AiDesktopComputerAccess }
 
 export { PASSWORD_VAULT_AI_ACCESS_LEVELS }
 /** @deprecated Use PasswordVaultAiAccessLevel */
@@ -53,6 +59,11 @@ export type AiSecuritySettingsResolved = {
   passwordVaultAiShare: PasswordVaultAiShareSettings
   /** Route password-related chat turns through a local Ollama profile only (never cloud APIs). */
   passwordQueriesLocalAiOnly: boolean
+  /**
+   * Whether chat may request This PC metadata tools through a paired Desktop.
+   * File contents are never in V1. Default off.
+   */
+  desktopComputerAccess: AiDesktopComputerAccess
 }
 
 export const DEFAULT_AI_SECURITY: AiSecuritySettingsResolved = {
@@ -69,6 +80,7 @@ export const DEFAULT_AI_SECURITY: AiSecuritySettingsResolved = {
   passwordVaultAiAccess: "blocked",
   passwordVaultAiShare: DEFAULT_PASSWORD_VAULT_AI_SHARE,
   passwordQueriesLocalAiOnly: false,
+  desktopComputerAccess: "off",
 }
 
 function resolveLibraryToolAccess(s: Record<string, unknown>): AiLibraryToolAccess {
@@ -105,6 +117,11 @@ export function parseAiSecurityConfig(sec: unknown): AiSecuritySettingsResolved 
     passwordVaultAiAccess,
     passwordVaultAiShare: parsePasswordVaultAiShare(s.passwordVaultAiShare),
     passwordQueriesLocalAiOnly: Boolean(s.passwordQueriesLocalAiOnly ?? false),
+    desktopComputerAccess: AI_DESKTOP_COMPUTER_ACCESS_LEVELS.includes(
+      s.desktopComputerAccess as AiDesktopComputerAccess,
+    )
+      ? (s.desktopComputerAccess as AiDesktopComputerAccess)
+      : "off",
   }
 }
 
