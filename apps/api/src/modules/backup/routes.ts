@@ -78,6 +78,21 @@ const rootSchema = z.object({
 const heartbeatSchema = z.object({
   health: z.enum(["UP_TO_DATE", "SYNCING", "PAUSED", "OFFLINE", "ERROR"]).optional(),
   lastError: z.string().max(500).nullable().optional(),
+  /**
+   * The roots this computer is backing up right now, by opaque source
+   * identifier. Absent and empty mean different things and must not be
+   * conflated: absent is a client that has no statement to make (including
+   * every client built before this field existed), empty is a client saying it
+   * owns nothing. Only a present list carries authority.
+   *
+   * Deliberately NOT `.strict()` on this object — the Desktop relies on unknown
+   * keys being stripped rather than rejected, so an older server keeps
+   * accepting newer heartbeats.
+   */
+  ownedRootSourceIdentifiers: z
+    .array(z.string().min(1).max(BACKUP_SOURCE_PATH_ID_MAX))
+    .max(256)
+    .optional(),
 })
 
 const folderEntrySchema = z.object({
@@ -490,6 +505,9 @@ export async function registerBackupRoutes(fastify: FastifyInstance) {
         sourcePathIdentifier: parsed.data.sourcePathIdentifier,
         libraryId: library.id,
         deviceFolderId: profile.folderId,
+        // This route is reached with the sync grant, so reaching it *is* the
+        // computer saying it holds this root.
+        acknowledge: true,
       })
       reply.status(201).send({ data: serializeBackupRoot(root) })
     } catch (error) {

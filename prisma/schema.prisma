@@ -499,6 +499,11 @@ model DeviceBackupProfile {
   lastSyncAt      DateTime?
   lastHeartbeatAt DateTime?
   lastError       String?
+  /// First heartbeat that carried an authoritative ownedRootSourceIdentifiers
+  /// list. Until this is set the client predates root ownership reporting and
+  /// legacy counting stays in force, so upgrading the server cannot strip
+  /// protection from roots an older Desktop is still backing up.
+  rootOwnershipObservedAt DateTime?
   fileCount       Int                @default(0)
   folderCount     Int                @default(0)
   byteCount       BigInt             @default(0)
@@ -548,6 +553,12 @@ model SyncRoot {
   sourcePathIdentifier String
   folderId             String
   status               SyncRootStatus  @default(PROTECTED)
+  /// When the computer itself claimed this root, via POST /backup/roots with
+  /// its sync grant, after committing the root to its own store. A root the
+  /// server created but no computer ever claimed has this null — which is what
+  /// separates a folder that is genuinely being backed up from one that only
+  /// exists in this database.
+  acknowledgedAt       DateTime?
   fileCount            Int             @default(0)
   folderCount          Int             @default(0)
   byteCount            BigInt          @default(0)

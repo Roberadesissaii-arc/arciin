@@ -19,6 +19,7 @@ import type {
 
 import { hashToken } from "@/services/security/auth"
 import { slugify } from "@/services/slug"
+import { rootsToWithdraw } from "./serialize"
 
 import { BackupError } from "./errors"
 import { ensureComputersLibrary, ensureDeviceFolder, folderSlugForSegment } from "./library"
@@ -295,11 +296,56 @@ export async function listBackupProfilesForViewer(
   })
 }
 
+/**
+ * Apply an authoritative ownership statement from the computer.
+ *
+ * Only a *present* list says anything. A computer that is offline, mid-error,
+ * paused, or simply older than this field sends nothing, and silence must never
+ * be read as "owns nothing" — that would end protection for every root the
+ * moment a laptop was closed.
+ *
+ * Withdrawal runs through `disableSyncRoot`, so the root, its entries and every
+ * stored file survive. Removing a folder from backup stops future protection;
+ * it does not delete the backup already taken.
+ */
+export async function applyRootOwnership(
+  prisma: PrismaClient,
+  profile: DeviceBackupProfile,
+  ownedRootSourceIdentifiers: string[],
+) {
+  const activeRoots = await prisma.syncRoot.findMany({
+    where: { profileId: profile.id, status: { not: "DISABLED" } },
+  })
+
+  for (const root of rootsToWithdraw(activeRoots, ownedRootSourceIdentifiers)) {
+    await disableSyncRoot(prisma, root.id)
+  }
+
+  return prisma.deviceBackupProfile.update({
+    where: { id: profile.id },
+    data: { rootOwnershipObservedAt: profile.rootOwnershipObservedAt ?? new Date() },
+  })
+}
+
 export async function heartbeatBackupProfile(
   prisma: PrismaClient,
   profile: DeviceBackupProfile,
-  input: { health?: string; lastError?: string | null },
+  input: {
+    health?: string
+    lastError?: string | null
+    ownedRootSourceIdentifiers?: string[]
+  },
 ) {
+  // Ownership is applied before anything else, and before the heartbeat
+  // throttle below can return early: a throttled heartbeat still carries an
+  // authoritative statement, and dropping it would leave a withdrawn root
+  // protected until the client happened to change health.
+  let current = profile
+  if (input.ownedRootSourceIdentifiers !== undefined) {
+    current = await applyRootOwnership(prisma, profile, input.ownedRootSourceIdentifiers)
+  }
+  profile = current
+
   const requested = input.health ? input.health.trim().toUpperCase() : profile.health
   if (requested && !HEALTH_VALUES.has(requested as DeviceBackupHealth)) {
     throw new BackupError("VALIDATION_ERROR", "Unsupported backup health.", 400)
@@ -344,6 +390,13 @@ export async function upsertSyncRoot(
     sourcePathIdentifier: string
     libraryId: string
     deviceFolderId: string
+    /**
+     * Set only when the computer itself is registering the root with its sync
+     * grant. Backup setup runs through here too, over a user session, and that
+     * is precisely the call that must NOT count as the computer claiming
+     * anything — it is how an unowned root got created in the first place.
+     */
+    acknowledge?: boolean
   },
 ) {
   const identifier = input.sourcePathIdentifier.trim()
@@ -374,6 +427,12 @@ export async function upsertSyncRoot(
         kind: input.kind as SyncRootKind,
         displayName,
         status: "PROTECTED",
+        // Re-acknowledging is idempotent: the stamp is only ever set, never
+        // moved and never cleared, so a client that retries does not rewrite
+        // when the root was first claimed.
+        ...(input.acknowledge && !existing.acknowledgedAt
+          ? { acknowledgedAt: new Date() }
+          : {}),
       },
     })
   }
@@ -402,6 +461,7 @@ export async function upsertSyncRoot(
       kind: input.kind as SyncRootKind,
       displayName,
       sourcePathIdentifier: identifier,
+      acknowledgedAt: input.acknowledge ? new Date() : null,
       folderId: folder.id,
     },
   })

@@ -8,6 +8,7 @@ export type ComputerRoot = {
   sourcePathIdentifier: string
   folderId: string
   status: string
+  acknowledgedAt: string | null
   fileCount: number
   folderCount: number
   byteCount: number
