@@ -1,6 +1,7 @@
 import {
   AI_EMOJI_USAGE_LEVELS,
   AI_LIBRARY_TOOL_ACCESS_LEVELS,
+  AI_DESKTOP_COMPUTER_ACCESS_LEVELS,
   normalizeIpRule,
   parseAccessControlConfig,
   parseAiConfig,
@@ -156,6 +157,7 @@ const aiSecuritySchema = z.object({
     })
     .optional(),
   passwordQueriesLocalAiOnly: z.boolean().optional(),
+  desktopComputerAccess: z.enum(AI_DESKTOP_COMPUTER_ACCESS_LEVELS).optional(),
 })
 
 const clearDataSchema = z

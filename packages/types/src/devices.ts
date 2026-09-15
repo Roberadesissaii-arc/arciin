@@ -23,10 +23,14 @@ export type ArciinDiscoveryManifest = {
   }
   /**
    * Optional capabilities. Pairing-protocol-1 clients ignore unknown fields.
-   * `computerBackup` does not change `protocolVersion`.
+   * `computerBackup` and `aiDesktopTools` do not change `protocolVersion`.
    */
   capabilities?: {
     computerBackup: {
+      supported: boolean
+      protocolVersion: number
+    }
+    aiDesktopTools?: {
       supported: boolean
       protocolVersion: number
     }

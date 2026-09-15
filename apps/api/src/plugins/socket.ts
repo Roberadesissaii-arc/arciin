@@ -5,8 +5,9 @@ import { Server } from "socket.io"
 import { isSelfHostedLanOrigin, type RealtimeEvent } from "@arciin/shared"
 
 import { apiConfig } from "@/config"
-import { isActiveTunnelOrigin } from "@/plugins/cors-origins"
 import { hashApiKey, hashToken, scopeAllows } from "@/services/security/auth"
+import { isActiveTunnelOrigin } from "./cors-origins"
+import { attachDesktopToolNamespace } from "./desktop-tool-namespace"
 
 function emitRealtimeEvent(io: Server, event: RealtimeEvent) {
   let emitted = false
@@ -212,6 +213,7 @@ export async function registerSocket(fastify: FastifyInstance) {
     })
   })
 
+  attachDesktopToolNamespace(io, fastify)
   fastify.decorate("io", io)
   fastify.decorate("publishRealtimeEvent", async (event: RealtimeEvent) => {
     await fastify.redis.publish(apiConfig.socketChannel, JSON.stringify(event))
