@@ -24,31 +24,15 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty"
 import { Skeleton } from "@/components/ui/skeleton"
-import { listComputers, type ComputerCard, type ComputerRoot } from "@/lib/api/computers"
+import {
+  computerHealthLabel,
+  computerRootStatusLabel,
+} from "@/lib/utils/computer-root-status"
+import { listComputers, type ComputerCard } from "@/lib/api/computers"
 import { queryKeys } from "@/lib/api/query-keys"
 import { computerSourceValue, filesSourceHref } from "@/lib/utils/library-asset-pipeline"
 import { formatBytes } from "@/lib/utils/format-bytes"
 import { formatCardRelativeTime } from "@/lib/utils/format-card-relative-time"
-
-function healthLabel(health: ComputerCard["health"] | ComputerRoot["status"]) {
-  switch (health) {
-    case "UP_TO_DATE":
-    case "PROTECTED":
-      return "Up to date"
-    case "SYNCING":
-      return "Backing up"
-    case "PAUSED":
-      return "Paused"
-    case "OFFLINE":
-      return "Offline"
-    case "ERROR":
-      return "Error"
-    case "DISABLED":
-      return "Disabled"
-    default:
-      return health
-  }
-}
 
 function platformLabel(platform: ComputerCard["platform"]) {
   switch (platform) {
@@ -161,7 +145,7 @@ export function MyComputersPage() {
                     <div className="flex flex-wrap items-center gap-2">
                       <Monitor className="size-4 text-zinc-500" />
                       <h2 className="text-[16px] font-medium text-zinc-900">{computer.name}</h2>
-                      <Badge variant="secondary">{healthLabel(computer.health)}</Badge>
+                      <Badge variant="secondary">{computerHealthLabel(computer)}</Badge>
                     </div>
                     <p className="text-[13px] text-zinc-600">{platformLabel(computer.platform)}</p>
                     <p className="text-[13px] text-zinc-600">
@@ -194,7 +178,7 @@ export function MyComputersPage() {
                           className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 text-[13px]"
                         >
                           <span className="text-zinc-900">{root.displayName}</span>
-                          <span className="text-zinc-500">{healthLabel(root.status)}</span>
+                          <span className="text-zinc-500">{computerRootStatusLabel(root)}</span>
                         </li>
                       ))}
                     </ul>

@@ -16,6 +16,10 @@ import { SelectableAssetsContainer } from "@/components/libraries/selectable-ass
 import { GridPaginationBar } from "@/components/ui/app-pagination"
 import { browseComputer, type ComputerCard, type ComputerRoot } from "@/lib/api/computers"
 import {
+  computerHealthLabel,
+  computerRootStatusLabel,
+} from "@/lib/utils/computer-root-status"
+import {
   filterAssetsByKind,
   computerBrowseCrumbs,
   filesSourceHref,
@@ -37,26 +41,6 @@ function platformLabel(platform: ComputerCard["platform"]) {
       return "Linux"
     default:
       return "Other"
-  }
-}
-
-function healthLabel(health: ComputerCard["health"] | ComputerRoot["status"]) {
-  switch (health) {
-    case "UP_TO_DATE":
-    case "PROTECTED":
-      return "Up to date"
-    case "SYNCING":
-      return "Backing up"
-    case "PAUSED":
-      return "Paused"
-    case "OFFLINE":
-      return "Offline"
-    case "ERROR":
-      return "Error"
-    case "DISABLED":
-      return "Disabled"
-    default:
-      return health
   }
 }
 
@@ -93,7 +77,7 @@ function ComputerFolderTile({
           </span>
           <div className="truncate text-[13px] font-semibold text-zinc-900">{folder.name}</div>
           <div className="mt-0.5 text-[11px] font-medium text-zinc-500">
-            {root ? healthLabel(root.status) : "Folder"}
+            {root ? computerRootStatusLabel(root) : "Folder"}
           </div>
         </div>
       </div>
@@ -175,7 +159,7 @@ export function ComputerSourceBrowser({
   const protectedCount = computer.roots.filter((root) => root.status !== "DISABLED").length
   const statusLabel = `${platformLabel(computer.platform)} · ${protectedCount} protected ${
     protectedCount === 1 ? "folder" : "folders"
-  } · ${healthLabel(computer.health)}`
+  } · ${computerHealthLabel(computer)}`
 
   const folderTitle =
     atRoot || nestedCrumbs.length === 0 ? (
