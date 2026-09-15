@@ -75,6 +75,12 @@ docker-compose.smoke.yml
 # Development Next.js output (kept separate from the production .next)
 .next-dev/
 
+# Atomic web deploy: staging build, the previous build kept for rollback, and
+# any partial build quarantined off the live path (see scripts/deploy-web.sh)
+apps/web/.next-build/
+apps/web/.next-prev/
+apps/web/.next-broken-*/
+
 # Deployment lock (runtime state, never committed)
 .arciin-deploy.lock
 
