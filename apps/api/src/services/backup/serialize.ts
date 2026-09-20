@@ -89,6 +89,70 @@ export function rootsToWithdraw<T extends { id: string; sourcePathIdentifier: st
   )
 }
 
+/** Why a root was withdrawn. One value today; named so a log line is greppable. */
+export const OWNERSHIP_WITHDRAWAL_REASON = "OWNERSHIP_HEARTBEAT_WITHDRAWAL"
+
+type AuditRoot = {
+  id: string
+  displayName: string
+  sourcePathIdentifier: string
+  status: string
+  acknowledgedAt?: Date | string | null
+}
+
+/**
+ * What to record when a computer states which roots it owns.
+ *
+ * Withdrawal is the one thing the server does that silently ends protection,
+ * and it left no trace at all: three real roots were withdrawn and afterwards
+ * there was no way to tell what the heartbeat had actually said. Bounding the
+ * question to "which identifiers arrived, and which roots did that remove" is
+ * the difference between a provable incident and an unprovable one.
+ *
+ * Only opaque identifiers appear here. `sourcePathIdentifier` is a one-way hash
+ * and carries no local path, and nothing about the credential the heartbeat
+ * authenticated with is included.
+ */
+export function ownershipAuditRecord(input: {
+  profileId: string
+  deviceId: string
+  receivedIdentifiers: string[]
+  activeRoots: AuditRoot[]
+  withdrawing: AuditRoot[]
+}) {
+  return {
+    profileId: input.profileId,
+    deviceId: input.deviceId,
+    at: new Date().toISOString(),
+    receivedCount: input.receivedIdentifiers.length,
+    received: input.receivedIdentifiers,
+    acknowledgedActive: input.activeRoots
+      .filter((root) => Boolean(root.acknowledgedAt))
+      .map((root) => root.sourcePathIdentifier),
+    withdrawing: input.withdrawing.map((root) => ({
+      rootId: root.id,
+      displayName: root.displayName,
+      sourcePathIdentifier: root.sourcePathIdentifier,
+    })),
+  }
+}
+
+/** What to record for each root actually withdrawn. */
+export function withdrawalAuditRecord(input: {
+  profileId: string
+  deviceId: string
+  root: AuditRoot
+}) {
+  return {
+    reason: OWNERSHIP_WITHDRAWAL_REASON,
+    profileId: input.profileId,
+    deviceId: input.deviceId,
+    rootId: input.root.id,
+    displayName: input.root.displayName,
+    sourcePathIdentifier: input.root.sourcePathIdentifier,
+  }
+}
+
 export function presentedBackupHealth(input: {
   profileStatus: string
   health: ComputerCardPublic["health"]

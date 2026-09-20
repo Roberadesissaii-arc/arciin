@@ -463,7 +463,12 @@ export async function registerBackupRoutes(fastify: FastifyInstance) {
       return
     }
     try {
-      const profile = await heartbeatBackupProfile(fastify.prisma, ctx.profile, parsed.data)
+      const profile = await heartbeatBackupProfile(
+        fastify.prisma,
+        ctx.profile,
+        parsed.data,
+        request.log,
+      )
       reply.send({
         data: {
           health: profile.health,

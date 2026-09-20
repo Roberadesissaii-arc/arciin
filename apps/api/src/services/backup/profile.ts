@@ -19,7 +19,11 @@ import type {
 
 import { hashToken } from "@/services/security/auth"
 import { slugify } from "@/services/slug"
-import { rootsToWithdraw } from "./serialize"
+import {
+  ownershipAuditRecord,
+  rootsToWithdraw,
+  withdrawalAuditRecord,
+} from "./serialize"
 
 import { BackupError } from "./errors"
 import { ensureComputersLibrary, ensureDeviceFolder, folderSlugForSegment } from "./library"
@@ -296,6 +300,11 @@ export async function listBackupProfilesForViewer(
   })
 }
 
+/** Minimal logger shape so callers can pass `request.log` without coupling. */
+type BackupAuditLogger = {
+  info: (obj: Record<string, unknown>, msg: string) => void
+}
+
 /**
  * Apply an authoritative ownership statement from the computer.
  *
@@ -312,13 +321,33 @@ export async function applyRootOwnership(
   prisma: PrismaClient,
   profile: DeviceBackupProfile,
   ownedRootSourceIdentifiers: string[],
+  log?: BackupAuditLogger,
 ) {
   const activeRoots = await prisma.syncRoot.findMany({
     where: { profileId: profile.id, status: { not: "DISABLED" } },
   })
 
-  for (const root of rootsToWithdraw(activeRoots, ownedRootSourceIdentifiers)) {
+  const withdrawing = rootsToWithdraw(activeRoots, ownedRootSourceIdentifiers)
+
+  // Recorded before the writes, so the statement survives even if a write
+  // fails partway.
+  log?.info(
+    ownershipAuditRecord({
+      profileId: profile.id,
+      deviceId: profile.deviceId,
+      receivedIdentifiers: ownedRootSourceIdentifiers,
+      activeRoots,
+      withdrawing,
+    }),
+    "backup ownership statement received",
+  )
+
+  for (const root of withdrawing) {
     await disableSyncRoot(prisma, root.id)
+    log?.info(
+      withdrawalAuditRecord({ profileId: profile.id, deviceId: profile.deviceId, root }),
+      "backup root withdrawn by ownership heartbeat",
+    )
   }
 
   return prisma.deviceBackupProfile.update({
@@ -335,6 +364,7 @@ export async function heartbeatBackupProfile(
     lastError?: string | null
     ownedRootSourceIdentifiers?: string[]
   },
+  log?: BackupAuditLogger,
 ) {
   // Ownership is applied before anything else, and before the heartbeat
   // throttle below can return early: a throttled heartbeat still carries an
@@ -342,7 +372,7 @@ export async function heartbeatBackupProfile(
   // protected until the client happened to change health.
   let current = profile
   if (input.ownedRootSourceIdentifiers !== undefined) {
-    current = await applyRootOwnership(prisma, profile, input.ownedRootSourceIdentifiers)
+    current = await applyRootOwnership(prisma, profile, input.ownedRootSourceIdentifiers, log)
   }
   profile = current
 
