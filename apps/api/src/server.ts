@@ -22,7 +22,6 @@ import {
   registerDiscoveryRoutes,
 } from "@/modules/devices/routes"
 import { registerDeviceSettingsRoutes } from "@/modules/devices/settings-routes"
-import { registerBackupRoutes } from "@/modules/backup/routes"
 import { registerFolderRoutes } from "@/modules/folders/routes"
 import { registerInstanceRoutes } from "@/modules/instance/routes"
 import { registerIntegrationRoutes } from "@/modules/integrations/routes"
@@ -235,7 +234,6 @@ export async function createServer() {
       await registerDeviceDiscoverAlias(api)
       await registerDeviceClientRoutes(api)
       await registerDeviceSettingsRoutes(api)
-      await registerBackupRoutes(api)
       await registerAuthRoutes(api)
       await registerLibraryRoutes(api)
       await registerFolderRoutes(api)

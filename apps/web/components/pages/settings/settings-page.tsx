@@ -1,5 +1,6 @@
 "use client"
 
+import { DevicesPanel } from "@/components/settings/devices-panel"
 import { useCallback, useEffect, type ReactNode } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Settings2 } from "lucide-react"
@@ -14,7 +15,6 @@ import { ApiProtectionPanel } from "@/components/settings/api-protection-panel"
 import { AppearancePanel } from "@/components/settings/appearance-panel"
 import { AttachedDisksPanel } from "@/components/settings/attached-disks-panel"
 import { ClearDataPanel } from "@/components/settings/clear-data-panel"
-import { DevicesPanel } from "@/components/settings/devices-panel"
 import { DomainPanel } from "@/components/settings/domain-panel"
 import { DiscordPanel } from "@/components/settings/discord-panel"
 import { EmailPanel } from "@/components/settings/email-panel"
@@ -70,6 +70,7 @@ export function SettingsPage() {
   )
 
   const panels: Record<SettingsTab, ReactNode> = {
+    devices: <DevicesPanel />,
     storage: <StorageSettingsForm />,
     "attached-disks": <AttachedDisksPanel />,
     domain: <DomainPanel />,
@@ -85,7 +86,6 @@ export function SettingsPage() {
     trash: <TrashPanel />,
     "data-reset": <ClearDataPanel />,
     "access-control": <AccessControlPanel />,
-    devices: <DevicesPanel />,
     session: <SessionSecurityPanel />,
     "api-protection": <ApiProtectionPanel />,
     ai: <AiPanel />,

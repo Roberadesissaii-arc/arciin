@@ -1,5 +1,6 @@
 import type { ComponentType } from "react"
 import {
+  Monitor,
   Accessibility,
   Bell,
   Database,
@@ -12,7 +13,6 @@ import {
   Layers,
   LogOut,
   Mail,
-  Monitor,
   Palette,
   Shield,
   ShieldAlert,

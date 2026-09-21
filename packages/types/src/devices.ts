@@ -1,4 +1,3 @@
-import type { DeviceBackupSummary } from "./computer-backup"
 
 export type DeviceStatus = "ACTIVE" | "REVOKED"
 
@@ -21,16 +20,6 @@ export type ArciinDiscoveryManifest = {
     serviceType: string
     advertised: boolean
   }
-  /**
-   * Optional capabilities. Pairing-protocol-1 clients ignore unknown fields.
-   * `computerBackup` does not change `protocolVersion`.
-   */
-  capabilities?: {
-    computerBackup: {
-      supported: boolean
-      protocolVersion: number
-    }
-  }
 }
 
 export type PairedDevicePublic = {
@@ -43,7 +32,6 @@ export type PairedDevicePublic = {
   lastSeenAt: string | null
   appVersion: string | null
   protocolVersion: number
-  backup?: DeviceBackupSummary | null
   /** Present on Settings → Devices. Derived only from the session's pairedDeviceId. */
   isCurrentDevice?: boolean
 }

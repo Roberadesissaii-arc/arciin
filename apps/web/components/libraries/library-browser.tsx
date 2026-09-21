@@ -1,7 +1,6 @@
 "use client"
 
 import { useEffect, useMemo, useState, type ReactNode } from "react"
-import { useQuery } from "@tanstack/react-query"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Search } from "lucide-react"
 
@@ -11,7 +10,6 @@ import { AssetGrid } from "@/components/libraries/asset-grid"
 import { VideoEditProvider } from "@/components/libraries/video-edit-context"
 import { AssetTable } from "@/components/libraries/asset-table"
 import { CreateFolderDialog } from "@/components/libraries/create-folder-dialog"
-import { ComputerSourceBrowser } from "@/components/libraries/computer-source-browser"
 import {
   FolderGrid,
   FolderViewMoreButton,
@@ -31,15 +29,12 @@ import { useAssetsPage } from "@/hooks/use-assets"
 import { useLibraryBrowserFilters } from "@/hooks/use-library-browser-filters"
 import { useFolders, useLibraries } from "@/hooks/use-libraries"
 import { useUploadStore } from "@/lib/stores/upload-store"
-import { listComputers } from "@/lib/api/computers"
-import { queryKeys } from "@/lib/api/query-keys"
 import {
   SOURCE_ALL,
   collectSourceFilterOptions,
   filesSourceHref,
   GRID_PAGE_SIZE,
   LIST_PAGE_SIZE,
-  parseComputerSourceDeviceId,
   pipelineLibraryAssets,
 } from "@/lib/utils/library-asset-pipeline"
 import { cn } from "@/lib/utils"
@@ -88,7 +83,6 @@ export function LibraryBrowser({
   const sourceFilter = isAllFiles
     ? (searchParams.get("source") ?? SOURCE_ALL)
     : localSourceFilter
-  const computerFolderId = isAllFiles ? searchParams.get("folder") : null
 
   const setSourceFilter = (value: typeof sourceFilter) => {
     setLocalSourceFilter(value)
@@ -153,28 +147,7 @@ export function LibraryBrowser({
     () => assetsQuery.data?.pages.flatMap((page) => page.items) ?? [],
     [assetsQuery.data],
   )
-  const computersQuery = useQuery({
-    queryKey: queryKeys.computers,
-    queryFn: ({ signal }) => listComputers(signal),
-    retry: false,
-  })
-  const sourceOptions = useMemo(
-    () =>
-      collectSourceFilterOptions(
-        rawAssets,
-        computersQuery.isSuccess
-          ? computersQuery.data ?? []
-          : computersQuery.isError
-            ? undefined
-            : [],
-      ),
-    [rawAssets, computersQuery.data, computersQuery.isError, computersQuery.isSuccess],
-  )
-  const computerDeviceId = parseComputerSourceDeviceId(sourceFilter)
-  const browsingComputer = Boolean(isAllFiles && computerDeviceId)
-  useEffect(() => {
-    setPage(1)
-  }, [computerFolderId, setPage])
+  const sourceOptions = useMemo(() => collectSourceFilterOptions(rawAssets), [rawAssets])
   const assets = useMemo(
     () =>
       pipelineLibraryAssets(rawAssets, {
@@ -241,14 +214,14 @@ export function LibraryBrowser({
       ) : null}
 
       <section className={cn("space-y-3 pb-4", librarySlug && "pt-4")}>
-        {browsingComputer ? null : <BrowserSectionHeading>Assets</BrowserSectionHeading>}
+        <BrowserSectionHeading>Assets</BrowserSectionHeading>
 
         <LibraryBrowserToolbar
           search={search}
           onSearchChange={setSearch}
           view={view}
           onViewChange={setView}
-          resultCount={browsingComputer ? undefined : assets.length}
+          resultCount={assets.length}
           showKindChips={isAllFiles}
           kindFilter={kindFilter}
           onKindFilterChange={setKindFilter}
@@ -261,22 +234,9 @@ export function LibraryBrowser({
           placeholder="Search files and metadata"
         />
 
-        {browsingComputer ? null : (
-          <div className="border-b border-zinc-200/90" aria-hidden />
-        )}
+        <div className="border-b border-zinc-200/90" aria-hidden />
 
-        {browsingComputer && computerDeviceId ? (
-          <ComputerSourceBrowser
-            deviceId={computerDeviceId}
-            folderId={computerFolderId}
-            sourceValue={sourceFilter}
-            kindFilter={kindFilter}
-            search={search}
-            view={view}
-            page={page}
-            onPageChange={setPage}
-          />
-        ) : assetsBootLoading ? (
+        {assetsBootLoading ? (
           view === "table" ? (
             <AssetTableSkeleton />
           ) : (

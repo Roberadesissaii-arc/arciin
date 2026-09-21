@@ -1,8 +1,7 @@
 "use client"
 
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react"
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import Link from "next/link"
 import { Check, CircleCheck, Copy, EllipsisVertical, Laptop, Monitor, Smartphone, Tablet } from "lucide-react"
 import { toast } from "@/lib/notifications/arciin-toast"
 
@@ -24,7 +23,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import {
@@ -40,13 +38,11 @@ import {
   getConnectedDevices,
   revokeConnectedDevice,
 } from "@/lib/api/settings"
-import { disableComputerBackup } from "@/lib/api/computers"
 import { queryKeys } from "@/lib/api/query-keys"
-import { computerSourceValue, filesSourceHref } from "@/lib/utils/library-asset-pipeline"
 import { useAuth } from "@/hooks/use-auth"
 import type { DevicePairingCodeResult, PairedDevicePublic } from "@/lib/types/models"
 import { ApiError } from "@/lib/api/errors"
-import { devicePresenceLabel, isArciinDesktopWebView, requestNativeComputerBackupSetup, resolveDevicePresence } from "@arciin/shared"
+import { devicePresenceLabel, resolveDevicePresence } from "@arciin/shared"
 import { cn } from "@/lib/utils"
 import { copyToClipboard } from "@/lib/utils/clipboard"
 
@@ -87,13 +83,6 @@ function PlatformIcon({ platform }: { platform: PairedDevicePublic["platform"] }
   if (platform === "IOS" || platform === "ANDROID") return <Smartphone className={className} />
   if (platform === "MACOS") return <Laptop className={className} />
   return <Monitor className={className} />
-}
-
-function formatBytesLabel(bytes: number) {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
-  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`
 }
 
 function formatRelative(iso: string | null) {
@@ -159,42 +148,6 @@ function PairingMetaTile({
   )
 }
 
-function backupHealthLabel(health: NonNullable<PairedDevicePublic["backup"]>["health"]) {
-  switch (health) {
-    case "UP_TO_DATE":
-      return "Up to date"
-    case "SYNCING":
-      return "Backing up"
-    case "PAUSED":
-      return "Paused"
-    case "OFFLINE":
-      return "Offline"
-    case "ERROR":
-      return "Error"
-    case "DISABLED":
-      return "Disabled"
-    default:
-      return health
-  }
-}
-
-function useArciinDesktopWebView() {
-  return useSyncExternalStore(
-    () => () => {},
-    isArciinDesktopWebView,
-    () => false,
-  )
-}
-
-function requestBackupSetup(browserMessage: string) {
-  try {
-    if (requestNativeComputerBackupSetup()) return
-  } catch {
-    // Missing WebView must never throw in a browser.
-  }
-    toast.info(browserMessage)
-}
-
 function DeviceOverflowMenu({
   testId,
   children,
@@ -223,14 +176,10 @@ function DeviceOverflowMenu({
 
 function DeviceCard({
   device,
-  inDesktop,
-  onDisableBackup,
   onDisconnect,
   onRevoke,
 }: {
   device: PairedDevicePublic
-  inDesktop: boolean
-  onDisableBackup: (device: PairedDevicePublic) => void
   onDisconnect: (device: PairedDevicePublic) => void
   onRevoke: (device: PairedDevicePublic) => void
 }) {
@@ -239,9 +188,6 @@ function DeviceCard({
     isCurrentDevice: isCurrent,
     lastSeenAt: device.lastSeenAt,
   })
-  const backup = device.backup
-  const backupEnabled = Boolean(backup?.enabled)
-  const viewBackupHref = filesSourceHref(computerSourceValue(device.id))
 
   return (
     <div
@@ -268,79 +214,9 @@ function DeviceCard({
           </p>
           <p className="text-[13px] text-zinc-500">Last seen {formatRelative(device.lastSeenAt)}</p>
 
-          <div
-            className="mt-3 border-t border-zinc-200/80 pt-3 text-[13px] text-zinc-500"
-            data-testid="device-backup-summary"
-          >
-            <p className="font-medium text-zinc-900">Computer Backup</p>
-            {backupEnabled && backup ? (
-              <div className="mt-1 space-y-0.5">
-                <p>{backupHealthLabel(backup.health)}</p>
-                <p>
-                  {backup.rootCount} {backup.rootCount === 1 ? "folder" : "folders"} protected
-                </p>
-                {backup.byteCount > 0 ? <p>{formatBytesLabel(backup.byteCount)}</p> : null}
-                <p>Last backup {formatRelative(backup.lastSyncAt)}</p>
-                {isCurrent && !inDesktop ? (
-                  <p>Open Arciin Desktop to manage protected folders.</p>
-                ) : null}
-              </div>
-            ) : (
-              <div className="mt-1 space-y-0.5">
-                <p>Not enabled</p>
-                {isCurrent && !inDesktop ? (
-                  <p>Open Arciin Desktop to turn on backup.</p>
-                ) : null}
-              </div>
-            )}
-          </div>
-
           <div className="mt-3 flex items-center justify-end gap-1">
-            {isCurrent && !backupEnabled ? (
-              <Button
-                type="button"
-                size="sm"
-                data-testid="turn-on-backup"
-                onClick={() => requestBackupSetup("Open Arciin Desktop to turn on backup.")}
-              >
-                Turn On Backup
-              </Button>
-            ) : null}
-
-            {isCurrent && backupEnabled ? (
-              <Button
-                type="button"
-                size="sm"
-                data-testid="manage-backup"
-                onClick={() =>
-                  requestBackupSetup("Open Arciin Desktop to manage protected folders.")
-                }
-              >
-                Manage Backup
-              </Button>
-            ) : null}
-
-            {!isCurrent && backupEnabled ? (
-              <Button asChild size="sm">
-                <Link href={viewBackupHref} data-testid="view-backup">
-                  View Backup
-                </Link>
-              </Button>
-            ) : null}
-
             {isCurrent ? (
               <DeviceOverflowMenu testId="current-device-menu">
-                {backupEnabled ? (
-                  <>
-                    <DropdownMenuItem
-                      data-testid="disable-backup"
-                      onSelect={() => onDisableBackup(device)}
-                    >
-                      Disable Backup
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                  </>
-                ) : null}
                 <DropdownMenuItem
                   variant="destructive"
                   data-testid="disconnect-this-computer"
@@ -351,14 +227,6 @@ function DeviceCard({
               </DeviceOverflowMenu>
             ) : (
               <DeviceOverflowMenu testId="other-device-menu">
-                {backupEnabled ? (
-                  <DropdownMenuItem
-                    data-testid="disable-backup"
-                    onSelect={() => onDisableBackup(device)}
-                  >
-                    Disable Backup
-                  </DropdownMenuItem>
-                ) : null}
                 <DropdownMenuItem
                   variant="destructive"
                   data-testid="revoke-access"
@@ -380,14 +248,12 @@ export function DevicesPanel() {
   const authQuery = useAuth()
   const role = authQuery.data?.user.role
   const canManage = role === "OWNER" || role === "ADMIN"
-  const inDesktop = useArciinDesktopWebView()
 
   const [activeCode, setActiveCode] = useState<DevicePairingCodeResult | null>(null)
   const [pairedSuccess, setPairedSuccess] = useState<PairedDevicePublic | null>(null)
   const [now, setNow] = useState(() => Date.now())
   const [revokeTarget, setRevokeTarget] = useState<PairedDevicePublic | null>(null)
   const [disconnectTarget, setDisconnectTarget] = useState<PairedDevicePublic | null>(null)
-  const [disableTarget, setDisableTarget] = useState<PairedDevicePublic | null>(null)
   const [codeCopied, setCodeCopied] = useState(false)
   const knownDeviceIdsRef = useRef<Set<string>>(new Set())
 
@@ -460,24 +326,6 @@ export function DevicesPanel() {
     },
     onError: (err) => {
       toast.error("Could not cancel pairing", {
-        description: err instanceof Error ? err.message : "Try again.",
-      })
-    },
-  })
-
-  const disableBackupMutation = useMutation({
-    mutationFn: async (device: PairedDevicePublic) => {
-      if (!device.backup?.profileId) throw new Error("Backup profile not found.")
-      return disableComputerBackup(device.backup.profileId)
-    },
-    onSuccess: (_data, device) => {
-      setDisableTarget(null)
-      void queryClient.invalidateQueries({ queryKey: queryKeys.connectedDevices })
-      void queryClient.invalidateQueries({ queryKey: queryKeys.computers })
-      toast.success(`Computer backup disabled for ${device.name}`)
-    },
-    onError: (err) => {
-      toast.error("Could not disable computer backup", {
         description: err instanceof Error ? err.message : "Try again.",
       })
     },
@@ -595,8 +443,6 @@ export function DevicesPanel() {
                     <DeviceCard
                       key={device.id}
                       device={device}
-                      inDesktop={inDesktop}
-                      onDisableBackup={setDisableTarget}
                       onDisconnect={setDisconnectTarget}
                       onRevoke={setRevokeTarget}
                     />
@@ -612,8 +458,6 @@ export function DevicesPanel() {
                     <DeviceCard
                       key={device.id}
                       device={device}
-                      inDesktop={inDesktop}
-                      onDisableBackup={setDisableTarget}
                       onDisconnect={setDisconnectTarget}
                       onRevoke={setRevokeTarget}
                     />
@@ -737,26 +581,6 @@ export function DevicesPanel() {
         )}
       </SettingsCard>
 
-      <AlertDialog open={Boolean(disableTarget)} onOpenChange={(open) => !open && setDisableTarget(null)}>
-        <AlertDialogContent className="border-border bg-card text-foreground">
-          <AlertDialogHeader>
-            <AlertDialogTitle>Disable backup on {disableTarget?.name}?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This stops Computer Backup only. The ArciinSync credential is revoked, but this
-              computer stays paired. Files already stored in Arciin remain. Files on the computer
-              are not deleted.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => disableTarget && disableBackupMutation.mutate(disableTarget)}
-            >
-              Disable Backup
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
 
       <AlertDialog
         open={Boolean(disconnectTarget)}
@@ -766,10 +590,9 @@ export function DevicesPanel() {
           <AlertDialogHeader>
             <AlertDialogTitle>Disconnect {disconnectTarget?.name}?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will remove this computer&apos;s trusted connection to this Arciin server.
-              Computer Backup will stop and this computer will need to be paired again before
-              reconnecting. Files already backed up to Arciin will remain on the server. Files on
-              this computer will NOT be deleted.
+              This will remove this computer&apos;s trusted connection to this Arciin server. It
+              will need to be paired again before reconnecting. Files already in Arciin will remain
+              on the server, and files on this computer will NOT be deleted.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -790,8 +613,8 @@ export function DevicesPanel() {
             <AlertDialogTitle>Revoke access for {revokeTarget?.name}?</AlertDialogTitle>
             <AlertDialogDescription>
               This device will no longer be able to connect to this Arciin server until it is
-              paired again. Computer Backup on that device will stop. Server backups already stored
-              in Arciin will remain. Local files will not be deleted.
+              paired again. Files already stored in Arciin will remain, and local files will not be
+              deleted.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
