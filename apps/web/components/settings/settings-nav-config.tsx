@@ -1,5 +1,6 @@
 import type { ComponentType } from "react"
 import {
+  Monitor,
   Accessibility,
   Bell,
   Database,
@@ -30,6 +31,7 @@ export type SettingsTab =
   | "trash"
   | "data-reset"
   | "access-control"
+  | "devices"
   | "session"
   | "api-protection"
   | "ai"
@@ -49,6 +51,7 @@ export const SETTINGS_VALID_TABS: SettingsTab[] = [
   "trash",
   "data-reset",
   "access-control",
+  "devices",
   "session",
   "api-protection",
   "ai",
@@ -87,6 +90,7 @@ export const SETTINGS_NAV: SettingsNavItem[][] = [
     { id: "passwords", label: "Passwords", icon: FingerprintPattern },
     { id: "trash", label: "Trash", icon: Trash2 },
     { id: "access-control", label: "Access control", icon: Shield },
+    { id: "devices", label: "Devices", icon: Monitor },
     { id: "session", label: "Session", icon: LogOut },
     { id: "api-protection", label: "API protection", icon: Gauge },
     { id: "data-reset", label: "Data reset", icon: Eraser },

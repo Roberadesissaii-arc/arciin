@@ -1,5 +1,6 @@
 "use client"
 
+import { DevicesPanel } from "@/components/settings/devices-panel"
 import { useCallback, useEffect, type ReactNode } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Settings2 } from "lucide-react"
@@ -69,6 +70,7 @@ export function SettingsPage() {
   )
 
   const panels: Record<SettingsTab, ReactNode> = {
+    devices: <DevicesPanel />,
     storage: <StorageSettingsForm />,
     "attached-disks": <AttachedDisksPanel />,
     domain: <DomainPanel />,
