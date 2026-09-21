@@ -280,16 +280,27 @@ describe("upload routing when the target library disagrees with the file", () =>
     }
   })
 
-  it("never second-guesses Inbox or a custom library", () => {
-    // Those accept anything by design, so dropping a file there is deliberate.
-    for (const kind of ["INBOX", "CUSTOM"]) {
-      expect(
-        resolveUploadRoute({ mediaType: "APPLICATION", requestedLibraryKind: kind }).rerouted,
-      ).toBe(false)
-      expect(
-        resolveUploadRoute({ mediaType: "VIDEO", requestedLibraryKind: kind }).rerouted,
-      ).toBe(false)
-    }
+  it("never second-guesses a custom library", () => {
+    // A custom library has no declared type, and filing into one is a choice.
+    expect(
+      resolveUploadRoute({ mediaType: "APPLICATION", requestedLibraryKind: "CUSTOM" }).rerouted,
+    ).toBe(false)
+    expect(
+      resolveUploadRoute({ mediaType: "VIDEO", requestedLibraryKind: "CUSTOM" }).rerouted,
+    ).toBe(false)
+  })
+
+  it("files a recognised type out of Inbox, and leaves the rest in it", () => {
+    // Inbox is where a file lands when Arciin cannot tell what it is. Treating
+    // it as a catch-all meant standing on the Inbox page silently switched
+    // auto-organise off: a photo dropped there stayed there.
+    expect(resolveUploadRoute({ mediaType: "VIDEO", requestedLibraryKind: "INBOX" })).toMatchObject({
+      libraryKind: "VIDEO",
+      rerouted: true,
+    })
+    expect(
+      resolveUploadRoute({ mediaType: "APPLICATION", requestedLibraryKind: "INBOX" }).rerouted,
+    ).toBe(false)
   })
 
   it("routes typeless media to Inbox when nothing is requested", () => {
