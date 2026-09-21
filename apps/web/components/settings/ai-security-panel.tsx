@@ -16,6 +16,7 @@ import { SettingsPanelError } from "@/components/settings/settings-panel-error"
 import {
   VAULT_AI_ENCRYPTED,
   type AiLibraryToolAccess,
+  type AiDesktopComputerAccess,
   type PasswordVaultAiAccessLevel,
 } from "@arciin/shared"
 
@@ -31,6 +32,7 @@ const SETTING_LABELS: Record<
     | "passwordVaultAiAccess"
     | "passwordVaultAiShare"
     | "passwordQueriesLocalAiOnly"
+    | "desktopComputerAccess"
   >,
   string
 > = {
@@ -48,6 +50,11 @@ const LIBRARY_TOOL_ACCESS_OPTIONS: { value: AiLibraryToolAccess; label: string }
   { value: "full", label: "Full" },
   { value: "sandbox", label: "Sandbox" },
   { value: "vision_only", label: "Read-only" },
+]
+
+const DESKTOP_COMPUTER_ACCESS_OPTIONS: { value: AiDesktopComputerAccess; label: string }[] = [
+  { value: "off", label: "Off" },
+  { value: "metadata_only", label: "Metadata only" },
 ]
 
 const PASSWORD_VAULT_AI_OPTIONS: { value: PasswordVaultAiAccessLevel; label: string }[] = [
@@ -127,6 +134,7 @@ export function AiSecurityPanel() {
       | "passwordVaultAiAccess"
       | "passwordVaultAiShare"
       | "passwordQueriesLocalAiOnly"
+      | "desktopComputerAccess"
     >,
   ) {
     if (!data) return
@@ -214,6 +222,29 @@ export function AiSecurityPanel() {
                     const label = LIBRARY_TOOL_ACCESS_OPTIONS.find((o) => o.value === value)?.label ?? value
                     toast.success(`Library tools: ${label}`, {
                       description: "This controls what the AI assistant can do in your libraries.",
+                    })
+                  },
+                },
+              )
+            }}
+          />
+        </SettingRow>
+        <SettingRow
+          label="This PC"
+          hint="Off by default. Metadata only lets a future Desktop This PC control list and search granted folders — never file contents, never the remote WebView."
+        >
+          <SettingsSegment<AiDesktopComputerAccess>
+            aria-label="This PC access"
+            options={DESKTOP_COMPUTER_ACCESS_OPTIONS}
+            value={s.desktopComputerAccess ?? "off"}
+            disabled={busy}
+            onChange={(value) => {
+              mutation.mutate(
+                { desktopComputerAccess: value },
+                {
+                  onSuccess: () => {
+                    toast.success(value === "off" ? "This PC tools off" : "This PC metadata only", {
+                      description: "The remote browser never receives filesystem access.",
                     })
                   },
                 },

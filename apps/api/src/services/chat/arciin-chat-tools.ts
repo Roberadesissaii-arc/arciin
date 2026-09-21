@@ -3,6 +3,8 @@ import { nanoid } from "nanoid"
 import type { AiLibraryToolAccess } from "@arciin/shared"
 import {
   DELIVERY_CHAT_TOOLS,
+  DESKTOP_CHAT_TOOLS,
+  isDesktopChatToolName,
   libraryAllowsDeletion,
   libraryAllowsFolderMutations,
   libraryAllowsOrganize,
@@ -31,6 +33,7 @@ import {
   MAX_MOVES_PER_BATCH,
   moveLibraryAssets,
 } from "@/services/assets/move-library-assets"
+import { executeDesktopChatTool } from "@/services/desktop-tools/broker"
 import { slugify } from "@/services/slug"
 
 export type ArciinChatToolContext = {
@@ -56,6 +59,8 @@ export type ArciinChatToolContext = {
     | { ok: false; code: string; message: string }
   >
   publishRealtimeEvent?: (event: import("@arciin/shared").RealtimeEvent) => Promise<void>
+  desktopDeviceId?: string | null
+  conversationId?: string | null
 }
 
 export const ARCIIN_CHAT_TOOLS = [
@@ -123,6 +128,7 @@ export const ARCIIN_CHAT_TOOLS = [
   },
   // Defined in @arciin/shared beside the rule they obey: no destination argument.
   ...DELIVERY_CHAT_TOOLS,
+  ...DESKTOP_CHAT_TOOLS,
   {
     type: "function",
     function: {
@@ -535,6 +541,16 @@ export async function executeArciinChatTool(
       ? (JSON.parse(rawArgs) as Record<string, unknown>)
       : (rawArgs ?? {})
   const access: AiLibraryToolAccess = ctx.libraryToolAccess ?? "full"
+
+  if (isDesktopChatToolName(name)) {
+    return executeDesktopChatTool({
+      name,
+      args,
+      userId: ctx.userId,
+      deviceId: ctx.desktopDeviceId ?? null,
+      conversationId: ctx.conversationId ?? null,
+    })
+  }
 
   if (name === "vision_search_library") {
     const query = normalizeVisionSearchQuery(String(args.query ?? ""))

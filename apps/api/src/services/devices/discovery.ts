@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto"
 
 import {
   APP_VERSION,
+  ARCIIN_AI_DESKTOP_TOOLS_PROTOCOL_VERSION,
   ARCIIN_COMPUTER_BACKUP_PROTOCOL_VERSION,
   ARCIIN_DEVICE_PROTOCOL_VERSION,
   ARCIIN_DISCOVERY_SERVICE,
@@ -82,6 +83,10 @@ export async function buildDiscoveryManifest(
       computerBackup: {
         supported: true,
         protocolVersion: ARCIIN_COMPUTER_BACKUP_PROTOCOL_VERSION,
+      },
+      aiDesktopTools: {
+        supported: true,
+        protocolVersion: ARCIIN_AI_DESKTOP_TOOLS_PROTOCOL_VERSION,
       },
     },
   }

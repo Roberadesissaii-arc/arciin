@@ -407,6 +407,8 @@ export async function revokeDevice(
   await prisma.deviceSession.deleteMany({ where: { deviceId: device.id } })
   await prisma.session.deleteMany({ where: { pairedDeviceId: device.id } })
   await revokeBackupGrantsForDevice(prisma, device.id)
+  const { getDesktopToolHub } = await import("@/services/desktop-tools/hub")
+  getDesktopToolHub().disconnectDevice(device.id)
   return updated
 }
 

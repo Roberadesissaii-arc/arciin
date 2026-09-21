@@ -63,6 +63,7 @@ export default defineConfig({
        */
       "@/services/": `${path.resolve(__dirname, "apps/api/src/services")}/`,
       "@/config": path.resolve(__dirname, "apps/api/src/config"),
+      "@/plugins/": `${path.resolve(__dirname, "apps/api/src/plugins")}/`,
       "@/": `${path.resolve(__dirname, "apps/web")}/`,
       "@arciin/shared": path.resolve(__dirname, "packages/shared/src/index.ts"),
       "@arciin/types": path.resolve(__dirname, "packages/types/src/index.ts"),
