@@ -65,13 +65,43 @@ async function readEntry(entry: FileSystemEntry, basePath: string): Promise<File
   return []
 }
 
+/**
+ * True when this file arrived as part of a dragged folder rather than on its
+ * own — it has a relative path with a directory in front of it.
+ */
+function cameFromDraggedFolder(file: File): boolean {
+  const rel = (file as File & { webkitRelativePath?: string }).webkitRelativePath
+  if (!rel) return false
+  return rel.replace(/\\/g, "/").split("/").filter(Boolean).length > 1
+}
+
+/**
+ * Which of the dropped files to actually upload.
+ *
+ * The skip list is for the contents of a dragged project folder: nobody
+ * dropping a repository wants node_modules or .pyc files. It must not apply to
+ * a file dropped on its own, which is a deliberate choice — dragging an
+ * installer in did nothing at all, no upload and no error, because `.exe` is
+ * on that list and the file was filtered away before anything could report it.
+ */
+export function partitionDroppedFiles(files: File[]): { upload: File[]; skipped: File[] } {
+  const upload: File[] = []
+  const skipped: File[] = []
+  for (const file of files) {
+    if (isLikelyDirectoryPlaceholder(file)) continue
+    if (!cameFromDraggedFolder(file)) {
+      upload.push(file)
+      continue
+    }
+    const rel = (file as File & { webkitRelativePath?: string }).webkitRelativePath!
+    if (shouldSkipUploadPath(rel)) skipped.push(file)
+    else upload.push(file)
+  }
+  return { upload, skipped }
+}
+
 function filterCollected(files: File[]): File[] {
-  return files.filter((file) => {
-    if (isLikelyDirectoryPlaceholder(file)) return false
-    const rel =
-      (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name
-    return !shouldSkipUploadPath(rel)
-  })
+  return partitionDroppedFiles(files).upload
 }
 
 /**
@@ -97,7 +127,8 @@ export function shouldPreferDataTransferFileList(
   return false
 }
 
-async function collectViaWebkitEntries(dataTransfer: DataTransfer): Promise<File[]> {
+/** Everything the entries API can see, unfiltered — callers decide what to skip. */
+async function collectRawWebkitEntries(dataTransfer: DataTransfer): Promise<File[]> {
   const items = dataTransfer.items
   if (!items?.length || typeof items[0]?.webkitGetAsEntry !== "function") {
     return []
@@ -118,7 +149,11 @@ async function collectViaWebkitEntries(dataTransfer: DataTransfer): Promise<File
     }
   }
 
-  return filterCollected(collected)
+  return collected
+}
+
+async function collectViaWebkitEntries(dataTransfer: DataTransfer): Promise<File[]> {
+  return filterCollected(await collectRawWebkitEntries(dataTransfer))
 }
 
 /** Expand folder drag-and-drop into real files (fixes Windows sending only the folder name). */
@@ -145,4 +180,30 @@ export async function collectFilesFromDataTransfer(
   }
 
   return fromFileList
+}
+
+/**
+ * The same expansion, but saying what it left behind.
+ *
+ * `collectFilesFromDataTransfer` returns only what will upload, which is what
+ * the caller needs — but a drop where some files were filtered out of a
+ * dragged folder used to look identical to one where nothing was. The caller
+ * can now tell the difference and say so.
+ */
+export async function collectDropResult(
+  dataTransfer: DataTransfer | null,
+): Promise<{ upload: File[]; skipped: File[] }> {
+  if (!dataTransfer) return { upload: [], skipped: [] }
+
+  const rawFileList = Array.from(dataTransfer.files || [])
+  const fromFileList = filterCollected(rawFileList)
+
+  if (shouldPreferDataTransferFileList(dataTransfer, fromFileList)) {
+    return partitionDroppedFiles(rawFileList)
+  }
+
+  const expanded = await collectRawWebkitEntries(dataTransfer)
+  if (expanded.length > 0) return partitionDroppedFiles(expanded)
+
+  return partitionDroppedFiles(rawFileList)
 }

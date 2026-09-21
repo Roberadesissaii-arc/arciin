@@ -2,7 +2,9 @@
 
 import { useEffect } from "react"
 
-import { collectFilesFromDataTransfer } from "@/lib/uploads/collect-drop-files"
+import { toast } from "sonner"
+
+import { collectDropResult } from "@/lib/uploads/collect-drop-files"
 import { useUploadStore } from "@/lib/stores/upload-store"
 
 function hasFileItems(event: DragEvent) {
@@ -64,9 +66,20 @@ export function useGlobalDropzone(onFiles: (files: File[]) => void | Promise<voi
       }
 
       void (async () => {
-        const files = await collectFilesFromDataTransfer(event.dataTransfer)
-        if (files.length) {
-          await onFiles(files)
+        const { upload, skipped } = await collectDropResult(event.dataTransfer)
+        // Build artefacts inside a dragged folder are still skipped, but no
+        // longer in silence — a drop that quietly shed half its files looked
+        // exactly like one that had not.
+        if (skipped.length) {
+          toast.info(
+            skipped.length === 1
+              ? `Skipped ${skipped[0]!.name}`
+              : `Skipped ${skipped.length} build files`,
+            { description: "Build output and dependency folders are not backed up." },
+          )
+        }
+        if (upload.length) {
+          await onFiles(upload)
         }
       })()
     }

@@ -455,9 +455,15 @@ export function assetSupportsDocumentThumbnail(
 /**
  * Whether a library is a sensible home for a given media type.
  *
- * INBOX and CUSTOM accept anything by design — Inbox is the catch-all and a
- * custom library has no declared type. The fixed libraries accept only their
- * own kind.
+ * CUSTOM accepts anything: it has no declared type, and filing into one is a
+ * deliberate choice worth honouring.
+ *
+ * INBOX does not. Inbox is where a file lands when Arciin *cannot* tell what
+ * it is — the documented routing is image → Images, video → Videos, unknown →
+ * Inbox. Treating it as a catch-all meant that standing on the Inbox page
+ * silently turned auto-organise off: drop a photo there and it stayed there,
+ * while the same photo dropped on Videos was rerouted to Images. A recognised
+ * file gets filed by what it is, wherever you happened to be standing.
  */
 export function libraryAcceptsMediaType(
   libraryKind: string | null | undefined,
@@ -473,6 +479,8 @@ export function libraryAcceptsMediaType(
     case "DOCUMENT":
       return mediaType === "DOCUMENT"
     case "INBOX":
+      // Only what nothing else claims.
+      return libraryKindForMediaType(mediaType) === "INBOX"
     case "CUSTOM":
     case "COMPUTER":
       return true
