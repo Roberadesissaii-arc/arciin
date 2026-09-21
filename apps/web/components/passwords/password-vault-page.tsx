@@ -14,7 +14,7 @@ import {
   Trash2,
 } from "lucide-react"
 import Link from "next/link"
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useMemo, useState } from "react"
 import {
   notifyPasswordVault,
   notifyPasswordVaultError,
@@ -22,8 +22,6 @@ import {
 
 import { SoftLockBanner } from "@/components/license/soft-lock-banner"
 import { PasswordVaultCredentialsSection } from "@/components/passwords/password-vault-credentials-section"
-import { PasswordVaultDetailPlaceholder } from "@/components/passwords/password-vault-detail-placeholder"
-import { PasswordVaultEntryDetail } from "@/components/passwords/password-vault-entry-detail"
 import { PasswordVaultPageIntro } from "@/components/passwords/password-vault-page-intro"
 import { useLicense } from "@/lib/license/use-license"
 import {
@@ -164,8 +162,6 @@ export function PasswordVaultPage() {
   const [editRevealedPassword, setEditRevealedPassword] = useState<string | null>(null)
   const [pendingEditPasswordReveal, setPendingEditPasswordReveal] = useState(false)
   const [deleteEntry, setDeleteEntry] = useState<PasswordVaultEntry | null>(null)
-  const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [detailCollapsed, setDetailCollapsed] = useState(false)
   const [page, setPage] = useState(1)
   const [search, setSearch] = useState("")
   /** Narrowing the list can leave you on a page that no longer exists. */
@@ -218,68 +214,9 @@ export function PasswordVaultPage() {
     [entries, safePage],
   )
 
-  const effectiveSelectedId = useMemo(() => {
-    if (entries.length === 0) return null
-    if (selectedId && entries.some((e) => e.id === selectedId)) return selectedId
-    return entries[0]!.id
-  }, [entries, selectedId])
-
-  const selectedIndex = useMemo(() => {
-    if (!effectiveSelectedId || entries.length === 0) return -1
-    return entries.findIndex((e) => e.id === effectiveSelectedId)
-  }, [entries, effectiveSelectedId])
-
-  const selectedEntry = selectedIndex >= 0 ? entries[selectedIndex]! : null
-
-  const goToEntry = useCallback(
-    (index: number) => {
-      const next = entries[index]
-      if (next) {
-        setSelectedId(next.id)
-        setDetailCollapsed(false)
-      }
-    },
-    [entries],
-  )
-
-  const selectEntry = useCallback((id: string) => {
-    setSelectedId(id)
-    setDetailCollapsed(false)
+  const handlePageChange = useCallback((nextPage: number) => {
+    setPage(nextPage)
   }, [])
-
-  const handlePageChange = useCallback(
-    (nextPage: number) => {
-      setPage(nextPage)
-      const first = entries[(nextPage - 1) * PAGE_SIZE]
-      if (first) {
-        setSelectedId(first.id)
-        setDetailCollapsed(false)
-      }
-    },
-    [entries],
-  )
-
-  useEffect(() => {
-    if (!selectedEntry || entries.length < 2) return
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return
-      const target = e.target as HTMLElement | null
-      if (
-        target?.tagName === "INPUT" ||
-        target?.tagName === "TEXTAREA" ||
-        target?.isContentEditable
-      ) {
-        return
-      }
-      e.preventDefault()
-      if (e.key === "ArrowLeft" && selectedIndex > 0) goToEntry(selectedIndex - 1)
-      if (e.key === "ArrowRight" && selectedIndex < entries.length - 1) {
-        goToEntry(selectedIndex + 1)
-      }
-    }
-    window.addEventListener("keydown", onKey)
-    return () => window.removeEventListener("keydown", onKey)
-  }, [entries.length, goToEntry, selectedEntry, selectedIndex])
 
   const unlockMutation = useMutation({
     mutationFn: unlockPasswordVault,
@@ -572,11 +509,7 @@ export function PasswordVaultPage() {
           "min-h-0",
           (vaultLocked || (allEntries.length === 0 && !vaultQuery.isLoading)) &&
             "flex flex-1 flex-col",
-          !vaultLocked &&
-            allEntries.length > 0 &&
-            !vaultQuery.isLoading
-            ? "grid items-stretch gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(300px,400px)] xl:grid-cols-[minmax(0,1fr)_minmax(340px,440px)]"
-            : "grid-cols-1",
+          "grid grid-cols-1",
         )}
       >
         {vaultLocked ? (
@@ -662,22 +595,7 @@ export function PasswordVaultPage() {
                   const pwdVisible = isPasswordVisible(entry)
                   const hasPwd = vaultEntryHasPassword(entry)
                   return (
-                    <tr
-                      key={entry.id}
-                      role="button"
-                      tabIndex={0}
-                      onClick={() => selectEntry(entry.id)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" || e.key === " ") {
-                          e.preventDefault()
-                          selectEntry(entry.id)
-                        }
-                      }}
-                      className={cn(
-                        "h-[3.75rem] cursor-pointer transition-colors hover:bg-muted/40",
-                        effectiveSelectedId === entry.id && "bg-primary/[0.06]",
-                      )}
-                    >
+                    <tr key={entry.id} className="h-[3.75rem] transition-colors hover:bg-muted/40">
                       <td className="px-5 py-4 align-middle text-[13px] font-medium text-foreground">
                         <span className="block truncate" title={entry.name}>
                           {entry.name}
@@ -839,40 +757,6 @@ export function PasswordVaultPage() {
         </div>
         )}
 
-        {entries.length > 0 && !vaultQuery.isLoading ? (
-          selectedEntry && !detailCollapsed ? (
-            <PasswordVaultEntryDetail
-              entry={{
-                ...selectedEntry,
-                password:
-                  entryPlainPassword(selectedEntry, ephemeralPasswords) ?? selectedEntry.password,
-              }}
-              index={selectedIndex}
-              total={entries.length}
-              display={display}
-              secretsVisible={secretsVisible || Boolean(ephemeralPasswords[selectedEntry.id])}
-              passwordVisible={isPasswordVisible(selectedEntry)}
-              onClose={() => setDetailCollapsed(true)}
-              onPrevious={() => goToEntry(selectedIndex - 1)}
-              onNext={() => goToEntry(selectedIndex + 1)}
-              onRevealPassword={() => onEyeClick(selectedEntry)}
-              onCopyPassword={() => onCopyPassword(selectedEntry)}
-              onCopyUsername={() =>
-                selectedEntry.username &&
-                void copyToClipboard(selectedEntry.username, "Username")
-              }
-              onEdit={() => openEditEntry(selectedEntry)}
-              onDelete={() => setDeleteEntry(selectedEntry)}
-              onOpenUrl={() => selectedEntry.url && openUrl(selectedEntry.url)}
-            />
-          ) : (
-            <PasswordVaultDetailPlaceholder
-              total={entries.length}
-              collapsed={detailCollapsed}
-              onExpand={() => setDetailCollapsed(false)}
-            />
-          )
-        ) : null}
       </div>
 
       <VaultUnlockDialog
