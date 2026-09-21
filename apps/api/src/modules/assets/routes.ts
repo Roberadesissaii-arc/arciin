@@ -29,8 +29,6 @@ import {
   computerOwnerRestriction,
   resolveSmartLibraryScope,
 } from "@/services/libraries/library-view"
-import { attachAssetSourceContext } from "@/services/backup/source-context"
-import { rejectSyncedAssetHierarchyChange } from "@/services/backup/guards"
 import {
   ASSET_PAGE_ORDER_BY,
   buildAssetPage,
@@ -335,10 +333,7 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
         // Batched for the whole page — a request per card would be two hundred
         // requests to draw two hundred badges.
         data: withAiSummaries(
-          await attachAssetSourceContext(
-            fastify.prisma,
-            assets.map(serializeAsset),
-          ),
+          assets.map(serializeAsset),
           await loadAiSummariesForPage(
             fastify,
             assets.map((a) => a.id),
@@ -456,10 +451,7 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
       reply.send({
         data: {
           items: withAiSummaries(
-            await attachAssetSourceContext(
-              fastify.prisma,
-              page.items.map(serializeAsset),
-            ),
+            page.items.map(serializeAsset),
             await loadAiSummariesForPage(
               fastify,
               page.items.map((a) => a.id),
@@ -503,9 +495,7 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
         return
       }
 
-      const [withContext] = await attachAssetSourceContext(fastify.prisma, [
-        serializeAsset(asset),
-      ])
+      const withContext = serializeAsset(asset)
       reply.send({
         data: withContext,
       })
@@ -551,7 +541,7 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
 
       if (
         parsed.data.originalFilename !== undefined &&
-        (await rejectSyncedAssetHierarchyChange(fastify.prisma, reply, existing.id))
+        false
       ) {
         return
       }
@@ -680,9 +670,6 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
         return
       }
 
-      if (await rejectSyncedAssetHierarchyChange(fastify.prisma, reply, current.id)) {
-        return
-      }
 
       const { folderId: requestedFolderId, libraryId: requestedLibraryId } = parsed.data
 
@@ -831,12 +818,6 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
           error: { code: "UNAUTHORIZED", message: "Authentication required." },
         })
         return
-      }
-
-      for (const move of parsed.data.moves) {
-        if (await rejectSyncedAssetHierarchyChange(fastify.prisma, reply, move.assetId)) {
-          return
-        }
       }
 
       const result = await moveLibraryAssets({

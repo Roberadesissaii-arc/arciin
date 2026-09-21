@@ -21,7 +21,6 @@ import {
   revokeDevice,
 } from "@/services/devices/pairing"
 import { serializePairedDevice } from "@/services/devices/serialize"
-import { serializeDeviceBackupSummary } from "@/services/backup/serialize"
 import { recordSecurityEvent } from "@/services/security/security-events"
 import { requireSessionRole } from "@/services/security/auth"
 import { checkEndpointRateLimit } from "@/services/security/endpoint-rate-limit"
@@ -40,17 +39,6 @@ export async function registerDeviceSettingsRoutes(fastify: FastifyInstance) {
       getActiveDevicePairing(fastify.prisma),
       fastify.prisma.instanceConfig.findFirst(),
     ])
-    const profiles = await fastify.prisma.deviceBackupProfile.findMany({
-      where: { deviceId: { in: devices.map((device) => device.id) } },
-      include: { roots: true },
-    })
-    const profileByDevice = new Map<string, (typeof profiles)[number]>()
-    for (const profile of profiles) {
-      const current = profileByDevice.get(profile.deviceId)
-      if (!current || (current.status === "DISABLED" && profile.status === "ENABLED")) {
-        profileByDevice.set(profile.deviceId, profile)
-      }
-    }
     const local = resolveLocalAccessUrls()
     const currentDeviceId = resolveCurrentDeviceId(
       request.auth.session?.pairedDeviceId,
@@ -61,7 +49,6 @@ export async function registerDeviceSettingsRoutes(fastify: FastifyInstance) {
       data: {
         devices: devices.map((device) => ({
           ...serializePairedDevice(device),
-          backup: serializeDeviceBackupSummary(profileByDevice.get(device.id) ?? null),
           isCurrentDevice: device.id === currentDeviceId,
         })),
         currentDeviceId,

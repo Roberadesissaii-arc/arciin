@@ -2,7 +2,6 @@ import type { FastifyInstance } from "fastify"
 import { z } from "zod"
 
 import {
-  COMPUTERS_LIBRARY_DEFINITION,
   DEFAULT_LIBRARY_DEFINITIONS,
   normalizeLibrarySelection,
   DEFAULT_LIBRARY_FOLDERS,
@@ -458,13 +457,6 @@ export async function registerInstanceRoutes(fastify: FastifyInstance) {
             icon: library.icon,
             storageLocationId: storageLocation.id,
           })),
-          {
-            name: COMPUTERS_LIBRARY_DEFINITION.name,
-            slug: COMPUTERS_LIBRARY_DEFINITION.slug,
-            kind: COMPUTERS_LIBRARY_DEFINITION.kind,
-            icon: COMPUTERS_LIBRARY_DEFINITION.icon,
-            storageLocationId: storageLocation.id,
-          },
         ],
       })
 

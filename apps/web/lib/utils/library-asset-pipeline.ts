@@ -10,65 +10,18 @@ import type { FilterDropdownOption } from "@/components/ui/filter-dropdown"
 
 export const SOURCE_ALL = "all"
 export const SOURCE_MANUAL = "manual"
-export const SOURCE_COMPUTER = "computer"
-
-export function computerSourceValue(deviceId: string): string {
-  return `computer:${deviceId}`
-}
-
-export function parseComputerSourceDeviceId(source: string): string | null {
-  if (!source.startsWith("computer:")) return null
-  const id = source.slice("computer:".length).trim()
-  return id || null
-}
-
 export function assetSourceLabel(asset: AssetSummary): string {
   const badge = resolveAssetBadge(asset)
   if (badge?.label) return badge.label
   return inferDestinationLabel(asset.mimeType, asset.originalFilename)
 }
 
-export function collectSourceFilterOptions(
-  assets: AssetSummary[],
-  computers?: Array<{ deviceId: string; name: string }> | null,
-): FilterDropdownOption[] {
-  const byId = new Map<string, string>()
-  const listed = Array.isArray(computers)
-  if (listed) {
-    for (const computer of computers) {
-      if (!computer.deviceId) continue
-      byId.set(computer.deviceId, computer.name)
-    }
-  } else {
-    for (const asset of assets) {
-      const ctx = asset.sourceContext
-      if (!ctx?.deviceId) continue
-      if (!byId.has(ctx.deviceId)) byId.set(ctx.deviceId, ctx.deviceName)
-    }
-  }
-
-  const hasBackupAssets = assets.some((asset) => Boolean(asset.sourceContext))
-  const options: FilterDropdownOption[] = [
+export function collectSourceFilterOptions(assets: AssetSummary[]): FilterDropdownOption[] {
+  void assets
+  return [
     { value: SOURCE_ALL, label: "All sources" },
     { value: SOURCE_MANUAL, label: "Manual uploads", group: "Manual uploads" },
   ]
-  if (byId.size === 0 && !hasBackupAssets) return options
-
-  options.push({
-    value: SOURCE_COMPUTER,
-    label: "Computer backups",
-    group: "Computer backups",
-  })
-  const named = [...byId.entries()].sort((a, b) => a[1].localeCompare(b[1], undefined, { sensitivity: "base" }))
-  for (const [deviceId, name] of named) {
-    options.push({
-      value: computerSourceValue(deviceId),
-      label: name,
-      group: "Computer backups",
-      child: true,
-    })
-  }
-  return options
 }
 
 export function filterAssetsByKind(
@@ -86,13 +39,7 @@ export function filterAssetsBySource(
   assets: AssetSummary[],
   source: SourceFilterValue,
 ): AssetSummary[] {
-  if (source === SOURCE_ALL) return assets
-  if (source === SOURCE_MANUAL) return assets.filter((asset) => !asset.sourceContext)
-  if (source === SOURCE_COMPUTER) return assets.filter((asset) => Boolean(asset.sourceContext))
-  const deviceId = parseComputerSourceDeviceId(source)
-  if (deviceId) {
-    return assets.filter((asset) => asset.sourceContext?.deviceId === deviceId)
-  }
+  void source
   return assets
 }
 
@@ -112,7 +59,7 @@ export function pipelineLibraryAssets(
   return filterAssetsBySource(next, options.sourceFilter)
 }
 
-/** All Files query string for a source (and optional computer folder). */
+/** All Files query string for a source. */
 export function filesSourceHref(source: SourceFilterValue, folderId?: string | null): string {
   const params: string[] = []
   if (source && source !== SOURCE_ALL) params.push(`source=${source}`)
@@ -120,25 +67,6 @@ export function filesSourceHref(source: SourceFilterValue, folderId?: string | n
   return params.length > 0 ? `/files?${params.join("&")}` : "/files"
 }
 
-/**
- * Breadcrumb labels for a computer browse path.
- * Drops the internal `device-…` path prefix used on disk.
- */
-export function computerBrowseCrumbs(input: {
-  computerName: string
-  folderPathCache: string
-  atRoot: boolean
-  currentFolderName?: string
-}): string[] {
-  if (input.atRoot) return [input.computerName]
-  const pathSegments = input.folderPathCache.split("/").filter(Boolean)
-  const withoutDevice = pathSegments[0]?.startsWith("device-") ? pathSegments.slice(1) : pathSegments
-  const crumbs = [input.computerName, ...withoutDevice]
-  if (input.currentFolderName && crumbs.length > 1) {
-    crumbs[crumbs.length - 1] = input.currentFolderName
-  }
-  return crumbs
-}
 
 export const GRID_PAGE_SIZE = 30
 export const LIST_PAGE_SIZE = 10
