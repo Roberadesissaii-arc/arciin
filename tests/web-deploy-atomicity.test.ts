@@ -40,7 +40,10 @@ describe("no deploy script writes into the live build directory", () => {
     const staged =
       script.includes("NEXT_DIST_DIR=.next-build") ||
       script.includes("scripts/deploy-web.sh") ||
-      script.includes("deploy:web")
+      script.includes("deploy:web") ||
+      // build:web now carries the staging distDir itself, so delegating to it
+      // is staging.
+      script.includes("build:web")
     expect(staged, `${name} must stage the build, got: ${script}`).toBe(true)
   })
 })
@@ -68,5 +71,26 @@ describe("the deploy is gated on a complete build", () => {
 
   it("exposes the verifier as its own script", () => {
     expect(pkg.scripts["verify:web-assets"]).toContain("verify-web-assets.mjs")
+  })
+})
+
+describe("a bare build cannot reach the running build", () => {
+  // `pnpm build` wrote straight into apps/web/.next. It filled the disk
+  // partway through, left `.next` with no BUILD_ID and no manifests, and took
+  // production down — the same partial-build state this file was written for,
+  // arrived at through the one script that still pointed at the live
+  // directory. Every build now lands in staging; only deploy-web.sh swaps.
+  it.each(["build", "build:web", "build:clean"])("%s targets .next-build", (name) => {
+    expect(pkg.scripts[name]).toBeTypeOf("string")
+    const script = pkg.scripts[name]
+    const staged = script.includes("NEXT_DIST_DIR=.next-build") || script.includes("build:web")
+    expect(staged, `${name} must build into staging, got: ${script}`).toBe(true)
+  })
+
+  it("no build script names the live directory", () => {
+    for (const name of ["build", "build:web", "build:clean", "deploy", "deploy:web", "deploy:safe"]) {
+      // `.next-build` and `.next-prev` are fine; a bare `.next` is not.
+      expect(pkg.scripts[name] ?? "").not.toMatch(/NEXT_DIST_DIR=\.next(?![\w-])/)
+    }
   })
 })
