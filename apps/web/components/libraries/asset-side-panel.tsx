@@ -209,8 +209,14 @@ export function AssetSidePanel() {
           <AlertDialogHeader>
             <AlertDialogTitle>Delete this file?</AlertDialogTitle>
             <AlertDialogDescription>
-              This removes <span className="font-medium">{asset.originalFilename}</span> from your
-              libraries. You can&apos;t undo this from the UI.
+              {/* Said "you can't undo this from the UI", which was not true: the
+                  file goes to Trash and Settings → Trash has a Restore button
+                  for thirty days. Telling someone a recoverable action is
+                  final makes them hesitate over something safe, and teaches
+                  them to disbelieve the warning that really is final. */}
+              This moves <span className="font-medium">{asset.originalFilename}</span> to Trash.
+              You can restore it from Settings → Trash for 30 days, after which Arciin removes it
+              from this server permanently.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
