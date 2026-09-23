@@ -465,6 +465,62 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
     }
   )
 
+  /**
+   * The counts the All Files header shows.
+   *
+   * It used to count the array the browser happened to have — one page of
+   * results — so "Total files" and the Videos/Images chips disagreed with the
+   * sidebar in both directions depending on what that page contained. These
+   * come from the database through the same buildVisibleAssetWhere the listing
+   * uses, so a number and the list beneath it describe the same set.
+   *
+   * "Active" is the contract: not trashed, not archived, not inside a deleted
+   * or hidden folder. Archived is reported separately rather than folded in,
+   * because a count that silently includes archived files is the thing that
+   * made these disagree in the first place.
+   */
+  fastify.get(
+    "/assets/stats",
+    {
+      preHandler: requireSessionRolesOrApiKeyScopes(
+        ["OWNER", "ADMIN", "MEMBER", "VIEWER"],
+        ["assets:read"],
+      ),
+    },
+    async (request, reply) => {
+      const hiddenFolderIds = await resolveHiddenFromAllFilesFolderIds(fastify.prisma)
+      const restrictComputerOwnerId = request.auth
+        ? computerOwnerRestriction(request.auth.user)
+        : null
+
+      const base = {
+        scope: { kind: "all" as const },
+        hiddenFolderIds,
+        restrictComputerOwnerId,
+      }
+
+      const countActive = (mediaType?: string) =>
+        fastify.prisma.asset.count({
+          where: buildVisibleAssetWhere({ ...base, ...(mediaType ? { mediaType } : {}) }),
+        })
+
+      const [active, images, videos, audio, documents, archived] = await Promise.all([
+        countActive(),
+        countActive("IMAGE"),
+        countActive("VIDEO"),
+        countActive("AUDIO"),
+        countActive("DOCUMENT"),
+        fastify.prisma.asset.count({
+          where: buildVisibleAssetWhere({ ...base, archived: "only" }),
+        }),
+      ])
+
+      reply.send({
+        data: { active, images, videos, audio, documents, archived },
+      })
+    },
+  )
+
   fastify.get(
     "/assets/:assetId",
     {

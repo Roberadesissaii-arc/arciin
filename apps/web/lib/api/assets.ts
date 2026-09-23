@@ -193,3 +193,23 @@ export async function checkDuplicates(
 
   return { duplicates }
 }
+
+/**
+ * The counts the All Files header shows, from the database.
+ *
+ * "Active" means not trashed, not archived, and not inside a deleted or hidden
+ * folder — the same predicate the listing uses. Archived is reported
+ * separately rather than folded in.
+ */
+export type AssetStats = {
+  active: number
+  images: number
+  videos: number
+  audio: number
+  documents: number
+  archived: number
+}
+
+export function getAssetStats(signal?: AbortSignal) {
+  return fetchApi<AssetStats>("/assets/stats", { method: "GET", signal })
+}

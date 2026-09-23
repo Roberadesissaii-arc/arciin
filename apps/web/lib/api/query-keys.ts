@@ -10,6 +10,8 @@ export const queryKeys = {
     ["folders", libraryId, folderId ?? "root"] as const,
   /** Prefix for invalidating every assets query (library grids, search, etc.). */
   assetsRoot: ["assets"] as const,
+  /** Server-side totals for the All Files header; invalidated by asset mutations. */
+  assetStats: ["assets", "stats"] as const,
   assets: (filters: Record<string, unknown> = {}) => ["assets", filters] as const,
   /** Paginated library/folder browsing. Shares the "assets" prefix so realtime invalidation reaches it. */
   assetsPage: (filters: Record<string, unknown> = {}) => ["assets", "page", filters] as const,
