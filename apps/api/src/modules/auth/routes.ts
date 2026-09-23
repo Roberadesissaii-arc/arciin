@@ -23,6 +23,10 @@ import {
 } from "@/services/security/login-audit"
 import { clientIpFromRequest, normalizeClientIp } from "@/services/security/client-ip"
 import { consumeSecondFactor } from "@/services/security/mfa-challenge"
+import {
+  consumeMfaChallenge,
+  issueMfaChallenge,
+} from "@/services/security/mfa-login-challenge"
 import { decryptSecret, encryptSecret } from "@/services/security/encryption"
 import {
   buildOtpAuthUri,
@@ -220,6 +224,54 @@ export async function registerAuthRoutes(fastify: FastifyInstance) {
     reply.status(201).send({ data: serializeAuth(user, session) })
   })
 
+  /**
+   * Everything that happens once both factors are satisfied.
+   *
+   * Shared by the password-only path and the second-factor path so a session
+   * can only be minted in one place.
+   */
+  async function completeSignIn(
+    request: FastifyRequest,
+    reply: FastifyReply,
+    user: { id: string; name: string },
+    rememberMe: boolean,
+  ) {
+    const access = await loadAccessControlSettings(fastify.prisma)
+    // Remember me → 30-day session with a persistent cookie. Otherwise the
+    // session keeps the configured timeout and the cookie dies with the browser.
+    const trustedDevice = await resolveTrustedPairedDevice(request)
+    const { session, rawToken } = await createSession(
+      request,
+      user.id,
+      rememberMe
+        ? { expiresInDays: 30, reply, pairedDeviceId: trustedDevice?.id ?? null }
+        : {
+            expiresInMinutes: access.sessionTimeoutMinutes,
+            reply,
+            pairedDeviceId: trustedDevice?.id ?? null,
+          },
+    )
+    setSessionCookie(reply, rawToken, session.expiresAt, request, {
+      persistent: rememberMe,
+    })
+
+    const ctx = resolveRequestClientContext(request)
+    await recordSecurityEvent(fastify, {
+      userId: user.id,
+      type: "auth.login",
+      title: "Signed in",
+      message: formatAuthSecurityMessage(user.name, ctx.ip, ctx.deviceLabel),
+      metadata: {
+        clientIp: ctx.normalizedIp,
+        deviceLabel: ctx.deviceLabel ?? undefined,
+        userAgent: ctx.userAgent,
+        status: "ok",
+      },
+    })
+
+    reply.send({ data: serializeAuth(user as never, session) })
+  }
+
   fastify.post("/auth/login", async (request, reply) => {
     if (await checkEndpointRateLimit(request, reply, { key: "login", limit: 20, windowSec: 60 })) return
 
@@ -263,56 +315,87 @@ export async function registerAuthRoutes(fastify: FastifyInstance) {
      *
      * Deliberately after the password check: asking for a code before the
      * password is right would tell an unauthenticated caller which addresses
-     * exist and which have MFA enabled. The session is not created until this
-     * passes, so a correct password alone gets nobody in.
+     * exist and which have MFA on.
+     *
+     * No session is created here. The caller gets a short-lived ticket and
+     * comes back to /auth/mfa/challenge with a code, so the password crosses
+     * the wire once rather than being held in the page until someone finds
+     * their phone.
      */
     if (user.mfaEnabledAt) {
-      const mfaOutcome = await consumeSecondFactor(request, reply, user, {
-        totp: parsed.data.totp,
-        recoveryCode: parsed.data.recoveryCode,
+      await clearFailedLoginAttempts(fastify, email, clientIp)
+      const challenge = await issueMfaChallenge(fastify, {
+        userId: user.id,
+        clientIp,
+        rememberMe: parsed.data.rememberMe === true,
       })
-      if (mfaOutcome !== "accepted") return
+      reply.send({
+        data: {
+          mfaRequired: true,
+          challengeToken: challenge.token,
+          expiresInSeconds: challenge.expiresInSeconds,
+        },
+      })
+      return
     }
 
     await clearFailedLoginAttempts(fastify, email, clientIp)
+    await completeSignIn(request, reply, user, parsed.data.rememberMe === true)
+  })
 
-    const access = await loadAccessControlSettings(fastify.prisma)
-    const rememberMe = parsed.data.rememberMe === true
-    // Remember me → 30-day session with a persistent cookie. Otherwise the
-    // session keeps the configured timeout and the cookie dies with the browser.
-    const trustedDevice = await resolveTrustedPairedDevice(request)
-    const { session, rawToken } = await createSession(
-      request,
-      user.id,
-      rememberMe
-        ? { expiresInDays: 30, reply, pairedDeviceId: trustedDevice?.id ?? null }
-        : {
-            expiresInMinutes: access.sessionTimeoutMinutes,
-            reply,
-            pairedDeviceId: trustedDevice?.id ?? null,
-          },
-    )
-    setSessionCookie(reply, rawToken, session.expiresAt, request, {
-      persistent: rememberMe,
-    })
+  const mfaChallengeSchema = z.object({
+    challengeToken: z.string().min(16),
+    totp: z.string().trim().optional(),
+    recoveryCode: z.string().trim().optional(),
+  })
 
-    const ctx = resolveRequestClientContext(request)
-    await recordSecurityEvent(fastify, {
-      userId: user.id,
-      type: "auth.login",
-      title: "Signed in",
-      message: formatAuthSecurityMessage(user.name, ctx.ip, ctx.deviceLabel),
-      metadata: {
-        clientIp: ctx.normalizedIp,
-        deviceLabel: ctx.deviceLabel ?? undefined,
-        userAgent: ctx.userAgent,
-        status: "ok",
-      },
-    })
+  /**
+   * Exchange a ticket plus a code for a session.
+   *
+   * Unauthenticated by design — the ticket is what stands in for the password
+   * here, and it is worth nothing without a valid code.
+   */
+  fastify.post("/auth/mfa/challenge", async (request, reply) => {
+    if (await checkEndpointRateLimit(request, reply, { key: "mfa", limit: 10, windowSec: 300 })) {
+      return
+    }
+    const parsed = mfaChallengeSchema.safeParse(request.body)
+    if (!parsed.success) {
+      reply.status(400).send({
+        error: { code: "VALIDATION_ERROR", message: "Provide the challenge and a code." },
+      })
+      return
+    }
 
-    reply.send({
-      data: serializeAuth(user, session),
+    const clientIp = clientIpFromRequest(request)
+    const pending = await consumeMfaChallenge(fastify, parsed.data.challengeToken, clientIp)
+    if (!pending) {
+      // Expired, already spent, or presented from a different address. One
+      // message for all three: which it was is not the caller's business.
+      reply.status(401).send({
+        error: {
+          code: "MFA_CHALLENGE_INVALID",
+          message: "That sign-in attempt has expired. Start again.",
+        },
+      })
+      return
+    }
+
+    const user = await fastify.prisma.user.findUnique({ where: { id: pending.userId } })
+    if (!user || user.status !== "ACTIVE" || !user.mfaEnabledAt) {
+      reply.status(401).send({
+        error: { code: "MFA_CHALLENGE_INVALID", message: "That sign-in attempt is no longer valid." },
+      })
+      return
+    }
+
+    const outcome = await consumeSecondFactor(request, reply, user, {
+      totp: parsed.data.totp,
+      recoveryCode: parsed.data.recoveryCode,
     })
+    if (outcome !== "accepted") return
+
+    await completeSignIn(request, reply, user, pending.rememberMe)
   })
 
   const updateProfileSchema = z
@@ -337,9 +420,36 @@ export async function registerAuthRoutes(fastify: FastifyInstance) {
    * replacing the secret, which would be a quiet way to take an account over
    * from a borrowed session.
    */
+  const mfaEnrollSchema = z.object({ password: z.string().min(1) })
+
   fastify.post("/auth/mfa/enroll", profileAuth, async (request, reply) => {
     if (!request.auth) return
     const user = request.auth.user
+
+    /**
+     * The current password, even though the caller is already signed in.
+     *
+     * Starting an enrolment replaces whatever secret was pending, so a
+     * borrowed or forgotten session should not be enough to point the second
+     * factor at an attacker's phone.
+     */
+    const parsedEnroll = mfaEnrollSchema.safeParse(request.body)
+    if (!parsedEnroll.success) {
+      reply.status(400).send({
+        error: { code: "VALIDATION_ERROR", message: "Confirm your password to begin." },
+      })
+      return
+    }
+    if (await checkEndpointRateLimit(request, reply, { key: "mfa", limit: 10, windowSec: 300 })) {
+      return
+    }
+    if (!(await verifyPassword(parsedEnroll.data.password, user.passwordHash))) {
+      reply.status(401).send({
+        error: { code: "INVALID_CREDENTIALS", message: "Password is incorrect." },
+      })
+      return
+    }
+
     if (user.mfaEnabledAt) {
       reply.status(409).send({
         error: {
