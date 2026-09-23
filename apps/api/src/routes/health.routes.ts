@@ -35,6 +35,53 @@ async function probe(check: () => Promise<unknown>): Promise<boolean> {
   }
 }
 
+export type HealthDetail = {
+  api: "online"
+  database: "online" | "offline"
+  redis: "online" | "offline"
+  realtime: "online" | "offline"
+  worker: "online" | "offline" | "unknown"
+  storage: "online" | "offline"
+  status: "ready" | "degraded"
+  version: string
+  timestamp: string
+}
+
+/**
+ * The full picture, in one place.
+ *
+ * The public endpoint reduces this to a word and the authenticated one sends
+ * it whole, so there is no second implementation to drift.
+ */
+export async function computeHealth(fastify: FastifyInstance): Promise<HealthDetail> {
+  const [databaseOk, storageOk] = await Promise.all([
+    probe(() => fastify.prisma.$queryRaw`SELECT 1`),
+    probe(() => access(apiConfig.dataDir)),
+  ])
+  const redisOk = await probe(() => fastify.redis.ping())
+
+  let worker: "online" | "offline" | "unknown" = redisOk ? "unknown" : "offline"
+  if (redisOk) {
+    const heartbeat = await fastify.redis.get(apiConfig.workerHeartbeatKey).catch(() => null)
+    if (heartbeat) {
+      worker = Date.now() - Number(heartbeat) < 60_000 ? "online" : "offline"
+    }
+  }
+
+  const ready = databaseOk && redisOk && storageOk
+  return {
+    api: "online",
+    database: databaseOk ? "online" : "offline",
+    redis: redisOk ? "online" : "offline",
+    realtime: redisOk ? "online" : "offline",
+    worker,
+    storage: storageOk ? "online" : "offline",
+    status: ready ? "ready" : "degraded",
+    version: apiConfig.appVersion,
+    timestamp: new Date().toISOString(),
+  }
+}
+
 export async function registerHealthRoutes(fastify: FastifyInstance) {
   /**
    * Liveness: is this process running and able to answer?
@@ -71,37 +118,19 @@ export async function registerHealthRoutes(fastify: FastifyInstance) {
    * not make a fresh install look broken.
    */
   fastify.get("/health", async (_request, reply) => {
-    const [databaseOk, storageOk] = await Promise.all([
-      probe(() => fastify.prisma.$queryRaw`SELECT 1`),
-      probe(() => access(apiConfig.dataDir)),
-    ])
-
-    const redisOk = await probe(() => fastify.redis.ping())
-
-    let worker: "online" | "offline" | "unknown" = redisOk ? "unknown" : "offline"
-    if (redisOk) {
-      const heartbeat = await fastify.redis.get(apiConfig.workerHeartbeatKey).catch(() => null)
-      if (heartbeat) {
-        worker = Date.now() - Number(heartbeat) < 60_000 ? "online" : "offline"
-      }
-    }
-
-    const ready = databaseOk && redisOk && storageOk
-
+    const detail = await computeHealth(fastify)
     /**
      * Deliberately minimal for an unauthenticated caller.
      *
      * This used to answer with the exact version, which subsystems existed and
-     * whether each was up, plus a server timestamp — a free inventory of the
-     * instance, and an accurate one, to anyone who could reach the port. A
-     * health check needs the status code and a word; container and PM2 probes
-     * read the code, not the body.
+     * whether each was up, plus a server timestamp — a free and accurate
+     * inventory to anyone who could reach the port.
      *
-     * The per-component breakdown still exists for the owner, behind the
-     * session on /settings/system-health.
+     * The status code still carries the same truth it always did: a supervisor
+     * reads the code, not the body, and that is what ARC-003 pinned.
      */
-    reply.status(ready ? 200 : 503).send({
-      data: { status: ready ? "ok" : "degraded" },
+    reply.status(detail.status === "ready" ? 200 : 503).send({
+      data: { status: detail.status === "ready" ? "ok" : "degraded" },
     })
   })
 
@@ -112,34 +141,7 @@ export async function registerHealthRoutes(fastify: FastifyInstance) {
     "/health/detailed",
     { preHandler: requireSessionRole(["OWNER", "ADMIN"]) },
     async (_request, reply) => {
-      const [databaseOk, storageOk] = await Promise.all([
-        probe(() => fastify.prisma.$queryRaw`SELECT 1`),
-        probe(() => access(apiConfig.dataDir)),
-      ])
-      const redisOk = await probe(() => fastify.redis.ping())
-
-      let worker: "online" | "offline" | "unknown" = redisOk ? "unknown" : "offline"
-      if (redisOk) {
-        const heartbeat = await fastify.redis.get(apiConfig.workerHeartbeatKey).catch(() => null)
-        if (heartbeat) {
-          worker = Date.now() - Number(heartbeat) < 60_000 ? "online" : "offline"
-        }
-      }
-
-      const ready = databaseOk && redisOk && storageOk
-      reply.status(200).send({
-        data: {
-          api: "online",
-          database: databaseOk ? "online" : "offline",
-          redis: redisOk ? "online" : "offline",
-          realtime: redisOk ? "online" : "offline",
-          worker,
-          storage: storageOk ? "online" : "offline",
-          status: ready ? "ready" : "degraded",
-          version: apiConfig.appVersion,
-          timestamp: new Date().toISOString(),
-        },
-      })
+      reply.status(200).send({ data: await computeHealth(fastify) })
     },
   )
 }

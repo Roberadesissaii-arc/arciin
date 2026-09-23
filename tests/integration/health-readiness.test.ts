@@ -4,7 +4,7 @@ import { afterEach, beforeAll, describe, expect, it } from "vitest"
 
 import { apiConfig } from "../../apps/api/src/config"
 import { isExempt } from "../../apps/api/src/plugins/api-protection"
-import { registerHealthRoutes } from "../../apps/api/src/routes/health.routes"
+import { computeHealth, registerHealthRoutes } from "../../apps/api/src/routes/health.routes"
 
 /**
  * ARC-003 — health has to be readable by a supervisor, not just by a human.
@@ -84,10 +84,21 @@ afterEach(async () => {
   apiConfig.dataDir = REAL_DATA_DIR
 })
 
+/**
+ * Status code from the public endpoint; component detail from the shared
+ * computation behind it.
+ *
+ * The public body was reduced to a single word, because an unauthenticated
+ * caller was being handed the version and a service-by-service inventory. The
+ * status code — which is what ARC-003 exists to pin, and what a supervisor
+ * reads — is unchanged, and the detail is still asserted, from the one
+ * function both endpoints now share.
+ */
 async function getHealth(stub: Stub = {}) {
   const instance = await buildApp(stub)
   const res = await instance.inject({ method: "GET", url: "/health" })
-  return { status: res.statusCode, body: res.json().data as Record<string, unknown> }
+  const body = (await computeHealth(instance)) as unknown as Record<string, unknown>
+  return { status: res.statusCode, body, publicBody: res.json().data as Record<string, unknown> }
 }
 
 describe("a fully operational instance", () => {
@@ -194,5 +205,27 @@ describe("liveness is separate from readiness", () => {
     // Still a list of specific exemptions, not a prefix free-for-all.
     expect(isExempt("/api/assets")).toBe(false)
     expect(isExempt("/api/health-summary")).toBe(false)
+  })
+})
+
+describe("the public endpoint says as little as it can", () => {
+  it("answers a single word, not an inventory", async () => {
+    const { publicBody } = await getHealth()
+    expect(publicBody).toEqual({ status: "ok" })
+  })
+
+  it("names no version, no subsystem and no timestamp", async () => {
+    const { publicBody } = await getHealth()
+    // Each of these was free reconnaissance for anyone who could reach the
+    // port, and none of it is needed to answer "is this thing up".
+    for (const key of ["version", "database", "redis", "worker", "storage", "timestamp", "api"]) {
+      expect(publicBody).not.toHaveProperty(key)
+    }
+  })
+
+  it("still degrades in the body as well as the code", async () => {
+    const { status, publicBody } = await getHealth({ databaseOk: false })
+    expect(status).toBe(503)
+    expect(publicBody).toEqual({ status: "degraded" })
   })
 })
