@@ -282,6 +282,12 @@ model User {
   passwordHash       String
   recoveryQuestion   String?
   recoveryAnswerHash String?
+  /// TOTP shared secret, encrypted at rest. Null until enrolment is verified.
+  mfaSecretEnc       String?
+  /// Set only once a submitted code has proved the authenticator works.
+  mfaEnabledAt       DateTime?
+  /// Counter value of the last accepted TOTP step, so a code cannot be replayed.
+  mfaLastUsedStep    BigInt?
   role               UserRole
   status             UserStatus          @default(ACTIVE)
   avatarPath         String?
@@ -300,6 +306,19 @@ model User {
   shareLinks         ShareLink[]
   fileRequests       FileRequest[]
   bookRuns           BookRun[]
+  mfaRecoveryCodes   MfaRecoveryCode[]
+}
+
+/// Single-use fallback codes, stored hashed. Shown to the owner once.
+model MfaRecoveryCode {
+  id        String    @id @default(cuid())
+  userId    String
+  codeHash  String    @unique
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 /// Logical app database for API/automation: metadata + JSON in PostgreSQL (not library file storage).

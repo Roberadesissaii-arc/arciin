@@ -11,6 +11,7 @@ import { createReadStream } from "node:fs"
 import { access } from "node:fs/promises"
 
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify"
+import { toDataURL } from "qrcode"
 import { z } from "zod"
 
 import { apiConfig } from "@/config"
@@ -21,6 +22,15 @@ import {
   resolveRequestClientContext,
 } from "@/services/security/login-audit"
 import { clientIpFromRequest, normalizeClientIp } from "@/services/security/client-ip"
+import { consumeSecondFactor } from "@/services/security/mfa-challenge"
+import { decryptSecret, encryptSecret } from "@/services/security/encryption"
+import {
+  buildOtpAuthUri,
+  generateRecoveryCodes,
+  generateTotpSecret,
+  hashRecoveryCode,
+  verifyTotp,
+} from "@/services/security/mfa"
 import { recordSecurityEvent } from "@/services/security/security-events"
 import {
   authenticate,
@@ -60,6 +70,10 @@ const loginSchema = z.object({
   email: z.email(),
   password: z.string().min(8),
   rememberMe: z.boolean().optional(),
+  /** Six digits from the authenticator app, when the account has MFA on. */
+  totp: z.string().trim().optional(),
+  /** A single-use recovery code, for when the authenticator is unavailable. */
+  recoveryCode: z.string().trim().optional(),
 })
 
 const registerSchema = z.object({
@@ -244,6 +258,22 @@ export async function registerAuthRoutes(fastify: FastifyInstance) {
       return
     }
 
+    /**
+     * Second factor, if this account has one.
+     *
+     * Deliberately after the password check: asking for a code before the
+     * password is right would tell an unauthenticated caller which addresses
+     * exist and which have MFA enabled. The session is not created until this
+     * passes, so a correct password alone gets nobody in.
+     */
+    if (user.mfaEnabledAt) {
+      const mfaOutcome = await consumeSecondFactor(request, reply, user, {
+        totp: parsed.data.totp,
+        recoveryCode: parsed.data.recoveryCode,
+      })
+      if (mfaOutcome !== "accepted") return
+    }
+
     await clearFailedLoginAttempts(fastify, email, clientIp)
 
     const access = await loadAccessControlSettings(fastify.prisma)
@@ -295,6 +325,235 @@ export async function registerAuthRoutes(fastify: FastifyInstance) {
     })
 
   const profileAuth = { preHandler: authenticate }
+
+  /**
+   * Begin enrolment.
+   *
+   * The secret is stored encrypted immediately but MFA stays off until a code
+   * proves the authenticator actually holds it — enabling first would lock the
+   * owner out of their own instance if the QR code never scanned properly.
+   *
+   * Re-enrolling while already enabled is refused rather than silently
+   * replacing the secret, which would be a quiet way to take an account over
+   * from a borrowed session.
+   */
+  fastify.post("/auth/mfa/enroll", profileAuth, async (request, reply) => {
+    if (!request.auth) return
+    const user = request.auth.user
+    if (user.mfaEnabledAt) {
+      reply.status(409).send({
+        error: {
+          code: "MFA_ALREADY_ENABLED",
+          message: "Two-factor authentication is already on. Turn it off before enrolling again.",
+        },
+      })
+      return
+    }
+
+    const secret = generateTotpSecret()
+    await fastify.prisma.user.update({
+      where: { id: user.id },
+      data: { mfaSecretEnc: encryptSecret(secret), mfaLastUsedStep: null },
+    })
+
+    const otpauthUri = buildOtpAuthUri({
+      secret,
+      accountName: user.email,
+      issuer: "Arciin",
+    })
+
+    // The secret travels exactly once, to the person enrolling. After
+    // verification it is never returned again.
+    reply.send({
+      data: {
+        secret,
+        otpauthUri,
+        qrDataUrl: await toDataURL(otpauthUri, { margin: 1, width: 240 }),
+      },
+    })
+  })
+
+  const mfaVerifySchema = z.object({ totp: z.string().trim() })
+
+  /** Finish enrolment: prove the code works, then switch MFA on. */
+  fastify.post("/auth/mfa/enroll/verify", profileAuth, async (request, reply) => {
+    if (!request.auth) return
+    const user = request.auth.user
+    if (user.mfaEnabledAt) {
+      reply.status(409).send({
+        error: { code: "MFA_ALREADY_ENABLED", message: "Two-factor authentication is already on." },
+      })
+      return
+    }
+    if (!user.mfaSecretEnc) {
+      reply.status(400).send({
+        error: { code: "MFA_NOT_STARTED", message: "Start enrolment before verifying a code." },
+      })
+      return
+    }
+    const parsed = mfaVerifySchema.safeParse(request.body)
+    if (!parsed.success) {
+      reply.status(400).send({
+        error: { code: "VALIDATION_ERROR", message: "Provide the six-digit code." },
+      })
+      return
+    }
+    if (await checkEndpointRateLimit(request, reply, { key: "mfa", limit: 10, windowSec: 300 })) {
+      return
+    }
+
+    const result = verifyTotp({
+      token: parsed.data.totp,
+      secret: decryptSecret(user.mfaSecretEnc),
+      lastUsedStep: null,
+    })
+    if (!result.ok) {
+      reply.status(400).send({
+        error: { code: "MFA_INVALID", message: "That code is not valid." },
+      })
+      return
+    }
+
+    const codes = generateRecoveryCodes()
+    await fastify.prisma.$transaction([
+      fastify.prisma.user.update({
+        where: { id: user.id },
+        data: { mfaEnabledAt: new Date(), mfaLastUsedStep: BigInt(result.step) },
+      }),
+      fastify.prisma.mfaRecoveryCode.deleteMany({ where: { userId: user.id } }),
+      fastify.prisma.mfaRecoveryCode.createMany({
+        data: codes.map((code) => ({ userId: user.id, codeHash: hashRecoveryCode(code) })),
+      }),
+    ])
+
+    await recordSecurityEvent(fastify, {
+      userId: user.id,
+      type: "auth.mfa_enabled",
+      title: "Two-factor authentication enabled",
+      message: "An authenticator app was enrolled for this account.",
+      metadata: { status: "ok" },
+    })
+
+    // Shown once. Only hashes are kept.
+    reply.send({ data: { enabled: true, recoveryCodes: codes } })
+  })
+
+  const mfaSensitiveSchema = z.object({
+    password: z.string().min(1),
+    totp: z.string().trim().optional(),
+    recoveryCode: z.string().trim().optional(),
+  })
+
+  /**
+   * Both of the dangerous operations — turning MFA off, and replacing the
+   * recovery codes — need the password *and* a current second factor. A
+   * borrowed session alone is not enough to undo the protection.
+   */
+  async function requirePasswordAndSecondFactor(
+    request: FastifyRequest,
+    reply: FastifyReply,
+  ): Promise<boolean> {
+    if (!request.auth) return false
+    const user = request.auth.user
+    const parsed = mfaSensitiveSchema.safeParse(request.body)
+    if (!parsed.success) {
+      reply.status(400).send({
+        error: { code: "VALIDATION_ERROR", message: "Password and a current code are required." },
+      })
+      return false
+    }
+    if (await checkEndpointRateLimit(request, reply, { key: "mfa", limit: 10, windowSec: 300 })) {
+      return false
+    }
+    if (!(await verifyPassword(parsed.data.password, user.passwordHash))) {
+      reply.status(401).send({
+        error: { code: "INVALID_CREDENTIALS", message: "Password is incorrect." },
+      })
+      return false
+    }
+    const outcome = await consumeSecondFactor(request, reply, user, {
+      totp: parsed.data.totp,
+      recoveryCode: parsed.data.recoveryCode,
+    })
+    return outcome === "accepted"
+  }
+
+  fastify.post("/auth/mfa/disable", profileAuth, async (request, reply) => {
+    if (!request.auth) return
+    const user = request.auth.user
+    if (!user.mfaEnabledAt) {
+      reply.status(400).send({
+        error: { code: "MFA_NOT_ENABLED", message: "Two-factor authentication is not on." },
+      })
+      return
+    }
+    if (!(await requirePasswordAndSecondFactor(request, reply))) return
+
+    await fastify.prisma.$transaction([
+      fastify.prisma.user.update({
+        where: { id: user.id },
+        data: { mfaEnabledAt: null, mfaSecretEnc: null, mfaLastUsedStep: null },
+      }),
+      fastify.prisma.mfaRecoveryCode.deleteMany({ where: { userId: user.id } }),
+    ])
+
+    await recordSecurityEvent(fastify, {
+      userId: user.id,
+      type: "auth.mfa_disabled",
+      title: "Two-factor authentication disabled",
+      message: "The authenticator app was removed from this account.",
+      metadata: { status: "warning" },
+    })
+    reply.send({ data: { enabled: false } })
+  })
+
+  /** Replace every recovery code. The previous set stops working immediately. */
+  fastify.post("/auth/mfa/recovery-codes", profileAuth, async (request, reply) => {
+    if (!request.auth) return
+    const user = request.auth.user
+    if (!user.mfaEnabledAt) {
+      reply.status(400).send({
+        error: { code: "MFA_NOT_ENABLED", message: "Two-factor authentication is not on." },
+      })
+      return
+    }
+    if (!(await requirePasswordAndSecondFactor(request, reply))) return
+
+    const codes = generateRecoveryCodes()
+    await fastify.prisma.$transaction([
+      fastify.prisma.mfaRecoveryCode.deleteMany({ where: { userId: user.id } }),
+      fastify.prisma.mfaRecoveryCode.createMany({
+        data: codes.map((code) => ({ userId: user.id, codeHash: hashRecoveryCode(code) })),
+      }),
+    ])
+
+    await recordSecurityEvent(fastify, {
+      userId: user.id,
+      type: "auth.mfa_recovery_regenerated",
+      title: "Recovery codes replaced",
+      message: "A new set of recovery codes was issued; the previous set no longer works.",
+      metadata: { status: "warning" },
+    })
+    reply.send({ data: { recoveryCodes: codes } })
+  })
+
+  /** Status for the settings screen. Never includes the secret. */
+  fastify.get("/auth/mfa", profileAuth, async (request, reply) => {
+    if (!request.auth) return
+    const user = request.auth.user
+    const remaining = user.mfaEnabledAt
+      ? await fastify.prisma.mfaRecoveryCode.count({ where: { userId: user.id, usedAt: null } })
+      : 0
+    reply.send({
+      data: {
+        enabled: Boolean(user.mfaEnabledAt),
+        enabledAt: user.mfaEnabledAt?.toISOString() ?? null,
+        enrollmentStarted: Boolean(user.mfaSecretEnc) && !user.mfaEnabledAt,
+        recoveryCodesRemaining: remaining,
+      },
+    })
+  })
+
 
   async function handleProfileUpdate(request: FastifyRequest, reply: FastifyReply) {
     if (!request.auth) return
