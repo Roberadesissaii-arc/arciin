@@ -1,6 +1,49 @@
 import { spawn, type ChildProcess } from "node:child_process"
+import { mkdtempSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import path from "node:path"
 
 const TRY_CLOUDFLARE_URL_RE = /https:\/\/[a-z0-9-]+\.trycloudflare\.com/i
+
+let isolatedConfigPath: string | null = null
+
+/**
+ * Path to a config file that exists only so cloudflared does not read
+ * somebody else's.
+ *
+ * With no `--config`, cloudflared loads ~/.cloudflared/config.yml. On a host
+ * that already runs a named tunnel, that file belongs to the named tunnel —
+ * here it routes license.arciin.com and ends, as ingress rules must, with a
+ * catch-all:
+ *
+ *     - service: http_status:404
+ *
+ * A quick tunnel's hostname is random and therefore never matches the named
+ * hostname, so every request fell through to that catch-all. cloudflared
+ * answered 404 itself, through the edge, which is why the failure looked like
+ * Cloudflare refusing to route: the hostname registered, the connector came
+ * up, the origin was healthy, and every request still returned 404. Running
+ * cloudflared by hand reproduced it exactly, because the same default config
+ * was picked up.
+ *
+ * Passing an empty config keeps the quick tunnel on its own `--url` origin and
+ * leaves the named tunnel's file untouched.
+ */
+export function buildQuickTunnelArgs(configPath: string, target: string): string[] {
+  // --config must precede the subcommand; cloudflared treats it as a global flag.
+  return ["--config", configPath, "tunnel", "--url", target]
+}
+
+function ensureIsolatedTunnelConfig(): string {
+  if (isolatedConfigPath) return isolatedConfigPath
+  const dir = mkdtempSync(path.join(tmpdir(), "arciin-cloudflared-"))
+  const file = path.join(dir, "config.yml")
+  // Deliberately empty: every setting a quick tunnel needs is on the command
+  // line, and anything inherited here would be another tunnel's.
+  writeFileSync(file, "# Arciin quick tunnel: intentionally empty.\n", "utf8")
+  isolatedConfigPath = file
+  return file
+}
 
 export type CloudflareTunnelState = {
   running: boolean
@@ -261,10 +304,14 @@ export function startCloudflareQuickTunnel(
       fn()
     }
 
-    const child = spawn("cloudflared", ["tunnel", "--url", normalizedTarget], {
-      stdio: ["ignore", "pipe", "pipe"],
-      env: process.env,
-    })
+    const child = spawn(
+      "cloudflared",
+      buildQuickTunnelArgs(ensureIsolatedTunnelConfig(), normalizedTarget),
+      {
+        stdio: ["ignore", "pipe", "pipe"],
+        env: process.env,
+      },
+    )
     tunnelProcess = child
     tunnelState = {
       running: true,
