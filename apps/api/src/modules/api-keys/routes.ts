@@ -9,6 +9,9 @@ import { recordAndBroadcastActivity } from "@/services/activity/record-and-broad
 import { hashApiKey, requireFeature, requireSessionRole } from "@/services/security/auth"
 import { serializeApiKey } from "@/services/serializers"
 
+/** New keys expire after this unless the caller or the operator says otherwise. */
+export const DEFAULT_API_KEY_LIFETIME_DAYS = 90
+
 const createApiKeySchema = z.object({
   name: z.string().min(2),
   scopes: z.array(z.enum(API_KEY_SCOPES)).min(1),
@@ -83,6 +86,28 @@ export async function registerApiKeyRoutes(fastify: FastifyInstance) {
         }
       }
 
+      /**
+       * A new key gets an expiry even when the caller does not ask for one.
+       *
+       * Previously `expiresAt` was simply optional and the column went null,
+       * so every key ever created here lived forever. Making it a hard
+       * requirement would break existing API clients that post without the
+       * field, so the default is applied instead: ninety days unless the
+       * caller chooses otherwise, capped by maxApiKeyExpiryDays where an
+       * operator has set one.
+       *
+       * Keys created before this keep their null expiry — they are not
+       * retroactively expired — and the UI labels them "No expiration" so the
+       * difference is visible rather than silent.
+       */
+      const defaultLifetimeDays = Math.min(
+        DEFAULT_API_KEY_LIFETIME_DAYS,
+        maxDays > 0 ? maxDays : DEFAULT_API_KEY_LIFETIME_DAYS,
+      )
+      const resolvedExpiry = parsed.data.expiresAt
+        ? new Date(parsed.data.expiresAt)
+        : new Date(Date.now() + defaultLifetimeDays * 24 * 60 * 60 * 1000)
+
       const rawKey = `arc_${randomBytes(24).toString("hex")}`
       const apiKey = await fastify.prisma.apiKey.create({
         data: {
@@ -91,7 +116,7 @@ export async function registerApiKeyRoutes(fastify: FastifyInstance) {
           keyPrefix: rawKey.slice(0, 12),
           keyHash: hashApiKey(rawKey),
           scopes: parsed.data.scopes,
-          expiresAt: parsed.data.expiresAt ? new Date(parsed.data.expiresAt) : null,
+          expiresAt: resolvedExpiry,
         },
       })
 

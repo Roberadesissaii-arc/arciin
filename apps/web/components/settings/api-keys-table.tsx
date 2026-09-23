@@ -159,6 +159,21 @@ export function ApiKeysTable() {
                 <ApiKeyScopeBadges scopes={apiKey.scopes} />
                 <span className="text-[12px] text-zinc-500 lg:text-zinc-600">
                   {apiKey.lastUsedAt ? formatRelativeDate(apiKey.lastUsedAt) : "Never"}
+                  {/*
+                    New keys are given a ninety-day expiry. Keys created before
+                    that have none, and saying so is the point: a key that never
+                    expires is a standing credential, and the only way to know
+                    which ones those are is to show it.
+                  */}
+                  {apiKey.expiresAt ? (
+                    <span className="mt-0.5 block text-[11px] text-zinc-500">
+                      Expires {formatRelativeDate(apiKey.expiresAt)}
+                    </span>
+                  ) : (
+                    <span className="mt-0.5 block text-[11px] font-medium text-amber-600 dark:text-amber-400">
+                      No expiration
+                    </span>
+                  )}
                 </span>
                 <div className="flex flex-wrap items-center gap-2 lg:justify-end">
                   <Button
