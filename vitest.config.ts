@@ -25,6 +25,19 @@ export default defineConfig({
   },
   test: {
     environment: "node",
+    /**
+     * Vitest defaults to 5s. Several suites shell out to repo scripts
+     * (verify-install-parity.sh, build-backend, the healthcheck probes), which
+     * take ~0.2s on a warm developer machine and have repeatedly taken ~10s on
+     * a cold, contended GitHub runner. That made "Unit, license, integration"
+     * fail three separate times on a timeout alone, with no assertion broken —
+     * a required check turning red for reasons unrelated to the code under it.
+     *
+     * A longer ceiling does not slow a passing test down; it only changes how
+     * long a genuinely hung one waits before failing.
+     */
+    testTimeout: 30_000,
+    hookTimeout: 30_000,
     include: [
       "tests/**/*.test.ts",
       "packages/*/src/**/*.test.ts",
