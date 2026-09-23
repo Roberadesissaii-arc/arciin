@@ -33,7 +33,10 @@ import {
   startCloudflareQuickTunnel,
   stopCloudflareQuickTunnel,
 } from "@/services/remote-access/cloudflare-tunnel"
-import { resolveMobileLocalAccessUrls } from "@/services/remote-access/local-access-urls"
+import {
+  resolveLocalAccessUrls,
+  resolveMobileLocalAccessUrls,
+} from "@/services/remote-access/local-access-urls"
 import { resolveCloudflareTunnelTarget } from "@/services/remote-access/tunnel-target"
 import {
   emailConfigSchema,
@@ -586,21 +589,37 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
       const config = (instance?.remoteAccessConfig as Record<string, unknown> | null) || {}
       const urls = await resolveMobileServerUrls(fastify.prisma, request)
       const mobileLocal = resolveMobileLocalAccessUrls()
+      const desktopLocal = resolveLocalAccessUrls()
 
       reply.send({
         data: {
           publicUrl: instance?.publicUrl ?? null,
           mobilePublicUrl:
             typeof config.mobilePublicUrl === "string" ? config.mobilePublicUrl : null,
-          localUrl: mobileLocal.localUrl,
-          loopbackUrl: mobileLocal.loopbackUrl,
-          lanUrls: mobileLocal.lanUrls,
-          primaryLanUrl: mobileLocal.primaryLanUrl,
+          /**
+           * These describe the desktop web app, which is what the page is
+           * about and what the tunnel forwards to. They were built from the
+           * mobile resolver, so every address on the page — "This machine" and
+           * each LAN row — rendered the mobile port and claimed to be the
+           * server's address.
+           */
+          localUrl: desktopLocal.localUrl,
+          loopbackUrl: desktopLocal.loopbackUrl,
+          lanUrls: desktopLocal.lanUrls,
+          primaryLanUrl: desktopLocal.primaryLanUrl,
+          /** The mobile PWA is a second entry point on its own port. */
+          mobileLocal: {
+            loopbackUrl: mobileLocal.loopbackUrl,
+            lanUrls: mobileLocal.lanUrls,
+            primaryLanUrl: mobileLocal.primaryLanUrl,
+            webPort: mobileLocal.webPort,
+          },
+          webPort: desktopLocal.webPort,
           currentUrl:
             (typeof config.mobilePublicUrl === "string" ? config.mobilePublicUrl : null) ??
             instance?.publicUrl ??
             urls.requestOrigin ??
-            mobileLocal.localUrl,
+            desktopLocal.localUrl,
           requestOrigin: urls.requestOrigin,
           mode: (instance?.remoteAccessMode as string) || "local",
           reverseProxyEnabled: Boolean(config.reverseProxyEnabled),
@@ -691,21 +710,29 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
       const urls = await resolveMobileServerUrls(fastify.prisma, request)
       const raw = (updated.remoteAccessConfig as Record<string, unknown> | null) || {}
       const mobileLocal = resolveMobileLocalAccessUrls()
+      const desktopLocal = resolveLocalAccessUrls()
 
       reply.send({
         data: {
           publicUrl: updated.publicUrl ?? null,
           mobilePublicUrl:
             typeof raw.mobilePublicUrl === "string" ? raw.mobilePublicUrl : null,
-          localUrl: mobileLocal.localUrl,
-          loopbackUrl: mobileLocal.loopbackUrl,
-          lanUrls: mobileLocal.lanUrls,
-          primaryLanUrl: mobileLocal.primaryLanUrl,
+          localUrl: desktopLocal.localUrl,
+          loopbackUrl: desktopLocal.loopbackUrl,
+          lanUrls: desktopLocal.lanUrls,
+          primaryLanUrl: desktopLocal.primaryLanUrl,
+          mobileLocal: {
+            loopbackUrl: mobileLocal.loopbackUrl,
+            lanUrls: mobileLocal.lanUrls,
+            primaryLanUrl: mobileLocal.primaryLanUrl,
+            webPort: mobileLocal.webPort,
+          },
+          webPort: desktopLocal.webPort,
           currentUrl:
             (typeof raw.mobilePublicUrl === "string" ? raw.mobilePublicUrl : null) ??
             updated.publicUrl ??
             urls.requestOrigin ??
-            mobileLocal.localUrl,
+            desktopLocal.localUrl,
           requestOrigin: urls.requestOrigin,
           mode: updated.remoteAccessMode || "local",
           reverseProxyEnabled: Boolean(nextConfig.reverseProxyEnabled),

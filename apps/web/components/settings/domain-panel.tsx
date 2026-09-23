@@ -174,13 +174,43 @@ export function DomainPanel() {
       ? data.lanUrls
       : [data?.primaryLanUrl, data?.localUrl].filter((u): u is string => Boolean(u))
 
-  const tunnelTone: "ok" | "warn" | "off" = tunnel?.running
-    ? tunnel.stale
-      ? "warn"
-      : "ok"
-    : tunnel?.stale
-      ? "warn"
-      : "off"
+  /**
+   * The mobile PWA's own addresses, shown only when they add something.
+   *
+   * On a host where both apps answer on the same interface these differ only
+   * by port, which is worth saying; an address already listed above is not.
+   */
+  const mobileLanUrls = (data?.mobileLocal?.lanUrls ?? []).filter(
+    (url) => !lanUrls.includes(url),
+  )
+
+  /** Whether there is a mobile surface for the proxy to route phones to. */
+  const mobileSurfaceAvailable = Boolean(
+    data?.mobileLocal?.primaryLanUrl || data?.mobileLocal?.loopbackUrl,
+  )
+
+  /**
+   * What the tunnel is actually doing, not whether a process exists.
+   *
+   * "Live" used to mean a cloudflared process was alive. A quick tunnel can
+   * hold a live process and a registered hostname while Cloudflare's edge
+   * returns 404 for that hostname, and the panel called that Live while the
+   * address did nothing. Live now requires the public URL to have answered.
+   */
+  const tunnelStatus: {
+    label: "Live" | "Starting" | "Unavailable" | "Expired" | "Off"
+    tone: "ok" | "warn" | "off"
+  } = (() => {
+    if (!tunnel?.running) {
+      if (tunnel?.stale) return { label: "Expired", tone: "warn" }
+      return { label: "Off", tone: "off" }
+    }
+    if (tunnel.reachable === true) return { label: "Live", tone: "ok" }
+    if (tunnel.reachable === false) return { label: "Unavailable", tone: "warn" }
+    // Not determined yet — a fresh tunnel takes 30–60s to answer.
+    return { label: "Starting", tone: "warn" }
+  })()
+  const tunnelTone = tunnelStatus.tone
 
   useEffect(() => {
     if (!initializingUrl) return
@@ -263,6 +293,12 @@ export function DomainPanel() {
           </div>
         </div>
 
+        {/*
+          Desktop and mobile listen on different ports, and these rows used to
+          be built entirely from the mobile resolver — so every address here,
+          including "This machine", showed the mobile port and presented it as
+          the server's address. Each row now says which app it reaches.
+        */}
         <div className="space-y-2 px-4 py-4 sm:px-5">
           {data?.loopbackUrl ? (
             <UrlChip
@@ -271,12 +307,20 @@ export function DomainPanel() {
               onCopy={() => copyText(data.loopbackUrl!, "Loopback URL")}
             />
           ) : null}
-          {lanUrls.map((url, i) => (
+          {lanUrls.map((url) => (
             <UrlChip
               key={url}
-              label={lanUrls.length > 1 ? `LAN ${i + 1}` : "LAN"}
+              label={lanUrls.length > 1 ? "Desktop · LAN" : "Desktop"}
               value={url}
-              onCopy={() => copyText(url, "LAN URL")}
+              onCopy={() => copyText(url, "Desktop LAN URL")}
+            />
+          ))}
+          {mobileLanUrls.map((url) => (
+            <UrlChip
+              key={url}
+              label={mobileLanUrls.length > 1 ? "Mobile · LAN" : "Mobile"}
+              value={url}
+              onCopy={() => copyText(url, "Mobile LAN URL")}
             />
           ))}
         </div>
@@ -323,10 +367,19 @@ export function DomainPanel() {
                 {addressesMatch ? (
                   <>
                     <Check className="mt-0.5 size-3.5 shrink-0 text-primary" />
+                    {/*
+                      Only claimed when a mobile surface actually exists to route
+                      to. The tunnel forwards to the desktop app and proxy.ts
+                      rewrites phone user agents to the mobile app; without a
+                      resolvable mobile origin that rewrite never happens and a
+                      phone simply gets the desktop app, so promising otherwise
+                      would be a guess dressed as a fact.
+                    */}
                     <span>
                       <span className="font-medium text-foreground">Same link for both.</span>{" "}
-                      Open it on a phone and you get the mobile app; on a computer you get the
-                      full desktop app. There is nothing separate to remember.
+                      {mobileSurfaceAvailable
+                        ? "Open it on a phone and you get the mobile app; on a computer you get the full desktop app. There is nothing separate to remember."
+                        : "The mobile app is not reachable on this server right now, so this link opens the desktop app on every device."}
                     </span>
                   </>
                 ) : (
@@ -415,7 +468,7 @@ export function DomainPanel() {
             </div>
           </div>
           <StatusPill tone={tunnelTone}>
-            {tunnel?.running ? (tunnel.stale ? "Starting" : "Live") : tunnel?.stale ? "Expired" : "Off"}
+            {tunnelStatus.label}
           </StatusPill>
         </div>
 

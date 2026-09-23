@@ -9,6 +9,17 @@ export type CloudflareTunnelState = {
   error: string | null
   /** Set when cloudflared exited but DB may still store the old trycloudflare.com URL. */
   stale: boolean
+  /**
+   * Whether the public URL actually answered from outside, as opposed to
+   * whether a cloudflared process exists.
+   *
+   * null means not determined yet. The two are genuinely different states: a
+   * quick tunnel can hold a live process and a registered hostname while the
+   * edge returns 404 for it, which is what "Live" used to be reported for.
+   */
+  reachable: boolean | null
+  /** When reachability was last determined, ISO-8601. */
+  reachabilityCheckedAt: string | null
 }
 
 let tunnelProcess: ChildProcess | null = null
@@ -18,6 +29,8 @@ let tunnelState: CloudflareTunnelState = {
   localTarget: null,
   error: null,
   stale: false,
+  reachable: null,
+  reachabilityCheckedAt: null,
 }
 
 let suppressAutoRestart = false
@@ -45,8 +58,52 @@ function markTunnelStopped(message: string, keepUrl = true) {
     localTarget: null,
     error: message,
     stale: keepUrl && Boolean(tunnelState.url),
+    reachable: false,
+    reachabilityCheckedAt: new Date().toISOString(),
   }
   tunnelProcess = null
+}
+
+/** How long a reachability result is trusted before it is checked again. */
+const REACHABILITY_TTL_MS = 60_000
+let reachabilityRefreshInFlight = false
+
+/**
+ * Re-check the public URL in the background when the cached answer has aged
+ * out.
+ *
+ * A quick tunnel does not only fail by its process dying. It can keep the
+ * process and the registered hostname while the edge stops routing to it, and
+ * then the hostname answers 404 from Cloudflare with the origin perfectly
+ * healthy. Probing once at startup could not see that happen later, so the
+ * status stayed at whatever it was when the tunnel opened.
+ *
+ * Deliberately not awaited: a settings page must not block on an external
+ * request. Callers get the previous answer and the next read sees the new one.
+ */
+function refreshReachabilityIfStale() {
+  if (reachabilityRefreshInFlight) return
+  if (!tunnelState.running || !tunnelState.url) return
+  const checkedAt = tunnelState.reachabilityCheckedAt
+  if (checkedAt && Date.now() - Date.parse(checkedAt) < REACHABILITY_TTL_MS) return
+
+  const url = tunnelState.url
+  reachabilityRefreshInFlight = true
+  void (async () => {
+    try {
+      // One pass, not the startup poll: this answers "is it working now".
+      const reachable = await probeTunnelPublicUrl(url, 6_000)
+      if (tunnelState.url !== url) return
+      tunnelState = {
+        ...tunnelState,
+        reachable,
+        reachabilityCheckedAt: new Date().toISOString(),
+        error: reachable ? null : PUBLIC_PROBE_HINT,
+      }
+    } finally {
+      reachabilityRefreshInFlight = false
+    }
+  })()
 }
 
 export function getCloudflareTunnelState(): CloudflareTunnelState {
@@ -55,6 +112,7 @@ export function getCloudflareTunnelState(): CloudflareTunnelState {
       "The Cloudflare quick tunnel stopped. Your old trycloudflare.com link will show error 530 — generate a new public URL.",
     )
   }
+  refreshReachabilityIfStale()
   return { ...tunnelState }
 }
 
@@ -70,6 +128,8 @@ export function stopCloudflareQuickTunnel() {
     localTarget: null,
     error: null,
     stale: false,
+    reachable: false,
+    reachabilityCheckedAt: new Date().toISOString(),
   }
 }
 
@@ -134,6 +194,8 @@ function schedulePublicTunnelProbe(publicUrl: string) {
     tunnelState = {
       ...tunnelState,
       error: reachable ? null : PUBLIC_PROBE_HINT,
+      reachable,
+      reachabilityCheckedAt: new Date().toISOString(),
     }
   })()
 }
@@ -148,6 +210,8 @@ async function finalizeTunnelStart(publicUrl: string, localTarget: string): Prom
     localTarget,
     error: PUBLIC_PROBE_HINT,
     stale: false,
+    reachable: null,
+    reachabilityCheckedAt: null,
   }
 
   if (lifecycleHooks.onPublicUrl) {
@@ -208,6 +272,8 @@ export function startCloudflareQuickTunnel(
       localTarget: normalizedTarget,
       error: null,
       stale: false,
+      reachable: null,
+      reachabilityCheckedAt: null,
     }
 
     const timeout = setTimeout(() => {
