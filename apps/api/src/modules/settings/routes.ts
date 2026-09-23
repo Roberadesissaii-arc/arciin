@@ -271,6 +271,28 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
           objectCount,
           totalBytes,
           availableBytes,
+          /**
+           * The same numbers under names that say which question they answer.
+           *
+           * `usageBytes` is how much Arciin's own storage root holds;
+           * `totalBytes` is the capacity of the whole filesystem it sits on.
+           * Dividing one by the other produced "9% of volume used" on a disk
+           * that was 90% full, because everything else on the disk — the OS,
+           * home directories, container images — is invisible to the first
+           * number and counted in the second.
+           *
+           * filesystemUsedBytes comes from capacity minus free, so it
+           * describes the disk rather than Arciin's share of it.
+           */
+          arciinUsageBytes: usageBytes,
+          filesystemTotalBytes: totalBytes,
+          filesystemAvailableBytes: availableBytes,
+          filesystemUsedBytes:
+            totalBytes != null && availableBytes != null ? totalBytes - availableBytes : null,
+          filesystemUsagePercent:
+            totalBytes != null && availableBytes != null && totalBytes > 0
+              ? Math.round(((totalBytes - availableBytes) / totalBytes) * 100)
+              : null,
         },
       })
     }
