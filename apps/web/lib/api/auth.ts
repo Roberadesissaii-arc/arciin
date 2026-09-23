@@ -147,3 +147,8 @@ export function revokeSession(id: string) {
     method: "DELETE",
   })
 }
+
+/** One call rather than one per session, so it cannot half-finish. */
+export function revokeOtherSessions() {
+  return fetchApi<{ revoked: number }>("/auth/sessions/revoke-others", { method: "POST" })
+}

@@ -892,6 +892,8 @@ export type LoginInput = {
 export type ChangePasswordInput = {
   currentPassword: string
   newPassword: string
+  /** Defaults to true server-side; sent explicitly so the UI owns the choice. */
+  signOutOtherSessions?: boolean
 }
 
 /** PATCH /auth/profile — at least one field required (validated server-side). */

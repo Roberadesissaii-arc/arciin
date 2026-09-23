@@ -865,6 +865,12 @@ export async function registerAuthRoutes(fastify: FastifyInstance) {
   const changePasswordSchema = z.object({
     currentPassword: z.string().min(1),
     newPassword: z.string().min(8),
+    /**
+     * Defaults to true, because the usual reason for changing a password is
+     * that somebody thinks it is known. Leaving other sessions signed in would
+     * defeat the change for exactly the case it is meant to answer.
+     */
+    signOutOtherSessions: z.boolean().optional(),
   })
 
   const passwordAuth = { preHandler: authenticate }
@@ -896,16 +902,63 @@ export async function registerAuthRoutes(fastify: FastifyInstance) {
       where: { id: user.id },
       data: { passwordHash: newHash },
     })
+    /**
+     * Sign out everywhere else.
+     *
+     * The Session rows go; the Device pairing rows do not. A paired Desktop
+     * therefore loses its session and gets a new one from its own device
+     * credential, rather than having to be paired again from scratch — the
+     * pairing is a separate credential from the password, and a password
+     * change is not a reason to make somebody walk to the other machine.
+     */
+    const signOutOthers = parsed.data.signOutOtherSessions !== false
+    let revoked = 0
+    if (signOutOthers) {
+      const currentToken = request.cookies[apiConfig.SESSION_COOKIE_NAME]
+      const currentHash = currentToken ? hashToken(currentToken) : null
+      const result = await request.server.prisma.session.deleteMany({
+        where: {
+          userId: user.id,
+          ...(currentHash ? { tokenHash: { not: currentHash } } : {}),
+        },
+      })
+      revoked = result.count
+    }
+
     await request.server.prisma.activityEvent.create({
       data: {
         userId: user.id,
         type: "security.password_changed",
         title: "Password changed",
-        message: `${user.name} changed their password.`,
+        message: signOutOthers
+          ? `${user.name} changed their password and signed out ${revoked} other session(s).`
+          : `${user.name} changed their password.`,
       },
     })
-    reply.send({ data: { success: true } })
+    reply.send({ data: { success: true, otherSessionsRevoked: revoked } })
   }
+
+  /** The same thing on its own, for Account → Sessions. */
+  fastify.post("/auth/sessions/revoke-others", passwordAuth, async (request, reply) => {
+    if (!request.auth) return
+    const user = request.auth.user
+    const currentToken = request.cookies[apiConfig.SESSION_COOKIE_NAME]
+    const currentHash = currentToken ? hashToken(currentToken) : null
+    const result = await request.server.prisma.session.deleteMany({
+      where: {
+        userId: user.id,
+        ...(currentHash ? { tokenHash: { not: currentHash } } : {}),
+      },
+    })
+    await recordSecurityEvent(request.server, {
+      userId: user.id,
+      type: "auth.sessions_revoked",
+      title: "Other sessions signed out",
+      message: `${user.name} signed out ${result.count} other session(s).`,
+      metadata: { status: "ok" },
+    })
+    reply.send({ data: { revoked: result.count } })
+  })
 
   fastify.patch("/auth/password", passwordAuth, handlePasswordChange)
 
