@@ -13,6 +13,15 @@ const eslintConfig = defineConfig([
     "apps/web/.next-dev/**",
     // Browser-suite build output — generated bundles, not source.
     "apps/web/.next-e2e/**",
+    // Staging build output. Every build lands here, so on any machine that has
+    // built, these generated bundles outnumbered the source files and buried
+    // the real findings.
+    "apps/web/.next-build/**",
+    // The previous build, kept by deploy-web.sh so a bad deploy can roll back.
+    "apps/web/.next-prev/**",
+    // Compiled backend bundles — esbuild output, not source.
+    "apps/api/dist/**",
+    "apps/worker/dist/**",
     // Account portal build output — same generated bundles as apps/web/.next.
     // Missing here, `pnpm lint` failed for anyone who had built the portal.
     "apps/account/.next/**",
