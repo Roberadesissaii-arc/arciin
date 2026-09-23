@@ -20,7 +20,7 @@ import {
   formatAuthSecurityMessage,
   resolveRequestClientContext,
 } from "@/services/security/login-audit"
-import { normalizeClientIp } from "@/services/security/client-ip"
+import { clientIpFromRequest, normalizeClientIp } from "@/services/security/client-ip"
 import { recordSecurityEvent } from "@/services/security/security-events"
 import {
   authenticate,
@@ -223,12 +223,13 @@ export async function registerAuthRoutes(fastify: FastifyInstance) {
     }
 
     const email = parsed.data.email.toLowerCase()
-    const lock = await isLoginLocked(fastify, email)
+    const clientIp = clientIpFromRequest(request)
+    const lock = await isLoginLocked(fastify, email, clientIp)
     if (lock.locked) {
       reply.status(429).send({
         error: {
-          code: "ACCOUNT_LOCKED",
-          message: `Too many failed sign-in attempts. Try again in about 15 minutes.`,
+          code: "TOO_MANY_ATTEMPTS",
+          message: `Too many failed sign-in attempts from this device. Try again in about 15 minutes.`,
         },
       })
       return
@@ -243,7 +244,7 @@ export async function registerAuthRoutes(fastify: FastifyInstance) {
       return
     }
 
-    await clearFailedLoginAttempts(fastify, email)
+    await clearFailedLoginAttempts(fastify, email, clientIp)
 
     const access = await loadAccessControlSettings(fastify.prisma)
     const rememberMe = parsed.data.rememberMe === true
