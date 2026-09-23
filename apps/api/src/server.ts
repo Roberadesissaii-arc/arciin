@@ -9,6 +9,7 @@ import { registerAdminRoutes } from "@/modules/admin/routes"
 import { registerChatRoutes } from "@/modules/chat/routes"
 import { registerModelRoutes } from "@/modules/models/routes"
 import { registerActivityRoutes } from "@/modules/activity/routes"
+import { registerNotificationRoutes } from "@/modules/notifications/routes"
 import { registerApiKeyRoutes } from "@/modules/api-keys/routes"
 import { registerAppDatabaseRoutes } from "@/modules/app-databases/routes"
 import { registerAssetRoutes } from "@/modules/assets/routes"
@@ -247,6 +248,7 @@ export async function createServer() {
       await registerUploadRoutes(api)
       await registerImportRoutes(api)
       await registerActivityRoutes(api)
+      await registerNotificationRoutes(api)
       await registerJobRoutes(api)
       await registerLogsRoutes(api)
       await registerApiKeyRoutes(api)

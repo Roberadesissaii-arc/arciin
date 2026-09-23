@@ -307,6 +307,27 @@ model User {
   fileRequests       FileRequest[]
   bookRuns           BookRun[]
   mfaRecoveryCodes   MfaRecoveryCode[]
+  notificationReads  NotificationRead[]
+  /// Everything up to this moment counts as read. Lets "mark all read" be one
+  /// write instead of a row per event.
+  notificationsReadThrough DateTime?
+}
+
+/// Read state for one activity event, for one person.
+///
+/// The event body lives in ActivityEvent and is not copied here: an inbox item
+/// is an activity event plus whether this user has seen it. Duplicating the
+/// title and message would create a second thing to keep correct.
+model NotificationRead {
+  id              String        @id @default(cuid())
+  userId          String
+  activityEventId String
+  readAt          DateTime      @default(now())
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  activityEvent   ActivityEvent @relation(fields: [activityEventId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, activityEventId])
+  @@index([userId])
 }
 
 /// Single-use fallback codes, stored hashed. Shown to the owner once.
@@ -869,6 +890,7 @@ model ActivityEvent {
   metadata   Json?
   createdAt  DateTime @default(now())
   user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  notificationReads NotificationRead[]
 
   @@index([userId])
   @@index([createdAt])
