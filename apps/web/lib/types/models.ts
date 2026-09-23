@@ -614,6 +614,15 @@ export type RemoteAccessSettings = {
   loopbackUrl?: string | null
   lanUrls?: string[]
   primaryLanUrl?: string | null
+  /** Desktop web listen port these addresses were built for. */
+  webPort?: string | null
+  /** The mobile PWA is a second entry point on its own port. */
+  mobileLocal?: {
+    loopbackUrl?: string | null
+    lanUrls?: string[]
+    primaryLanUrl?: string | null
+    webPort?: string | null
+  } | null
   currentUrl?: string | null
   requestOrigin?: string | null
   mode: "local" | "reverse-proxy" | "cloudflare-tunnel"
@@ -630,6 +639,13 @@ export type CloudflareTunnelStatus = {
   error: string | null
   /** Tunnel process died; saved trycloudflare URL will return Cloudflare 530. */
   stale?: boolean
+  /**
+   * Whether the public URL answered from outside. null = not determined yet.
+   * A live process and a registered hostname are not the same thing as a
+   * working address, so this is what "Live" is allowed to mean.
+   */
+  reachable?: boolean | null
+  reachabilityCheckedAt?: string | null
   cloudflareTunnelEnabled: boolean
   publicUrl?: string | null
   mobilePublicUrl?: string | null
