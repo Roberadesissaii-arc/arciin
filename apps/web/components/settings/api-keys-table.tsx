@@ -41,6 +41,12 @@ import { copyTextNow } from "@/lib/utils/clipboard"
 import { cn } from "@/lib/utils"
 import { formatRelativeDate } from "@/lib/utils/format-date"
 
+/**
+ * One width for every action in the key row, so the column does not shift
+ * with the length of the label.
+ */
+const API_KEY_ACTION_WIDTH = "w-[104px] justify-center"
+
 const API_KEYS_GRID =
   "lg:grid lg:grid-cols-[minmax(5.5rem,1.1fr)_minmax(6.5rem,1fr)_minmax(0,1.45fr)_minmax(5rem,0.85fr)_minmax(7.5rem,1fr)] lg:items-center lg:gap-x-3"
 
@@ -176,11 +182,17 @@ export function ApiKeysTable() {
                   )}
                 </span>
                 <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+                  {/*
+                    Both actions share one width so the column lines up down the
+                    list rather than shifting with the label. Rotate stays
+                    neutral; Revoke is destructive and says so — it invalidates
+                    the key immediately and nothing brings it back.
+                  */}
                   <Button
                     type="button"
                     variant="outline"
                     size="sm"
-                    className="border-border bg-card text-foreground hover:bg-muted/50"
+                    className={cn(API_KEY_ACTION_WIDTH, "border-border bg-card text-foreground hover:bg-muted/50")}
                     disabled={rotateMutation.isPending}
                     onClick={() => setConfirm({ kind: "rotate", id: apiKey.id, name: apiKey.name })}
                   >
@@ -189,9 +201,9 @@ export function ApiKeysTable() {
                   </Button>
                   <Button
                     type="button"
-                    variant="outline"
+                    variant="destructive"
                     size="sm"
-                    className="border-border bg-card text-foreground hover:bg-muted/50"
+                    className={API_KEY_ACTION_WIDTH}
                     disabled={revokeMutation.isPending}
                     onClick={() => setConfirm({ kind: "revoke", id: apiKey.id, name: apiKey.name })}
                   >

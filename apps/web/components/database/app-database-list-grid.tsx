@@ -7,8 +7,13 @@ import { Button } from "@/components/ui/button"
 import type { AppDatabaseSummary } from "@/lib/types/models"
 import { RelativeTime } from "@/components/shared/relative-time"
 
+/**
+ * Was a hardcoded #EF4444. The same red as the token today, but a literal
+ * does not follow the theme and carries no focus or dark handling of its own.
+ * Paired with variant="destructive" at the call sites.
+ */
 const deleteButtonClass =
-  "border-0 bg-[#EF4444] text-white shadow-none hover:bg-[#DC2626] focus-visible:ring-2 focus-visible:ring-[#EF4444]/50"
+  "shadow-none"
 
 type MutationLike<TVariables = void> = {
   isPending: boolean

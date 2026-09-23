@@ -149,7 +149,7 @@ export function AppDatabaseTablesPanel({
                               <Plus className="size-3.5" />
                               Add row
                             </Button>
-                            <Button type="button" variant="default" size="sm" className="border-0 bg-[#EF4444] text-white shadow-none hover:bg-[#DC2626]"
+                            <Button type="button" variant="destructive" size="sm" className="shadow-none"
                               disabled={deleteFolderMutation.isPending}
                               onClick={() => { if (window.confirm(`Delete table "${f.pathCache}" and all its rows?`)) deleteFolderMutation.mutate(f.id) }}>
                               <Trash2 className="size-4" />

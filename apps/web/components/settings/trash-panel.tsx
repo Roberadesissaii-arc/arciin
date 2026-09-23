@@ -154,7 +154,8 @@ function TrashRow({
         <Button
           type="button"
           size="sm"
-          className="h-9 gap-1.5 rounded-md border-0 bg-[#EF4444] px-3 text-[12px] font-semibold text-white hover:bg-[#DC2626] disabled:opacity-50"
+          variant="destructive"
+          className="h-9 gap-1.5 rounded-md px-3 text-[12px] font-semibold"
           disabled={busy}
           onClick={() => onPermanent(item.id)}
         >
@@ -375,7 +376,7 @@ export function TrashPanel() {
             <AlertDialogCancel disabled={permanentMutation.isPending}>Cancel</AlertDialogCancel>
             <Button
               type="button"
-              className="bg-[#EF4444] text-white hover:bg-[#DC2626]"
+              variant="destructive"
               disabled={permanentMutation.isPending || !permanentTarget}
               onClick={() => permanentTarget && permanentMutation.mutate(permanentTarget.id)}
             >
@@ -401,7 +402,7 @@ export function TrashPanel() {
             <AlertDialogCancel disabled={emptyMutation.isPending}>Cancel</AlertDialogCancel>
             <Button
               type="button"
-              className="bg-[#EF4444] text-white hover:bg-[#DC2626]"
+              variant="destructive"
               disabled={emptyMutation.isPending}
               onClick={() => emptyMutation.mutate()}
             >

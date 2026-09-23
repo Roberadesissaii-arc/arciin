@@ -210,7 +210,7 @@ export function AssetBulkActionsBar({ defaultLibraryId }: { defaultLibraryId?: s
           <AlertDialogFooter>
             <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              className="bg-destructive text-white hover:bg-destructive/90"
+              variant="destructive"
               disabled={deleting}
               onClick={(event) => {
                 event.preventDefault()

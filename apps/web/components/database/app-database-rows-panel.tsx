@@ -136,7 +136,7 @@ export function AppDatabaseRowsPanel({
                             {previewRecordId === r.id ? "Hide" : "Open"}
                           </Button>
                           {canMutate ? (
-                            <Button type="button" variant="default" size="sm" className="border-0 bg-[#EF4444] text-white shadow-none hover:bg-[#DC2626]"
+                            <Button type="button" variant="destructive" size="sm" className="shadow-none"
                               disabled={deleteRecordMutation.isPending}
                               onClick={() => { if (window.confirm(`Delete row "${r.name}"?`)) deleteRecordMutation.mutate(r.id) }}>
                               <Trash2 className="size-4" />
