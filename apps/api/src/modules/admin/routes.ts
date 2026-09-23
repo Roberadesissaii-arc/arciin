@@ -44,6 +44,105 @@ async function countForTable(fastify: FastifyInstance, name: string): Promise<nu
   }
 }
 
+
+export type TableSummaryMetric = {
+  label: string
+  value: number
+  /** Drives the badge colour; "neutral" when the number is just a number. */
+  tone: "neutral" | "success" | "warning" | "danger"
+}
+
+/**
+ * The counts worth showing beside a table, computed from the rows themselves.
+ *
+ * A raw row count is not the same as how many of a thing currently work, and
+ * the Database browser had no way to say so. "API Keys — 10 records" sat
+ * beside a management page listing three, which reads as a discrepancy when it
+ * is actually history: a revoked key keeps its row, with revokedAt set, and
+ * that record is the audit trail. Deleting those to make the two numbers agree
+ * would destroy the only evidence that a key ever existed.
+ */
+async function summaryForTable(
+  fastify: FastifyInstance,
+  name: string,
+): Promise<TableSummaryMetric[]> {
+  const now = new Date()
+  try {
+    switch (name) {
+      case "api-keys": {
+        const [total, revoked, expired] = await Promise.all([
+          fastify.prisma.apiKey.count(),
+          fastify.prisma.apiKey.count({ where: { revokedAt: { not: null } } }),
+          fastify.prisma.apiKey.count({
+            where: { revokedAt: null, expiresAt: { not: null, lt: now } },
+          }),
+        ])
+        return [
+          { label: "historical records", value: total, tone: "neutral" },
+          { label: "active", value: total - revoked - expired, tone: "success" },
+          { label: "revoked", value: revoked, tone: "danger" },
+          { label: "expired", value: expired, tone: "warning" },
+        ]
+      }
+      case "users": {
+        const [total, active, owners] = await Promise.all([
+          fastify.prisma.user.count(),
+          fastify.prisma.user.count({ where: { status: "ACTIVE" } }),
+          fastify.prisma.user.count({ where: { role: "OWNER" } }),
+        ])
+        return [
+          { label: total === 1 ? "user" : "users", value: total, tone: "neutral" },
+          { label: "active", value: active, tone: "success" },
+          { label: owners === 1 ? "owner" : "owners", value: owners, tone: "neutral" },
+        ]
+      }
+      case "sessions": {
+        const [total, live] = await Promise.all([
+          fastify.prisma.session.count(),
+          fastify.prisma.session.count({ where: { expiresAt: { gt: now } } }),
+        ])
+        return [
+          { label: "records", value: total, tone: "neutral" },
+          { label: "unexpired", value: live, tone: "success" },
+          { label: "expired", value: total - live, tone: "warning" },
+        ]
+      }
+      case "assets": {
+        const [total, trashed, archived] = await Promise.all([
+          fastify.prisma.asset.count(),
+          fastify.prisma.asset.count({ where: { deletedAt: { not: null } } }),
+          fastify.prisma.asset.count({ where: { archivedAt: { not: null }, deletedAt: null } }),
+        ])
+        return [
+          { label: "records", value: total, tone: "neutral" },
+          { label: "active", value: total - trashed - archived, tone: "success" },
+          { label: "archived", value: archived, tone: "warning" },
+          { label: "in trash", value: trashed, tone: "danger" },
+        ]
+      }
+      case "folders": {
+        const [total, deleted] = await Promise.all([
+          fastify.prisma.folder.count(),
+          fastify.prisma.folder.count({ where: { deletedAt: { not: null } } }),
+        ])
+        return [
+          { label: "records", value: total, tone: "neutral" },
+          { label: "live", value: total - deleted, tone: "success" },
+          { label: "deleted", value: deleted, tone: "danger" },
+        ]
+      }
+      case "jobs": {
+        const total = await fastify.prisma.job.count()
+        return [{ label: "records", value: total, tone: "neutral" }]
+      }
+      default:
+        return [{ label: "records", value: await countForTable(fastify, name), tone: "neutral" }]
+    }
+  } catch {
+    return [{ label: "records", value: 0, tone: "neutral" }]
+  }
+}
+
 function sanitizeRows(rows: Record<string, unknown>[]): Record<string, unknown>[] {
   return rows.map((row) =>
     Object.fromEntries(
@@ -90,7 +189,27 @@ async function rowsForTable(
         }),
         fastify.prisma.apiKey.count(),
       ])
-      return { rows, total }
+      /**
+       * A derived status, computed here rather than in the browser.
+       *
+       * revokedAt and expiresAt are both already on the row, so a reader could
+       * work it out — but only by knowing that revocation wins over expiry and
+       * that a null expiry means forever. Deciding that once, on the server,
+       * keeps the Database view and anything else that asks from drifting
+       * apart. keyHash is not selected and never has been.
+       */
+      const now = Date.now()
+      return {
+        rows: rows.map((row) => ({
+          ...row,
+          status: row.revokedAt
+            ? "Revoked"
+            : row.expiresAt && row.expiresAt.getTime() < now
+              ? "Expired"
+              : "Active",
+        })),
+        total,
+      }
     }
     case "libraries": {
       const [rows, total] = await Promise.all([
@@ -255,6 +374,7 @@ export async function registerAdminRoutes(fastify: FastifyInstance) {
         TABLES.map(async (t) => ({
           ...t,
           count: await countForTable(fastify, t.name),
+          summary: await summaryForTable(fastify, t.name),
         }))
       )
       reply.send({ data: tables })

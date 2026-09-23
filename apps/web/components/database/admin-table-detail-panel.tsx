@@ -14,6 +14,7 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty"
+import { AdminTableHero } from "@/components/database/admin-table-hero"
 import { CellValue } from "@/components/database/table-cell-value"
 import { getAdminTableData, getAdminTables } from "@/lib/api/admin"
 import { queryKeys } from "@/lib/api/query-keys"
@@ -70,7 +71,21 @@ export function AdminTableDetailPanel({ table }: { table: string }) {
         ) : null}
       </div>
 
-      {meta ? <p className="text-sm text-muted-foreground">{meta.description}</p> : null}
+      {/*
+        Was a bare one-line description under the breadcrumb, which made a
+        detail page feel like a fragment of the hub rather than a page. The
+        hero reads its title, description and metrics from the same catalogue
+        the hub cards use, so the two cannot describe the same table
+        differently.
+      */}
+      {meta ? (
+        <AdminTableHero
+          table={meta.name}
+          label={meta.label}
+          description={meta.description}
+          summary={meta.summary}
+        />
+      ) : null}
 
       <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm ring-1 ring-black/[0.03]">
         {catalogLoading ? (
