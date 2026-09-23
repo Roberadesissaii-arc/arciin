@@ -195,7 +195,14 @@ COPY --from=web-builder --chown=1000:1000 /app/apps/web/next-env.d.ts ./apps/web
 COPY --chown=1000:1000 tsconfig.base.json tsconfig.json ./
 
 # Build output and static assets (public/ carries the copied pdfjs wasm).
-COPY --from=web-builder --chown=1000:1000 /app/apps/web/.next ./apps/web/.next
+#
+# The builder writes .next-build, because build:web pins NEXT_DIST_DIR so that
+# a bare build on a live host can never overwrite the directory the running
+# server is serving from. Inside an image there is no running server to
+# protect, and the runtime below starts with the default distDir, so the
+# staging directory is copied to the name `next start` expects. Renaming it
+# here keeps the safety on the host without making the image carry it.
+COPY --from=web-builder --chown=1000:1000 /app/apps/web/.next-build ./apps/web/.next
 COPY --from=web-builder --chown=1000:1000 /app/apps/web/public ./apps/web/public
 
 ENV NODE_ENV=production
