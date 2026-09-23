@@ -107,7 +107,7 @@
     "lucide-react": "^1.14.0",
     "nanoid": "^5.1.16",
     "next": "16.2.12",
-    "nodemailer": "^9.0.5",
+    "nodemailer": "^9.1.1",
     "pdfjs-dist": "^6.2.108",
     "pino": "^10.3.1",
     "prisma": "^6.19.3",
@@ -153,16 +153,18 @@
       "find-my-way": "^9.9.0",
       "sharp": "^0.35.4",
       "ws": "^8.21.0",
-      "hono": "^4.12.34",
+      "hono": "^4.13.5",
       "@hono/node-server": "^1.19.15",
       "ip-address": "^10.3.1",
-      "qs": "^6.15.2",
+      "qs": "^6.16.0",
       "body-parser": "^2.3.0",
       "@babel/core": "^7.29.6",
       "esbuild": "^0.28.2",
       "@fastify/ajv-compiler>fast-uri": "^3.1.6",
       "fast-json-stringify@^6>fast-uri": "^3.1.6",
-      "lucide-react": "1.14.0"
+      "lucide-react": "1.14.0",
+      "browserslist": "^4.28.7",
+      "baseline-browser-mapping": "^2.11.0"
     },
     "onlyBuiltDependencies": []
   }
