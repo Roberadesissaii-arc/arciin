@@ -6,6 +6,7 @@ import type { FastifyReply, FastifyRequest } from "fastify"
 import { apiConfig } from "@/config"
 import { verifyMediaToken } from "@/services/security/media-token"
 import { clientIpFromRequest, normalizeClientIp } from "@/services/security/client-ip"
+import { requestProtocol } from "@/services/security/trusted-proxy"
 import { enforceApiKeyRateLimit } from "@/services/security/api-key-rate-limit"
 
 export async function hashPassword(password: string) {
@@ -54,12 +55,14 @@ export function isSecureCookie(request?: FastifyRequest) {
     return true
   }
 
-  const forwarded = request?.headers["x-forwarded-proto"]
-  if (typeof forwarded === "string" && forwarded.split(",")[0]?.trim() === "https") {
-    return true
-  }
-
-  return false
+  /**
+   * Was: any client could send `X-Forwarded-Proto: https` and get a Secure
+   * cookie. The header describes a hop the server cannot see, so it is only
+   * worth anything from a hop we put there. requestProtocol applies the same
+   * trustProxy CIDR list Fastify already uses for X-Forwarded-For, so the two
+   * cannot disagree about which peers are ours.
+   */
+  return requestProtocol(request) === "https"
 }
 
 /** Long-lived, opaque, per-browser id. Not a credential — it authenticates nothing. */
