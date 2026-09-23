@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { libraryAcceptsMediaType, resolveUploadRoute } from "@arciin/shared"
+import { inferMediaType, libraryAcceptsMediaType, resolveUploadRoute } from "@arciin/shared"
 import { partitionDroppedFiles } from "@/lib/uploads/collect-drop-files"
 
 /**
@@ -101,5 +101,41 @@ describe("Inbox is the fallback, not a catch-all", () => {
     const decision = resolveUploadRoute({ mediaType: "IMAGE", requestedLibraryKind: "VIDEO" })
     expect(decision.rerouted).toBe(true)
     expect(decision.libraryKind).toBe("IMAGE")
+  })
+})
+
+describe("filename edge cases still upload when chosen deliberately", () => {
+  // The skip list matches on path text, so anything unusual in a name is a
+  // chance to match something it should not. These are all single files, so
+  // the only correct answer is that every one of them uploads.
+  it.each([
+    ["unicode", "файл.jpg"],
+    ["cjk", "日本語の書類.pdf"],
+    ["emoji", "holiday 🏖.png"],
+    ["spaces and parens", "photo (1) copy.jpg"],
+    ["leading dot", ".gitignore"],
+    ["double extension", "archive.tar.gz"],
+    ["uppercase exe", "SETUP.EXE"],
+    ["no extension", "LICENSE"],
+    ["very long", `${"a".repeat(200)}.txt`],
+    ["looks like a path", "not/a/folder.txt"],
+  ])("%s", (_label, name) => {
+    const { upload, skipped } = partitionDroppedFiles([droppedFile(name)])
+    expect(skipped).toEqual([])
+    expect(upload.map((f) => f.name)).toEqual([name])
+  })
+
+  it("an empty file is still a file", () => {
+    const empty = new File([], "empty.txt")
+    expect(partitionDroppedFiles([empty]).upload).toHaveLength(1)
+  })
+})
+
+describe("AVIF and HEIC are recognised images", () => {
+  // Both decode through libheif inside sharp, so they must stay classified as
+  // images and keep flowing to the thumbnailer rather than silently becoming
+  // Inbox items.
+  it.each(["photo.avif", "IMG_0001.heic", "scan.heif"])("%s is an IMAGE", (name) => {
+    expect(inferMediaType("application/octet-stream", name)).toBe("IMAGE")
   })
 })
