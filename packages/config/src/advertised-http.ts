@@ -115,12 +115,20 @@ export function buildAdvertisedLocalAccessUrls(input: {
   const protocol = input.protocol ?? "http"
   const port = input.port
   const loopbackUrl = formatAdvertisedHttpOrigin(input.loopbackHost ?? "127.0.0.1", port, protocol)
-  const preferredHost = input.preferredHost?.trim() || null
-  const hosts = new Set<string>()
-  if (preferredHost) hosts.add(preferredHost)
-  for (const host of input.lanHosts) {
-    if (host.trim()) hosts.add(host.trim())
-  }
+  const lanHosts = input.lanHosts.map((host) => host.trim()).filter(Boolean)
+  /**
+   * A preference only orders the addresses we have; it cannot add one.
+   *
+   * `lanHosts` has already been through selectLanIpv4Addresses, which keeps an
+   * address the machine actually holds (or, in a container, the configured
+   * override, since host interfaces are invisible there). Adding the preferred
+   * host back unconditionally re-admitted whatever selection had just dropped
+   * and sorted it first, so a stale ARCIIN_PUBLIC_URL still became the
+   * advertised address even once selection had rejected it.
+   */
+  const requestedHost = input.preferredHost?.trim() || null
+  const preferredHost = requestedHost && lanHosts.includes(requestedHost) ? requestedHost : null
+  const hosts = new Set<string>(lanHosts)
   const preferredUrl = preferredHost
     ? formatAdvertisedHttpOrigin(preferredHost, port, protocol)
     : null

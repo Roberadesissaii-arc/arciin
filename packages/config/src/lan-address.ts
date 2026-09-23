@@ -200,7 +200,31 @@ export function selectLanIpv4Addresses(options: LanSelectionOptions): LanSelecti
 
   if (overrideHost && isUsableLanOverrideHostname(overrideHost, inContainer)) {
     if (!selected.includes(overrideHost)) {
-      selected.unshift(overrideHost)
+      /**
+       * The override names an address this machine does not currently hold.
+       *
+       * Inside a container that is expected — the host's LAN address is not on
+       * any interface we can see — so the override is still the best answer.
+       *
+       * Outside one it means the configured value has gone stale, usually
+       * because DHCP moved the server after the value was set. The override is
+       * always an RFC1918 IPv4 literal (isUsableLanOverrideHostname rejects
+       * hostnames), so "not on any interface" is decidable rather than a guess.
+       * Advertising it anyway put an address that answers nothing at the front
+       * of the list, where it became `primary` and was published as the
+       * server's current address in the discovery manifest and Remote Access.
+       * A real interface address is worth more than a configured one that has
+       * expired.
+       */
+      if (inContainer) {
+        selected.unshift(overrideHost)
+      } else {
+        rejected.push({
+          address: overrideHost,
+          interfaceName: "(configured override)",
+          reason: "override-not-on-any-interface",
+        })
+      }
     }
   }
 
