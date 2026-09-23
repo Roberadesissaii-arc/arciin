@@ -39,6 +39,10 @@ import {
 } from "@/services/remote-access/local-access-urls"
 import { resolveCloudflareTunnelTarget } from "@/services/remote-access/tunnel-target"
 import {
+  canEnablePublicRemoteAccess,
+  readOwnerMfaState,
+} from "@/services/security/owner-mfa-policy"
+import {
   emailConfigSchema,
   mergeEmailConfig,
   parseStoredEmailConfig,
@@ -647,6 +651,11 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
           reverseProxyEnabled: Boolean(config.reverseProxyEnabled),
           cloudflareTunnelEnabled: Boolean(config.cloudflareTunnelEnabled),
           cloudflareTunnelAutoStart: config.cloudflareTunnelAutoStart !== false,
+          /**
+           * So the panel can say why the button is unavailable before it is
+           * pressed, rather than answering with a 403 after.
+           */
+          ownerMfa: await readOwnerMfaState(fastify.prisma),
         },
       })
     }
@@ -800,6 +809,18 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
       ],
     },
     async (request, reply) => {
+      /**
+       * Opening the door to the internet is where the owner's second factor
+       * stops being advice. LAN-only use is untouched — this is checked here,
+       * not on sign-in — so an upgraded instance keeps working while its owner
+       * gets round to enrolling.
+       */
+      const verdict = await canEnablePublicRemoteAccess(fastify.prisma)
+      if (!verdict.allowed) {
+        reply.status(403).send({ error: { code: verdict.code, message: verdict.message } })
+        return
+      }
+
       const instance = await fastify.prisma.instanceConfig.findFirst()
       if (!instance) {
         reply.status(409).send({

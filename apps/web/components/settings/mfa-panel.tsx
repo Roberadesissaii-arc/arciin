@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Check, Copy, KeyRound, ShieldCheck, ShieldOff, TriangleAlert } from "lucide-react"
+import { Check, Copy, Download, KeyRound, ShieldCheck, ShieldOff, TriangleAlert } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
@@ -21,6 +21,8 @@ import { toast } from "@/lib/notifications/arciin-toast"
 const MFA_QUERY_KEY = ["auth", "mfa"] as const
 /** Below this, the account is one bad day from having no way back in. */
 const LOW_RECOVERY_CODES = 3
+/** Issued as a set; the remaining count is only meaningful against it. */
+const RECOVERY_CODE_TOTAL = 10
 
 type Stage =
   | { name: "idle" }
@@ -141,7 +143,7 @@ export function MfaPanel() {
             </h2>
             <p className="mt-0.5 text-[12px] text-muted-foreground">
               {enabled
-                ? `On since ${data?.enabledAt ? new Date(data.enabledAt).toLocaleDateString() : "recently"} · ${remaining} recovery ${remaining === 1 ? "code" : "codes"} left`
+                ? `Your account asks for an authenticator code when signing in · ${remaining} of ${RECOVERY_CODE_TOTAL} recovery codes left`
                 : "Not set up. A password on its own is the only thing between someone and this server."}
             </p>
           </div>
@@ -161,7 +163,9 @@ export function MfaPanel() {
         ) : null}
 
         {stage.name === "idle" && !enabled ? (
-          <Button onClick={() => setStage({ name: "password" })}>Enable MFA</Button>
+          <Button onClick={() => setStage({ name: "password" })}>
+            Set up two-factor authentication
+          </Button>
         ) : null}
 
         {stage.name === "idle" && enabled ? (
@@ -169,7 +173,7 @@ export function MfaPanel() {
             <Button variant="outline" onClick={() => setStage({ name: "password" })}>
               Replace recovery codes
             </Button>
-            <Button variant="outline" onClick={() => setStage({ name: "password" })}>
+            <Button variant="destructive" onClick={() => setStage({ name: "password" })}>
               Turn off
             </Button>
           </div>
@@ -231,13 +235,25 @@ export function MfaPanel() {
             <p className="text-[13px] text-muted-foreground">
               Scan this with an authenticator app, then enter the code it shows.
             </p>
+            {/*
+              Named rather than prescribed. This is standard TOTP — it needs no
+              account with anybody, and once enrolled it keeps working with no
+              network at all.
+            */}
+            <p className="text-[12px] text-muted-foreground">
+              Works with most authenticator apps, including Google Authenticator,
+              Microsoft Authenticator, 1Password and other TOTP apps. No account with
+              anyone is required, and codes keep working offline.
+            </p>
             {/* eslint-disable-next-line @next/next/no-img-element -- a data: URI generated in this request; there is no remote asset to optimise. */}
             <img
               src={stage.qrDataUrl}
               alt="QR code for enrolling this account in an authenticator app"
-              className="rounded-lg border border-border bg-white p-2"
-              width={200}
-              height={200}
+              /* White plate and generous quiet zone: a scanner needs the
+                 margin, and a dark theme would otherwise invert it away. */
+              className="rounded-lg border border-border bg-white p-3"
+              width={232}
+              height={232}
             />
             <div className="space-y-1">
               <p className="text-[12px] text-muted-foreground">
@@ -299,6 +315,32 @@ export function MfaPanel() {
                 }}
               >
                 <Copy className="size-3.5" /> Copy all
+              </Button>
+              {/*
+                Offered, never automatic. A file appearing in Downloads without
+                being asked for is a surprise, and these are credentials.
+              */}
+              <Button
+                variant="outline"
+                onClick={() => {
+                  const blob = new Blob(
+                    [
+                      "Arciin recovery codes\n",
+                      "Each code works once. Keep them somewhere you can reach without your phone.\n\n",
+                      stage.codes.join("\n"),
+                      "\n",
+                    ],
+                    { type: "text/plain" },
+                  )
+                  const url = URL.createObjectURL(blob)
+                  const link = document.createElement("a")
+                  link.href = url
+                  link.download = "arciin-recovery-codes.txt"
+                  link.click()
+                  URL.revokeObjectURL(url)
+                }}
+              >
+                <Download className="size-3.5" /> Download
               </Button>
               <label className="flex items-center gap-2 text-[12px] text-muted-foreground">
                 <input

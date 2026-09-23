@@ -478,7 +478,9 @@ export async function registerAuthRoutes(fastify: FastifyInstance) {
       data: {
         secret,
         otpauthUri,
-        qrDataUrl: await toDataURL(otpauthUri, { margin: 1, width: 240 }),
+        // Wider quiet zone and a larger bitmap: this gets scanned from a
+        // phone held at arm's length, not inspected on screen.
+        qrDataUrl: await toDataURL(otpauthUri, { margin: 2, width: 320 }),
       },
     })
   })
