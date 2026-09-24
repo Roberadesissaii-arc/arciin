@@ -22,6 +22,24 @@ export async function verifyPassword(password: string, passwordHash: string) {
   return verify(passwordHash, password)
 }
 
+let dummyHash: Promise<string> | null = null
+
+/**
+ * Verify a login password in constant work, whether or not the account exists.
+ *
+ * Returning early for an unknown email answered in ~4 ms, while a real
+ * account paid the Argon2 cost (~90 ms), so response time told anyone which
+ * addresses have accounts even though the message was identical. With no
+ * account, this verifies against a throwaway hash with the same parameters
+ * and still returns false.
+ */
+export async function verifyLoginPassword(password: string, passwordHash: string | null | undefined) {
+  if (passwordHash) return verifyPassword(password, passwordHash)
+  dummyHash ??= hashPassword(`arciin-timing-equaliser-${generateOpaqueToken(16)}`)
+  await verify(await dummyHash, password).catch(() => false)
+  return false
+}
+
 export function hashToken(token: string) {
   return createHash("sha256").update(token).digest("hex")
 }

@@ -45,6 +45,7 @@ import {
   hashPassword,
   hashToken,
   setSessionCookie,
+  verifyLoginPassword,
   verifyPassword,
 } from "@/services/security/auth"
 import {
@@ -306,7 +307,9 @@ export async function registerAuthRoutes(fastify: FastifyInstance) {
       where: { email },
     })
 
-    if (!user || user.status !== "ACTIVE" || !(await verifyPassword(parsed.data.password, user.passwordHash))) {
+    // Always pay the hashing cost, so timing does not reveal which emails exist.
+    const passwordOk = await verifyLoginPassword(parsed.data.password, user?.passwordHash)
+    if (!user || user.status !== "ACTIVE" || !passwordOk) {
       await recordFailedLogin(request, reply, email)
       return
     }
