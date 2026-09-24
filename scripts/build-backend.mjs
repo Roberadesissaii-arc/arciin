@@ -45,7 +45,20 @@ async function buildOne(label, entry, outfile) {
   })
 }
 
-await buildOne("api", path.join(root, "apps/api/src/index.ts"), path.join(root, "apps/api/dist/index.js"))
-await buildOne("worker", path.join(root, "apps/worker/src/index.ts"), path.join(root, "apps/worker/dist/index.js"))
+/**
+ * Where the bundles go. Defaults to apps/<name>/dist — what PM2 runs.
+ *
+ * ARCIIN_BACKEND_OUT_DIR sends them somewhere else. The unit suite uses it:
+ * on a host where PM2 serves production straight out of this checkout, a
+ * test that built into apps/<name>/dist replaced the live bundles on every
+ * `pnpm test`, and the next restart ran unreviewed code against a database
+ * that had not been migrated for it.
+ */
+const outRoot = process.env.ARCIIN_BACKEND_OUT_DIR ? path.resolve(process.env.ARCIIN_BACKEND_OUT_DIR) : null
+const outFile = (name) =>
+  outRoot ? path.join(outRoot, name, "index.js") : path.join(root, "apps", name, "dist", "index.js")
 
-console.log("[build-backend] api and worker bundles written to apps/*/dist/index.js")
+await buildOne("api", path.join(root, "apps/api/src/index.ts"), outFile("api"))
+await buildOne("worker", path.join(root, "apps/worker/src/index.ts"), outFile("worker"))
+
+console.log(`[build-backend] api and worker bundles written to ${outRoot ?? "apps/*/dist"}`)
