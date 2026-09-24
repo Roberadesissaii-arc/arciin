@@ -30,7 +30,6 @@ import { serializeActivity } from "@/services/serializers"
 import { ClearInstanceContentError, clearInstanceContent } from "@/services/settings/clear-instance-content"
 import {
   getCloudflareTunnelState,
-  startCloudflareQuickTunnel,
   stopCloudflareQuickTunnel,
 } from "@/services/remote-access/cloudflare-tunnel"
 import {
@@ -72,6 +71,10 @@ import {
   filterMigrationTargets,
   parseLinuxMounts,
 } from "@/services/storage/discover-storage"
+import {
+  requireOwnerMfaForPublicRemoteAccess,
+  startPublicTunnel,
+} from "@/services/remote-access/public-tunnel"
 import { requestCloudflareTunnelStart } from "@/services/remote-access/tunnel-boot"
 import {
   loadEffectiveStorageRoot,
@@ -727,6 +730,18 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
             : parsed.data.publicUrl
           : (instance.publicUrl ?? null)
 
+      // Turning the tunnel on here starts it (requestCloudflareTunnelStart
+      // below), so it is public Remote Access and needs the same owner-MFA
+      // policy as the Start buttons. Turning it off, or saving other settings
+      // while it stays off, is never blocked.
+      if (parsed.data.cloudflareTunnelEnabled === true) {
+        const verdict = await canEnablePublicRemoteAccess(fastify.prisma)
+        if (!verdict.allowed) {
+          reply.status(403).send({ error: { code: verdict.code, message: verdict.message } })
+          return
+        }
+      }
+
       const updated = await fastify.prisma.instanceConfig.update({
         where: {
           id: instance.id,
@@ -806,21 +821,12 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
         // deliberately left ungated: an entitlement lapse must never leave a
         // customer unable to close their own front door.
         requireFeature("ops.remote_access_helper"),
+        // Owner MFA is required to open public Remote Access — desktop or
+        // mobile alike. Same policy, same code, for every start route.
+        requireOwnerMfaForPublicRemoteAccess,
       ],
     },
     async (request, reply) => {
-      /**
-       * Opening the door to the internet is where the owner's second factor
-       * stops being advice. LAN-only use is untouched — this is checked here,
-       * not on sign-in — so an upgraded instance keeps working while its owner
-       * gets round to enrolling.
-       */
-      const verdict = await canEnablePublicRemoteAccess(fastify.prisma)
-      if (!verdict.allowed) {
-        reply.status(403).send({ error: { code: verdict.code, message: verdict.message } })
-        return
-      }
-
       const instance = await fastify.prisma.instanceConfig.findFirst()
       if (!instance) {
         reply.status(409).send({
@@ -837,7 +843,7 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
       try {
         // Explicit user action: always mint a fresh address so a reset really resets
         // (and therefore actually notifies).
-        const url = await startCloudflareQuickTunnel(localTarget, { force: true })
+        const url = await startPublicTunnel(fastify.prisma, localTarget, { force: true })
 
         if (request.auth) {
           await fastify.prisma.activityEvent.create({
@@ -877,6 +883,9 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
         // deliberately left ungated: an entitlement lapse must never leave a
         // customer unable to close their own front door.
         requireFeature("ops.remote_access_helper"),
+        // Owner MFA is required to open public Remote Access — desktop or
+        // mobile alike. Same policy, same code, for every start route.
+        requireOwnerMfaForPublicRemoteAccess,
       ],
     },
     async (request, reply) => {
@@ -901,7 +910,7 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
       try {
         // Explicit user action: always mint a fresh address so a reset really resets
         // (and therefore actually notifies).
-        const url = await startCloudflareQuickTunnel(localTarget, { force: true })
+        const url = await startPublicTunnel(fastify.prisma, localTarget, { force: true })
 
         if (request.auth) {
           await fastify.prisma.activityEvent.create({
