@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client"
 import type { FastifyInstance } from "fastify"
 
 import { requireSessionRole } from "@/services/security/auth"
@@ -151,11 +152,36 @@ function sanitizeRows(rows: Record<string, unknown>[]): Record<string, unknown>[
   )
 }
 
+export const API_KEY_STATUS_FILTERS = ["all", "active", "revoked", "expired"] as const
+export type ApiKeyStatusFilter = (typeof API_KEY_STATUS_FILTERS)[number]
+
+/**
+ * The Database → API Keys filter, as a where clause.
+ *
+ * Same rule as the derived `status` column below: revocation wins over
+ * expiry, and a null expiry never expires. Filtering in the database keeps
+ * paging and the row total honest — filtering one page in the browser would
+ * show "3 revoked" while twenty more sat on other pages.
+ */
+export function apiKeyStatusWhere(filter: ApiKeyStatusFilter, now: Date): Prisma.ApiKeyWhereInput {
+  switch (filter) {
+    case "revoked":
+      return { revokedAt: { not: null } }
+    case "expired":
+      return { revokedAt: null, expiresAt: { not: null, lt: now } }
+    case "active":
+      return { revokedAt: null, OR: [{ expiresAt: null }, { expiresAt: { gte: now } }] }
+    default:
+      return {}
+  }
+}
+
 async function rowsForTable(
   fastify: FastifyInstance,
   name: string,
   skip: number,
   take: number,
+  filters: { apiKeyStatus?: ApiKeyStatusFilter } = {},
 ): Promise<{ rows: Record<string, unknown>[]; total: number }> {
   switch (name) {
     case "users": {
@@ -181,13 +207,15 @@ async function rowsForTable(
       return { rows, total }
     }
     case "api-keys": {
+      const where = apiKeyStatusWhere(filters.apiKeyStatus ?? "all", new Date())
       const [rows, total] = await Promise.all([
         fastify.prisma.apiKey.findMany({
+          where,
           skip, take,
           orderBy: { createdAt: "desc" },
           select: { id: true, name: true, keyPrefix: true, scopes: true, lastUsedAt: true, expiresAt: true, revokedAt: true, createdAt: true },
         }),
-        fastify.prisma.apiKey.count(),
+        fastify.prisma.apiKey.count({ where }),
       ])
       /**
        * A derived status, computed here rather than in the browser.
@@ -382,7 +410,7 @@ export async function registerAdminRoutes(fastify: FastifyInstance) {
   )
 
   // GET /admin/tables/:table?page=1&limit=20 — paginated rows
-  fastify.get<{ Params: { table: string }; Querystring: { page?: string; limit?: string } }>(
+  fastify.get<{ Params: { table: string }; Querystring: { page?: string; limit?: string; status?: string } }>(
     "/admin/tables/:table",
     { preHandler: requireSessionRole(["OWNER", "ADMIN"]) },
     async (request, reply) => {
@@ -396,7 +424,17 @@ export async function registerAdminRoutes(fastify: FastifyInstance) {
         return
       }
 
-      const { rows, total } = await rowsForTable(fastify, table, skip, limit)
+      const status = request.query.status ?? "all"
+      if (!(API_KEY_STATUS_FILTERS as readonly string[]).includes(status)) {
+        reply.status(400).send({
+          error: { code: "VALIDATION_ERROR", message: "status must be all, active, revoked, or expired." },
+        })
+        return
+      }
+
+      const { rows, total } = await rowsForTable(fastify, table, skip, limit, {
+        apiKeyStatus: table === "api-keys" ? (status as ApiKeyStatusFilter) : undefined,
+      })
       const totalPages = Math.max(1, Math.ceil(total / limit))
 
       reply.send({ data: { rows, total, page, totalPages, limit } })

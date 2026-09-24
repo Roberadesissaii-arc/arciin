@@ -16,12 +16,26 @@ import {
 } from "@/components/ui/empty"
 import { AdminTableHero } from "@/components/database/admin-table-hero"
 import { CellValue } from "@/components/database/table-cell-value"
-import { getAdminTableData, getAdminTables } from "@/lib/api/admin"
+import {
+  API_KEY_STATUS_FILTERS,
+  getAdminTableData,
+  getAdminTables,
+  type ApiKeyStatusFilter,
+} from "@/lib/api/admin"
 import { queryKeys } from "@/lib/api/query-keys"
 import { cn } from "@/lib/utils"
 
 export function AdminTableDetailPanel({ table }: { table: string }) {
   const [page, setPage] = useState(1)
+  /**
+   * Database → API Keys is the audit view: revoked and expired keys stay,
+   * because deleting history to tidy a list would destroy the record of who
+   * had access when. The filter narrows the view without touching rows.
+   * Default All. Developer → API Keys is where keys are managed.
+   */
+  const [status, setStatus] = useState<ApiKeyStatusFilter>("all")
+  const statusFilterable = table === "api-keys"
+  const effectiveStatus = statusFilterable ? status : "all"
 
   const metaQuery = useQuery({
     queryKey: queryKeys.adminTables,
@@ -29,8 +43,8 @@ export function AdminTableDetailPanel({ table }: { table: string }) {
   })
 
   const dataQuery = useQuery({
-    queryKey: queryKeys.adminTableData(table, page),
-    queryFn: ({ signal }) => getAdminTableData(table, page, signal),
+    queryKey: queryKeys.adminTableData(table, page, effectiveStatus),
+    queryFn: ({ signal }) => getAdminTableData(table, page, signal, { status: effectiveStatus }),
     placeholderData: (prev) => prev,
   })
 
@@ -85,6 +99,39 @@ export function AdminTableDetailPanel({ table }: { table: string }) {
           description={meta.description}
           summary={meta.summary}
         />
+      ) : null}
+
+      {statusFilterable && meta ? (
+        <div
+          role="radiogroup"
+          aria-label="Filter API keys by status"
+          className="flex flex-wrap items-center gap-2"
+        >
+          {API_KEY_STATUS_FILTERS.map((value) => {
+            const selected = status === value
+            return (
+              <Button
+                key={value}
+                type="button"
+                role="radio"
+                aria-checked={selected}
+                size="sm"
+                variant="outline"
+                data-testid={`api-key-filter-${value}`}
+                className={cn(
+                  "h-8 rounded-full border-border bg-card px-3 text-xs font-semibold capitalize text-muted-foreground",
+                  selected && "border-primary/40 bg-primary/10 text-primary",
+                )}
+                onClick={() => {
+                  setStatus(value)
+                  setPage(1)
+                }}
+              >
+                {value}
+              </Button>
+            )
+          })}
+        </div>
       ) : null}
 
       <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm ring-1 ring-black/[0.03]">
@@ -168,11 +215,22 @@ export function AdminTableDetailPanel({ table }: { table: string }) {
               <EmptyMedia variant="icon">
                 <Database className="size-4 text-muted-foreground" />
               </EmptyMedia>
-              <EmptyTitle>No rows yet</EmptyTitle>
-              <EmptyDescription>
-                This table exists but has no records. New writes from the app or migrations will appear here—same idea
-                as an empty library before the first upload.
-              </EmptyDescription>
+              {effectiveStatus !== "all" ? (
+                <>
+                  <EmptyTitle>No {effectiveStatus} keys</EmptyTitle>
+                  <EmptyDescription>
+                    No API key is currently {effectiveStatus}. Choose All to see every key this instance has issued.
+                  </EmptyDescription>
+                </>
+              ) : (
+                <>
+                  <EmptyTitle>No rows yet</EmptyTitle>
+                  <EmptyDescription>
+                    This table exists but has no records. New writes from the app or migrations will appear here—same
+                    idea as an empty library before the first upload.
+                  </EmptyDescription>
+                </>
+              )}
             </EmptyHeader>
           </Empty>
         ) : (

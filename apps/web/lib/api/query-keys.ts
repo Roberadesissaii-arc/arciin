@@ -53,7 +53,8 @@ export const queryKeys = {
   webhooks: ["webhooks"] as const,
   webhookDeliveries: (endpointId: string) => ["webhooks", endpointId, "deliveries"] as const,
   adminTables: ["admin", "tables"] as const,
-  adminTableData: (table: string, page: number) => ["admin", "table", table, page] as const,
+  adminTableData: (table: string, page: number, status = "all") =>
+    ["admin", "table", table, page, status] as const,
   appDatabases: ["app-databases"] as const,
   appDatabase: (id: string) => ["app-database", id] as const,
   appDatabaseFolders: (databaseId: string) => ["app-database-folders", databaseId] as const,

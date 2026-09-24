@@ -35,6 +35,18 @@ export function getAdminTables(signal?: AbortSignal) {
   return fetchApi<AdminTable[]>("/admin/tables", { method: "GET", signal })
 }
 
-export function getAdminTableData(table: string, page = 1, signal?: AbortSignal) {
-  return fetchApi<AdminTableData>(`/admin/tables/${table}?page=${page}&limit=20`, { method: "GET", signal })
+export const API_KEY_STATUS_FILTERS = ["all", "active", "revoked", "expired"] as const
+export type ApiKeyStatusFilter = (typeof API_KEY_STATUS_FILTERS)[number]
+
+export function getAdminTableData(
+  table: string,
+  page = 1,
+  signal?: AbortSignal,
+  filters: { status?: ApiKeyStatusFilter } = {},
+) {
+  const status = filters.status && filters.status !== "all" ? `&status=${filters.status}` : ""
+  return fetchApi<AdminTableData>(`/admin/tables/${table}?page=${page}&limit=20${status}`, {
+    method: "GET",
+    signal,
+  })
 }
