@@ -4,6 +4,7 @@ import Link from "next/link"
 import { ArrowRight, Trash2 } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
+import { ConfirmDestructiveButton } from "@/components/shared/confirm-destructive-button"
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { approxDatabaseIndexBytes, typeBadgeClass } from "@/lib/database/table-format"
@@ -12,12 +13,18 @@ import { cn } from "@/lib/utils"
 import type { AppDatabaseSummary } from "@/lib/types/models"
 import { RelativeTime } from "@/components/shared/relative-time"
 
+/**
+ * Was a hardcoded #EF4444. The same red as the token today, but a literal
+ * does not follow the theme and carries no focus or dark handling of its own.
+ * Paired with variant="destructive" at the call sites.
+ */
 const deleteButtonClass =
-  "border-0 bg-[#EF4444] text-white shadow-none hover:bg-[#DC2626] focus-visible:ring-2 focus-visible:ring-[#EF4444]/50"
+  "shadow-none"
 
 type MutationLike<TVariables = void> = {
   isPending: boolean
   mutate: (variables: TVariables) => void
+  mutateAsync: (variables: TVariables) => Promise<unknown>
 }
 
 export function AppDatabaseListTable({
@@ -92,21 +99,19 @@ export function AppDatabaseListTable({
                     </Link>
                   </Button>
                   {canMutate ? (
-                    <Button
-                      type="button"
-                      variant="default"
-                      size="sm"
+                    <ConfirmDestructiveButton
+                      title={`Delete database “${db.name}”?`}
+                      description="Every table and row in this database is deleted permanently. Files uploaded to your libraries are not affected. This cannot be undone."
+                      confirmLabel="Delete database"
                       className={deleteButtonClass}
-                      disabled={deleteMutation.isPending}
-                      onClick={() => {
-                        if (window.confirm(`Delete database “${db.name}” and all tables and rows?`)) {
-                          deleteMutation.mutate(db.id)
-                        }
-                      }}
+                      pending={deleteMutation.isPending}
+                      onConfirm={() => deleteMutation.mutateAsync(db.id)}
+                      aria-label={`Delete database ${db.name}`}
+                      data-testid="app-database-delete"
                     >
                       <Trash2 className="size-4" />
                       Delete
-                    </Button>
+                    </ConfirmDestructiveButton>
                   ) : null}
                 </div>
               </TableCell>

@@ -282,6 +282,12 @@ model User {
   passwordHash       String
   recoveryQuestion   String?
   recoveryAnswerHash String?
+  /// TOTP shared secret, encrypted at rest. Null until enrolment is verified.
+  mfaSecretEnc       String?
+  /// Set only once a submitted code has proved the authenticator works.
+  mfaEnabledAt       DateTime?
+  /// Counter value of the last accepted TOTP step, so a code cannot be replayed.
+  mfaLastUsedStep    BigInt?
   role               UserRole
   status             UserStatus          @default(ACTIVE)
   avatarPath         String?
@@ -300,6 +306,40 @@ model User {
   shareLinks         ShareLink[]
   fileRequests       FileRequest[]
   bookRuns           BookRun[]
+  mfaRecoveryCodes   MfaRecoveryCode[]
+  notificationReads  NotificationRead[]
+  /// Everything up to this moment counts as read. Lets "mark all read" be one
+  /// write instead of a row per event.
+  notificationsReadThrough DateTime?
+}
+
+/// Read state for one activity event, for one person.
+///
+/// The event body lives in ActivityEvent and is not copied here: an inbox item
+/// is an activity event plus whether this user has seen it. Duplicating the
+/// title and message would create a second thing to keep correct.
+model NotificationRead {
+  id              String        @id @default(cuid())
+  userId          String
+  activityEventId String
+  readAt          DateTime      @default(now())
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  activityEvent   ActivityEvent @relation(fields: [activityEventId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, activityEventId])
+  @@index([userId])
+}
+
+/// Single-use fallback codes, stored hashed. Shown to the owner once.
+model MfaRecoveryCode {
+  id        String    @id @default(cuid())
+  userId    String
+  codeHash  String    @unique
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 /// Logical app database for API/automation: metadata + JSON in PostgreSQL (not library file storage).
@@ -465,6 +505,10 @@ model ApiKey {
   expiresAt  DateTime?
   createdAt  DateTime  @default(now())
   revokedAt  DateTime?
+  /// Requests per minute for this key alone. Null on keys created before
+  /// v1.1.0: they are grandfathered and only the instance-wide limit (if the
+  /// owner set one) applies, so existing integrations do not start failing.
+  rateLimitPerMinute Int?
   user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
@@ -850,6 +894,7 @@ model ActivityEvent {
   metadata   Json?
   createdAt  DateTime @default(now())
   user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  notificationReads NotificationRead[]
 
   @@index([userId])
   @@index([createdAt])

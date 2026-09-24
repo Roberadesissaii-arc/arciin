@@ -1,3 +1,4 @@
+import { constants as fsConstants } from "node:fs"
 import { access, copyFile, link, mkdir, unlink } from "node:fs/promises"
 import path from "node:path"
 
@@ -6,11 +7,14 @@ import type { Asset, Folder, Integration, Library, PrismaClient, StorageObject }
 import { MEDIA_LIBRARY_SLUGS } from "@arciin/shared"
 import { mirrorFilenameForDisk } from "@arciin/storage"
 
+import { computeConnectorHealth, type ConnectorHealth } from "@/services/integrations/connector-health"
 import { slugify } from "@/services/slug"
 import { resolveEffectiveStorageRoot } from "@/services/storage/effective-storage-root"
 import { ensureStorageDirectories, getStoragePaths } from "@/services/storage/local-storage"
 
 export { MEDIA_LIBRARY_SLUGS }
+export { computeConnectorHealth }
+export type { ConnectorHealth }
 
 export type ConnectorFolderStatus = {
   libraryId: string
@@ -19,13 +23,25 @@ export type ConnectorFolderStatus = {
   folderId: string | null
   folderPath: string
   ready: boolean
+  /** The mirror directory the media server scans exists and is writable. */
+  onDisk: boolean
 }
 
 export type ConnectorStatus = {
   enabled: boolean
+  health: ConnectorHealth
   folders: ConnectorFolderStatus[]
   storageRoot: string
   mirrorRootHint: string
+}
+
+async function isWritableDirectory(dir: string): Promise<boolean> {
+  try {
+    await access(dir, fsConstants.W_OK | fsConstants.X_OK)
+    return true
+  } catch {
+    return false
+  }
 }
 
 export type MediaConnectorDef = {
@@ -144,6 +160,7 @@ export async function ensureConnectorFolders(
       folderId: folder.id,
       folderPath: `${library.slug}/${folder.pathCache}`,
       ready: true,
+      onDisk: true,
     })
   }
 
@@ -240,11 +257,23 @@ export async function getConnectorStatus(
       folderId: folder?.id ?? null,
       folderPath: folder ? `${library.slug}/${folder.pathCache}` : `${library.slug}/${folderSlug}`,
       ready: Boolean(folder),
+      onDisk: folder
+        ? await isWritableDirectory(path.join(paths.librariesDir, library.slug, folder.pathCache))
+        : false,
     })
   }
 
+  const displayName = def.folderName
+  const health = computeConnectorHealth({
+    enabled: integration.enabled,
+    displayName,
+    mirrorRootWritable: await isWritableDirectory(paths.librariesDir),
+    folders,
+  })
+
   return {
     enabled: integration.enabled,
+    health,
     folders,
     storageRoot,
     mirrorRootHint: paths.librariesDir,

@@ -817,7 +817,7 @@ export function PasswordVaultPage() {
           <AlertDialogFooter>
             <AlertDialogCancel disabled={deleteMutation.isPending}>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              className="bg-destructive text-white hover:bg-destructive/90"
+              variant="destructive"
               disabled={deleteMutation.isPending}
               onClick={() => deleteEntry && deleteMutation.mutate(deleteEntry.id)}
             >

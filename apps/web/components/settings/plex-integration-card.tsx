@@ -2,13 +2,16 @@
 
 import Link from "next/link"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { ExternalLink, Loader2, MonitorPlay } from "lucide-react"
+import { ExternalLink, MonitorPlay } from "lucide-react"
 import { toast } from "@/lib/notifications/arciin-toast"
 
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { MediaConnectorCardFooter } from "@/components/settings/media-connector-card-footer"
+import {
+  MediaConnectorHealthBadge,
+  MediaConnectorHealthNotice,
+} from "@/components/settings/media-connector-health"
 import { getPlexStatus, setupPlexFolders, updatePlexIntegration } from "@/lib/api/integrations"
 import { queryKeys } from "@/lib/api/query-keys"
 import type { IntegrationSummary } from "@/lib/types/models"
@@ -44,7 +47,7 @@ export function PlexIntegrationCard({ integration }: { integration: IntegrationS
           queryKey: queryKeys.plexStatus,
           queryFn: ({ signal }) => getPlexStatus(signal),
         })
-        const ready = status.folders.every((f) => f.ready)
+        const ready = status.health.state === "healthy"
         toast.success(ready ? "Plex enabled." : "Plex enabled, with warnings.", {
           description: ready
             ? "Plex folders are set up in Videos, Images, and Music — new uploads will use them."
@@ -83,7 +86,6 @@ export function PlexIntegrationCard({ integration }: { integration: IntegrationS
   const enabled = integration.enabled
   const folders = statusQuery.data?.folders ?? []
   const mirrorRootHint = statusQuery.data?.mirrorRootHint
-  const allReady = folders.length > 0 && folders.every((f) => f.ready)
   const busy = toggleMutation.isPending || repairMutation.isPending
 
   return (
@@ -102,15 +104,10 @@ export function PlexIntegrationCard({ integration }: { integration: IntegrationS
               {MEDIA_CONNECTOR_HEADER_BLURB}
             </CardDescription>
           </div>
-          <Badge
-            className={
-              enabled
-                ? "shrink-0 border-0 bg-emerald-600 text-white shadow-none hover:bg-emerald-600"
-                : "shrink-0 border-0 bg-zinc-800 text-white shadow-none hover:bg-zinc-800"
-            }
-          >
-            {enabled ? "Connected" : "Off"}
-          </Badge>
+          <MediaConnectorHealthBadge
+            health={statusQuery.data?.health}
+            loading={statusQuery.isLoading}
+          />
         </div>
       </CardHeader>
       <CardContent className="flex flex-1 flex-col gap-4">
@@ -122,28 +119,21 @@ export function PlexIntegrationCard({ integration }: { integration: IntegrationS
           onChange={(v) => toggleMutation.mutate(v)}
         />
 
-        {enabled && !allReady && !statusQuery.isLoading ? (
-          <div className="rounded-xl border border-amber-500/30 bg-amber-50/80 px-3 py-2.5 text-sm text-amber-950">
-            <p className="font-medium">Some Plex folders are missing.</p>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="mt-2 border-amber-600/30 bg-white"
-              disabled={busy}
-              onClick={() => repairMutation.mutate()}
-            >
-              {repairMutation.isPending ? (
-                <>
-                  <Loader2 className="mr-2 size-4 animate-spin" />
-                  Repairing…
-                </>
-              ) : (
-                "Repair folders"
-              )}
-            </Button>
+        {statusQuery.isError ? (
+          <div
+            className="rounded-xl border border-destructive/30 bg-destructive/5 px-3 py-2.5 text-sm text-foreground"
+            role="alert"
+          >
+            Could not read Plex status from the server. Try again in a moment.
           </div>
-        ) : null}
+        ) : (
+          <MediaConnectorHealthNotice
+            health={statusQuery.data?.health}
+            onRepair={() => repairMutation.mutate()}
+            repairing={repairMutation.isPending}
+            disabled={busy}
+          />
+        )}
 
         {statusQuery.isLoading ? (
           <p className="text-xs text-muted-foreground">Loading folder status…</p>
@@ -158,7 +148,7 @@ export function PlexIntegrationCard({ integration }: { integration: IntegrationS
                 >
                   <span className="font-medium text-foreground">{f.libraryName}</span>
                   <span className="font-mono text-xs text-muted-foreground">{f.folderPath}</span>
-                  {f.ready && f.folderId ? (
+                  {f.ready && f.onDisk && f.folderId ? (
                     <Button
                       asChild
                       size="sm"
@@ -170,7 +160,9 @@ export function PlexIntegrationCard({ integration }: { integration: IntegrationS
                       </Link>
                     </Button>
                   ) : (
-                    <span className="text-xs text-amber-700">Missing</span>
+                    <span className="text-xs font-medium text-warning">
+                      {f.ready ? "Missing on disk" : "Missing"}
+                    </span>
                   )}
                 </li>
               ))}

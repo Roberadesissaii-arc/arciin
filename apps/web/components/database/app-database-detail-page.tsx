@@ -115,6 +115,10 @@ export function AppDatabaseDetailPage({ databaseId }: { databaseId: string }) {
     mutationFn: (folderId: string) => deleteAppDatabaseFolder(folderId),
     onSuccess: (_data, folderId) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.appDatabaseFolders(databaseId) })
+      queryClient.invalidateQueries({ queryKey: queryKeys.appFolderRecords(folderId) })
+      queryClient.invalidateQueries({ queryKey: queryKeys.appDatabase(databaseId) })
+      queryClient.invalidateQueries({ queryKey: queryKeys.appDatabases })
+      queryClient.invalidateQueries({ queryKey: queryKeys.adminTables })
       if (openTableId === folderId) setOpenTableId(null)
       toast.success("Table removed.", { description: "The table and all of its rows were deleted." })
     },
@@ -153,9 +157,13 @@ export function AppDatabaseDetailPage({ databaseId }: { databaseId: string }) {
     mutationFn: (recordId: string) => deleteFolderRecord(recordId),
     onSuccess: (_data, recordId) => {
       if (effectiveTableId) queryClient.invalidateQueries({ queryKey: queryKeys.appFolderRecords(effectiveTableId) })
+      queryClient.invalidateQueries({ queryKey: queryKeys.appDatabaseFolders(databaseId) })
+      queryClient.invalidateQueries({ queryKey: queryKeys.adminTables })
       if (previewRecordId === recordId) setPreviewRecordId(null)
       notifyDeleted({ kind: "row" })
     },
+    // Without this a failed delete was silent — the other half of "the button does nothing".
+    onError: (e) => { toast.error(e instanceof Error ? e.message : "Could not delete row.") },
   })
 
   // ── Column management helpers ──

@@ -50,10 +50,33 @@ export function StorageSettingsForm() {
 
   const d = storageQuery.data
   const displayPath = pathDraft || d?.storageRoot || ""
-  const usagePct =
-    d?.totalBytes && d.totalBytes > 0 && d.usageBytes >= 0
-      ? Math.min(100, Math.round((d.usageBytes / d.totalBytes) * 100))
-      : null
+  /**
+   * How full the disk is — not Arciin's share of it.
+   *
+   * This used to be Arciin's bytes over the filesystem's capacity, which read
+   * "9% of volume used" on a disk that was 90% full. Everything else on the
+   * disk is invisible to the numerator and counted in the denominator, so the
+   * number was reassuring in exactly the situation where it should not be.
+   */
+  const filesystemPct =
+    d?.filesystemUsagePercent ??
+    (d?.filesystemTotalBytes && d.filesystemTotalBytes > 0 && d.filesystemAvailableBytes != null
+      ? Math.round(
+          ((d.filesystemTotalBytes - d.filesystemAvailableBytes) / d.filesystemTotalBytes) * 100,
+        )
+      : null)
+
+  /** Under 80% is unremarkable; past 90% the number is the headline. */
+  const diskTone =
+    filesystemPct == null
+      ? "normal"
+      : filesystemPct >= 90
+        ? "critical"
+        : filesystemPct >= 80
+          ? "warning"
+          : "normal"
+
+  const usagePct = filesystemPct
 
   if (storageQuery.isLoading) {
     return (
@@ -105,13 +128,41 @@ export function StorageSettingsForm() {
             <p className="mt-1 max-w-xl text-[13px] text-muted-foreground">
               Metadata stays in PostgreSQL. File bytes live under the root path below.
             </p>
+            {d?.arciinUsageBytes != null ? (
+              <p className="mt-1 text-[13px] text-muted-foreground">
+                Arciin is using{" "}
+                <span className="font-medium text-foreground">
+                  {formatBytes(d.arciinUsageBytes)}
+                </span>
+                {d.filesystemTotalBytes != null && d.filesystemUsedBytes != null ? (
+                  <>
+                    {" "}· disk {formatBytes(d.filesystemUsedBytes)} used of{" "}
+                    {formatBytes(d.filesystemTotalBytes)}
+                  </>
+                ) : null}
+              </p>
+            ) : null}
           </div>
-          {usagePct != null ? (
+          {filesystemPct != null ? (
             <div className="text-right">
-              <span className="text-2xl font-semibold tabular-nums text-foreground">
-                {usagePct}%
+              <span
+                className={cn(
+                  "text-2xl font-semibold tabular-nums",
+                  diskTone === "critical"
+                    ? "text-red-600 dark:text-red-400"
+                    : diskTone === "warning"
+                      ? "text-amber-600 dark:text-amber-400"
+                      : "text-foreground",
+                )}
+              >
+                {filesystemPct}%
               </span>
-              <p className="text-[11px] text-muted-foreground">of volume used</p>
+              <p className="text-[11px] text-muted-foreground">disk full</p>
+              {d?.filesystemAvailableBytes != null ? (
+                <p className="text-[11px] text-muted-foreground">
+                  {formatBytes(d.filesystemAvailableBytes)} free
+                </p>
+              ) : null}
             </div>
           ) : null}
         </div>

@@ -1,27 +1,15 @@
+/**
+ * Full configuration: the browser-safe half plus server-only modules.
+ * API, worker, scripts and Next.js *server* code only — the web client uses
+ * "@arciin/config/client".
+ */
+export * from "./client"
+
+// Server-only below: environment, process isolation, licence signing.
 export * from "./load-env"
 export * from "./environment"
-export * from "./job-options"
-export * from "./constants"
-export * from "./entitlements"
-export * from "./entitlement-state"
-export * from "./entitlement-runtime"
-export * from "./trusted-entitlement"
-export * from "./license"
+export * from "./env"
 export * from "./license-signing"
 export * from "./license-token"
-export * from "./permissions"
-export * from "./ai-settings"
-export * from "./ai-security"
-export * from "./user-preferences"
-export * from "./access-control"
-export * from "./api-protection"
-export * from "./mobile-pairing"
+export * from "./trusted-entitlement"
 export * from "./device-pairing"
-export * from "./integration-code-guide"
-export * from "./password-vault-settings"
-export * from "./password-vault-ai"
-export * from "./lan-origin"
-export * from "./lan-address"
-export * from "./advertised-http"
-export * from "./env"
-export * from "./storage-paths"

@@ -4,18 +4,29 @@ import Link from "next/link"
 import { Files } from "lucide-react"
 import { DashboardPageIntro } from "@/components/app-shell/dashboard-page-intro"
 import { IntroCornerIcon } from "@/components/app-shell/intro-corner-icon"
-import { useAssets } from "@/hooks/use-assets"
+import { useQuery } from "@tanstack/react-query"
+import { getAssetStats } from "@/lib/api/assets"
+import { queryKeys } from "@/lib/api/query-keys"
 import { useLibraries } from "@/hooks/use-libraries"
 
 export function FilesPageIntro() {
-  const assetsQuery = useAssets()
+  /**
+   * Counts come from the database, not from the array this page happens to
+   * hold.
+   *
+   * These used to be assets.length and assets.filter(...) over whatever the
+   * browser had fetched — one page of results — so the header disagreed with
+   * the sidebar in both directions depending on what that page contained. The
+   * sidebar was right; the header was counting a sample.
+   */
+  const statsQuery = useQuery({
+    queryKey: queryKeys.assetStats,
+    queryFn: ({ signal }) => getAssetStats(signal),
+  })
   const librariesQuery = useLibraries()
-  const assets = assetsQuery.data ?? []
   const libraries = librariesQuery.data ?? []
-  const loading = assetsQuery.isLoading || librariesQuery.isLoading
-
-  const videos = assets.filter((a) => a.mediaType === "VIDEO").length
-  const images = assets.filter((a) => a.mediaType === "IMAGE").length
+  const stats = statsQuery.data
+  const loading = statsQuery.isLoading || librariesQuery.isLoading
 
   return (
     <DashboardPageIntro
@@ -35,8 +46,10 @@ export function FilesPageIntro() {
       }
       stats={[
         {
-          label: "Total files",
-          value: loading ? "…" : assets.length.toLocaleString(),
+          // "Active" rather than bare "files": archived items still exist, and
+          // a number that quietly leaves them out should say so.
+          label: "Active files",
+          value: loading ? "…" : (stats?.active ?? 0).toLocaleString(),
         },
         {
           label: "Libraries",
@@ -44,12 +57,15 @@ export function FilesPageIntro() {
         },
         {
           label: "Videos",
-          value: loading ? "…" : videos.toLocaleString(),
+          value: loading ? "…" : (stats?.videos ?? 0).toLocaleString(),
         },
         {
           label: "Images",
-          value: loading ? "…" : images.toLocaleString(),
+          value: loading ? "…" : (stats?.images ?? 0).toLocaleString(),
         },
+        ...(stats?.archived
+          ? [{ label: "Archived", value: stats.archived.toLocaleString() }]
+          : []),
       ]}
     />
   )

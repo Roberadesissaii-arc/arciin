@@ -9,6 +9,15 @@ const execFileAsync = promisify(execFile)
 import { ARCIIN_DEFAULT_STORAGE_ROOT } from "@arciin/shared"
 
 import { apiConfig } from "@/config"
+import {
+  blockDevicePathForRow,
+  eligibleMountCandidatesOnDisk,
+  isEligibleMountCandidate,
+  isUsableBlockFilesystem,
+  resolvePhysicalDiskRow,
+  rowByName,
+  rowForDevicePath,
+} from "@/services/storage/mount-eligibility"
 import { assertStorageWritable, ensureStorageDirectories, probeStorageRoot } from "@/services/storage/local-storage"
 
 export type StorageVolumeOption = {
@@ -464,53 +473,6 @@ async function readLsblkInventory(): Promise<LsblkInventoryRow[]> {
   return rows
 }
 
-function rowByName(rows: LsblkInventoryRow[], name: string): LsblkInventoryRow | null {
-  return rows.find((row) => row.name === name) ?? null
-}
-
-const USABLE_MOUNT_FILESYSTEMS = new Set([
-  "ext4",
-  "xfs",
-  "btrfs",
-  "ntfs",
-  "exfat",
-  "vfat",
-])
-
-export function isUsableBlockFilesystem(fstype: string | null | undefined): boolean {
-  if (!fstype) return false
-  if (/^crypto_LUKS/i.test(fstype)) return false
-  if (fstype === "LVM2_member") return false
-  return USABLE_MOUNT_FILESYSTEMS.has(fstype.toLowerCase())
-}
-
-/** lsblk LVM nodes live under /dev/mapper, not /dev/<name>. */
-export function blockDevicePathForRow(row: Pick<LsblkInventoryRow, "name" | "type">): string {
-  if (row.type === "lvm") return `/dev/mapper/${row.name}`
-  return `/dev/${row.name}`
-}
-
-function resolvePhysicalDiskRow(
-  rows: LsblkInventoryRow[],
-  devicePath: string | null | undefined,
-): LsblkInventoryRow | null {
-  if (!devicePath) return null
-  const normalized = devicePath.replace(/^\/dev\//, "").replace(/^\/dev\/mapper\//, "")
-  let current = rowByName(rows, normalized)
-  if (!current && devicePath.startsWith("/dev/mapper/")) {
-    current = rowByName(rows, path.basename(devicePath))
-  }
-  if (!current) return null
-
-  let safety = 0
-  while (current && current.type !== "disk" && safety < 8) {
-    if (!current.pkname) break
-    current = rowByName(rows, current.pkname)
-    safety += 1
-  }
-  return current?.type === "disk" ? current : null
-}
-
 function diskRole(row: LsblkInventoryRow): StorageBlockDisk["role"] {
   if (row.name === "nvme0n1" || row.transport === "nvme") return "system"
   if (row.name.startsWith("mmcblk0") || row.transport === "usb") return "attached"
@@ -518,21 +480,31 @@ function diskRole(row: LsblkInventoryRow): StorageBlockDisk["role"] {
   return "attached"
 }
 
-function countUnmountedPartitionsOnDisk(diskName: string, rows: LsblkInventoryRow[]): number {
-  return rows.filter((row) => {
-    if (row.mount) return false
-    if (row.fstype === "LVM2_member") return false
-    if (row.sizeBytes != null && row.sizeBytes < 4 * 1024 * 1024 * 1024) return false
-    if (row.type === "part" && row.pkname === diskName) return true
-    if (row.type === "lvm") {
-      const physical = resolvePhysicalDiskRow(rows, blockDevicePathForRow(row))
-      return physical?.name === diskName
-    }
-    return false
-  }).length
-}
+function discoverBlockDisks(
+  rows: LsblkInventoryRow[],
+  candidates: UnmountedBlockDevice[] = [],
+): StorageBlockDisk[] {
+  /**
+   * Counted from the candidates actually offered, not recomputed.
+   *
+   * The two used to be worked out separately and could disagree: a disk
+   * reported "1 partition needs mounting" while the list below it offered
+   * nothing, because the list applied an exclusion set and a /boot/ name test
+   * that the count did not. Deriving one from the other removes the
+   * possibility rather than keeping the rules in step by hand.
+   */
+  const candidatesByDisk = new Map<string, number>()
+  for (const candidate of candidates) {
+    const row = rows.find((r) => blockDevicePathForRow(r) === candidate.device)
+    if (!row) continue
+    const disk =
+      row.type === "part" && row.pkname
+        ? rowByName(rows, row.pkname)
+        : resolvePhysicalDiskRow(rows, candidate.device)
+    if (!disk) continue
+    candidatesByDisk.set(disk.name, (candidatesByDisk.get(disk.name) ?? 0) + 1)
+  }
 
-function discoverBlockDisks(rows: LsblkInventoryRow[]): StorageBlockDisk[] {
   return rows
     .filter(
       (row) =>
@@ -549,7 +521,7 @@ function discoverBlockDisks(rows: LsblkInventoryRow[]): StorageBlockDisk[] {
       model: row.model,
       transport: row.transport,
       role: diskRole(row),
-      unmountedPartitionCount: countUnmountedPartitionsOnDisk(row.name, rows),
+      unmountedPartitionCount: candidatesByDisk.get(row.name) ?? 0,
     }))
     .sort((a, b) => (b.sizeBytes ?? 0) - (a.sizeBytes ?? 0))
 }
@@ -605,31 +577,31 @@ export async function discoverUnmountedBlockDevices(options?: {
       const mounts = await parseLinuxMounts()
       const containing = findContainingMount(mounts, options.storageRoot)
       if (containing) {
-        const dev = containing.device.replace(/^\/dev\//, "")
-        excludedNames.add(dev)
-        const row = allRows.find((r) => r.name === dev)
-        if (row?.pkname) {
-          excludedNames.add(row.pkname)
-        } else {
-          for (const disk of allRows) {
-            if (disk.type === "disk" && dev.startsWith(disk.name)) {
-              excludedNames.add(disk.name)
-            }
-          }
+        /**
+         * Never offer the device Arciin is already living on.
+         *
+         * This used to strip only a leading "/dev/", so a root on
+         * /dev/mapper/ubuntu--vg-ubuntu--lv became "mapper/ubuntu--vg-ubuntu--lv"
+         * — a string that matches no lsblk name and no disk-name prefix, so
+         * nothing was excluded at all and the guard quietly did nothing.
+         *
+         * Matching is now on the lsblk row itself, reached through the same
+         * device path the rest of this module builds, and the physical disk is
+         * resolved by walking the tree rather than by comparing name prefixes.
+         */
+        const row = rowForDevicePath(allRows, containing.device)
+        if (row) {
+          excludedNames.add(row.name)
+          const physical = resolvePhysicalDiskRow(allRows, blockDevicePathForRow(row))
+          if (physical) excludedNames.add(physical.name)
+          if (row.pkname) excludedNames.add(row.pkname)
         }
       }
     }
 
-    const filtered = allRows.filter((row) => {
-      if (row.mount) return false
-      if (excludedNames.has(row.name)) return false
-      if (row.type === "disk" && disksWithPartitions.has(row.name)) return false
-      if (/boot/i.test(row.name)) return false
-      if (row.fstype === "LVM2_member") return false
-      if (row.type === "lvm" && !isUsableBlockFilesystem(row.fstype)) return false
-      if (row.sizeBytes != null && row.sizeBytes < 4 * 1024 * 1024 * 1024) return false
-      return true
-    })
+    const filtered = allRows.filter((row) =>
+      isEligibleMountCandidate(row, { excludedNames, disksWithPartitions }),
+    )
 
     return filtered.map((row) => {
       const mountSlug = row.name.replace(/[^a-zA-Z0-9]+/g, "-")
@@ -839,7 +811,7 @@ export async function discoverStorageVolumes(): Promise<StorageDiscovery> {
     storageRoot: runtimeDataDir,
     inventory,
   })
-  const blockDisks = discoverBlockDisks(inventory)
+  const blockDisks = discoverBlockDisks(inventory, unmountedDevices)
   const mountPasswordlessSudo = await detectMountPasswordlessSudo()
 
   const currentMountForContext = findContainingMount(mounts, runtimeDataDir)
@@ -969,4 +941,12 @@ export async function prepareStoragePathForSetup(requestedPath: string): Promise
   await ensureStorageDirectories(resolved)
   const { writable } = await probeStorageRoot(resolved)
   return { arciinPath: resolved, writable }
+}
+
+export {
+  blockDevicePathForRow,
+  eligibleMountCandidatesOnDisk,
+  isEligibleMountCandidate,
+  isUsableBlockFilesystem,
+  rowForDevicePath,
 }

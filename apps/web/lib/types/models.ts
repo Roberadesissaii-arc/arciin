@@ -447,6 +447,8 @@ export type ApiKeySummary = {
   expiresAt?: string | null
   createdAt: string
   revokedAt?: string | null
+  /** Null = created before per-key limits; only the instance-wide limit applies. */
+  rateLimitPerMinute?: number | null
 }
 
 export type AppDatabaseSummary = {
@@ -509,10 +511,26 @@ export type StorageSettings = {
   isDockerRuntime?: boolean
   defaultLocationId?: string | null
   writable: boolean
+  /** @deprecated ambiguous — use arciinUsageBytes. Kept so nothing breaks mid-release. */
   usageBytes: number
   objectCount: number
+  /** @deprecated ambiguous — use filesystemTotalBytes. */
   totalBytes?: number | null
+  /** @deprecated ambiguous — use filesystemAvailableBytes. */
   availableBytes?: number | null
+
+  /**
+   * Two different questions, under names that say which is which.
+   *
+   * Dividing Arciin's own usage by the whole filesystem's capacity produced
+   * "9% of volume used" on a disk that was 90% full: everything else on the
+   * disk is invisible to the numerator and counted in the denominator.
+   */
+  arciinUsageBytes?: number | null
+  filesystemTotalBytes?: number | null
+  filesystemUsedBytes?: number | null
+  filesystemAvailableBytes?: number | null
+  filesystemUsagePercent?: number | null
 }
 
 export type StorageMigrateStatus = {
@@ -892,6 +910,8 @@ export type LoginInput = {
 export type ChangePasswordInput = {
   currentPassword: string
   newPassword: string
+  /** Defaults to true server-side; sent explicitly so the UI owns the choice. */
+  signOutOtherSessions?: boolean
 }
 
 /** PATCH /auth/profile — at least one field required (validated server-side). */

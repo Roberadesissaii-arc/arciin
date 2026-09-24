@@ -6,6 +6,7 @@ import type { FastifyReply, FastifyRequest } from "fastify"
 import { apiConfig } from "@/config"
 import { verifyMediaToken } from "@/services/security/media-token"
 import { clientIpFromRequest, normalizeClientIp } from "@/services/security/client-ip"
+import { requestProtocol } from "@/services/security/trusted-proxy"
 import { enforceApiKeyRateLimit } from "@/services/security/api-key-rate-limit"
 
 export async function hashPassword(password: string) {
@@ -19,6 +20,24 @@ export async function hashPassword(password: string) {
 
 export async function verifyPassword(password: string, passwordHash: string) {
   return verify(passwordHash, password)
+}
+
+let dummyHash: Promise<string> | null = null
+
+/**
+ * Verify a login password in constant work, whether or not the account exists.
+ *
+ * Returning early for an unknown email answered in ~4 ms, while a real
+ * account paid the Argon2 cost (~90 ms), so response time told anyone which
+ * addresses have accounts even though the message was identical. With no
+ * account, this verifies against a throwaway hash with the same parameters
+ * and still returns false.
+ */
+export async function verifyLoginPassword(password: string, passwordHash: string | null | undefined) {
+  if (passwordHash) return verifyPassword(password, passwordHash)
+  dummyHash ??= hashPassword(`arciin-timing-equaliser-${generateOpaqueToken(16)}`)
+  await verify(await dummyHash, password).catch(() => false)
+  return false
 }
 
 export function hashToken(token: string) {
@@ -54,12 +73,14 @@ export function isSecureCookie(request?: FastifyRequest) {
     return true
   }
 
-  const forwarded = request?.headers["x-forwarded-proto"]
-  if (typeof forwarded === "string" && forwarded.split(",")[0]?.trim() === "https") {
-    return true
-  }
-
-  return false
+  /**
+   * Was: any client could send `X-Forwarded-Proto: https` and get a Secure
+   * cookie. The header describes a hop the server cannot see, so it is only
+   * worth anything from a hop we put there. requestProtocol applies the same
+   * trustProxy CIDR list Fastify already uses for X-Forwarded-For, so the two
+   * cannot disagree about which peers are ours.
+   */
+  return requestProtocol(request) === "https"
 }
 
 /** Long-lived, opaque, per-browser id. Not a credential — it authenticates nothing. */
@@ -404,7 +425,7 @@ export async function authenticateFlexible(request: FastifyRequest, reply: Fasti
     apiKeyScopes: row.scopes,
   }
 
-  const allowed = await enforceApiKeyRateLimit(request, reply)
+  const allowed = await enforceApiKeyRateLimit(request, reply, row.rateLimitPerMinute)
   if (!allowed) {
     request.auth = undefined
     return

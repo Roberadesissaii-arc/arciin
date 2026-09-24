@@ -72,7 +72,9 @@ export function AppDatabasesPage() {
 
   const deleteMutation = useMutation({
     mutationFn: (databaseId: string) => deleteAppDatabase(databaseId),
-    onSuccess: () => {
+    onSuccess: (_data, databaseId) => {
+      queryClient.removeQueries({ queryKey: queryKeys.appDatabase(databaseId) })
+      queryClient.removeQueries({ queryKey: queryKeys.appDatabaseFolders(databaseId) })
       queryClient.invalidateQueries({ queryKey: queryKeys.appDatabases })
       queryClient.invalidateQueries({ queryKey: queryKeys.adminTables })
       queryClient.invalidateQueries({ queryKey: queryKeys.chatContext })

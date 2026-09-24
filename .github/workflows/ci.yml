@@ -226,3 +226,9 @@ jobs:
           NEXT_PUBLIC_API_BASE_URL: /api
           NEXT_PUBLIC_ARCIIN_API_ORIGIN: http://localhost:4000
           NEXT_PUBLIC_SOCKET_URL: ""
+      - name: Browser bundle carries no server configuration
+        # Runs against the build just made. In the unit job no build exists
+        # yet, so this suite skips there; this is where it actually bites.
+        run: pnpm exec vitest run tests/client-bundle-boundary.test.ts
+        env:
+          ARCIIN_WEB_DIST: .next-build

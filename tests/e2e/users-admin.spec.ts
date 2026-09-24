@@ -94,8 +94,9 @@ test.describe("Settings → Users administration", () => {
       await page.getByRole("option", { name: "Viewer" }).click()
       await expect(row.getByText("VIEWER", { exact: true })).toBeVisible({ timeout: 15_000 })
 
-      page.once("dialog", (dialog) => dialog.accept())
+      // In-page confirmation (window.confirm was silently false in WebViews).
       await row.getByRole("button", { name: "Disable" }).click()
+      await page.getByRole("alertdialog").getByRole("button", { name: "Disable account" }).click()
       await expect(row.getByText("DISABLED", { exact: true })).toBeVisible({ timeout: 15_000 })
 
       await disabledPage.goto("/login")
@@ -122,8 +123,8 @@ test.describe("Settings → Users administration", () => {
       await page.getByRole("option", { name: "Member" }).click()
       await expect(row.getByText("MEMBER", { exact: true })).toBeVisible({ timeout: 15_000 })
 
-      page.once("dialog", (dialog) => dialog.accept())
       await row.getByRole("button", { name: "Remove" }).click()
+      await page.getByRole("alertdialog").getByRole("button", { name: "Remove account" }).click()
       await expect(page.getByText(memberEmail)).toHaveCount(0, { timeout: 15_000 })
 
       const featureErrors = consoleErrors.filter(
@@ -155,8 +156,8 @@ test.describe("Settings → Users administration", () => {
 
       await ownerPage.goto("/settings/users")
       const row = userRow(ownerPage, creds.member.email)
-      ownerPage.once("dialog", (dialog) => dialog.accept())
       await row.getByRole("button", { name: "Disable" }).click()
+      await ownerPage.getByRole("alertdialog").getByRole("button", { name: "Disable account" }).click()
       await expect(row.getByText("DISABLED", { exact: true })).toBeVisible({ timeout: 15_000 })
 
       const meDenied = await memberPage.request.get("/api/auth/me")

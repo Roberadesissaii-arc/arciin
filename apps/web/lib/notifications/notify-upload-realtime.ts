@@ -15,8 +15,6 @@ import {
   notifyUploadComplete,
   notifyUploadFailed,
 } from "./toast-actions"
-import { importFileCopy, uploadFileCopy, uploadMobileFileCopy } from "./toast-copy"
-import { recordInboxNotification } from "./record-inbox-notification"
 import type { UploadClientChannel, UploadCompleteOrigin } from "./upload-toast-resolver"
 
 /**
@@ -105,30 +103,6 @@ export function notifyUploadCompleted(input: {
 
   const isImport = input.origin === "url"
   const isMobile = input.client === "mobile"
-  const copy = isImport
-    ? input.fileName
-      ? importFileCopy(input.fileName, input.destination)
-      : { title: "Link downloaded", description: "Arciin finished fetching the file from the link." }
-    : isMobile && input.fileName
-      ? uploadMobileFileCopy(input.fileName, input.destination)
-      : input.fileName
-        ? uploadFileCopy(input.fileName, input.destination)
-        : isMobile
-          ? {
-              title: "Uploaded from your phone",
-              description: "A file from Arciin mobile was saved on your server.",
-            }
-          : {
-              title: "File uploaded",
-              description: "Your file was saved on the server and added to your library.",
-            }
-
-  recordInboxNotification({
-    title: copy.title,
-    message: copy.description,
-    variant: "success",
-    source: "upload",
-  })
 
   if (shouldPlayUploadSound()) void playUploadCompleteSound()
   if (!shouldShowUploadCompleteToast()) return
@@ -171,12 +145,6 @@ export function notifyUploadFailedEvent(input: {
 
   const isImport = input.origin === "url"
 
-  recordInboxNotification({
-    title: isImport ? "Download failed" : "Upload failed",
-    message: input.message,
-    variant: "error",
-    source: "upload",
-  })
 
   if (!shouldShowUploadFailedToast()) return
 

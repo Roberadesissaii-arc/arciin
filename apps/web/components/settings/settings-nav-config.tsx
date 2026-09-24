@@ -15,6 +15,7 @@ import {
   Mail,
   Palette,
   Shield,
+  ShieldCheck,
   ShieldAlert,
   Sparkles,
   Trash2,
@@ -33,6 +34,7 @@ export type SettingsTab =
   | "access-control"
   | "devices"
   | "session"
+  | "mfa"
   | "api-protection"
   | "ai"
   | "ai-security"
@@ -53,6 +55,7 @@ export const SETTINGS_VALID_TABS: SettingsTab[] = [
   "access-control",
   "devices",
   "session",
+  "mfa",
   "api-protection",
   "ai",
   "ai-security",
@@ -88,6 +91,7 @@ export const SETTINGS_NAV: SettingsNavItem[][] = [
   ],
   [
     { id: "passwords", label: "Passwords", icon: FingerprintPattern },
+    { id: "mfa", label: "Two-factor", icon: ShieldCheck },
     { id: "trash", label: "Trash", icon: Trash2 },
     { id: "access-control", label: "Access control", icon: Shield },
     { id: "devices", label: "Devices", icon: Monitor },

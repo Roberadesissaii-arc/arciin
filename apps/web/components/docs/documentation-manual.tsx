@@ -1178,7 +1178,9 @@ print(r.json())`}
               title="POST /libraries/{libraryId}/folders"
               postman={`POST ${BASE}/libraries/{{library_id}}/folders
 Body: { "name": "2024" } or { "name": "raw", "parentFolderId": "{{parent_folder_id}}" }`}
-              node={`const API_KEY = process.env.ARCIIN_KEY ?? "arc_live_your_key_here";
+              node={`import fs from "node:fs";
+
+const API_KEY = process.env.ARCIIN_KEY ?? "arc_live_your_key_here";
 const BASE = "${BASE}";
 const auth = { Authorization: \`Bearer \${API_KEY}\`, Accept: "application/json", "Content-Type": "application/json" } as const;
 
@@ -1527,7 +1529,7 @@ curl -sS -X POST "$API/assets/$ASSET_ID/move" \\
               On the server repo: <IC>scripts/examples/</IC> (not a browser URL).
             </Callout>
             <div className="space-y-2">
-              <EndpointRow method="POST" path="/uploads"                    desc="Multipart upload — query targetLibraryId, targetFolderId" />
+              <EndpointRow method="POST" path="/uploads"                    desc="Multipart upload — query targetLibraryId, targetFolderId → 201 Created with data.assetId" />
               <EndpointRow method="GET"  path="/uploads"                    desc="List recent upload sessions" />
               <EndpointRow method="GET"  path="/uploads/:id"                desc="Get session status" />
               <EndpointRow method="POST" path="/uploads/:id/cancel"         desc="Abandon and remove temp file" />
@@ -1632,16 +1634,17 @@ GET ${BASE}/libraries → match slug "images" → use id as targetLibraryId`}
             </Callout>
             <div className="space-y-1.5">
               {[
-                ["GET",    "/app-databases",                              "List all databases"],
-                ["POST",   "/app-databases",                              "Create database (auto-creates Default table)"],
-                ["DELETE", "/app-databases/:id",                          "Delete database + all tables + records"],
-                ["GET",    "/app-databases/:id/tables",                  "List tables"],
-                ["POST",   "/app-databases/:id/tables",                  "Create table"],
-                ["DELETE", "/app-database-tables/:tableId",             "Delete table + records"],
-                ["GET",    "/app-database-tables/:tableId/rows",     "List records"],
-                ["POST",   "/app-database-tables/:tableId/rows",     "Create record"],
-                ["PATCH",  "/app-database-rows/:rowId",             "Update record payload"],
-                ["DELETE", "/app-database-rows/:rowId",             "Delete record"],
+                ["GET",    "/app-databases",                              "List all databases → 200"],
+                ["POST",   "/app-databases",                              "Create database (auto-creates Default table) → 201 Created"],
+                ["DELETE", "/app-databases/:id",                          "Delete database + all tables + records → 200"],
+                ["GET",    "/app-databases/:id/tables",                  "List tables → 200"],
+                ["POST",   "/app-databases/:id/tables",                  "Create table → 201 Created"],
+                ["DELETE", "/app-database-tables/:tableId",             "Delete table + records → 200"],
+                ["GET",    "/app-database-tables/:tableId/rows",     "List records → 200"],
+                ["POST",   "/app-database-tables/:tableId/rows",     "Create record → 201 Created"],
+                ["PATCH",  "/app-database-rows/:rowId",             "Partial update — payload is merged, omitted keys kept → 200"],
+                ["PUT",    "/app-database-rows/:rowId",             "Full replace — payload required, becomes the whole payload → 200"],
+                ["DELETE", "/app-database-rows/:rowId",             "Delete record → 200"],
               ].map(([m, p, d]) => <EndpointRow key={`${m}-${p}`} method={m} path={p} desc={d} />)}
             </div>
 
@@ -1866,6 +1869,118 @@ curl -sS -X PATCH "$API/app-database-rows/$REC_ID" \\
 curl -sS -X DELETE "$API/app-database-rows/$REC_ID" \\
   -H "Authorization: Bearer $ARCIIN_KEY"`}
             />
+
+            <DocH3>PATCH merges, PUT replaces</DocH3>
+            <DocP>
+              <IC>PATCH</IC> changes only what you send. Sending <IC>{`{"payload":{"price":13.99}}`}</IC> to a row that also has a
+              <IC>category</IC> and an <IC>image</IC> updates the price and keeps both.
+            </DocP>
+            <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm">
+              <table className="w-full text-left text-[13px]">
+                <thead className="bg-zinc-50 text-[11px] uppercase tracking-wide text-zinc-500">
+                  <tr><th className="px-4 py-2">In the PATCH payload</th><th className="px-4 py-2">Result</th></tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-100 text-zinc-700">
+                  <tr><td className="px-4 py-2">object, where the row has an object</td><td className="px-4 py-2">merged recursively — <IC>{`{"image":{"title":"New"}}`}</IC> keeps <IC>image.assetId</IC></td></tr>
+                  <tr><td className="px-4 py-2">array</td><td className="px-4 py-2">replaces the whole array</td></tr>
+                  <tr><td className="px-4 py-2">string, number, boolean</td><td className="px-4 py-2">replaces</td></tr>
+                  <tr><td className="px-4 py-2"><IC>null</IC></td><td className="px-4 py-2">stored as <IC>null</IC> (not a deletion)</td></tr>
+                  <tr><td className="px-4 py-2">key not sent</td><td className="px-4 py-2">left exactly as it was</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <DocP className="text-zinc-600">
+              To remove a key, or to overwrite the row wholesale, send the complete payload with <IC>PUT</IC>. <IC>name</IC> and
+              <IC>mimeType</IC> follow the same rule: omitted means unchanged.
+            </DocP>
+
+            <DocH3>Upload a file, then reference it from a row</DocH3>
+            <DocP>
+              App Data rows are plain JSON, so a file is referenced by storing its <IC>assetId</IC> (and, for convenience, a
+              download path) inside the payload. There is no foreign key: deleting the asset does not delete the row, and your
+              app decides what a missing asset means. <IC>POST /uploads</IC> answers <strong className="text-zinc-900">201 Created</strong>{" "}
+              with <IC>data.assetId</IC>. Scopes: <IC>uploads:create</IC> and <IC>appdata:records:write</IC>.
+            </DocP>
+            <MultiCode
+              title="Menu item with a photo"
+              postman={`POST {{base}}/uploads?targetLibraryId={{images_library_id}}   (form-data: file)
+→ 201 { "data": { "assetId": "…" } }
+POST {{base}}/app-database-tables/{{table_id}}/rows
+→ 201`}
+              node={`const API_KEY = process.env.ARCIIN_KEY ?? "arc_live_your_key_here";
+const BASE = "${BASE}";
+const auth = { Authorization: \`Bearer \${API_KEY}\` };
+
+// 1 · Upload — 201 Created
+const form = new FormData();
+form.append("file", new Blob([await fs.promises.readFile("margherita.jpg")]), "margherita.jpg");
+let res = await fetch(\`\${BASE}/uploads?targetLibraryId=\${imagesLibraryId}\`, {
+  method: "POST", headers: auth, body: form,
+});
+if (res.status !== 201) throw new Error(JSON.stringify(await res.json()));
+const { data: upload } = await res.json();
+
+// 2 · Store the reference in a row — 201 Created
+res = await fetch(\`\${BASE}/app-database-tables/\${menuTableId}/rows\`, {
+  method: "POST",
+  headers: { ...auth, "Content-Type": "application/json" },
+  body: JSON.stringify({
+    name: "margherita",
+    payload: {
+      price: 12.99,
+      category: "pizza",
+      image: {
+        assetId: upload.assetId,
+        title: "Margherita",
+        // Needs the same Bearer key to fetch; not a public link.
+        downloadUrl: \`/api/assets/\${upload.assetId}/download\`,
+      },
+    },
+  }),
+});
+if (res.status !== 201) throw new Error(JSON.stringify(await res.json()));
+
+// 3 · Later: change only the price. category and image are kept.
+await fetch(\`\${BASE}/app-database-rows/\${(await res.json()).data.id}\`, {
+  method: "PATCH",
+  headers: { ...auth, "Content-Type": "application/json" },
+  body: JSON.stringify({ payload: { price: 13.99 } }),
+});`}
+              python={`import os, requests
+
+API = "${BASE}"
+s = requests.Session()
+s.headers["Authorization"] = f"Bearer {os.environ['ARCIIN_KEY']}"
+
+# 1 · Upload — 201 Created
+with open("margherita.jpg", "rb") as fh:
+    r = s.post(f"{API}/uploads", params={"targetLibraryId": images_library_id},
+               files={"file": ("margherita.jpg", fh, "image/jpeg")}, timeout=300)
+assert r.status_code == 201, r.text
+asset_id = r.json()["data"]["assetId"]
+
+# 2 · Row referencing it — 201 Created
+r = s.post(f"{API}/app-database-tables/{menu_table_id}/rows", json={
+    "name": "margherita",
+    "payload": {"price": 12.99, "category": "pizza",
+                "image": {"assetId": asset_id, "title": "Margherita",
+                          "downloadUrl": f"/api/assets/{asset_id}/download"}},
+}, timeout=60)
+assert r.status_code == 201, r.text
+
+# 3 · Change only the price — merge keeps category and image
+s.patch(f"{API}/app-database-rows/{r.json()['data']['id']}",
+        json={"payload": {"price": 13.99}}, timeout=60).raise_for_status()`}
+              curl={`# 1 · Upload — expect HTTP 201
+ASSET_ID=$(curl -sS -X POST "$API/uploads?targetLibraryId=$IMAGES_LIBRARY_ID" \\
+  -H "Authorization: Bearer $ARCIIN_KEY" \\
+  -F "file=@margherita.jpg" | jq -r '.data.assetId')
+
+# 2 · Row referencing it — expect HTTP 201
+curl -sS -X POST "$API/app-database-tables/$TBL_ID/rows" \\
+  -H "Authorization: Bearer $ARCIIN_KEY" -H "Content-Type: application/json" \\
+  -d "{\\"name\\":\\"margherita\\",\\"payload\\":{\\"price\\":12.99,\\"category\\":\\"pizza\\",\\"image\\":{\\"assetId\\":\\"$ASSET_ID\\",\\"downloadUrl\\":\\"/api/assets/$ASSET_ID/download\\"}}}"`}
+            />
           </section>
 
           <Sep />
@@ -1889,13 +2004,33 @@ curl -sS -X DELETE "$API/app-database-rows/$REC_ID" \\
                 <p className="mb-2 text-[13px] font-semibold text-zinc-700">Error (4xx / 5xx)</p>
                 <CodeBlock title="Error">{`{
   "error": {
-    "code": "UNAUTHORIZED",
-    "message": "Authentication required.",
+    "code": "UNAUTHENTICATED",
+    "message": "Invalid or revoked API key.",
     "details": {}
   }
 }`}</CodeBlock>
               </div>
             </div>
+            <DocH3>Status codes</DocH3>
+            <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm">
+              <table className="w-full text-left text-[13px]">
+                <thead className="bg-zinc-50 text-[11px] uppercase tracking-wide text-zinc-500">
+                  <tr><th className="px-4 py-2">Status</th><th className="px-4 py-2">Meaning</th></tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-100 text-zinc-700">
+                  <tr><td className="px-4 py-2 font-mono">200</td><td className="px-4 py-2">Read, update (<IC>PATCH</IC>/<IC>PUT</IC>) or delete succeeded.</td></tr>
+                  <tr><td className="px-4 py-2 font-mono">201</td><td className="px-4 py-2">Created. Returned by every create: <IC>POST /uploads</IC>, <IC>POST /app-databases</IC>, <IC>POST /app-databases/:id/tables</IC>, <IC>POST /app-database-tables/:id/rows</IC>, <IC>POST /libraries/:id/folders</IC>, <IC>POST /api-keys</IC>, <IC>POST /shares</IC>, <IC>POST /webhooks</IC>. Treat any 2xx as success.</td></tr>
+                  <tr><td className="px-4 py-2 font-mono">400</td><td className="px-4 py-2"><IC>VALIDATION_ERROR</IC> — the body or query is invalid; <IC>error.details</IC> says which field.</td></tr>
+                  <tr><td className="px-4 py-2 font-mono">401</td><td className="px-4 py-2"><IC>UNAUTHENTICATED</IC> — no credential, or the key is unknown, revoked, or expired.</td></tr>
+                  <tr><td className="px-4 py-2 font-mono">403</td><td className="px-4 py-2"><IC>FORBIDDEN</IC> — the key is valid but lacks the scope this route needs (or the plan lacks the feature).</td></tr>
+                  <tr><td className="px-4 py-2 font-mono">404</td><td className="px-4 py-2"><IC>NOT_FOUND</IC> — no such resource, or not one this key can see.</td></tr>
+                  <tr><td className="px-4 py-2 font-mono">409</td><td className="px-4 py-2"><IC>ALREADY_EXISTS</IC> — e.g. a row name already used in that table.</td></tr>
+                  <tr><td className="px-4 py-2 font-mono">429</td><td className="px-4 py-2"><IC>RATE_LIMITED</IC> — this key&apos;s per-minute limit is used up. Wait <IC>Retry-After</IC> seconds. Every keyed response carries <IC>X-RateLimit-Limit</IC> and <IC>X-RateLimit-Remaining</IC>; new keys default to 600 requests/minute.</td></tr>
+                  <tr><td className="px-4 py-2 font-mono">502</td><td className="px-4 py-2"><IC>UPSTREAM_UNAVAILABLE</IC> — the web address answered but the API behind it did not; retry shortly.</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <DocP className="text-zinc-600">Errors always carry this JSON body — never an empty one — so read <IC>error.code</IC> rather than parsing <IC>message</IC>.</DocP>
             <CodeBlock title="Paginated list">{`{
   "data": [ /* array of items */ ],
   "meta": {

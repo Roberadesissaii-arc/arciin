@@ -1,7 +1,7 @@
 "use client"
 
-import { useEffect, useMemo, useRef, useState } from "react"
-import { Bell, CheckCheck, Trash2 } from "lucide-react"
+import { useState } from "react"
+import { AlertCircle, Bell, CheckCheck } from "lucide-react"
 
 import { AppPagination } from "@/components/ui/app-pagination"
 import { Badge } from "@/components/ui/badge"
@@ -21,7 +21,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { useActivity } from "@/hooks/use-activity"
+import {
+  useMarkAllNotificationsRead,
+  useMarkNotificationRead,
+  useNotificationsPage,
+} from "@/hooks/use-notifications"
+import type { NotificationItem } from "@/lib/api/notifications"
 import {
   dashboardTableBodyRow,
   dashboardTableHeadCell,
@@ -30,107 +35,48 @@ import {
   dashboardTablePanel,
   dashboardTablePanelHeader,
 } from "@/lib/dashboard-table-styles"
-import {
-  isInboxNotificationUnread,
-  unreadNotificationCount,
-  useNotificationInboxStore,
-  type InboxNotification,
-} from "@/lib/stores/notification-inbox-store"
+import { Skeleton } from "@/components/ui/skeleton"
 import { formatRelativeDate } from "@/lib/utils/format-date"
 import { cn } from "@/lib/utils"
 
 const PAGE_SIZE = 10
 
-const SOURCE_LABEL: Record<InboxNotification["source"], string> = {
+const SOURCE_LABEL: Record<NotificationItem["source"], string> = {
   upload: "Upload",
   security: "Security",
   activity: "Activity",
-  system: "System",
 }
 
 /** Badge color reflects the category (source) — stable regardless of outcome. */
-const SOURCE_BADGE: Record<InboxNotification["source"], string> = {
+const SOURCE_BADGE: Record<NotificationItem["source"], string> = {
   upload: "border-0 bg-primary text-primary-foreground",
   security: "border-0 bg-blue-600 text-white",
   activity: "border-0 bg-violet-600 text-white",
-  system: "border-0 bg-zinc-600 text-white",
 }
 
 /** Outcome indicator, shown separately from the source badge so the two never conflate. */
-const VARIANT_DOT: Record<InboxNotification["variant"], string> = {
+const VARIANT_DOT: Record<NotificationItem["variant"], string> = {
   default: "bg-zinc-400",
   success: "bg-emerald-500",
   error: "bg-red-500",
   warning: "bg-amber-500",
 }
 
-const VARIANT_LABEL: Record<InboxNotification["variant"], string> = {
+const VARIANT_LABEL: Record<NotificationItem["variant"], string> = {
   default: "Info",
   success: "Success",
   error: "Failed",
   warning: "Warning",
 }
 
-function mapActivityToInbox(event: {
-  id: string
-  type: string
-  title: string
-  message?: string | null
-  createdAt: string
-}): InboxNotification | null {
-  const t = event.type
-  if (t.startsWith("auth.login_failed") || t.startsWith("auth.")) {
-    return {
-      id: `activity-${event.id}`,
-      title: event.title,
-      message: event.message ?? undefined,
-      variant: t.includes("failed") ? "warning" : "default",
-      source: "security",
-      createdAt: event.createdAt,
-      read: true,
-    }
-  }
-  if (t.startsWith("upload.") || t.includes("upload")) {
-    return {
-      id: `activity-${event.id}`,
-      title: event.title,
-      message: event.message ?? undefined,
-      variant: t.includes("failed") ? "error" : "success",
-      source: "upload",
-      createdAt: event.createdAt,
-      read: true,
-    }
-  }
-  if (t.startsWith("integration.") || t.startsWith("settings.")) {
-    return {
-      id: `activity-${event.id}`,
-      title: event.title,
-      message: event.message ?? undefined,
-      variant: "default",
-      source: "activity",
-      createdAt: event.createdAt,
-      read: true,
-    }
-  }
-  return {
-    id: `activity-${event.id}`,
-    title: event.title,
-    message: event.message ?? undefined,
-    variant: "default",
-    source: "activity",
-    createdAt: event.createdAt,
-    read: true,
-  }
-}
-
 function NotificationTableRow({
   item,
   onOpen,
 }: {
-  item: InboxNotification
-  onOpen: (item: InboxNotification) => void
+  item: NotificationItem
+  onOpen: (item: NotificationItem) => void
 }) {
-  const unreadItem = isInboxNotificationUnread(item)
+  const unreadItem = !item.read
 
   return (
     <TableRow
@@ -140,6 +86,14 @@ function NotificationTableRow({
         unreadItem && "bg-muted/20",
       )}
       onClick={() => onOpen(item)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault()
+          onOpen(item)
+        }
+      }}
+      tabIndex={0}
+      aria-label={`${item.title}${unreadItem ? ", unread. Press Enter to mark read." : ", read."}`}
     >
       <TableCell className="whitespace-nowrap py-3.5 pl-5 text-[13px] tabular-nums text-zinc-500">
         <span className="flex items-center gap-2">
@@ -206,67 +160,18 @@ function NotificationTableRow({
 
 export function NotificationInbox() {
   const [page, setPage] = useState(1)
-  const hydrate = useNotificationInboxStore((s) => s.hydrate)
-  const items = useNotificationInboxStore((s) => s.items)
-  const markRead = useNotificationInboxStore((s) => s.markRead)
-  const markAllRead = useNotificationInboxStore((s) => s.markAllRead)
-  const clearAll = useNotificationInboxStore((s) => s.clearAll)
-  const hydrated = useNotificationInboxStore((s) => s.hydrated)
-  const activityBackfillDone = useNotificationInboxStore((s) => s.activityBackfillDone)
-  const backfillFromActivity = useNotificationInboxStore((s) => s.backfillFromActivity)
+  const query = useNotificationsPage(page, PAGE_SIZE)
+  const markRead = useMarkNotificationRead()
+  const markAllRead = useMarkAllNotificationsRead()
 
-  const needsActivityBackfill = hydrated && !activityBackfillDone && items.length === 0
-  const activityQuery = useActivity({ enabled: needsActivityBackfill })
-  const backfillStartedRef = useRef(false)
-
-  useEffect(() => {
-    hydrate()
-  }, [hydrate])
-
-  useEffect(() => {
-    if (!needsActivityBackfill || !activityQuery.data?.length || backfillStartedRef.current) {
-      return
-    }
-    backfillStartedRef.current = true
-    const entries = activityQuery.data
-      .slice(0, 40)
-      .map(mapActivityToInbox)
-      .filter((row): row is InboxNotification => row !== null)
-      .map((row) => ({
-        id: row.id,
-        title: row.title,
-        message: row.message,
-        variant: row.variant,
-        source: row.source,
-        read: row.read,
-        createdAt: row.createdAt,
-      }))
-    backfillFromActivity(entries)
-  }, [needsActivityBackfill, activityQuery.data, backfillFromActivity])
-
-  const sorted = useMemo(
-    () => [...items].sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
-    [items],
-  )
-
-  const unread = unreadNotificationCount(items)
-  const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE))
+  const pageItems = query.data?.items ?? []
+  const total = query.data?.total ?? 0
+  const unread = query.data?.unreadCount ?? 0
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
   const safePage = Math.min(Math.max(1, page), totalPages)
-  const pageItems = sorted.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE)
 
-  function handleMarkAllRead() {
-    hydrate()
-    markAllRead()
-  }
-
-  function handleOpenItem(item: InboxNotification) {
-    hydrate()
-    markRead(item.id)
-  }
-
-  function handleClearAll() {
-    clearAll()
-    setPage(1)
+  function handleOpenItem(item: NotificationItem) {
+    if (!item.read) markRead.mutate(item.id)
   }
 
   return (
@@ -275,9 +180,9 @@ export function NotificationInbox() {
         <Bell className="size-4 text-primary" />
         <span className="text-sm font-semibold text-foreground">Recent alerts</span>
         <div className="ml-auto flex flex-wrap items-center gap-2">
-          {sorted.length > 0 ? (
+          {total > 0 ? (
             <span className="rounded-md bg-muted px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">
-              {sorted.length} alert{sorted.length === 1 ? "" : "s"}
+              {total.toLocaleString()} alert{total === 1 ? "" : "s"}
               {unread > 0 ? ` · ${unread} unread` : " · all read"}
               {totalPages > 1 ? ` · page ${safePage} of ${totalPages}` : ""}
             </span>
@@ -287,27 +192,37 @@ export function NotificationInbox() {
             variant="outline"
             size="sm"
             className="h-8 gap-1.5 border-border bg-card text-xs font-semibold text-foreground"
-            disabled={unread === 0}
-            onClick={handleMarkAllRead}
+            disabled={unread === 0 || markAllRead.isPending}
+            onClick={() => markAllRead.mutate()}
           >
             <CheckCheck className="size-3.5" />
             Mark all read
           </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-8 gap-1.5 border-border bg-card text-xs font-semibold text-foreground"
-            disabled={items.length === 0}
-            onClick={handleClearAll}
-          >
-            <Trash2 className="size-3.5" />
-            Clear
-          </Button>
         </div>
       </div>
 
-      {sorted.length === 0 ? (
+      {query.isError && !query.data ? (
+        <Empty className="rounded-none border-0 py-12">
+          <EmptyMedia variant="icon">
+            <AlertCircle />
+          </EmptyMedia>
+          <EmptyHeader>
+            <EmptyTitle>Notifications could not be loaded</EmptyTitle>
+            <EmptyDescription>
+              The server did not answer. Check that Arciin is running, then try again.
+            </EmptyDescription>
+          </EmptyHeader>
+          <Button type="button" variant="outline" size="sm" onClick={() => void query.refetch()}>
+            Try again
+          </Button>
+        </Empty>
+      ) : query.isPending ? (
+        <div className="space-y-2 p-5" aria-busy="true" aria-label="Loading notifications">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <Skeleton key={i} className="h-10 w-full" />
+          ))}
+        </div>
+      ) : total === 0 ? (
         <Empty className="rounded-none border-0 py-12">
           <EmptyMedia variant="icon">
             <Bell />
@@ -315,8 +230,8 @@ export function NotificationInbox() {
           <EmptyHeader>
             <EmptyTitle>No notifications yet</EmptyTitle>
             <EmptyDescription>
-              Upload a file, sign in, or trigger activity — alerts will show here when notification
-              channels are enabled in preferences.
+              Uploads, sign-ins, and other events on this server will appear here, on every device
+              you use.
             </EmptyDescription>
           </EmptyHeader>
         </Empty>
