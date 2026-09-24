@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs"
 
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test"
 
+import { suppressWindowsDesktopPromo } from "./desktop-promo"
+
 /**
  * v1.1.0 release behaviours, end to end in a real browser against the
  * isolated dev stack. Each test cleans up what it creates.
@@ -37,7 +39,11 @@ test("notifications are server-backed: badge, mark-all from another session, rel
     await expect(badge(page)).toBeVisible({ timeout: 30_000 })
 
     // A second, separately signed-in session marks everything read.
-    const other = await browser.newContext()
+    // A genuinely different browser: no stored cookies. browser.newContext()
+    // otherwise inherits the project's storageState — the same device cookie —
+    // and signing in again on one device deliberately replaces its session.
+    const other = await browser.newContext({ storageState: { cookies: [], origins: [] } })
+    await suppressWindowsDesktopPromo(other)
     try {
       const login = await other.request.post("/api/auth/login", { data: { email: EMAIL, password: password() } })
       expect(login.ok()).toBe(true)
@@ -169,7 +175,7 @@ test("Database → API Keys filters by status without deleting history", async (
 })
 
 test("storage Rescan answers, and labels say which part is mounted", async ({ page }) => {
-  await page.goto("/settings/storage")
+  await page.goto("/settings?tab=attached-disks")
   const rescan = page.getByTestId("storage-rescan")
   await expect(rescan).toBeVisible({ timeout: 60_000 })
   await rescan.click()
