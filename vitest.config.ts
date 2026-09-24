@@ -19,6 +19,8 @@ export default defineConfig({
       "@/": `${path.resolve(__dirname, "apps/web")}/`,
       "@arciin/shared": path.resolve(__dirname, "packages/shared/src/index.ts"),
       "@arciin/types": path.resolve(__dirname, "packages/types/src/index.ts"),
+      // Subpath first: a bare "@arciin/config" prefix would swallow it.
+      "@arciin/config/client": path.resolve(__dirname, "packages/config/src/client.ts"),
       "@arciin/config": path.resolve(__dirname, "packages/config/src/index.ts"),
       "@arciin/ui": path.resolve(__dirname, "packages/ui/src/index.ts"),
     },

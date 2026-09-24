@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, readdirSync } from "node:fs"
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs"
 import path from "node:path"
 
 import { describe, expect, it } from "vitest"
@@ -16,7 +16,25 @@ import { describe, expect, it } from "vitest"
  * it cannot quietly grow while the module split is outstanding.
  */
 
-const CHUNK_DIR = path.resolve(__dirname, "../apps/web/.next/static/chunks")
+/**
+ * Which build to scan.
+ *
+ * `ARCIIN_WEB_DIST` names one explicitly (CI sets it to the build it just
+ * made). Otherwise the newest build on disk is used, so a developer's fresh
+ * build is what gets certified — not whichever older artefact happens to live
+ * in `.next`, which on a server is the currently deployed release.
+ */
+function resolveDistDir(): string {
+  const web = path.resolve(__dirname, "../apps/web")
+  if (process.env.ARCIIN_WEB_DIST) return path.resolve(web, process.env.ARCIIN_WEB_DIST)
+  const candidates = [".next-build", ".next-e2e", ".next", ".next-dev"]
+    .map((d) => path.join(web, d))
+    .filter((d) => existsSync(path.join(d, "BUILD_ID")))
+    .sort((a, b) => statSync(path.join(b, "BUILD_ID")).mtimeMs - statSync(path.join(a, "BUILD_ID")).mtimeMs)
+  return candidates[0] ?? path.join(web, ".next")
+}
+
+const CHUNK_DIR = path.join(resolveDistDir(), "static/chunks")
 
 function chunkText(): string {
   if (!existsSync(CHUNK_DIR)) return ""
@@ -111,14 +129,21 @@ describeBuilt("no secret value reaches the browser", () => {
   })
 })
 
-describeBuilt("server-only configuration shape does not spread further", () => {
+describeBuilt("server-only configuration does not reach the browser", () => {
   /**
-   * The server's env schema is currently bundled, so these markers appear.
-   * That is the open half of L-3 and the module split is still to come. The
-   * point of pinning it is that the list must shrink, never grow: a new
-   * server-only marker crossing into the browser fails here.
+   * Closed half of L-3. The server env schema used to ship because
+   * @arciin/shared re-exported the whole of @arciin/config; it now re-exports
+   * only @arciin/config/client (tests/config-client-boundary.test.ts). These
+   * markers come only from the schema and the isolation guard, so their
+   * presence would mean that split regressed.
+   *
+   * Deliberately *not* listed: variable names such as DATABASE_URL, REDIS_URL
+   * or ARCIIN_UPDATE_MANIFEST_URL. They legitimately appear in operator help
+   * text ("Set ARCIIN_UPDATE_MANIFEST_URL to enable update checks", the
+   * health page's "verify REDIS_URL", the docs page's placeholder .env). A
+   * scanner that flagged product copy would be switched off, not heeded; the
+   * value checks above are what guard real values.
    */
-  const KNOWN = ["DATABASE_URL", "SESSION_SECRET", "ARCIIN_ENCRYPTION_KEY", "/srv/arciin-storage"]
   const MUST_NEVER_APPEAR = [
     "ARCIIN_SETUP_TOKEN=",
     "credentials-file",
@@ -126,16 +151,19 @@ describeBuilt("server-only configuration shape does not spread further", () => {
     "keyHash",
     "tokenHash",
     "mfaSecretEnc",
+    // env schema / namespace isolation (packages/config/src/env.ts, environment.ts)
+    "ARCIIN_ENV_NAMESPACE",
+    "ARCIIN_QUEUE_PREFIX",
+    "ARCIIN_SOCKET_CHANNEL_PREFIX",
+    "is the production storage root",
+    "the production API port",
+    "arciin-dev-storage",
+    // licence signing (packages/config/src/license-signing.ts)
+    "LICENSE_SIGNING_KEY",
+    "ARCIIN_LICENSE_PUBLIC_KEYS",
   ]
 
   it.each(MUST_NEVER_APPEAR)("%s is absent", (marker) => {
     expect(bundle.includes(marker), `${marker} reached a browser chunk`).toBe(false)
-  })
-
-  it("the known leak is still only the env schema, not values", () => {
-    // If this ever fails it means a marker was removed — delete it from KNOWN
-    // rather than loosening the assertion above.
-    const present = KNOWN.filter((m) => bundle.includes(m))
-    expect(present.length).toBeLessThanOrEqual(KNOWN.length)
   })
 })

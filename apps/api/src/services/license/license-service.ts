@@ -15,7 +15,7 @@ import {
   type LicensePlanId,
   type LicenseStateSnapshot,
   type MockLicenseTokenPayload,
-} from "@arciin/shared"
+} from "@arciin/config"
 import type { PrismaClient } from "@prisma/client"
 
 import { apiConfig } from "@/config"
