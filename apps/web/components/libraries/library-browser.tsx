@@ -35,6 +35,7 @@ import {
   filesSourceHref,
   GRID_PAGE_SIZE,
   LIST_PAGE_SIZE,
+  allFilesArchivedMode,
   pipelineLibraryAssets,
 } from "@/lib/utils/library-asset-pipeline"
 import { cn } from "@/lib/utils"
@@ -104,21 +105,19 @@ export function LibraryBrowser({
    * user-archived files are actually fetchable (All Files otherwise hides Inbox
    * and excludes archived). Other chips still refine client-side.
    */
+  const archivedMode = isAllFiles
+    ? allFilesArchivedMode({ kindFilter, search })
+    : ("exclude" as const)
   const assetsQuery = useAssetsPage({
     libraryId: library?.id,
     search: search || undefined,
     // Library pages default to root; All Files has no folders so keep the full set.
     ...(librarySlug && scope === "root" ? { rootOnly: true } : {}),
-    ...(isAllFiles && kindFilter === "ARCHIVE"
-      ? { archived: "only" as const, includeInbox: true }
-      : {}),
+    archived: archivedMode,
+    ...(isAllFiles && kindFilter === "ARCHIVE" ? { includeInbox: true } : {}),
     ...(isAllFiles && kindFilter === "OTHER"
-      ? { includeInbox: true, archived: "exclude" as const, category: "other" as const }
+      ? { includeInbox: true, category: "other" as const }
       : {}),
-    ...(isAllFiles && kindFilter !== "ARCHIVE" && kindFilter !== "OTHER"
-      ? { archived: "exclude" as const }
-      : {}),
-    ...(!isAllFiles ? { archived: "exclude" as const } : {}),
   })
 
   // Pull remaining pages so grid/list page numbers can walk the full set.
@@ -154,8 +153,9 @@ export function LibraryBrowser({
         kindFilter,
         sourceFilter,
         applyKind: isAllFiles,
+        includeArchived: archivedMode === "include",
       }),
-    [rawAssets, kindFilter, sourceFilter, isAllFiles],
+    [rawAssets, kindFilter, sourceFilter, isAllFiles, archivedMode],
   )
   const pageSize = view === "grid" ? GRID_PAGE_SIZE : LIST_PAGE_SIZE
   const totalPages = Math.max(1, Math.ceil(assets.length / pageSize))
