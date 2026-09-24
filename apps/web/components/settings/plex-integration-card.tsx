@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { ExternalLink, Loader2, MonitorPlay } from "lucide-react"
+import { ExternalLink, MonitorPlay } from "lucide-react"
 import { toast } from "@/lib/notifications/arciin-toast"
 
 import { Button } from "@/components/ui/button"
