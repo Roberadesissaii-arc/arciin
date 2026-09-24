@@ -17,6 +17,8 @@ export default defineConfig({
       // The web app's own alias. API and worker code under test is imported by
       // relative path instead, so a single "@/" mapping is unambiguous here.
       "@/": `${path.resolve(__dirname, "apps/web")}/`,
+      // Next provides this marker module; tests of server-side web code need a stand-in.
+      "server-only": path.resolve(__dirname, "tests/fixtures/server-only-stub.ts"),
       "@arciin/shared": path.resolve(__dirname, "packages/shared/src/index.ts"),
       "@arciin/types": path.resolve(__dirname, "packages/types/src/index.ts"),
       // Subpath first: a bare "@arciin/config" prefix would swallow it.
