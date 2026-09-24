@@ -163,6 +163,14 @@ against someone "simplifying" the option away.
 
 ## Upload safety
 
+**Uploads never render as active content on the app origin.** Signed-in
+downloads and public share links (`?inline=1` included) render inline only
+for an allowlist of inert types (images except SVG, audio, video, PDF, plain
+text). HTML, SVG, XML, JavaScript and unknown types are served as attachments
+with `Content-Security-Policy: sandbox; default-src 'none'` and `nosniff`,
+and the share thumbnail never falls back to streaming an SVG original.
+`services/media/inline-safety.ts`, `tests/integration/share-active-content.test.ts`.
+
 - Filenames are reduced to their basename under both separators, stripped of
   control characters (including NUL) and shell/header-hostile characters, and
   capped. Verified: `../../../../etc/passwd` stores as `passwd` inside the

@@ -6,6 +6,8 @@ import { z } from "zod"
 
 import { resolveInlineContentType } from "@arciin/shared"
 
+import { attachmentDisposition, isInlineSafe, SANDBOX_CSP } from "@/services/media/inline-safety"
+
 import { apiConfig } from "@/config"
 import {
   ensureThumbnailWritten,
@@ -458,9 +460,19 @@ export async function registerShareRoutes(fastify: FastifyInstance) {
       return
     }
     const contentType = resolveInlineContentType(asset.mimeType, asset.extension)
-    const disposition = inlinePreview
-      ? `inline; filename="${asset.originalFilename.replace(/"/g, "")}"`
-      : `attachment; filename="${asset.originalFilename.replace(/"/g, "")}"`
+    /**
+     * A public share link is opened by people who are signed in to this
+     * instance too — the owner, most of all. Rendering an uploaded HTML or SVG
+     * inline here ran its script on the app origin with their session (found
+     * in the v1.1.0 pentest). Inline is now limited to the same safe set the
+     * signed-in asset route uses; everything else downloads, sandboxed.
+     */
+    const inline = inlinePreview && isInlineSafe(contentType)
+    const disposition = inline
+      ? `inline; filename="${asset.originalFilename.replace(/[^\w.\- ]/g, "_")}"`
+      : attachmentDisposition(asset.originalFilename)
+    reply.header("X-Content-Type-Options", "nosniff")
+    if (!inline) reply.header("Content-Security-Policy", SANDBOX_CSP)
 
     await streamFileResponse(reply, {
       path: asset.storageObject.physicalPath,
@@ -562,7 +574,14 @@ export async function registerShareRoutes(fastify: FastifyInstance) {
         // Thumbnailing failed (unusual format, corrupt file). The original is
         // still a correct preview — better a slow tile than an empty one.
         const contentType = resolveInlineContentType(asset.mimeType, asset.extension)
+        // The original stands in for a thumbnail only when it is a type the
+        // browser renders inertly. An SVG that failed to rasterise is not.
+        if (!isInlineSafe(contentType)) {
+          reply.status(404).send(shareAccessError("ASSET_NOT_FOUND", "Preview unavailable."))
+          return
+        }
         reply.header("content-type", contentType)
+        reply.header("X-Content-Type-Options", "nosniff")
         reply.header("Cache-Control", "public, max-age=86400")
         return reply.send(createReadStream(sourcePathResolved))
       }

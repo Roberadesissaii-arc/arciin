@@ -46,6 +46,7 @@ import {
 } from "@/services/media/thumbnail-cache"
 import { generateAssetCoverImage } from "@/services/media/generate-cover-image"
 import { ensureBrowserPlayableVideo } from "@/services/media/browser-playable-video"
+import { INLINE_SAFE_MIME_TYPES } from "@/services/media/inline-safety"
 import { streamFileResponse } from "@/services/media/stream-file-response"
 import {
   assetIsInJellyfinFolder,
@@ -85,33 +86,6 @@ async function loadAiSummariesForPage(fastify: FastifyInstance, assetIds: string
     },
   })
 }
-
-/**
- * MIME types safe to render inline in the browser. Everything else (SVG, HTML,
- * XML, unknown) is served as a download so uploaded active content can't run
- * script on the app origin. SVG is deliberately excluded despite being image/*.
- */
-const INLINE_SAFE_MIME_TYPES = new Set([
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-  "image/gif",
-  "image/avif",
-  "image/bmp",
-  "image/x-icon",
-  "video/mp4",
-  "video/webm",
-  "video/quicktime",
-  "audio/mpeg",
-  "audio/mp4",
-  "audio/aac",
-  "audio/ogg",
-  "audio/wav",
-  "audio/x-wav",
-  "audio/flac",
-  "application/pdf",
-  "text/plain",
-])
 
 const assetUpdateSchema = z.object({
   title: z.string().max(200).optional(),
