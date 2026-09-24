@@ -1,10 +1,7 @@
 "use client"
 
+import { useNotificationUnreadCount } from "@/hooks/use-notifications"
 import { cn } from "@/lib/utils"
-import {
-  unreadNotificationCount,
-  useNotificationInboxStore,
-} from "@/lib/stores/notification-inbox-store"
 
 /**
  * Unread count on the sidebar Notifications row.
@@ -20,8 +17,7 @@ export function NotificationUnreadBadge({
   /** When true, show a soft dot instead of a number (sidebar icon mode). */
   collapsed?: boolean
 }) {
-  const items = useNotificationInboxStore((s) => s.items)
-  const unread = unreadNotificationCount(items)
+  const unread = useNotificationUnreadCount()
 
   if (unread <= 0) return null
 

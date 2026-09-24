@@ -3,7 +3,7 @@
 import { useEffect, useMemo } from "react"
 import { io, type Socket } from "socket.io-client"
 
-import { NotificationInboxHydrator } from "@/components/notifications/notification-inbox-hydrator"
+import { RetireLocalNotificationInbox } from "@/components/notifications/retire-local-notification-inbox"
 import { SocketContextProvider } from "@/components/providers/socket-context"
 import { useSocketEvents } from "@/hooks/use-socket-events"
 import { getClientSocketUrl } from "@/lib/realtime/client-socket-url"
@@ -73,7 +73,7 @@ export function SocketProvider({
 
   return (
     <SocketContextProvider socket={socket}>
-      <NotificationInboxHydrator />
+      <RetireLocalNotificationInbox />
       {children}
     </SocketContextProvider>
   )

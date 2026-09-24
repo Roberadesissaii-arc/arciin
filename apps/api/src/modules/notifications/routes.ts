@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify"
 import { z } from "zod"
 
+import { buildRealtimeEvent } from "@/services/events/publish-event"
 import { authenticate } from "@/services/security/auth"
 
 /**
@@ -56,13 +57,30 @@ export function notificationVariantForType(
   return "default"
 }
 
+/** Which inbox tab an event belongs to. Derived here so every client agrees. */
+export function notificationSourceForType(type: string): "upload" | "security" | "activity" {
+  if (/^(auth|security|mfa|session|api-key|api_key)[._]/i.test(type)) return "security"
+  if (/^(upload|import)[._]/i.test(type)) return "upload"
+  return "activity"
+}
+
+const listQuery = z.object({
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+  offset: z.coerce.number().int().min(0).max(100_000).default(0),
+})
+
 export async function registerNotificationRoutes(fastify: FastifyInstance) {
   const auth = { preHandler: authenticate }
 
   fastify.get("/notifications", auth, async (request, reply) => {
     if (!request.auth) return
     const userId = request.auth.user.id
-    const limit = Math.min(Number((request.query as { limit?: string })?.limit ?? 50) || 50, 200)
+    const parsedQuery = listQuery.safeParse(request.query ?? {})
+    if (!parsedQuery.success) {
+      reply.status(400).send({ error: { code: "VALIDATION_ERROR", message: "Invalid paging." } })
+      return
+    }
+    const { limit, offset } = parsedQuery.data
 
     const user = await fastify.prisma.user.findUnique({
       where: { id: userId },
@@ -73,12 +91,16 @@ export async function registerNotificationRoutes(fastify: FastifyInstance) {
     // Instance-wide events (userId null) are addressed to whoever is looking.
     const where = { OR: [{ userId }, { userId: null }] }
 
-    const events = await fastify.prisma.activityEvent.findMany({
-      where,
-      orderBy: { createdAt: "desc" },
-      take: limit,
-      select: { id: true, type: true, title: true, message: true, metadata: true, createdAt: true },
-    })
+    const [events, total] = await Promise.all([
+      fastify.prisma.activityEvent.findMany({
+        where,
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        skip: offset,
+        take: limit,
+        select: { id: true, type: true, title: true, message: true, metadata: true, createdAt: true },
+      }),
+      fastify.prisma.activityEvent.count({ where }),
+    ])
 
     const reads = await fastify.prisma.notificationRead.findMany({
       where: { userId, activityEventId: { in: events.map((e) => e.id) } },
@@ -106,13 +128,14 @@ export async function registerNotificationRoutes(fastify: FastifyInstance) {
           title: event.title,
           message: event.message ?? undefined,
           variant: notificationVariantForType(event.type),
-          source: "activity" as const,
+          source: notificationSourceForType(event.type),
           createdAt: event.createdAt.toISOString(),
           read:
             readIds.has(event.id) || (readThrough !== null && event.createdAt <= readThrough),
           metadata: sanitizeNotificationMetadata(event.metadata),
         })),
         unreadCount,
+        total,
       },
     })
   })
@@ -144,15 +167,32 @@ export async function registerNotificationRoutes(fastify: FastifyInstance) {
       create: { userId, activityEventId: event.id },
       update: {},
     })
+    await announceReadStateChanged(fastify, userId)
     reply.send({ data: { read: true } })
   })
 
   fastify.post("/notifications/mark-all-read", auth, async (request, reply) => {
     if (!request.auth) return
+    const userId = request.auth.user.id
     await fastify.prisma.user.update({
-      where: { id: request.auth.user.id },
+      where: { id: userId },
       data: { notificationsReadThrough: new Date() },
     })
+    await announceReadStateChanged(fastify, userId)
     reply.send({ data: { unreadCount: 0 } })
   })
+}
+
+/**
+ * Tell this person's other tabs and devices to refetch. Carries no content —
+ * only that read state moved — so the socket never becomes a second inbox.
+ * Best effort: a Redis hiccup must not turn a successful write into a 500.
+ */
+async function announceReadStateChanged(fastify: FastifyInstance, userId: string) {
+  if (typeof fastify.publishRealtimeEvent !== "function") return
+  try {
+    await fastify.publishRealtimeEvent(buildRealtimeEvent("notifications.read", { userId }))
+  } catch (error) {
+    fastify.log.warn({ err: error }, "notifications.read broadcast failed")
+  }
 }

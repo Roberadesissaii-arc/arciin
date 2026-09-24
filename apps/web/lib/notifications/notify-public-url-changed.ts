@@ -3,8 +3,6 @@ import { toast } from "@/lib/notifications/arciin-toast"
 import { queryKeys } from "@/lib/api/query-keys"
 import type { QueryClient } from "@tanstack/react-query"
 
-import { recordInboxNotification } from "./record-inbox-notification"
-
 export function publicUrlHostLabel(url: string): string {
   const raw = url.trim().replace(/\/+$/, "")
   if (!raw) return url
@@ -28,12 +26,6 @@ export function notifyPublicUrlChanged(
   const title = "Public URL changed"
   const message = `Your free Cloudflare tunnel restarted. New address: ${newHost}. Update bookmarks and reopen the mobile app if you are away from home Wi‑Fi.`
 
-  recordInboxNotification({
-    title,
-    message,
-    variant: "warning",
-    source: "system",
-  })
   toast.warning(title, {
     description: message,
     duration: 14_000,

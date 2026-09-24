@@ -24,6 +24,8 @@ async function sessionCookie(userId: string) {
   return `arciin_session=${raw}`
 }
 
+const published: Array<{ type: string; userId?: string; data?: unknown }> = []
+
 async function buildApp() {
   const Fastify = (await import("fastify")).default
   const { registerCookies } = await import("../../apps/api/src/plugins/cookies")
@@ -32,6 +34,9 @@ async function buildApp() {
   )
   const app = Fastify({ logger: false })
   app.decorate("prisma", prisma)
+  app.decorate("publishRealtimeEvent", async (event: { type: string; userId?: string; data?: unknown }) => {
+    published.push(event)
+  })
   await registerCookies(app)
   await app.register(async (api) => registerNotificationRoutes(api), { prefix: "/api" })
   await app.ready()
@@ -74,6 +79,7 @@ beforeEach(async () => {
   await prisma.activityEvent.deleteMany()
   await prisma.session.deleteMany()
   await prisma.user.updateMany({ data: { notificationsReadThrough: null } })
+  published.length = 0
 })
 
 async function seedEvents() {
@@ -247,6 +253,76 @@ describe("notifications", () => {
         expect(body).not.toContain(leaked)
       }
       expect(res.json().data.items[0].metadata).toEqual({ keyPrefix: "arc_abc", scopes: "assets:read" })
+    } finally {
+      await app.close()
+    }
+  })
+
+  it("pages over the whole inbox and reports a total independent of the page", async () => {
+    const base = Date.now() - 100_000
+    for (let i = 0; i < 25; i++) {
+      await prisma.activityEvent.create({
+        data: { userId: ownerId, type: "upload.completed", title: `File ${i}`, createdAt: new Date(base + i * 1000) },
+      })
+    }
+    const app = await buildApp()
+    try {
+      const cookie = await sessionCookie(ownerId)
+      const get = async (qs: string) =>
+        (await app.inject({ method: "GET", url: `/api/notifications?${qs}`, headers: { cookie } })).json().data
+      const first = await get("limit=10&offset=0")
+      const third = await get("limit=10&offset=20")
+      expect(first.total).toBe(25)
+      expect(first.unreadCount).toBe(25)
+      expect(first.items).toHaveLength(10)
+      expect(third.items).toHaveLength(5)
+      expect(first.items[0].title).toBe("File 24")
+      expect(third.items.at(-1).title).toBe("File 0")
+      const bad = await app.inject({ method: "GET", url: "/api/notifications?limit=abc", headers: { cookie } })
+      expect(bad.statusCode).toBe(400)
+      expect(bad.json().error.code).toBe("VALIDATION_ERROR")
+    } finally {
+      await app.close()
+    }
+  })
+
+  it("derives a source the client can group by", async () => {
+    await prisma.activityEvent.createMany({
+      data: [
+        { userId: ownerId, type: "auth.login", title: "a" },
+        { userId: ownerId, type: "security.ip_denied", title: "b" },
+        { userId: ownerId, type: "upload.failed", title: "c" },
+        { userId: ownerId, type: "library.created", title: "d" },
+      ],
+    })
+    const app = await buildApp()
+    try {
+      const data = await inbox(app, await sessionCookie(ownerId))
+      const byTitle = Object.fromEntries(
+        (data.items as unknown as Array<{ title: string; source: string; variant: string }>).map((i) => [i.title, i]),
+      )
+      expect(byTitle.a.source).toBe("security")
+      expect(byTitle.b.source).toBe("security")
+      expect(byTitle.c.source).toBe("upload")
+      expect(byTitle.c.variant).toBe("error")
+      expect(byTitle.d.source).toBe("activity")
+    } finally {
+      await app.close()
+    }
+  })
+
+  it("tells the user's other tabs and devices when read state moves, and carries no content", async () => {
+    const { mine } = await seedEvents()
+    const app = await buildApp()
+    try {
+      const cookie = await sessionCookie(ownerId)
+      await app.inject({ method: "PATCH", url: `/api/notifications/${mine.id}/read`, headers: { cookie } })
+      await app.inject({ method: "POST", url: "/api/notifications/mark-all-read", headers: { cookie } })
+      expect(published.map((e) => e.type)).toEqual(["notifications.read", "notifications.read"])
+      for (const event of published) {
+        expect(event.userId).toBe(ownerId)
+        expect(event.data).toBeUndefined()
+      }
     } finally {
       await app.close()
     }

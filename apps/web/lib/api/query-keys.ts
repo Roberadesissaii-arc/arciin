@@ -21,6 +21,10 @@ export const queryKeys = {
   activity: (filters: Record<string, unknown> = {}) =>
     ["activity", filters] as const,
   securityActivity: ["activity", "security"] as const,
+  /** Prefix for every notifications query: the badge and each inbox page. */
+  notificationsRoot: ["notifications"] as const,
+  notifications: (params: { limit: number; offset: number }) =>
+    ["notifications", params] as const,
   uploads: ["uploads"] as const,
   upload: (uploadId: string) => ["upload", uploadId] as const,
   jobs: ["jobs"] as const,

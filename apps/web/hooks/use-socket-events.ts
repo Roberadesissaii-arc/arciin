@@ -14,7 +14,6 @@ import { buildLiveSocketEvent, useEventsFeedStore } from "@/lib/stores/events-fe
 import { useSocketStore } from "@/lib/stores/socket-store"
 import { useUploadStore } from "@/lib/stores/upload-store"
 import { notifyPublicUrlChanged } from "@/lib/notifications/notify-public-url-changed"
-import { recordInboxNotification } from "@/lib/notifications/record-inbox-notification"
 import {
   notifyUploadCompleted,
   notifyUploadFailedEvent,
@@ -190,14 +189,6 @@ export function useSocketEvents(socket: Socket | null) {
           eventType.startsWith("auth.") || eventType.startsWith("security.")
 
         if (eventType === "share.feedback") {
-          const sentiment = String(payload.data?.sentiment || "")
-          recordInboxNotification({
-            id: activityId ? `activity-${activityId}` : undefined,
-            title,
-            message,
-            variant: sentiment === "DISLIKE" ? "warning" : "success",
-            source: "activity",
-          })
           notifyShareFeedback(title, message)
         } else if (eventType === "upload.completed" || eventType === "upload.failed") {
           if (eventType === "upload.completed") {
@@ -253,12 +244,6 @@ export function useSocketEvents(socket: Socket | null) {
         } else if (eventType === "remote.public_url_changed") {
           /* Toast + inbox handled on instance.urls.updated to avoid duplicates */
         } else if (isSecurity && shouldShowSecurityEventsToast()) {
-          recordInboxNotification({
-            title,
-            message,
-            variant: "warning",
-            source: "security",
-          })
           if (eventType === "security.ip_denied") {
             notifyApiRequestBlocked(title, message)
           } else if (eventType === "security.ip_blocklist_added") {
@@ -283,14 +268,13 @@ export function useSocketEvents(socket: Socket | null) {
             notifyApiRequestBlocked(title, message)
           }
         } else if (shouldShowActivityFeedToast() && shouldToastForActivityEvent(eventType)) {
-          recordInboxNotification({
-            title,
-            message,
-            variant: "default",
-            source: "activity",
-          })
           notifyInfo(title, message)
         }
+      }
+
+      // Another tab or device changed read state; the server holds the answer.
+      if (type === "notifications.read") {
+        queryClient.invalidateQueries({ queryKey: queryKeys.notificationsRoot })
       }
 
       if (isTranscriptRealtimeType(type) && typeof payload.assetId === "string") {
@@ -329,6 +313,7 @@ export function useSocketEvents(socket: Socket | null) {
       ) {
         queryClient.invalidateQueries({ queryKey: queryKeys.uploads })
         queryClient.invalidateQueries({ queryKey: queryKeys.activityRoot })
+        queryClient.invalidateQueries({ queryKey: queryKeys.notificationsRoot })
         queryClient.invalidateQueries({ queryKey: queryKeys.assetsRoot })
         queryClient.invalidateQueries({ queryKey: queryKeys.jobs })
         queryClient.invalidateQueries({ queryKey: queryKeys.libraries })
