@@ -473,9 +473,23 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
         restrictComputerOwnerId,
       }
 
+      /**
+       * The All Files list an undirected browse shows leaves Inbox out (see
+       * the /assets route), so the header's totals must too — otherwise
+       * "Active files 92" sat above a list of 91 whenever Inbox held a file.
+       * Archived keeps Inbox, because the Archives chip lists it.
+       */
+      const inboxIds = (
+        await fastify.prisma.library.findMany({ where: { kind: "INBOX" }, select: { id: true } })
+      ).map((l) => l.id)
+
       const countActive = (mediaType?: string) =>
         fastify.prisma.asset.count({
-          where: buildVisibleAssetWhere({ ...base, ...(mediaType ? { mediaType } : {}) }),
+          where: buildVisibleAssetWhere({
+            ...base,
+            excludeLibraryIds: inboxIds,
+            ...(mediaType ? { mediaType } : {}),
+          }),
         })
 
       const [active, images, videos, audio, documents, archived] = await Promise.all([

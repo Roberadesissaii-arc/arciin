@@ -108,3 +108,13 @@ describe("typed libraries and their listings share one scope", () => {
     expect(assetRoutes).toContain("resolveSmartLibraryScope")
   })
 })
+
+describe("the header counts the set the All Files list shows", () => {
+  it("active and per-type totals leave Inbox out, as the undirected list does", () => {
+    const stats = assetRoutes.slice(assetRoutes.indexOf('"/assets/stats"'), assetRoutes.indexOf('"/assets/:assetId"'))
+    expect(stats).toContain('where: { kind: "INBOX" }')
+    expect(stats).toContain("excludeLibraryIds: inboxIds")
+    // Archived is still counted everywhere, Inbox included.
+    expect(stats).toMatch(/archived: "only"/)
+  })
+})
