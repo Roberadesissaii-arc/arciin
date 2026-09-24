@@ -20,8 +20,6 @@ import {
  */
 
 const secret = generateTotpSecret()
-const codeFor = (atMs: number) =>
-  authenticator.generate(secret) && authenticator.generate(secret)
 
 describe("enrolment produces something an authenticator can read", () => {
   it("generates a base32 secret", () => {

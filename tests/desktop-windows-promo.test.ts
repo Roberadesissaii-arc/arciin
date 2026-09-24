@@ -163,3 +163,17 @@ describe("dismissal persistence", () => {
     expect(store.get(DESKTOP_PROMO_DISMISSED_KEY)).toBe("1")
   })
 })
+
+describe("Computer Backup stays removed from the Desktop promotion", () => {
+  it("no Desktop promo or download card promises backup", async () => {
+    const { readFileSync } = await import("node:fs")
+    const path = await import("node:path")
+    for (const rel of [
+      "apps/web/components/app-shell/windows-desktop-promo.tsx",
+      "apps/web/components/settings/windows-desktop-download-card.tsx",
+    ]) {
+      const text = readFileSync(path.resolve(__dirname, "..", rel), "utf8")
+      expect(text, rel).not.toMatch(/back ?up/i)
+    }
+  })
+})
