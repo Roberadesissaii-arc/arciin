@@ -1,10 +1,5 @@
 import Redis from "ioredis"
 
-import {
-  buildHostedTokenPayload,
-  parseLicensePrivateKey,
-  signHostedLicenseToken,
-} from "@arciin/config"
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest"
 
 import {
@@ -15,6 +10,7 @@ import { authenticateFlexible, hashApiKey, hashToken } from "../../apps/api/src/
 import { invalidateApiProtectionCache } from "../../apps/api/src/services/security/instance-security"
 import {
   createTestStorageRoot,
+  grantTestLicense,
   prisma,
   removeTestStorageRoot,
   resetDatabase,
@@ -216,45 +212,8 @@ describe("the create route gives new keys the baseline", () => {
     await registerCookies(app)
     await app.register(async (api) => registerApiKeyRoutes(api), { prefix: "/api" })
     await app.ready()
-    // developer.api_keys is a paid feature. Sign a licence with the suite's
-    // throwaway vendor key so the route itself — not the gate — is under test.
-    const instance = await prisma.instanceConfig.create({
-      data: {
-        instanceName: "Rate",
-        storageRoot: fixtures.storageLocation.rootPath,
-        initializedAt: new Date(),
-        licensePlan: "free",
-        licenseStatus: "none",
-      },
-    })
-    const expiresAt = new Date(Date.now() + 31 * 86_400_000)
-    const graceUntil = new Date(Date.now() + 38 * 86_400_000)
-    await prisma.instanceConfig.update({
-      where: { id: instance.id },
-      data: {
-        licensePlan: "business",
-        licenseStatus: "active",
-        licenseKeyPrefix: "ARC_TST…0001",
-        licenseActivatedAt: new Date(),
-        licenseExpiresAt: expiresAt,
-        licenseGraceUntil: graceUntil,
-        licenseSource: "hosted",
-        licenseSignedToken: signHostedLicenseToken(
-          buildHostedTokenPayload({
-            licenseId: "lic_rate",
-            plan: "business",
-            status: "active",
-            instanceId: instance.id,
-            serverLimit: 1,
-            keyPrefix: "ARC_TST…0001",
-            expiresAt,
-            graceUntil,
-          }),
-          parseLicensePrivateKey("P1L5nJPd7wq0kUwqhU7SbXe0P4H2fT1YtGxWvBoNsRA"),
-          "arciin-lic-test",
-        ),
-      },
-    })
+    // developer.api_keys is a paid feature; the route, not the gate, is under test.
+    await grantTestLicense(fixtures.storageLocation.rootPath)
     const raw = `sess_${crypto.randomUUID()}`
     await prisma.session.create({
       data: { userId: fixtures.user.id, tokenHash: hashToken(raw), expiresAt: new Date(Date.now() + 86_400_000) },
