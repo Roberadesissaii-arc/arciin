@@ -250,6 +250,12 @@ export function UnmountedDrivesPanel({
                         <span className="rounded-md border border-border bg-muted/40 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
                           {device.sizeLabel}
                         </span>
+                        <span
+                          className="rounded-md border border-warning/40 bg-warning/10 px-1.5 py-0.5 text-[10px] font-medium text-warning"
+                          title="The disk is connected; this partition is not mounted, so Arciin cannot use it yet."
+                        >
+                          Partition: Not mounted
+                        </span>
                         {device.model ? (
                           <span className="text-[10px] text-muted-foreground">{device.model}</span>
                         ) : null}
@@ -360,7 +366,7 @@ export function UnmountedDrivesPanel({
                   ) : (
                     <HardDriveDownload className="size-3.5" />
                   )}
-                  Mount this drive
+                  {sudoRequired ? "Mount (server authorization required)" : "Mount this partition"}
                 </Button>
               </>
             )}
@@ -397,14 +403,25 @@ export function UnmountedDrivesPanel({
         </Collapsible>
       </section>
 
-      <AlertDialog open={mountDialogOpen} onOpenChange={setMountDialogOpen}>
+      <AlertDialog
+        open={mountDialogOpen}
+        onOpenChange={(open) => {
+          setMountDialogOpen(open)
+          // Do not keep a server password in memory after the person backs out.
+          if (!open) {
+            setSudoPassword("")
+            setSudoError(null)
+          }
+        }}
+      >
         <AlertDialogContent className="border-border bg-card text-foreground">
           <AlertDialogHeader>
-            <AlertDialogTitle>Enter server sudo password</AlertDialogTitle>
+            <AlertDialogTitle>Server authorization required</AlertDialogTitle>
             <AlertDialogDescription className="text-left text-muted-foreground">
-              Mounting <span className="font-mono text-foreground">{selected?.device}</span> needs
-              your Linux user password on this machine. It is sent only to the local API and is not
-              stored.
+              Mounting <span className="font-mono text-foreground">{selected?.device}</span> changes the
+              server&apos;s disks, so it needs the Linux password of the account running Arciin — the
+              same one you would type for sudo over SSH. It goes straight to sudo on this server and is
+              never stored or logged.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="space-y-2 py-1">
