@@ -180,6 +180,11 @@ export function ApiKeysTable() {
                       No expiration
                     </span>
                   )}
+                  <span className="mt-0.5 block text-[11px] text-zinc-500">
+                    {apiKey.rateLimitPerMinute
+                      ? `${apiKey.rateLimitPerMinute.toLocaleString()} requests / min`
+                      : "No per-key rate limit"}
+                  </span>
                 </span>
                 <div className="flex flex-wrap items-center gap-2 lg:justify-end">
                   {/*

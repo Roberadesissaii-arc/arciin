@@ -505,6 +505,10 @@ model ApiKey {
   expiresAt  DateTime?
   createdAt  DateTime  @default(now())
   revokedAt  DateTime?
+  /// Requests per minute for this key alone. Null on keys created before
+  /// v1.1.0: they are grandfathered and only the instance-wide limit (if the
+  /// owner set one) applies, so existing integrations do not start failing.
+  rateLimitPerMinute Int?
   user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])

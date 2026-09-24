@@ -447,6 +447,8 @@ export type ApiKeySummary = {
   expiresAt?: string | null
   createdAt: string
   revokedAt?: string | null
+  /** Null = created before per-key limits; only the instance-wide limit applies. */
+  rateLimitPerMinute?: number | null
 }
 
 export type AppDatabaseSummary = {

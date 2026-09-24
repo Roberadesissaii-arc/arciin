@@ -407,7 +407,7 @@ export async function authenticateFlexible(request: FastifyRequest, reply: Fasti
     apiKeyScopes: row.scopes,
   }
 
-  const allowed = await enforceApiKeyRateLimit(request, reply)
+  const allowed = await enforceApiKeyRateLimit(request, reply, row.rateLimitPerMinute)
   if (!allowed) {
     request.auth = undefined
     return

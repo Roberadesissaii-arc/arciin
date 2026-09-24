@@ -6,6 +6,7 @@ import { z } from "zod"
 import { API_KEY_SCOPES } from "@arciin/shared"
 
 import { recordAndBroadcastActivity } from "@/services/activity/record-and-broadcast-activity"
+import { DEFAULT_API_KEY_RATE_LIMIT_PER_MINUTE } from "@/services/security/api-key-rate-limit"
 import { hashApiKey, requireFeature, requireSessionRole } from "@/services/security/auth"
 import { serializeApiKey } from "@/services/serializers"
 
@@ -16,6 +17,8 @@ const createApiKeySchema = z.object({
   name: z.string().min(2),
   scopes: z.array(z.enum(API_KEY_SCOPES)).min(1),
   expiresAt: z.string().optional(),
+  /** Omitted → DEFAULT_API_KEY_RATE_LIMIT_PER_MINUTE. */
+  rateLimitPerMinute: z.number().int().min(1).max(100_000).optional(),
 })
 
 export async function registerApiKeyRoutes(fastify: FastifyInstance) {
@@ -117,6 +120,9 @@ export async function registerApiKeyRoutes(fastify: FastifyInstance) {
           keyHash: hashApiKey(rawKey),
           scopes: parsed.data.scopes,
           expiresAt: resolvedExpiry,
+          // New keys always get a per-key limit; see api-key-rate-limit.ts.
+          rateLimitPerMinute:
+            parsed.data.rateLimitPerMinute ?? DEFAULT_API_KEY_RATE_LIMIT_PER_MINUTE,
         },
       })
 
