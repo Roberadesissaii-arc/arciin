@@ -21,6 +21,7 @@ import {
   notifyPasswordVaultError,
 } from "@/lib/notifications/toast-actions"
 
+import { ConfirmDestructiveButton } from "@/components/shared/confirm-destructive-button"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -578,21 +579,19 @@ export function PasswordsPanel() {
                   </div>
 
                   {entries.length > 0 ? (
-                    <Button
-                      type="button"
+                    <ConfirmDestructiveButton
                       variant="ghost"
-                      size="sm"
                       className="text-destructive hover:text-destructive"
+                      title="Delete every saved credential?"
+                      description="All entries in the Passwords vault on this instance are deleted permanently. This cannot be undone."
+                      confirmLabel="Clear vault"
                       disabled={busy}
-                      onClick={() => {
-                        if (window.confirm("Delete all saved credentials from this instance?")) {
-                          clearMutation.mutate()
-                        }
-                      }}
+                      pending={clearMutation.isPending}
+                      onConfirm={() => clearMutation.mutateAsync()}
                     >
                       <Trash2 className="mr-1.5 size-4" />
                       Clear vault
-                    </Button>
+                    </ConfirmDestructiveButton>
                   ) : null}
                 </div>
 

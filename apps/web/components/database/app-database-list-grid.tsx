@@ -3,6 +3,7 @@
 import Link from "next/link"
 import { ArrowRight, Layers2, Trash2 } from "lucide-react"
 
+import { ConfirmDestructiveButton } from "@/components/shared/confirm-destructive-button"
 import { Button } from "@/components/ui/button"
 import type { AppDatabaseSummary } from "@/lib/types/models"
 import { RelativeTime } from "@/components/shared/relative-time"
@@ -18,6 +19,7 @@ const deleteButtonClass =
 type MutationLike<TVariables = void> = {
   isPending: boolean
   mutate: (variables: TVariables) => void
+  mutateAsync: (variables: TVariables) => Promise<unknown>
 }
 
 export function AppDatabaseListGrid({
@@ -59,21 +61,19 @@ export function AppDatabaseListGrid({
               </Link>
             </Button>
             {canMutate ? (
-              <Button
-                type="button"
-                variant="default"
-                size="sm"
+              <ConfirmDestructiveButton
+                title={`Delete database “${db.name}”?`}
+                description="Every table and row in this database is deleted permanently. Files uploaded to your libraries are not affected. This cannot be undone."
+                confirmLabel="Delete database"
                 className={deleteButtonClass}
-                disabled={deleteMutation.isPending}
-                onClick={() => {
-                  if (window.confirm(`Delete database “${db.name}” and all tables and rows?`)) {
-                    deleteMutation.mutate(db.id)
-                  }
-                }}
+                pending={deleteMutation.isPending}
+                onConfirm={() => deleteMutation.mutateAsync(db.id)}
+                aria-label={`Delete database ${db.name}`}
+                data-testid="app-database-delete"
               >
                 <Trash2 className="size-4" />
                 Delete
-              </Button>
+              </ConfirmDestructiveButton>
             ) : null}
           </div>
         </div>
