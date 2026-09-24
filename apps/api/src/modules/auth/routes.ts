@@ -109,6 +109,7 @@ const userPreferencesPatchSchema = z
         toastShowIcons: z.boolean().optional(),
         toastOrbitColor: z.enum(accentValues).optional(),
         uiRadius: z.enum(UI_RADIUS_OPTIONS).optional(),
+        sidebarCollapsed: z.boolean().optional(),
       })
       .optional(),
     accessibility: z

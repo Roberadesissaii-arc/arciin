@@ -8,7 +8,8 @@ import { DashboardMobileSidebarButton } from "@/components/app-shell/dashboard-m
 import { DashboardHeader } from "@/components/app-shell/dashboard-header"
 import { MusicPlayerBar } from "@/components/libraries/music-player-bar"
 import { UploadOverlay } from "@/components/uploads/upload-overlay"
-import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
+import { PersistedSidebarProvider } from "@/components/app-shell/persisted-sidebar-provider"
+import { SidebarInset } from "@/components/ui/sidebar"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import type { AuthSession } from "@/lib/types/models"
 
@@ -27,8 +28,7 @@ export function DashboardShell({
       <LoginWelcomeToast />
       <WindowsDesktopPromo />
       <TooltipProvider delayDuration={0}>
-        <SidebarProvider
-          defaultOpen
+        <PersistedSidebarProvider
           className="relative z-10 flex min-h-0 flex-1 flex-row overflow-hidden bg-white"
         >
           <AppSidebar auth={auth} />
@@ -48,7 +48,7 @@ export function DashboardShell({
             <UploadOverlay />
             <MusicPlayerBar />
           </SidebarInset>
-        </SidebarProvider>
+        </PersistedSidebarProvider>
       </TooltipProvider>
       </div>
     </>
