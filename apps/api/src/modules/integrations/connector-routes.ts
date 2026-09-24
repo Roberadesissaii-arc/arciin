@@ -30,7 +30,7 @@ export function registerMediaConnectorRoutes(
   fastify.get(
     `${basePath}/status`,
     { preHandler: requireSessionRole(["OWNER", "ADMIN", "MEMBER", "VIEWER"]) },
-    async (_request, reply) => {
+    async (request, reply) => {
       const status = await getConnectorStatus(fastify.prisma, def)
       if (!status) {
         reply.status(404).send({
@@ -38,7 +38,13 @@ export function registerMediaConnectorRoutes(
         })
         return
       }
-      reply.send({ data: status })
+      // Admins need the host path to point their media server at it. Nobody
+      // else needs to learn where this server keeps its files.
+      const role = request.auth?.user.role
+      const canSeePaths = role === "OWNER" || role === "ADMIN"
+      reply.send({
+        data: canSeePaths ? status : { ...status, storageRoot: undefined, mirrorRootHint: undefined },
+      })
     },
   )
 

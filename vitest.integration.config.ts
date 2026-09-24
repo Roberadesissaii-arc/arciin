@@ -62,6 +62,9 @@ export default defineConfig({
        * prefix is unambiguous: `apps/web` has no `services/` directory.
        */
       "@/services/": `${path.resolve(__dirname, "apps/api/src/services")}/`,
+      // Same reasoning: apps/web has no modules/ or plugins/ directory either.
+      "@/modules/": `${path.resolve(__dirname, "apps/api/src/modules")}/`,
+      "@/plugins/": `${path.resolve(__dirname, "apps/api/src/plugins")}/`,
       "@/config": path.resolve(__dirname, "apps/api/src/config"),
       "@/": `${path.resolve(__dirname, "apps/web")}/`,
       "@arciin/shared": path.resolve(__dirname, "packages/shared/src/index.ts"),

@@ -8,13 +8,20 @@ export type PlexFolderStatus = {
   folderId: string | null
   folderPath: string
   ready: boolean
+  /** The mirror directory the media server scans exists and is writable. */
+  onDisk: boolean
 }
+
+export type ConnectorHealthState = "healthy" | "degraded" | "disconnected" | "error"
+export type ConnectorHealth = { state: ConnectorHealthState; reason: string }
 
 export type ConnectorStatus = {
   enabled: boolean
+  health: ConnectorHealth
   folders: PlexFolderStatus[]
-  storageRoot: string
-  mirrorRootHint: string
+  /** OWNER/ADMIN only — omitted for everyone else. */
+  storageRoot?: string
+  mirrorRootHint?: string
 }
 
 export type PlexStatus = ConnectorStatus
