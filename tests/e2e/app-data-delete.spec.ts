@@ -59,9 +59,14 @@ test("row and table delete with the mouse; database delete with the keyboard", a
   // Table: mouse.
   await page.getByRole("button", { name: "Delete table items" }).click()
   await page.getByTestId("app-table-delete-confirm").click()
+  // Every database keeps its auto-created Default table; "items" is the one that must go.
   await expect
-    .poll(async () => ((await (await request.get(`/api/app-databases/${database.id}/tables`)).json()).data as unknown[]).length)
-    .toBe(0)
+    .poll(async () =>
+      ((await (await request.get(`/api/app-databases/${database.id}/tables`)).json()).data as Array<{ id: string }>).some(
+        (t) => t.id === table.id,
+      ),
+    )
+    .toBe(false)
 
   // Database: keyboard only, from the list.
   await page.goto("/database/app-data")
