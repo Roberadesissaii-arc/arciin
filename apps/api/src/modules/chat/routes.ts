@@ -31,6 +31,8 @@ import {
   ARCIIN_CHAT_TOOLS,
   executeArciinChatTool,
   type ArciinChatToolContext,
+  type ChatTurnState,
+  UNTRUSTED_CONTENT_NOTICE,
 } from "@/services/chat/arciin-chat-tools"
 import {
   DEFAULT_GEMINI_TTS_VOICE,
@@ -1174,6 +1176,8 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
         (instanceForSecurity?.aiConfig as Record<string, unknown> | null)?.security,
       )
       const lastUserText = [...messages].reverse().find((m) => m.role === "user")?.content ?? ""
+      // One per request: every tool call in this turn shares it (see guardUntrustedTurn).
+      const turn: ChatTurnState = { untrustedContent: false }
       const vaultConversationText = recentUserVaultContextText(messages)
       const passwordRelatedTurn = isPasswordRelatedConversation(messages)
       if (
@@ -1299,6 +1303,8 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
               apiKey: profile.apiKey,
               userId: request.auth!.user.id,
               libraryToolAccess: security.libraryToolAccess,
+              lastUserMessage: lastUserText,
+              turn,
               publishRealtimeEvent: fastify.publishRealtimeEvent,
               // Bound to this instance's configured destinations. The tool
               // schema has no recipient argument on purpose — see
@@ -1328,11 +1334,15 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
                   apiKey: profile.apiKey,
                   userId: request.auth!.user.id,
                   libraryToolAccess: security.libraryToolAccess,
+                  lastUserMessage: lastUserText,
+                  turn,
                   publishRealtimeEvent: fastify.publishRealtimeEvent,
                 },
               )
               if (typeof readResult.content === "string" && readResult.filename) {
-                compatAppend += `\n\n--- File: ${readResult.filename} (user asked you to read/explain it) ---\n\`\`\`\n${readResult.content}\n\`\`\``
+                // This lands in the system prompt, the most trusted place there
+                // is — so the file's text is fenced and labelled as data.
+                compatAppend += `\n\n--- File: ${readResult.filename} (user asked you to read/explain it) ---\n${UNTRUSTED_CONTENT_NOTICE}\n<untrusted_file_content>\n${readResult.content}\n</untrusted_file_content>`
                 if (readResult.truncated) {
                   compatAppend += "\n(Preview truncated — mention that if relevant.)"
                 }
@@ -1386,6 +1396,8 @@ export async function registerChatRoutes(fastify: FastifyInstance) {
               apiKey: profile.apiKey,
               userId: request.auth!.user.id,
               libraryToolAccess: security.libraryToolAccess,
+              lastUserMessage: lastUserText,
+              turn,
               publishRealtimeEvent: fastify.publishRealtimeEvent,
               // Bound to this instance's configured destinations. The tool
               // schema has no recipient argument on purpose — see
