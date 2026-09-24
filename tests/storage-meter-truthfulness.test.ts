@@ -79,3 +79,48 @@ describe("one formatter, so the same bytes read the same everywhere", () => {
     expect(a).toBe(b)
   })
 })
+
+describe("the dashboard meter reads the filesystem, not Arciin's share", () => {
+  it("a 90%-full disk with 7.5 MB of Arciin data reads 90%, not 0%", async () => {
+    const { resolveStorageUsagePercent, resolveFilesystemUsedBytes } = await import(
+      "../apps/web/lib/utils/storage-usage"
+    )
+    const GB = 1024 ** 3
+    const storage = {
+      storageRoot: "/srv/arciin-storage/arciin",
+      writable: true,
+      objectCount: 10,
+      usageBytes: 7.5 * 1024 ** 2,
+      totalBytes: 97.9 * GB,
+      availableBytes: 9.2 * GB,
+      arciinUsageBytes: 7.5 * 1024 ** 2,
+      filesystemTotalBytes: 97.9 * GB,
+      filesystemUsedBytes: 88.7 * GB,
+      filesystemAvailableBytes: 9.2 * GB,
+      filesystemUsagePercent: 90.6,
+    }
+    expect(resolveStorageUsagePercent(storage)).toBe(91)
+    expect(resolveFilesystemUsedBytes(storage)).toBe(88.7 * GB)
+  })
+
+  it("derives fullness from total and available when the percent is absent", async () => {
+    const { resolveStorageUsagePercent } = await import("../apps/web/lib/utils/storage-usage")
+    expect(
+      resolveStorageUsagePercent({
+        storageRoot: "/x",
+        writable: true,
+        objectCount: 0,
+        usageBytes: 1,
+        filesystemTotalBytes: 100,
+        filesystemAvailableBytes: 10,
+      }),
+    ).toBe(90)
+  })
+
+  it("the dashboard card uses the filesystem helpers", async () => {
+    const { readFileSync } = await import("node:fs")
+    const card = readFileSync("apps/web/components/dashboard/storage-donut-card.tsx", "utf8")
+    expect(card).toContain("resolveFilesystemUsedBytes(storage)")
+    expect(card).toContain("resolveFilesystemTotalBytes(storage)")
+  })
+})
