@@ -17,7 +17,7 @@ import {
   trustedLicenseSnapshotFromRow,
   type LicenseFeatureId,
   type LicenseStateSnapshot,
-} from "@arciin/shared"
+} from "@arciin/config"
 
 export const LICENSE_REQUIRED_CODE = "LICENSE_REQUIRED"
 

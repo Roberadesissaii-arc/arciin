@@ -66,14 +66,36 @@ export function DatabaseHubGrid({
             <ArrowRight className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-primary" />
           </div>
 
-          <div className="mt-3 flex items-center justify-between border-t border-border/80 pt-3">
+          {/*
+            "Records" alone read as "how many of these there are now", which is
+            not what a row count means where rows are kept after they stop
+            being usable: ten API key records beside a management page showing
+            three looks like a discrepancy when it is history. Where the server
+            can say more, the card says more.
+          */}
+          <div className="mt-3 flex items-center justify-between gap-2 border-t border-border/80 pt-3">
             <div className="flex items-center gap-1.5 text-muted-foreground">
               <Activity className="size-3" aria-hidden />
-              <span className="text-[11px] font-medium">Records</span>
+              <span className="text-[11px] font-medium">
+                {table.summary && table.summary.length > 1 ? "Records (incl. history)" : "Records"}
+              </span>
             </div>
-            <span className="rounded-lg border border-border bg-muted/50 px-2 py-0.5 text-[12px] font-bold tabular-nums text-foreground">
-              {table.count.toLocaleString()}
-            </span>
+            <div className="flex items-center gap-1.5">
+              {table.summary
+                ?.filter((metric) => metric.tone === "success" && metric.value !== table.count)
+                .slice(0, 1)
+                .map((metric) => (
+                  <span
+                    key={metric.label}
+                    className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-700 tabular-nums dark:text-emerald-400"
+                  >
+                    {metric.value.toLocaleString()} {metric.label}
+                  </span>
+                ))}
+              <span className="rounded-lg border border-border bg-muted/50 px-2 py-0.5 text-[12px] font-bold tabular-nums text-foreground">
+                {table.count.toLocaleString()}
+              </span>
+            </div>
           </div>
         </Link>
       ))}

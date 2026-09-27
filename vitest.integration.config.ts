@@ -62,10 +62,15 @@ export default defineConfig({
        * prefix is unambiguous: `apps/web` has no `services/` directory.
        */
       "@/services/": `${path.resolve(__dirname, "apps/api/src/services")}/`,
+      // Same reasoning: apps/web has no modules/ or plugins/ directory either.
+      "@/modules/": `${path.resolve(__dirname, "apps/api/src/modules")}/`,
+      "@/plugins/": `${path.resolve(__dirname, "apps/api/src/plugins")}/`,
       "@/config": path.resolve(__dirname, "apps/api/src/config"),
       "@/": `${path.resolve(__dirname, "apps/web")}/`,
       "@arciin/shared": path.resolve(__dirname, "packages/shared/src/index.ts"),
       "@arciin/types": path.resolve(__dirname, "packages/types/src/index.ts"),
+      // Subpath first: a bare "@arciin/config" prefix would swallow it.
+      "@arciin/config/client": path.resolve(__dirname, "packages/config/src/client.ts"),
       "@arciin/config": path.resolve(__dirname, "packages/config/src/index.ts"),
       "@arciin/ui": path.resolve(__dirname, "packages/ui/src/index.ts"),
     },
@@ -93,6 +98,14 @@ export default defineConfig({
        */
       API_PORT: "4100",
       PORT: "3100",
+      /**
+       * These win over PORT when code resolves "the web app" (tunnel target,
+       * advertised URLs). Left to .env they are production's :3002/:3003, and
+       * a tunnel test health-checked production. Dev ports, like the rest.
+       */
+      ARCIIN_WEB_PORT: "3100",
+      ARCIIN_MOBILE_PORT: "3103",
+      ARCIIN_MOBILE_ORIGIN: "http://127.0.0.1:3103",
       ARCIIN_QUEUE_PREFIX: "bull_test",
       ARCIIN_LICENSE_PUBLIC_KEYS: `${LICENSE_TEST_KID}:${licensePublicKeyFromPrivate(LICENSE_TEST_SIGNING_KEY)}`,
       /**

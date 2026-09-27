@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useReducer, useSyncExternalStore } from "react"
 import { usePathname } from "next/navigation"
 import { Monitor } from "lucide-react"
 
@@ -26,21 +26,31 @@ import {
 
 const BENEFITS = [
   "Find your Arciin server automatically",
-  "Back up Desktop, Documents and Pictures",
+  "Browse and upload your files from Windows",
   "Stay securely paired with this server",
 ]
 
+const subscribeNever = () => () => {}
+
 export function WindowsDesktopPromo() {
   const pathname = usePathname()
-  const [open, setOpen] = useState(false)
+  // Re-read the browser hints after a dismissal; they live outside React.
+  const [, rerender] = useReducer((n: number) => n + 1, 0)
 
-  useEffect(() => {
-    setOpen(shouldShowWindowsDesktopPromo(readDesktopPromoHints(pathname)))
-  }, [pathname])
+  /**
+   * The hints come from the browser (user agent, a persisted dismissal), which
+   * the server cannot see. useSyncExternalStore reads them after hydration —
+   * the server snapshot is "closed" — instead of setting state in an effect.
+   */
+  const open = useSyncExternalStore(
+    subscribeNever,
+    () => shouldShowWindowsDesktopPromo(readDesktopPromoHints(pathname)),
+    () => false,
+  )
 
   function dismiss() {
     persistDesktopPromoDismissed()
-    setOpen(false)
+    rerender()
   }
 
   return (

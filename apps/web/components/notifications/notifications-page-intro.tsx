@@ -1,38 +1,27 @@
 "use client"
 
 import Link from "next/link"
-import { useEffect } from "react"
 import { Bell } from "lucide-react"
 
 import { DashboardPageIntro } from "@/components/app-shell/dashboard-page-intro"
 import { IntroCornerIcon } from "@/components/app-shell/intro-corner-icon"
-import {
-  unreadNotificationCount,
-  useNotificationInboxStore,
-} from "@/lib/stores/notification-inbox-store"
+import { useNotificationsPage } from "@/hooks/use-notifications"
 
 export function NotificationsPageIntro() {
-  const hydrate = useNotificationInboxStore((s) => s.hydrate)
-  const hydrated = useNotificationInboxStore((s) => s.hydrated)
-  const items = useNotificationInboxStore((s) => s.items)
-
-  useEffect(() => {
-    hydrate()
-  }, [hydrate])
-
-  const unread = unreadNotificationCount(items)
-  const countLabel = hydrated ? items.length.toLocaleString() : "…"
-  const unreadLabel = hydrated ? unread.toLocaleString() : "…"
+  // Same query as the first inbox page, so this shares its cache entry.
+  const { data } = useNotificationsPage(1, 10)
+  const countLabel = data ? data.total.toLocaleString() : "…"
+  const unreadLabel = data ? data.unreadCount.toLocaleString() : "…"
 
   return (
     <DashboardPageIntro
       title="Notifications"
-      subtitle="Alert history · this browser"
+      subtitle="Alert history · synced across your devices"
       cornerDecoration={<IntroCornerIcon icon={Bell} />}
       description={
         <>
-          Alerts that appeared as toasts and live events are collected here. To change sounds and
-          which channels fire, use{" "}
+          Uploads, sign-ins, and other server events for your account, with read state kept on
+          the server so every device agrees. To change sounds and which toasts appear, use{" "}
           <Link href="/settings?tab=notifications" className="font-medium text-primary hover:underline">
             notification preferences in Settings
           </Link>

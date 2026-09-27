@@ -8,8 +8,11 @@ const execFileAsync = promisify(execFile)
 import {
   getCloudflareTunnelState,
   setTunnelLifecycleHooks,
-  startCloudflareQuickTunnel,
 } from "@/services/remote-access/cloudflare-tunnel"
+import {
+  PublicRemoteAccessDeniedError,
+  startPublicTunnel,
+} from "@/services/remote-access/public-tunnel"
 import {
   isCloudflareTunnelAutoStartEnabled,
   persistTunnelPublicUrl,
@@ -90,10 +93,21 @@ async function tryStartTunnel(fastify: FastifyInstance, reason: string): Promise
 
   try {
     const localTarget = resolveAutoStartTunnelTarget()
-    const url = await startCloudflareQuickTunnel(localTarget)
+    // Auto-start and restart-after-exit are public Remote Access too: they go
+    // through the same owner-MFA policy as the Start buttons.
+    const url = await startPublicTunnel(fastify.prisma, localTarget)
     fastify.log.info({ url, localTarget, reason }, "Cloudflare quick tunnel started")
     return true
   } catch (err) {
+    if (err instanceof PublicRemoteAccessDeniedError) {
+      fastify.log.warn(
+        { reason },
+        "Public Remote Access is paused until the owner enrolls two-factor authentication; the server stays reachable on the local network",
+      )
+      // Returning true stops the boot retries: nothing will change until the
+      // owner enrols, and retrying would only repeat this warning.
+      return true
+    }
     fastify.log.warn(
       { err: err instanceof Error ? err.message : String(err), reason },
       "Cloudflare tunnel auto-start failed",

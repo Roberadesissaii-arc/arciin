@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { ArrowRightLeft, BadgeCheck, HardDrive, Loader2, RefreshCw } from "lucide-react"
 import { toast } from "@/lib/notifications/arciin-toast"
@@ -16,6 +16,7 @@ import { queryKeys } from "@/lib/api/query-keys"
 import { formatBytes } from "@/lib/utils/format-bytes"
 import { cn } from "@/lib/utils"
 import { UnmountedDrivesPanel } from "@/components/storage/unmounted-drives-panel"
+import { describeRescan, transferBlockedReason } from "@/lib/storage/storage-device-ux"
 import type { StorageVolumeOption, UnmountedBlockDevice, StorageBlockDisk } from "@/lib/types/models"
 
 function diskRoleLabel(role: StorageBlockDisk["role"]) {
@@ -72,6 +73,35 @@ export function StorageMigratePanel({ usageBytes }: { usageBytes: number }) {
     },
   })
 
+  /**
+   * Rescan asks the server to enumerate block devices again (the volumes
+   * route runs discovery on every call; nothing is cached), then says what
+   * changed. The ref guards against a double-click starting two scans before
+   * React has re-rendered the disabled button.
+   */
+  const [rescanning, setRescanning] = useState(false)
+  const rescanInFlight = useRef(false)
+  async function rescan() {
+    if (rescanInFlight.current) return
+    rescanInFlight.current = true
+    setRescanning(true)
+    const before = volumesQuery.data
+    try {
+      const result = await volumesQuery.refetch({ throwOnError: true })
+      if (result.data) {
+        const { title, description } = describeRescan(before, result.data)
+        toast.success(title, { description })
+      }
+    } catch (err) {
+      toast.error("Could not scan storage devices", {
+        description: err instanceof Error ? err.message : "Check that the API is running, then try again.",
+      })
+    } finally {
+      rescanInFlight.current = false
+      setRescanning(false)
+    }
+  }
+
   const active = migrateStatusQuery.data?.active ?? false
   const job = migrateStatusQuery.data?.job
   const volumes = volumesQuery.data?.volumes ?? []
@@ -92,6 +122,14 @@ export function StorageMigratePanel({ usageBytes }: { usageBytes: number }) {
 
   const transferTarget =
     selectedVolume && !selectedVolume.isCurrent ? selectedVolume : null
+
+  const transferBlocked = transferBlockedReason({
+    active,
+    pending: migrateMutation.isPending,
+    hasTarget: Boolean(transferTarget),
+    targetWritable: transferTarget?.writable ?? false,
+    selectedUnmounted: Boolean(selectedUnmounted),
+  })
 
   async function handleMounted(result: { arciinPath: string; deviceId: string }) {
     setSelectedUnmounted(null)
@@ -137,11 +175,13 @@ export function StorageMigratePanel({ usageBytes }: { usageBytes: number }) {
           variant="outline"
           size="sm"
           className="shrink-0 gap-1.5"
-          disabled={volumesQuery.isFetching || active}
-          onClick={() => void volumesQuery.refetch()}
+          disabled={rescanning || volumesQuery.isFetching || active}
+          aria-busy={rescanning}
+          onClick={() => void rescan()}
+          data-testid="storage-rescan"
         >
-          <RefreshCw className={cn("size-3.5", volumesQuery.isFetching && "animate-spin")} />
-          Rescan
+          <RefreshCw className={cn("size-3.5", (rescanning || volumesQuery.isFetching) && "animate-spin")} />
+          {rescanning ? "Scanning…" : "Rescan"}
         </Button>
       </div>
 
@@ -233,6 +273,12 @@ export function StorageMigratePanel({ usageBytes }: { usageBytes: number }) {
                     <span className="rounded-md border border-border bg-muted/30 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
                       {diskRoleLabel(disk.role)}
                     </span>
+                    <span
+                      className="rounded-md border border-success/30 bg-success/10 px-1.5 py-0.5 text-[10px] font-medium text-success"
+                      title="The physical device is attached to this server."
+                    >
+                      Device: Connected
+                    </span>
                     {volumeOnDisk(disk, volumes)?.isCurrent ? (
                       <span className="rounded-md border border-primary/30 bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold text-[#FF4F12]">
                         Arciin here
@@ -245,7 +291,8 @@ export function StorageMigratePanel({ usageBytes }: { usageBytes: number }) {
                   {disk.unmountedPartitionCount > 0 ? (
                     <p className="text-[10px] text-[#FF4F12]">
                       {disk.unmountedPartitionCount} partition
-                      {disk.unmountedPartitionCount === 1 ? "" : "s"} need mounting below
+                      {disk.unmountedPartitionCount === 1 ? "" : "s"} not mounted — mount below to use
+                      {disk.unmountedPartitionCount === 1 ? " it" : " them"}
                     </p>
                   ) : disk.role === "system" ? (
                     <p className="text-[10px] text-muted-foreground">
@@ -394,20 +441,22 @@ export function StorageMigratePanel({ usageBytes }: { usageBytes: number }) {
 
         {selectedUnmounted && !transferTarget ? (
           <p className="text-[11px] text-[#FF4F12]">
-            Mount <span className="font-mono">{selectedUnmounted.device}</span> first, then transfer
-            to <span className="font-mono">{selectedUnmounted.suggestedArciinPath}</span>.
+            After mounting <span className="font-mono">{selectedUnmounted.device}</span>, Arciin will
+            transfer to <span className="font-mono">{selectedUnmounted.suggestedArciinPath}</span>.
+          </p>
+        ) : null}
+
+        {transferBlocked ? (
+          <p id="transfer-blocked-reason" className="text-[11px] font-medium text-muted-foreground" data-testid="transfer-blocked-reason">
+            {transferBlocked}
           </p>
         ) : null}
 
         <Button
           type="button"
           className="w-full gap-2 sm:w-auto"
-          disabled={
-            !transferTarget ||
-            active ||
-            migrateMutation.isPending ||
-            !transferTarget.writable
-          }
+          disabled={Boolean(transferBlocked)}
+          aria-describedby={transferBlocked ? "transfer-blocked-reason" : undefined}
           onClick={() => {
             if (!transferTarget) return
             migrateMutation.mutate(transferTarget.arciinPath)

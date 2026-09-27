@@ -18,7 +18,8 @@ import {
   AuthLightFormMessage,
   AuthPrimaryButton,
 } from "@/components/auth/auth-light"
-import { useLogin } from "@/hooks/use-auth"
+import { useLogin, useMfaChallenge } from "@/hooks/use-auth"
+import { isMfaChallenge } from "@/lib/api/auth"
 import {
   queueWelcomeToast,
   readLoginRemember,
@@ -33,6 +34,17 @@ export function LoginForm() {
   const [showPw, setShowPw] = useState(false)
   // Lazy initializer — reads localStorage once on mount, no effect needed.
   const [rememberMe, setRememberMe] = useState(() => readLoginRemember().rememberMe)
+  const mfaMutation = useMfaChallenge()
+  /**
+   * Held in component state only.
+   *
+   * Never localStorage, sessionStorage or the URL: it stands in for the
+   * password for the next few minutes, and a closed tab should end the attempt
+   * rather than leave a usable ticket lying about.
+   */
+  const [challengeToken, setChallengeToken] = useState<string | null>(null)
+  const [code, setCode] = useState("")
+  const [useRecoveryCode, setUseRecoveryCode] = useState(false)
   const form = useForm<LoginSchema>({
     defaultValues: { email: "", password: "" },
   })
@@ -57,6 +69,92 @@ export function LoginForm() {
     const qs = url.searchParams.toString()
     window.history.replaceState({}, "", qs ? `${url.pathname}?${qs}` : url.pathname)
   }, [])
+
+  if (challengeToken) {
+    return (
+      <form
+        className="space-y-4"
+        method="post"
+        onSubmit={async (event) => {
+          event.preventDefault()
+          setSubmitError(null)
+          try {
+            await mfaMutation.mutateAsync({
+              challengeToken,
+              ...(useRecoveryCode ? { recoveryCode: code } : { totp: code }),
+            })
+            queueWelcomeToast()
+            router.push("/dashboard")
+            router.refresh()
+          } catch (error) {
+            const message =
+              error instanceof Error ? error.message : "That code was not accepted."
+            setSubmitError(message)
+            setCode("")
+            // A ticket is spent whether or not the code was right, so a failed
+            // attempt sends the user back to the password rather than leaving
+            // them typing codes against something that no longer exists.
+            if (/expired|no longer valid/i.test(message)) setChallengeToken(null)
+          }
+        }}
+      >
+        <div className="space-y-1">
+          <h2 className="text-base font-semibold text-foreground">Two-factor authentication</h2>
+          <p className="text-[13px] text-muted-foreground">
+            {useRecoveryCode
+              ? "Enter one of the recovery codes you saved when you turned this on. Each one works once."
+              : "Enter the six-digit code from your authenticator app."}
+          </p>
+        </div>
+
+        <AuthLightField
+          id="mfa-code"
+          label={useRecoveryCode ? "Recovery code" : "Authentication code"}
+          icon={LockKeyhole}
+          type="text"
+          placeholder={useRecoveryCode ? "XXXXX-XXXXX-XXXXX-XXXXX" : "123456"}
+          autoComplete="one-time-code"
+          inputProps={{
+            value: code,
+            onChange: (event: React.ChangeEvent<HTMLInputElement>) => setCode(event.target.value),
+            inputMode: useRecoveryCode ? "text" : "numeric",
+            autoFocus: true,
+          }}
+        />
+
+        {submitError ? <AuthLightFormMessage message={submitError} /> : null}
+
+        <AuthPrimaryButton type="submit" disabled={mfaMutation.isPending || code.trim().length === 0}>
+          {mfaMutation.isPending ? "Checking…" : "Verify"}
+        </AuthPrimaryButton>
+
+        <div className="flex items-center justify-between text-[12px]">
+          <button
+            type="button"
+            className="text-muted-foreground underline-offset-4 hover:underline"
+            onClick={() => {
+              setUseRecoveryCode((previous) => !previous)
+              setCode("")
+              setSubmitError(null)
+            }}
+          >
+            {useRecoveryCode ? "Use authenticator app instead" : "Use a recovery code"}
+          </button>
+          <button
+            type="button"
+            className="text-muted-foreground underline-offset-4 hover:underline"
+            onClick={() => {
+              setChallengeToken(null)
+              setCode("")
+              setSubmitError(null)
+            }}
+          >
+            Start again
+          </button>
+        </div>
+      </form>
+    )
+  }
 
   return (
     <form
@@ -85,8 +183,13 @@ export function LoginForm() {
         }
 
         try {
-          await loginMutation.mutateAsync({ ...parsed.data, rememberMe })
+          const result = await loginMutation.mutateAsync({ ...parsed.data, rememberMe })
           writeLoginRemember(parsed.data.email, rememberMe)
+          if (isMfaChallenge(result)) {
+            // Password was right, but nobody is signed in yet.
+            setChallengeToken(result.challengeToken)
+            return
+          }
           queueWelcomeToast()
           router.push("/dashboard")
           router.refresh()

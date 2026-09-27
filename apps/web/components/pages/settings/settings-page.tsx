@@ -21,6 +21,7 @@ import { EmailPanel } from "@/components/settings/email-panel"
 import { LicensePanel } from "@/components/settings/license-panel"
 import { NotificationsSettingsPanel } from "@/components/settings/notifications-settings-panel"
 import { PasswordsPanel } from "@/components/settings/passwords-panel"
+import { MfaPanel } from "@/components/settings/mfa-panel"
 import { SessionSecurityPanel } from "@/components/settings/session-security-panel"
 import {
   SETTINGS_DEFAULT_TAB,
@@ -86,6 +87,7 @@ export function SettingsPage() {
     trash: <TrashPanel />,
     "data-reset": <ClearDataPanel />,
     "access-control": <AccessControlPanel />,
+    mfa: <MfaPanel />,
     session: <SessionSecurityPanel />,
     "api-protection": <ApiProtectionPanel />,
     ai: <AiPanel />,

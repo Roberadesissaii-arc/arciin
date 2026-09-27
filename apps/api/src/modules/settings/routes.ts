@@ -30,7 +30,6 @@ import { serializeActivity } from "@/services/serializers"
 import { ClearInstanceContentError, clearInstanceContent } from "@/services/settings/clear-instance-content"
 import {
   getCloudflareTunnelState,
-  startCloudflareQuickTunnel,
   stopCloudflareQuickTunnel,
 } from "@/services/remote-access/cloudflare-tunnel"
 import {
@@ -38,6 +37,10 @@ import {
   resolveMobileLocalAccessUrls,
 } from "@/services/remote-access/local-access-urls"
 import { resolveCloudflareTunnelTarget } from "@/services/remote-access/tunnel-target"
+import {
+  canEnablePublicRemoteAccess,
+  readOwnerMfaState,
+} from "@/services/security/owner-mfa-policy"
 import {
   emailConfigSchema,
   mergeEmailConfig,
@@ -68,6 +71,10 @@ import {
   filterMigrationTargets,
   parseLinuxMounts,
 } from "@/services/storage/discover-storage"
+import {
+  requireOwnerMfaForPublicRemoteAccess,
+  startPublicTunnel,
+} from "@/services/remote-access/public-tunnel"
 import { requestCloudflareTunnelStart } from "@/services/remote-access/tunnel-boot"
 import {
   loadEffectiveStorageRoot,
@@ -271,6 +278,28 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
           objectCount,
           totalBytes,
           availableBytes,
+          /**
+           * The same numbers under names that say which question they answer.
+           *
+           * `usageBytes` is how much Arciin's own storage root holds;
+           * `totalBytes` is the capacity of the whole filesystem it sits on.
+           * Dividing one by the other produced "9% of volume used" on a disk
+           * that was 90% full, because everything else on the disk — the OS,
+           * home directories, container images — is invisible to the first
+           * number and counted in the second.
+           *
+           * filesystemUsedBytes comes from capacity minus free, so it
+           * describes the disk rather than Arciin's share of it.
+           */
+          arciinUsageBytes: usageBytes,
+          filesystemTotalBytes: totalBytes,
+          filesystemAvailableBytes: availableBytes,
+          filesystemUsedBytes:
+            totalBytes != null && availableBytes != null ? totalBytes - availableBytes : null,
+          filesystemUsagePercent:
+            totalBytes != null && availableBytes != null && totalBytes > 0
+              ? Math.round(((totalBytes - availableBytes) / totalBytes) * 100)
+              : null,
         },
       })
     }
@@ -625,6 +654,11 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
           reverseProxyEnabled: Boolean(config.reverseProxyEnabled),
           cloudflareTunnelEnabled: Boolean(config.cloudflareTunnelEnabled),
           cloudflareTunnelAutoStart: config.cloudflareTunnelAutoStart !== false,
+          /**
+           * So the panel can say why the button is unavailable before it is
+           * pressed, rather than answering with a 403 after.
+           */
+          ownerMfa: await readOwnerMfaState(fastify.prisma),
         },
       })
     }
@@ -695,6 +729,18 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
             ? null
             : parsed.data.publicUrl
           : (instance.publicUrl ?? null)
+
+      // Turning the tunnel on here starts it (requestCloudflareTunnelStart
+      // below), so it is public Remote Access and needs the same owner-MFA
+      // policy as the Start buttons. Turning it off, or saving other settings
+      // while it stays off, is never blocked.
+      if (parsed.data.cloudflareTunnelEnabled === true) {
+        const verdict = await canEnablePublicRemoteAccess(fastify.prisma)
+        if (!verdict.allowed) {
+          reply.status(403).send({ error: { code: verdict.code, message: verdict.message } })
+          return
+        }
+      }
 
       const updated = await fastify.prisma.instanceConfig.update({
         where: {
@@ -775,6 +821,9 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
         // deliberately left ungated: an entitlement lapse must never leave a
         // customer unable to close their own front door.
         requireFeature("ops.remote_access_helper"),
+        // Owner MFA is required to open public Remote Access — desktop or
+        // mobile alike. Same policy, same code, for every start route.
+        requireOwnerMfaForPublicRemoteAccess,
       ],
     },
     async (request, reply) => {
@@ -794,7 +843,7 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
       try {
         // Explicit user action: always mint a fresh address so a reset really resets
         // (and therefore actually notifies).
-        const url = await startCloudflareQuickTunnel(localTarget, { force: true })
+        const url = await startPublicTunnel(fastify.prisma, localTarget, { force: true })
 
         if (request.auth) {
           await fastify.prisma.activityEvent.create({
@@ -834,6 +883,9 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
         // deliberately left ungated: an entitlement lapse must never leave a
         // customer unable to close their own front door.
         requireFeature("ops.remote_access_helper"),
+        // Owner MFA is required to open public Remote Access — desktop or
+        // mobile alike. Same policy, same code, for every start route.
+        requireOwnerMfaForPublicRemoteAccess,
       ],
     },
     async (request, reply) => {
@@ -858,7 +910,7 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
       try {
         // Explicit user action: always mint a fresh address so a reset really resets
         // (and therefore actually notifies).
-        const url = await startCloudflareQuickTunnel(localTarget, { force: true })
+        const url = await startPublicTunnel(fastify.prisma, localTarget, { force: true })
 
         if (request.auth) {
           await fastify.prisma.activityEvent.create({

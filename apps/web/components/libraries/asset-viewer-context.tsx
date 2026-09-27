@@ -54,7 +54,9 @@ export function AssetViewerProvider({
       // Close the asset Sheet and collapse the nav rail — both sit above the
       // preview (Sheet is z-50 fixed) and hide the picture if left open.
       selection?.clear()
-      sidebar.setOpen(false)
+      // Transient: making room for the picture is not the user choosing a
+      // collapsed sidebar, so it must not survive a reload.
+      sidebar.setOpenTransient(false)
       sidebar.setOpenMobile(false)
       setState({
         open: true,

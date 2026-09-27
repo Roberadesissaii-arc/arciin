@@ -78,6 +78,7 @@ import {
 } from "@arciin/types"
 import { libraryGlassSheetPanel } from "@/lib/library-glass-sheet"
 import type { AssetSummary } from "@/lib/types/models"
+import { useConfirmDialog } from "@/components/shared/confirm-destructive-button"
 
 const transcriptKey = (assetId: string) => ["asset-transcript", assetId] as const
 
@@ -482,11 +483,16 @@ export function VideoTranscriptSection({
     URL.revokeObjectURL(url)
   }
 
-  const startGenerate = () => {
-    if (transcript?.edited && transcript.status === "READY") {
-      const ok = window.confirm(
-        "Regenerating will replace your edited transcript. Continue?",
-      )
+  const { confirm, dialog: confirmDialog } = useConfirmDialog()
+
+  const startGenerate = async () => {
+    if (transcript?.edited) {
+      const ok = await confirm({
+        title: "Replace your edited transcript?",
+        description:
+          "This transcript has manual edits. Regenerating replaces them with a fresh machine transcript.",
+        confirmLabel: "Regenerate",
+      })
       if (!ok) return
     }
     generate.mutate()
@@ -647,6 +653,7 @@ export function VideoTranscriptSection({
                 saving={saveEdit.isPending}
               />
             </div>
+      {confirmDialog}
     </div>
   )
 }
@@ -717,7 +724,7 @@ function TranscriptBody(props: {
   onSearch: (v: string) => void
   activeIndex: number
   onSeek: (ms: number) => void
-  onGenerate: () => void
+  onGenerate: () => void | Promise<void>
   onCopy: (withTimestamps: boolean) => void
   onDownload: (kind: "txt" | "srt") => void
   editing: boolean
@@ -891,17 +898,8 @@ function TranscriptBody(props: {
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem
-                onSelect={() => {
-                  if (
-                    transcript.edited &&
-                    !window.confirm(
-                      "This transcript has manual edits. Regenerating replaces them. Continue?",
-                    )
-                  ) {
-                    return
-                  }
-                  props.onGenerate()
-                }}
+                // onGenerate asks about manual edits itself (in-page dialog).
+                onSelect={() => props.onGenerate()}
                 data-testid="regenerate-transcript"
               >
                 <RefreshCw className="size-3.5" /> Regenerate

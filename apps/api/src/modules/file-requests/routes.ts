@@ -13,7 +13,6 @@
  *      stay out, because an omission in a redact-list leaks silently.
  */
 
-import path from "node:path"
 import { createHash } from "node:crypto"
 
 import type { FastifyInstance, FastifyRequest } from "fastify"
@@ -23,15 +22,15 @@ import {
   FILE_REQUEST_DEFAULTS,
   FILE_REQUEST_MAX_CONCURRENCY,
   FILE_REQUEST_RATE_LIMIT_PER_MINUTE,
-  JOB_TYPES,
-  admitFile,
   checkSubmitter,
   toPublicFileRequest,
 } from "@arciin/shared"
 
 import { recordAndBroadcastActivity } from "@/services/activity/record-and-broadcast-activity"
-import { analyzeStoredFile } from "@/services/classification/media-classification"
-import { buildRealtimeEvent } from "@/services/events/publish-event"
+import { commitFileRequestFile } from "@/services/file-requests/file-request-commit"
+import { resolveChunkSizeBytes } from "@/services/file-requests/resumable-policy"
+import { getUploadLimits } from "@/services/config/upload-limits"
+import { registerResumableFileRequestRoutes } from "@/modules/file-requests/resumable-routes"
 import {
   generateFileRequestToken,
   hashAccessCode,
@@ -39,18 +38,13 @@ import {
   resolveFileRequestByToken,
   verifyAccessCode,
 } from "@/services/file-requests/file-request-access"
-import { mediaQueue } from "@/services/jobs/queues"
 import { clientIpFromRequest } from "@/services/security/client-ip"
 import { requireSessionRole } from "@/services/security/auth"
 import { resolveEffectiveStorageRoot } from "@/services/storage/effective-storage-root"
 import {
-  createObjectStoragePath,
-  placeCanonicalOriginal,
   removeTempFile,
   writeMultipartToTemp,
 } from "@/services/storage/local-storage"
-import { commitUpload } from "@/services/uploads/commit-upload"
-import { dispatchPendingForUpload } from "@/services/uploads/outbox-dispatch"
 import {
   beginIdempotentRequest,
   completeIdempotentRequest,
@@ -58,11 +52,6 @@ import {
   hashRequestFingerprint,
 } from "@/services/uploads/idempotency-store"
 import { canonicalUploadRequest, isValidIdempotencyKey } from "@arciin/shared"
-
-const JOB_NAMES = {
-  extractMetadata: JOB_TYPES.extractMetadata,
-  generateThumbnail: JOB_TYPES.generateThumbnail,
-}
 
 const createFileRequestSchema = z.object({
   title: z.string().trim().min(1).max(200),
@@ -157,6 +146,9 @@ function serializeOwnerFileRequest(
 }
 
 export async function registerFileRequestRoutes(fastify: FastifyInstance) {
+  // Own scope: the chunk routes install a raw-stream octet-stream parser.
+  await fastify.register(registerResumableFileRequestRoutes)
+
   // -------------------------------------------------------------------------
   // Owner management
   // -------------------------------------------------------------------------
@@ -433,7 +425,21 @@ export async function registerFileRequestRoutes(fastify: FastifyInstance) {
     // No caching: quotas and revocation must take effect immediately, and an
     // intermediary must never hold a copy of a private upload page.
     reply.header("Cache-Control", "no-store")
-    reply.send({ data: toPublicFileRequest(resolved.request) })
+    // Upload terms, so the page can say the limit before a file is chosen and
+    // chunk exactly as the server expects. The smaller of the request's own
+    // limit and the instance-wide one (Settings → Storage).
+    const instanceMax = getUploadLimits().maxUploadSizeBytes
+    const requestMax = resolved.request.maxFileSizeBytes == null ? null : Number(resolved.request.maxFileSizeBytes)
+    reply.send({
+      data: {
+        ...toPublicFileRequest(resolved.request),
+        upload: {
+          resumable: true,
+          chunkSize: resolveChunkSizeBytes(),
+          maximumUploadBytes: requestMax == null ? instanceMax : Math.min(requestMax, instanceMax),
+        },
+      },
+    })
   })
 
   fastify.post("/public/file-requests/:token/submissions", async (request, reply) => {
@@ -576,253 +582,46 @@ export async function registerFileRequestRoutes(fastify: FastifyInstance) {
         }
       }
 
-      const analysis = await analyzeStoredFile(
-        tempResult.tempPath,
-        file.filename,
-        file.mimetype,
-        request.log,
-      )
-
-      // Quotas are re-read here rather than trusted from the resolve above:
-      // two submitters racing for the last slot must not both win.
-      const live = await fastify.prisma.fileRequest.findUnique({
-        where: { id: fileRequest.id },
-        select: { currentFileCount: true, currentBytes: true, revokedAt: true, status: true },
-      })
-      if (!live || live.revokedAt || live.status === "REVOKED") {
-        await removeTempFile(tempResult.tempPath)
-        tempPath = null
-        reply.status(410).send({
-          error: { code: "REQUEST_REVOKED", message: "This upload link has been turned off." },
-        })
-        return
-      }
-
-      const admission = admitFile({
+      const result = await commitFileRequestFile(fastify, {
+        fileRequest,
+        storageRoot,
+        tempPath: tempResult.tempPath,
         filename: file.filename,
+        clientMimeType: file.mimetype,
         sizeBytes: tempResult.sizeBytes,
-        detectedMediaType: analysis.mediaType,
-        detectedExtension: analysis.extension,
-        maxFileSizeBytes: fileRequest.maxFileSizeBytes,
-        maxFileCount: fileRequest.maxFileCount,
-        maxTotalBytes: fileRequest.maxTotalBytes,
-        currentFileCount: live.currentFileCount,
-        currentBytes: live.currentBytes,
-        allowedExtensions: fileRequest.allowedExtensions,
-        allowedMediaTypes: fileRequest.allowedMediaTypes,
+        checksumSha256: tempResult.checksumSha256,
+        submissionId: fieldValue("submissionId"),
+        submitter: { name: submitter.name, email: submitter.email },
+        abuseHash,
+        log: request.log,
       })
+      // Moved into storage on success, removed on rejection: not ours to clean.
+      tempPath = null
 
-      if (!admission.allowed) {
-        await removeTempFile(tempResult.tempPath)
-        tempPath = null
-        const status =
-          admission.code === "FILE_TOO_LARGE"
-            ? 413
-            : admission.code === "FILE_COUNT_EXCEEDED" || admission.code === "TOTAL_BYTES_EXCEEDED"
-              ? 409
-              : 415
-        reply.status(status).send({ error: { code: admission.code, message: admission.message } })
+      if (!result.ok) {
+        reply.status(result.status).send({ error: { code: result.code, message: result.message } })
         return
       }
 
-      // ---- reserve the quota before writing ---------------------------------
-      // A conditional update is what makes two simultaneous last-slot uploads
-      // resolve to one winner. Reserving after the write would let both through.
-      const reservation = await fastify.prisma.fileRequest.updateMany({
-        where: {
-          id: fileRequest.id,
-          revokedAt: null,
-          ...(fileRequest.maxFileCount != null
-            ? { currentFileCount: { lt: fileRequest.maxFileCount } }
-            : {}),
-        },
+      const responseBody = {
         data: {
-          currentFileCount: { increment: 1 },
-          currentBytes: { increment: BigInt(tempResult.sizeBytes) },
+          submissionId: result.submissionId,
+          fileName: result.fileName,
+          sizeBytes: result.sizeBytes,
+          status: result.status,
         },
-      })
-
-      if (reservation.count === 0) {
-        await removeTempFile(tempResult.tempPath)
-        tempPath = null
-        reply.status(409).send({
-          error: {
-            code: "FILE_COUNT_EXCEEDED",
-            message: "This request has reached its file limit.",
-          },
-        })
-        return
       }
 
-      let reserved = true
-      const releaseReservation = async () => {
-        if (!reserved) return
-        reserved = false
-        await fastify.prisma.fileRequest
-          .update({
-            where: { id: fileRequest.id },
-            data: {
-              currentFileCount: { decrement: 1 },
-              currentBytes: { decrement: BigInt(tempResult.sizeBytes) },
-            },
-          })
-          .catch(() => {})
+      if (idempotencyKey) {
+        await completeIdempotentRequest(fastify.prisma, {
+          scope: idempotencyScope,
+          key: idempotencyKey,
+          responseCode: 201,
+          responseBody,
+        })
       }
 
-      try {
-        // Continue an existing submission when the client supplies its id, so a
-        // multi-file drop is one submission and therefore one owner notification.
-        const submissionId = fieldValue("submissionId")
-        let submission = submissionId
-          ? await fastify.prisma.fileRequestSubmission.findFirst({
-              where: { id: submissionId, fileRequestId: fileRequest.id },
-            })
-          : null
-
-        if (!submission) {
-          submission = await fastify.prisma.fileRequestSubmission.create({
-            data: {
-              fileRequestId: fileRequest.id,
-              status: "UPLOADING",
-              submitterName: submitter.name,
-              submitterEmail: submitter.email,
-              abuseIdentifierHash: abuseHash,
-            },
-          })
-        }
-
-        const existingObject = await fastify.prisma.storageObject.findFirst({
-          where: {
-            checksumSha256: tempResult.checksumSha256,
-            storageLocationId: fileRequest.destinationLibrary.storageLocationId,
-          },
-          select: { id: true, objectKey: true, physicalPath: true },
-        })
-
-        const objectPath = existingObject?.objectKey
-          ? {
-              objectKey: existingObject.objectKey,
-              physicalPath: path.join(storageRoot, existingObject.objectKey),
-            }
-          : createObjectStoragePath(
-              tempResult.checksumSha256,
-              analysis.extension || path.extname(admission.safeFilename),
-              storageRoot,
-            )
-
-        const placed = await placeCanonicalOriginal({
-          tempPath: tempResult.tempPath,
-          destinationPath: objectPath.physicalPath,
-          expectedSizeBytes: tempResult.sizeBytes,
-        })
-        tempPath = null
-        const objectKey = objectPath.objectKey
-        const physicalPath = objectPath.physicalPath
-
-        if (existingObject && (placed === "written" || existingObject.physicalPath !== physicalPath)) {
-          await fastify.prisma.storageObject.update({
-            where: { id: existingObject.id },
-            data: {
-              physicalPath,
-              sizeBytes: BigInt(tempResult.sizeBytes),
-              mimeType: analysis.mimeType,
-            },
-          })
-        }
-
-        const committed = await commitUpload(fastify.prisma, {
-          storage: {
-            existingStorageObjectId: existingObject?.id ?? null,
-            storageLocationId: fileRequest.destinationLibrary.storageLocationId,
-            objectKey,
-            physicalPath,
-            sizeBytes: tempResult.sizeBytes,
-            checksumSha256: tempResult.checksumSha256,
-            mimeType: analysis.mimeType,
-          },
-          asset: {
-            libraryId: fileRequest.destinationLibraryId,
-            folderId: fileRequest.destinationFolderId,
-            // The asset belongs to the folder's owner: an anonymous submitter
-            // has no Arciin identity, and the files are the owner's to manage.
-            ownerId: fileRequest.createdByUserId,
-            filename: `${tempResult.checksumSha256}.${analysis.extension || "bin"}`,
-            originalFilename: admission.safeFilename,
-            mimeType: analysis.mimeType,
-            mediaType: analysis.mediaType,
-            extension: analysis.extension || "bin",
-            durationSeconds: analysis.durationSeconds,
-            width: analysis.width,
-            height: analysis.height,
-            codec: analysis.codec,
-            uploadClient: "file-request",
-            fileRequestId: fileRequest.id,
-            fileRequestSubmissionId: submission.id,
-          },
-          uploadSession: {
-            userId: fileRequest.createdByUserId,
-            originalFilename: admission.safeFilename,
-            targetLibraryId: fileRequest.destinationLibraryId,
-            targetFolderId: fileRequest.destinationFolderId,
-          },
-          jobNames: JOB_NAMES,
-        })
-
-        reserved = false // the quota now belongs to a committed asset
-
-        await fastify.prisma.fileRequestSubmission.update({
-          where: { id: submission.id },
-          data: {
-            fileCount: { increment: 1 },
-            totalBytes: { increment: BigInt(tempResult.sizeBytes) },
-            status: committed.requiresProcessing ? "PROCESSING" : "UPLOADING",
-          },
-        })
-
-        await dispatchPendingForUpload(
-          fastify.prisma,
-          { media: mediaQueue },
-          committed.pendingJobs,
-          request.log,
-        )
-
-        await fastify.publishRealtimeEvent(
-          buildRealtimeEvent("asset.created", {
-            userId: fileRequest.createdByUserId,
-            libraryId: fileRequest.destinationLibraryId,
-            assetId: committed.assetId,
-            message: `${admission.safeFilename} arrived through “${fileRequest.title}”.`,
-            data: {
-              mediaType: analysis.mediaType,
-              fileName: admission.safeFilename,
-              client: "file-request",
-            },
-          }),
-        )
-
-        const responseBody = {
-          data: {
-            submissionId: submission.id,
-            fileName: admission.safeFilename,
-            sizeBytes: tempResult.sizeBytes,
-            status: committed.requiresProcessing ? "PROCESSING" : "READY",
-          },
-        }
-
-        if (idempotencyKey) {
-          await completeIdempotentRequest(fastify.prisma, {
-            scope: idempotencyScope,
-            key: idempotencyKey,
-            responseCode: 201,
-            responseBody,
-          })
-        }
-
-        reply.status(201).send(responseBody)
-      } catch (innerError) {
-        await releaseReservation()
-        throw innerError
-      }
+      reply.status(201).send(responseBody)
     } catch (error) {
       if (tempPath) await removeTempFile(tempPath).catch(() => {})
       if (idempotencyKey) {

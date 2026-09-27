@@ -6,6 +6,7 @@ import { KeyRound, Loader2, RefreshCw, ShieldCheck } from "lucide-react"
 import { toast } from "@/lib/notifications/arciin-toast"
 
 import { PlanBadge } from "@/components/license/plan-badge"
+import { ConfirmDestructiveButton } from "@/components/shared/confirm-destructive-button"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -279,19 +280,16 @@ export function LicensePanel() {
               Refresh status
             </Button>
             {!s.isFreeCore || s.keyPrefix ? (
-              <Button
-                type="button"
+              <ConfirmDestructiveButton
                 variant="ghost"
-                size="sm"
-                disabled={deactivateMutation.isPending}
-                onClick={() => {
-                  if (window.confirm("Return this instance to Free core? Your files stay on disk.")) {
-                    deactivateMutation.mutate()
-                  }
-                }}
+                title="Return this instance to Free core?"
+                description="Paid features stop working on this server. Your files stay on disk, and you can activate the licence again later."
+                confirmLabel="Deactivate license"
+                pending={deactivateMutation.isPending}
+                onConfirm={() => deactivateMutation.mutateAsync()}
               >
                 Deactivate license
-              </Button>
+              </ConfirmDestructiveButton>
             ) : null}
           </div>
         </div>

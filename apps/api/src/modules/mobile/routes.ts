@@ -1,4 +1,5 @@
 import { MOBILE_DISCOVER_SERVICE_ID, MOBILE_SESSION_USER_AGENT_PREFIX } from "@arciin/shared"
+import { clientIpFromRequest } from "@/services/security/client-ip"
 import type { FastifyInstance, FastifyRequest } from "fastify"
 import type { User } from "@prisma/client"
 import { z } from "zod"
@@ -230,7 +231,8 @@ export async function registerMobileRoutes(fastify: FastifyInstance) {
     }
 
     const email = parsed.data.email.trim().toLowerCase()
-    const lock = await isLoginLocked(fastify, email)
+    const clientIp = clientIpFromRequest(request)
+    const lock = await isLoginLocked(fastify, email, clientIp)
     if (lock.locked) {
       reply.status(429).send({
         error: {
@@ -247,7 +249,7 @@ export async function registerMobileRoutes(fastify: FastifyInstance) {
       return
     }
 
-    await clearFailedLoginAttempts(fastify, email)
+    await clearFailedLoginAttempts(fastify, email, clientIp)
 
     const ctx = resolveRequestClientContext(request)
     const deviceLabel = parsed.data.deviceName?.trim() || ctx.deviceLabel || "Mobile"

@@ -21,6 +21,8 @@ import { licenseTestEnv } from "./tests/license-server/test-env"
 export default defineConfig({
   resolve: {
     alias: {
+      // Subpath first: a bare "@arciin/config" prefix would swallow it.
+      "@arciin/config/client": path.resolve(__dirname, "packages/config/src/client.ts"),
       "@arciin/config": path.resolve(__dirname, "packages/config/src/index.ts"),
       "@arciin/types": path.resolve(__dirname, "packages/types/src/index.ts"),
     },

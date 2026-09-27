@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { WORKER_HEARTBEAT_KEY, resolveNamespacedKey } from "@arciin/shared"
+import { WORKER_HEARTBEAT_KEY, resolveNamespacedKey } from "@arciin/config"
 
 /**
  * FIX-012 — one key, written and read by the same name.

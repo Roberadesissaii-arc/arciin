@@ -23,6 +23,8 @@ export const SOCKET_EVENT_TYPES = [
   "job.completed",
   "job.failed",
   "activity.created",
+  /** Read state changed for one user; every tab/device of theirs refetches. */
+  "notifications.read",
   "instance.urls.updated",
   "plex.connected",
   "plex.sync.started",

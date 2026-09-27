@@ -33,6 +33,7 @@ import {
 } from "@/lib/dashboard-table-styles"
 import { formatBytes } from "@/lib/utils/format-bytes"
 import { formatMediaTypeLabel } from "@/lib/utils/media-type"
+import { ArchivedBadge } from "@/components/libraries/archived-badge"
 import { cn } from "@/lib/utils"
 import type { AssetSummary } from "@/lib/types/models"
 import { RelativeTime } from "@/components/shared/relative-time"
@@ -144,11 +145,14 @@ function AssetTableRow({ asset }: { asset: AssetSummary }) {
         </TableCell>
       ) : null}
       <TableCell className={cn("max-w-0 overflow-hidden py-3.5", !selection && "pl-5")}>
-        <span
-          className="block min-w-0 truncate text-[13px] font-medium leading-snug text-foreground"
-          title={asset.originalFilename}
-        >
-          {asset.originalFilename}
+        <span className="flex min-w-0 items-center gap-2">
+          <span
+            className="block min-w-0 truncate text-[13px] font-medium leading-snug text-foreground"
+            title={asset.originalFilename}
+          >
+            {asset.originalFilename}
+          </span>
+          {asset.archivedAt ? <ArchivedBadge /> : null}
         </span>
       </TableCell>
       <TableCell className="py-3.5">

@@ -1,4 +1,4 @@
-import { ARCIIN_CLIENT_CHANNEL_HEADER } from "@arciin/config"
+import { ARCIIN_CLIENT_CHANNEL_HEADER } from "@arciin/config/client"
 import { getBrowserApiUrl } from "@/lib/api/browser-api-origin"
 import { ApiError } from "@/lib/api/errors"
 import { fetchApi } from "@/lib/api/client"

@@ -31,6 +31,8 @@
   --color-input: var(--input);
   --color-border: var(--border);
   --color-destructive: var(--destructive);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
   --color-accent-foreground: var(--accent-foreground);
   --color-accent: var(--accent);
   --color-muted-foreground: var(--muted-foreground);
@@ -54,6 +56,9 @@
 
 :root {
   --arciin-accent: #ff4f12;
+  /* Semantic status colours (CLAUDE.md). Status only — never decoration. */
+  --success: #22c55e;
+  --warning: #f59e0b;
   --arciin-accent-hover: color-mix(in srgb, var(--arciin-accent) 88%, white);
   --arciin-accent-icon-bg: color-mix(in srgb, var(--arciin-accent) 8%, transparent);
   --arciin-accent-icon-border: color-mix(in srgb, var(--arciin-accent) 18%, transparent);

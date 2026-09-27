@@ -29,7 +29,9 @@ import {
 import { PanelLeftIcon } from "lucide-react"
 
 const SIDEBAR_COOKIE_NAME = "sidebar_state"
-const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7
+// First-paint cache only; the saved preference (appearance.sidebarCollapsed)
+// is authoritative. A week-long cookie meant the choice silently reset.
+const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 365
 const SIDEBAR_WIDTH = "16rem"
 const SIDEBAR_WIDTH_MOBILE = "18rem"
 const SIDEBAR_WIDTH_ICON = "3rem"
@@ -46,7 +48,10 @@ function readSidebarOpenCookie(): boolean | null {
 type SidebarContextProps = {
   state: "expanded" | "collapsed"
   open: boolean
+  /** A person's choice: applied and remembered. */
   setOpen: (open: boolean) => void
+  /** Applied for now, never remembered (e.g. making room for a viewer). */
+  setOpenTransient: (open: boolean) => void
   openMobile: boolean
   setOpenMobile: (open: boolean) => void
   isMobile: boolean
@@ -68,6 +73,8 @@ function SidebarProvider({
   defaultOpen = true,
   open: openProp,
   onOpenChange: setOpenProp,
+  preferredOpen,
+  onPreferredOpenChange,
   className,
   style,
   children,
@@ -76,6 +83,10 @@ function SidebarProvider({
   defaultOpen?: boolean
   open?: boolean
   onOpenChange?: (open: boolean) => void
+  /** Saved desktop preference; null/undefined while it is still loading. */
+  preferredOpen?: boolean | null
+  /** Called only when a person toggles the sidebar — never for automatic collapses. */
+  onPreferredOpenChange?: (open: boolean) => void
 }) {
   const isMobile = useIsMobile()
   const [openMobile, setOpenMobile] = React.useState(false)
@@ -85,19 +96,39 @@ function SidebarProvider({
   // Match SSR: always use defaultOpen on first render; sync viewport/cookie after mount.
   const [_open, _setOpen] = React.useState(defaultOpen)
   const open = openProp ?? _open
+
+  /**
+   * Show a state without recording it as the person's choice.
+   *
+   * Automatic changes used to go through setOpen, which wrote the cookie: a
+   * tablet-width window, or opening the file viewer, quietly replaced the
+   * user's own setting, so the next reload came back collapsed for no reason
+   * they could see.
+   */
+  const applyOpen = React.useCallback(
+    (openState: boolean) => {
+      if (setOpenProp) setOpenProp(openState)
+      else _setOpen(openState)
+    },
+    [setOpenProp]
+  )
+
+  const preferredRef = React.useRef(preferredOpen)
+  const onPreferredRef = React.useRef(onPreferredOpenChange)
+  React.useEffect(() => {
+    onPreferredRef.current = onPreferredOpenChange
+  })
+
   const setOpen = React.useCallback(
     (value: boolean | ((value: boolean) => boolean)) => {
       const openState = typeof value === "function" ? value(open) : value
-      if (setOpenProp) {
-        setOpenProp(openState)
-      } else {
-        _setOpen(openState)
-      }
-
+      applyOpen(openState)
+      preferredRef.current = openState
       // This sets the cookie to keep the sidebar state.
       document.cookie = `${SIDEBAR_COOKIE_NAME}=${openState}; path=/; max-age=${SIDEBAR_COOKIE_MAX_AGE}`
+      onPreferredRef.current?.(openState)
     },
-    [setOpenProp, open]
+    [applyOpen, open]
   )
 
   // Helper to toggle the sidebar.
@@ -105,22 +136,38 @@ function SidebarProvider({
     return isMobile ? setOpenMobile((open) => !open) : setOpen((open) => !open)
   }, [isMobile, setOpen, setOpenMobile])
 
-  // After hydration: tablet → collapsed; desktop → cookie preference.
-  const setOpenRef = React.useRef(setOpen)
+  // After hydration: tablet → collapsed; desktop → the person's preference.
+  const applyOpenRef = React.useRef(applyOpen)
 
   React.useEffect(() => {
-    setOpenRef.current = setOpen
+    applyOpenRef.current = applyOpen
   })
+
+  const readPreferred = React.useCallback(
+    () => preferredRef.current ?? readSidebarOpenCookie(),
+    []
+  )
 
   const syncSidebarOpenForViewport = React.useCallback(() => {
     const mq = window.matchMedia(TABLET_SIDEBAR_MEDIA)
     if (mq.matches) {
-      setOpenRef.current(false)
+      applyOpenRef.current(false)
       return
     }
-    const cookie = readSidebarOpenCookie()
-    if (cookie !== null) setOpenRef.current(cookie)
-  }, [])
+    const preferred = readPreferred()
+    if (preferred !== null) applyOpenRef.current(preferred)
+  }, [readPreferred])
+
+  // The saved preference arrives after first paint; adopt it, and refresh the
+  // first-paint cookie so the next load starts in the right state.
+  React.useEffect(() => {
+    if (preferredOpen === undefined || preferredOpen === null) return
+    preferredRef.current = preferredOpen
+    document.cookie = `${SIDEBAR_COOKIE_NAME}=${preferredOpen}; path=/; max-age=${SIDEBAR_COOKIE_MAX_AGE}`
+    if (isMobile || openProp !== undefined) return
+    if (window.matchMedia(TABLET_SIDEBAR_MEDIA).matches) return
+    applyOpenRef.current(preferredOpen)
+  }, [preferredOpen, isMobile, openProp])
 
   React.useLayoutEffect(() => {
     if (isMobile || openProp !== undefined) return
@@ -133,19 +180,18 @@ function SidebarProvider({
     const mq = window.matchMedia(TABLET_SIDEBAR_MEDIA)
     const onViewportChange = () => {
       if (mq.matches) {
-        setOpenRef.current(false)
+        applyOpenRef.current(false)
         return
       }
       // Widening again restores what the user actually chose. Collapsing on the
       // way down but never expanding on the way back left the rail shut for the
       // rest of the session, which reads as the toggle having broken.
-      const preferred = readSidebarOpenCookie()
-      setOpenRef.current(preferred ?? true)
+      applyOpenRef.current(readPreferred() ?? true)
     }
 
     mq.addEventListener("change", onViewportChange)
     return () => mq.removeEventListener("change", onViewportChange)
-  }, [isMobile, openProp])
+  }, [isMobile, openProp, readPreferred])
 
   // Adds a keyboard shortcut to toggle the sidebar.
   React.useEffect(() => {
@@ -172,12 +218,13 @@ function SidebarProvider({
       state,
       open,
       setOpen,
+      setOpenTransient: applyOpen,
       isMobile,
       openMobile,
       setOpenMobile,
       toggleSidebar,
     }),
-    [state, open, setOpen, isMobile, openMobile, setOpenMobile, toggleSidebar]
+    [state, open, setOpen, applyOpen, isMobile, openMobile, setOpenMobile, toggleSidebar]
   )
 
   return (

@@ -56,6 +56,7 @@ import {
 } from "@/lib/library-glass-sheet"
 import { formatCardRelativeTime } from "@/lib/utils/format-card-relative-time"
 import { inferDestinationLabel } from "@/lib/utils/media-type"
+import { ArchivedBadge } from "@/components/libraries/archived-badge"
 import { cn } from "@/lib/utils"
 import { isViewableAsset } from "@/lib/utils/viewable-asset"
 import type { AssetStatus, AssetSummary, MediaType } from "@/lib/types/models"
@@ -484,12 +485,15 @@ export function AssetCard({
         does not pull its source badge up out of line with its neighbours.
       */}
       <div className="mt-2.5 min-w-0">
-        <p
-          className="truncate text-[12.5px] font-medium leading-snug text-zinc-900"
-          title={asset.originalFilename}
-        >
-          {asset.originalFilename}
-        </p>
+        <div className="flex min-w-0 items-center gap-1.5">
+          <p
+            className="min-w-0 truncate text-[12.5px] font-medium leading-snug text-zinc-900"
+            title={asset.originalFilename}
+          >
+            {asset.originalFilename}
+          </p>
+          {isArchived ? <ArchivedBadge /> : null}
+        </div>
         {asset.sourceContext ? (
           <p
             className="mt-0.5 truncate text-[11px] text-zinc-500"

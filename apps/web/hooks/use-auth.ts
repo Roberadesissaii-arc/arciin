@@ -2,7 +2,13 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 
-import { getMe, login, logout } from "@/lib/api/auth"
+import {
+  getMe,
+  isMfaChallenge,
+  login,
+  logout,
+  submitMfaChallenge,
+} from "@/lib/api/auth"
 import { queryKeys } from "@/lib/api/query-keys"
 import type { LoginInput } from "@/lib/types/models"
 
@@ -19,6 +25,22 @@ export function useLogin() {
 
   return useMutation({
     mutationFn: (input: LoginInput) => login(input),
+    onSuccess: (data) => {
+      // A challenge is not a session. Caching it as one would leave the app
+      // believing it had signed somebody in on a correct password alone.
+      if (isMfaChallenge(data)) return
+      queryClient.setQueryData(queryKeys.authMe, data)
+    },
+  })
+}
+
+/** Second step of sign-in: exchange the ticket and a code for a session. */
+export function useMfaChallenge() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (input: { challengeToken: string; totp?: string; recoveryCode?: string }) =>
+      submitMfaChallenge(input),
     onSuccess: (data) => {
       queryClient.setQueryData(queryKeys.authMe, data)
     },

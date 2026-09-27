@@ -29,7 +29,7 @@ export function WindowsDesktopDownloadCard() {
         <SectionHeader
           icon={Monitor}
           title="Arciin Desktop"
-          description="Automatically discover, pair and back up this computer."
+          description="Automatically discover and securely pair with this server."
         />
         <div className="mt-4">
           <Button asChild>

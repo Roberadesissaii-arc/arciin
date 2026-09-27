@@ -10,6 +10,8 @@ export const queryKeys = {
     ["folders", libraryId, folderId ?? "root"] as const,
   /** Prefix for invalidating every assets query (library grids, search, etc.). */
   assetsRoot: ["assets"] as const,
+  /** Server-side totals for the All Files header; invalidated by asset mutations. */
+  assetStats: ["assets", "stats"] as const,
   assets: (filters: Record<string, unknown> = {}) => ["assets", filters] as const,
   /** Paginated library/folder browsing. Shares the "assets" prefix so realtime invalidation reaches it. */
   assetsPage: (filters: Record<string, unknown> = {}) => ["assets", "page", filters] as const,
@@ -19,6 +21,10 @@ export const queryKeys = {
   activity: (filters: Record<string, unknown> = {}) =>
     ["activity", filters] as const,
   securityActivity: ["activity", "security"] as const,
+  /** Prefix for every notifications query: the badge and each inbox page. */
+  notificationsRoot: ["notifications"] as const,
+  notifications: (params: { limit: number; offset: number }) =>
+    ["notifications", params] as const,
   uploads: ["uploads"] as const,
   upload: (uploadId: string) => ["upload", uploadId] as const,
   jobs: ["jobs"] as const,
@@ -31,6 +37,7 @@ export const queryKeys = {
   licenseStatusFor: (userId: string | null) => ["license", "status", userId ?? "anonymous"] as const,
   generalSettings: ["settings", "general"] as const,
   storageSettings: ["settings", "storage"] as const,
+  uploadLimits: ["settings", "uploads"] as const,
   storageVolumes: ["settings", "storage", "volumes"] as const,
   storageMigrateStatus: ["settings", "storage", "migrate"] as const,
   remoteAccessSettings: ["settings", "remote-access"] as const,
@@ -47,7 +54,8 @@ export const queryKeys = {
   webhooks: ["webhooks"] as const,
   webhookDeliveries: (endpointId: string) => ["webhooks", endpointId, "deliveries"] as const,
   adminTables: ["admin", "tables"] as const,
-  adminTableData: (table: string, page: number) => ["admin", "table", table, page] as const,
+  adminTableData: (table: string, page: number, status = "all") =>
+    ["admin", "table", table, page, status] as const,
   appDatabases: ["app-databases"] as const,
   appDatabase: (id: string) => ["app-database", id] as const,
   appDatabaseFolders: (databaseId: string) => ["app-database-folders", databaseId] as const,

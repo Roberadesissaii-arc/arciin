@@ -8,6 +8,9 @@ import {
   Inbox,
   Loader2,
   Paperclip,
+  Pause,
+  Play,
+  RotateCcw,
   UploadCloud,
   X,
 } from "lucide-react"
@@ -17,10 +20,20 @@ import { Input } from "@/components/ui/input"
 import {
   completeFileRequestSubmission,
   getPublicFileRequest,
-  submitFileToRequest,
   type PublicFileRequestView,
-  type SubmitFileError,
 } from "@/lib/api/file-requests"
+import {
+  UploadHttpError,
+  UploadPausedError,
+  UploadStalledError,
+  fileFingerprint,
+  forgetUpload,
+  httpTransport,
+  recallUpload,
+  rememberUpload,
+  runResumableUpload,
+  type FileMeta,
+} from "@/lib/uploads/resumable-upload"
 import { formatBytes } from "@/lib/utils/format-bytes"
 import { cn } from "@/lib/utils"
 
@@ -33,14 +46,54 @@ import { cn } from "@/lib/utils"
  * builds, which carries no internal identifier at all.
  */
 
+type ItemStatus =
+  | "pending"
+  | "uploading"
+  | "reconnecting"
+  | "verifying"
+  | "paused"
+  | "stalled"
+  | "done"
+  | "error"
+  | "cancelled"
+
 type QueuedFile = {
   id: string
   file: File
-  /** Stable across retries, so a lost response cannot create a second asset. */
-  idempotencyKey: string
-  status: "pending" | "uploading" | "done" | "error"
-  progress: number
+  status: ItemStatus
+  uploadedBytes: number
+  /** Bytes per second, smoothed. */
+  speed: number | null
   error?: string
+  uploadId?: string
+}
+
+/** Files uploading at once. More than this just splits the same bandwidth. */
+const MAX_PARALLEL_FILES = 2
+
+/** Failures that mean the whole link is closed, not just this file. */
+const LINK_WIDE_CODES = new Set([
+  "ACCESS_CODE_INVALID",
+  "REQUEST_EXPIRED",
+  "REQUEST_REVOKED",
+  "REQUEST_LIMIT_REACHED",
+])
+
+function metaOf(file: File): FileMeta {
+  return {
+    filename: file.name,
+    sizeBytes: file.size,
+    mimeType: file.type || null,
+    lastModified: Number.isFinite(file.lastModified) ? file.lastModified : null,
+  }
+}
+
+function formatDuration(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds <= 0) return ""
+  if (seconds < 60) return `${Math.ceil(seconds)}s left`
+  const minutes = Math.round(seconds / 60)
+  if (minutes < 60) return `${minutes} min left`
+  return `${Math.floor(minutes / 60)} h ${minutes % 60} min left`
 }
 
 function newId() {
@@ -78,6 +131,16 @@ export function PublicFileRequestPage({ token }: { token: string }) {
 
   const submissionIdRef = useRef<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const controllersRef = useRef(new Map<string, AbortController>())
+  // The upload loop reads the queue between awaits, before React has
+  // re-rendered, so the ref is the source of truth and state mirrors it. A ref
+  // synced in an effect lagged one render behind: the last file still looked
+  // "verifying" when the loop finished, and the submission was never closed.
+  const queueRef = useRef<QueuedFile[]>([])
+  const updateQueue = useCallback((change: (prev: QueuedFile[]) => QueuedFile[]) => {
+    queueRef.current = change(queueRef.current)
+    setQueue(queueRef.current)
+  }, [])
 
   const {
     data: request,
@@ -99,35 +162,30 @@ export function PublicFileRequestPage({ token }: { token: string }) {
       const incoming = Array.from(files)
       if (incoming.length === 0) return
 
-      setQueue((prev) => {
+      updateQueue((prev) => {
         const next = [...prev]
         for (const file of incoming) {
           // Local pre-checks are a courtesy so the sender sees the problem
           // before spending their upload. The server enforces all of this
           // again — a check that only runs in the browser is not a limit.
-          if (request?.maxFileSizeBytes != null && file.size > request.maxFileSizeBytes) {
+          const limit = request?.upload?.maximumUploadBytes ?? request?.maxFileSizeBytes ?? null
+          if (limit != null && file.size > limit) {
             next.push({
               id: newId(),
               file,
-              idempotencyKey: newId(),
               status: "error",
-              progress: 0,
-              error: `Larger than the ${formatBytes(request.maxFileSizeBytes)} limit.`,
+              uploadedBytes: 0,
+              speed: null,
+              error: `Larger than the ${formatBytes(limit)} limit.`,
             })
             continue
           }
-          next.push({
-            id: newId(),
-            file,
-            idempotencyKey: newId(),
-            status: "pending",
-            progress: 0,
-          })
+          next.push({ id: newId(), file, status: "pending", uploadedBytes: 0, speed: null })
         }
         return next
       })
     },
-    [request],
+    [request, updateQueue],
   )
 
   useEffect(() => {
@@ -184,7 +242,7 @@ export function PublicFileRequestPage({ token }: { token: string }) {
           variant="outline"
           onClick={() => {
             setConfirmed(null)
-            setQueue([])
+            updateQueue(() => [])
             submissionIdRef.current = null
           }}
         >
@@ -196,95 +254,191 @@ export function PublicFileRequestPage({ token }: { token: string }) {
 
   const pending = queue.filter((q) => q.status === "pending")
   const uploaded = queue.filter((q) => q.status === "done")
+  const active = queue.filter((q) =>
+    ["uploading", "reconnecting", "verifying"].includes(q.status),
+  )
   const canSubmit = pending.length > 0 && !submitting
+  const maximumUploadBytes = request.upload?.maximumUploadBytes ?? request.maxFileSizeBytes
 
-  async function handleSubmit() {
+  const patch = (id: string, change: Partial<QueuedFile>) =>
+    updateQueue((prev) => prev.map((q) => (q.id === id ? { ...q, ...change } : q)))
+
+  /** Upload one file to completion, or until it pauses, stalls or fails. */
+  async function uploadOne(item: QueuedFile): Promise<void> {
+    const controller = new AbortController()
+    controllersRef.current.set(item.id, controller)
+    const meta = metaOf(item.file)
+    const fingerprint = fileFingerprint(token, meta)
+    let lastBytes = item.uploadedBytes
+    let lastAt = performance.now()
+
+    patch(item.id, { status: "uploading", error: undefined })
+    try {
+      const result = await runResumableUpload({
+        file: item.file,
+        meta,
+        transport: httpTransport(token),
+        extra: {
+          submissionId: submissionIdRef.current,
+          submitterName: submitterName.trim() || null,
+          submitterEmail: submitterEmail.trim() || null,
+          accessCode: accessCode.trim() || null,
+        },
+        knownUploadId: item.uploadId ?? recallUpload(fingerprint),
+        submissionId: () => submissionIdRef.current,
+        signal: controller.signal,
+        onSession: (session) => {
+          rememberUpload(fingerprint, session.uploadId)
+          patch(item.id, { uploadId: session.uploadId, uploadedBytes: session.uploadedBytes })
+        },
+        onState: (state) => {
+          if (state === "reconnecting") patch(item.id, { status: "reconnecting" })
+          else if (state === "uploading") patch(item.id, { status: "uploading" })
+          else if (state === "verifying") patch(item.id, { status: "verifying" })
+        },
+        onProgress: (bytes) => {
+          const now = performance.now()
+          const elapsed = (now - lastAt) / 1000
+          if (elapsed >= 0.5) {
+            const instant = Math.max(0, bytes - lastBytes) / elapsed
+            lastBytes = bytes
+            lastAt = now
+            updateQueue((prev) =>
+              prev.map((q) =>
+                q.id === item.id
+                  ? { ...q, uploadedBytes: bytes, speed: q.speed == null ? instant : q.speed * 0.7 + instant * 0.3 }
+                  : q,
+              ),
+            )
+          } else {
+            patch(item.id, { uploadedBytes: bytes })
+          }
+        },
+      })
+      // Later files join this submission, so the owner is told once per drop.
+      if (result.submissionId) submissionIdRef.current = result.submissionId
+      forgetUpload(fingerprint)
+      patch(item.id, { status: "done", uploadedBytes: item.file.size, speed: null })
+    } catch (err) {
+      if (err instanceof UploadPausedError || controller.signal.aborted) {
+        const reason = controller.signal.reason
+        if (reason === "cancel") {
+          forgetUpload(fingerprint)
+          patch(item.id, { status: "cancelled", speed: null })
+        } else {
+          patch(item.id, { status: "paused", speed: null })
+        }
+      } else if (err instanceof UploadStalledError) {
+        patch(item.id, {
+          status: "stalled",
+          speed: null,
+          error: "Unable to reconnect. Your progress is saved.",
+        })
+      } else {
+        const failure = err instanceof UploadHttpError ? err : null
+        if (failure && ["UPLOAD_SESSION_EXPIRED", "UPLOAD_NOT_FOUND"].includes(failure.code)) {
+          forgetUpload(fingerprint)
+        }
+        patch(item.id, {
+          status: "error",
+          speed: null,
+          uploadId: failure?.code === "UPLOAD_SESSION_EXPIRED" ? undefined : item.uploadId,
+          error: failure?.message ?? "Upload failed.",
+        })
+        if (failure && LINK_WIDE_CODES.has(failure.code)) {
+          setFormError(failure.message)
+          throw failure
+        }
+      }
+    } finally {
+      controllersRef.current.delete(item.id)
+    }
+  }
+
+  /** Work through queued files, MAX_PARALLEL_FILES at a time. */
+  async function drain(ids: string[]) {
+    const waiting = [...ids]
+    let stopAll = false
+    const worker = async () => {
+      while (!stopAll && waiting.length > 0) {
+        const id = waiting.shift()!
+        const item = queueRef.current.find((q) => q.id === id)
+        if (!item) continue
+        try {
+          await uploadOne(item)
+        } catch {
+          stopAll = true
+        }
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(MAX_PARALLEL_FILES, waiting.length) }, worker))
+  }
+
+  function validateSubmitter(): boolean {
     setFormError(null)
-
     if (request!.requireName && !submitterName.trim()) {
       setFormError("Your name is required.")
-      return
+      return false
     }
     if (request!.requireEmail && !submitterEmail.trim()) {
       setFormError("Your email address is required.")
-      return
+      return false
     }
     if (request!.requiresAccessCode && !accessCode.trim()) {
       setFormError("An access code is required.")
-      return
+      return false
     }
+    return true
+  }
 
+  async function finish() {
+    const stillBusy = queueRef.current.some((q) =>
+      ["uploading", "reconnecting", "verifying", "pending"].includes(q.status),
+    )
+    const unfinished = queueRef.current.some((q) => ["paused", "stalled"].includes(q.status))
+    if (stillBusy || unfinished || !submissionIdRef.current) return
+    try {
+      const summary = await completeFileRequestSubmission(token, submissionIdRef.current)
+      if (summary.fileCount > 0) {
+        setConfirmed({ fileCount: summary.fileCount, totalBytes: summary.totalBytes })
+      }
+    } catch {
+      // The files are already stored; failing to close the submission is not
+      // worth showing the sender an error about.
+    }
+  }
+
+  async function run(ids: string[]) {
     setSubmitting(true)
-
-    for (const item of queue) {
-      if (item.status !== "pending") continue
-
-      setQueue((prev) =>
-        prev.map((q) => (q.id === item.id ? { ...q, status: "uploading", progress: 0 } : q)),
-      )
-
-      try {
-        const result = await submitFileToRequest(
-          token,
-          {
-            file: item.file,
-            submissionId: submissionIdRef.current,
-            submitterName: submitterName.trim() || null,
-            submitterEmail: submitterEmail.trim() || null,
-            accessCode: accessCode.trim() || null,
-            idempotencyKey: item.idempotencyKey,
-          },
-          (fraction) => {
-            setQueue((prev) =>
-              prev.map((q) => (q.id === item.id ? { ...q, progress: fraction } : q)),
-            )
-          },
-        )
-
-        // Every file after the first joins the same submission, so the owner
-        // gets one notification for the whole drop rather than one per file.
-        submissionIdRef.current = result.submissionId
-
-        setQueue((prev) =>
-          prev.map((q) => (q.id === item.id ? { ...q, status: "done", progress: 1 } : q)),
-        )
-      } catch (err) {
-        const failure = err as SubmitFileError
-        setQueue((prev) =>
-          prev.map((q) =>
-            q.id === item.id
-              ? { ...q, status: "error", error: failure?.message ?? "Upload failed." }
-              : q,
-          ),
-        )
-
-        // A rejection that applies to the whole request — a bad code, an
-        // expiry, an exhausted quota — will reject every remaining file too.
-        if (
-          failure?.code === "ACCESS_CODE_INVALID" ||
-          failure?.code === "REQUEST_EXPIRED" ||
-          failure?.code === "REQUEST_REVOKED" ||
-          failure?.code === "REQUEST_LIMIT_REACHED"
-        ) {
-          setFormError(failure.message)
-          break
-        }
-      }
+    try {
+      await drain(ids)
+    } finally {
+      setSubmitting(false)
     }
+    await finish()
+  }
 
-    setSubmitting(false)
+  async function handleSubmit() {
+    if (!validateSubmitter()) return
+    await run(queue.filter((q) => q.status === "pending").map((q) => q.id))
+  }
 
-    if (submissionIdRef.current) {
-      try {
-        const summary = await completeFileRequestSubmission(token, submissionIdRef.current)
-        if (summary.fileCount > 0) {
-          setConfirmed({ fileCount: summary.fileCount, totalBytes: summary.totalBytes })
-        }
-      } catch {
-        // The files are already stored; failing to close the submission is not
-        // worth showing the sender an error about.
-      }
-    }
+  function pauseItem(id: string) {
+    controllersRef.current.get(id)?.abort("pause")
+  }
+
+  async function cancelItem(item: QueuedFile) {
+    const controller = controllersRef.current.get(item.id)
+    if (controller) controller.abort("cancel")
+    if (item.uploadId) await httpTransport(token).cancel(item.uploadId)
+    forgetUpload(fileFingerprint(token, metaOf(item.file)))
+    patch(item.id, { status: "cancelled", speed: null })
+  }
+
+  async function resumeItem(id: string) {
+    if (!validateSubmitter()) return
+    patch(id, { status: "pending" })
+    await run([id])
   }
 
   return (
@@ -321,11 +475,11 @@ export function PublicFileRequestPage({ token }: { token: string }) {
             </dd>
           </>
         ) : null}
-        {request.maxFileSizeBytes != null ? (
+        {maximumUploadBytes != null ? (
           <>
             <dt className="text-muted-foreground">Max per file</dt>
-            <dd className="text-right text-foreground">
-              {formatBytes(request.maxFileSizeBytes)}
+            <dd className="text-right text-foreground" data-testid="file-request-max-size">
+              {formatBytes(maximumUploadBytes)}
             </dd>
           </>
         ) : null}
@@ -443,52 +597,134 @@ export function PublicFileRequestPage({ token }: { token: string }) {
 
       {queue.length > 0 ? (
         <ul className="mt-4 space-y-2" data-testid="file-request-queue">
-          {queue.map((item) => (
-            <li
-              key={item.id}
-              className="flex items-center gap-3 rounded-lg border border-border bg-card/40 px-3 py-2"
-            >
-              <Paperclip className="size-4 shrink-0 text-muted-foreground" />
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-[12px] font-medium text-foreground">
-                  {item.file.name}
-                </p>
-                <p className="text-[11px] text-muted-foreground">
-                  {item.status === "error"
-                    ? item.error
-                    : item.status === "done"
-                      ? "Sent"
-                      : item.status === "uploading"
-                        ? `${Math.round(item.progress * 100)}%`
-                        : formatBytes(item.file.size)}
-                </p>
-                {item.status === "uploading" ? (
-                  <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-muted">
+          {queue.map((item) => {
+            const fraction = item.file.size > 0 ? item.uploadedBytes / item.file.size : 1
+            const percent = Math.min(100, Math.floor(fraction * 100))
+            const inFlight = ["uploading", "reconnecting", "verifying"].includes(item.status)
+            const showBar = inFlight || item.status === "paused" || item.status === "stalled"
+            const remaining = item.speed && item.speed > 0 ? (item.file.size - item.uploadedBytes) / item.speed : NaN
+            const label =
+              item.status === "error"
+                ? item.error
+                : item.status === "done"
+                  ? `Sent · ${formatBytes(item.file.size)}`
+                  : item.status === "cancelled"
+                    ? "Cancelled"
+                    : item.status === "pending"
+                      ? formatBytes(item.file.size)
+                      : item.status === "reconnecting"
+                        ? "Connection interrupted. Retrying…"
+                        : item.status === "verifying"
+                          ? "Verifying…"
+                          : item.status === "paused"
+                            ? `Paused · ${formatBytes(item.uploadedBytes)} / ${formatBytes(item.file.size)}`
+                            : item.status === "stalled"
+                              ? item.error
+                              : [
+                                  `${formatBytes(item.uploadedBytes)} / ${formatBytes(item.file.size)}`,
+                                  `${percent}%`,
+                                  item.speed ? `${formatBytes(item.speed)}/s` : null,
+                                  formatDuration(remaining) || null,
+                                ]
+                                  .filter(Boolean)
+                                  .join(" · ")
+            return (
+              <li
+                key={item.id}
+                data-testid="file-request-item"
+                data-status={item.status}
+                className="flex items-center gap-3 rounded-lg border border-border bg-card/40 px-3 py-2"
+              >
+                <Paperclip className="size-4 shrink-0 text-muted-foreground" />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[12px] font-medium text-foreground">{item.file.name}</p>
+                  <p className="text-[11px] tabular-nums text-muted-foreground" aria-live="polite">
+                    {label}
+                  </p>
+                  {showBar ? (
                     <div
-                      className="h-full bg-primary transition-[width]"
-                      style={{ width: `${Math.round(item.progress * 100)}%` }}
-                    />
-                  </div>
-                ) : null}
-              </div>
-              {item.status === "done" ? (
-                <CheckCircle2 className="size-4 shrink-0 text-primary" />
-              ) : item.status === "error" ? (
-                <AlertCircle className="size-4 shrink-0 text-destructive" />
-              ) : item.status === "uploading" ? (
-                <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" />
-              ) : (
-                <button
-                  type="button"
-                  aria-label={`Remove ${item.file.name}`}
-                  onClick={() => setQueue((prev) => prev.filter((q) => q.id !== item.id))}
-                  className="shrink-0 text-muted-foreground hover:text-foreground"
-                >
-                  <X className="size-4" />
-                </button>
-              )}
-            </li>
-          ))}
+                      className="mt-1 h-1 w-full overflow-hidden rounded-full bg-muted"
+                      role="progressbar"
+                      aria-label={`${item.file.name} upload progress`}
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                      aria-valuenow={percent}
+                    >
+                      <div
+                        className={cn(
+                          "h-full transition-[width]",
+                          item.status === "stalled" || item.status === "reconnecting" ? "bg-amber-500" : "bg-primary",
+                        )}
+                        style={{ width: `${percent}%` }}
+                      />
+                    </div>
+                  ) : null}
+                </div>
+                <div className="flex shrink-0 items-center gap-1">
+                  {item.status === "done" ? <CheckCircle2 className="size-4 text-primary" /> : null}
+                  {item.status === "error" ? <AlertCircle className="size-4 text-destructive" /> : null}
+                  {inFlight ? <Loader2 className="size-4 animate-spin text-muted-foreground" /> : null}
+                  {item.status === "uploading" ? (
+                    <button
+                      type="button"
+                      aria-label={`Pause ${item.file.name}`}
+                      onClick={() => pauseItem(item.id)}
+                      className="rounded p-1 text-muted-foreground hover:text-foreground"
+                    >
+                      <Pause className="size-4" />
+                    </button>
+                  ) : null}
+                  {item.status === "paused" || item.status === "stalled" ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-7 gap-1 px-2 text-[11px]"
+                      onClick={() => void resumeItem(item.id)}
+                      data-testid="file-request-resume"
+                    >
+                      <Play className="size-3" />
+                      Resume upload
+                    </Button>
+                  ) : null}
+                  {item.status === "error" && item.uploadId ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-7 gap-1 px-2 text-[11px]"
+                      onClick={() => void resumeItem(item.id)}
+                      data-testid="file-request-retry"
+                    >
+                      <RotateCcw className="size-3" />
+                      Retry
+                    </Button>
+                  ) : null}
+                  {item.status === "pending" || item.status === "error" || item.status === "cancelled" ? (
+                    <button
+                      type="button"
+                      aria-label={`Remove ${item.file.name}`}
+                      onClick={() => updateQueue((prev) => prev.filter((q) => q.id !== item.id))}
+                      className="rounded p-1 text-muted-foreground hover:text-foreground"
+                    >
+                      <X className="size-4" />
+                    </button>
+                  ) : null}
+                  {inFlight || item.status === "paused" || item.status === "stalled" ? (
+                    <button
+                      type="button"
+                      aria-label={`Cancel ${item.file.name}`}
+                      onClick={() => void cancelItem(item)}
+                      className="rounded p-1 text-muted-foreground hover:text-destructive"
+                      data-testid="file-request-cancel"
+                    >
+                      <X className="size-4" />
+                    </button>
+                  ) : null}
+                </div>
+              </li>
+            )
+          })}
         </ul>
       ) : null}
 
@@ -510,7 +746,7 @@ export function PublicFileRequestPage({ token }: { token: string }) {
       >
         {submitting ? <Loader2 className="size-4 animate-spin" /> : <UploadCloud className="size-4" />}
         {submitting
-          ? "Sending…"
+          ? `Sending${active.length > 1 ? ` ${active.length} files` : ""}…`
           : pending.length > 0
             ? `Send ${pending.length} file${pending.length === 1 ? "" : "s"}`
             : uploaded.length > 0

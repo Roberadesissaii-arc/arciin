@@ -175,3 +175,56 @@ export async function createFolder(
     },
   })
 }
+
+/**
+ * A verified paid licence, signed with the suite's throwaway vendor key (the
+ * same one vitest.integration.config.ts trusts). For tests where a paid route
+ * — not its feature gate — is what is under test.
+ */
+export async function grantTestLicense(
+  storageRoot: string,
+  plan: "pro" | "business" | "team" = "business",
+): Promise<string> {
+  const { buildHostedTokenPayload, parseLicensePrivateKey, signHostedLicenseToken } = await import(
+    "@arciin/config"
+  )
+  await prisma.instanceConfig.deleteMany()
+  const instance = await prisma.instanceConfig.create({
+    data: {
+      instanceName: "Integration",
+      storageRoot,
+      initializedAt: new Date(),
+      licensePlan: "free",
+      licenseStatus: "none",
+    },
+  })
+  const expiresAt = new Date(Date.now() + 31 * 86_400_000)
+  const graceUntil = new Date(Date.now() + 38 * 86_400_000)
+  await prisma.instanceConfig.update({
+    where: { id: instance.id },
+    data: {
+      licensePlan: plan,
+      licenseStatus: "active",
+      licenseKeyPrefix: "ARC_TST…0001",
+      licenseActivatedAt: new Date(),
+      licenseExpiresAt: expiresAt,
+      licenseGraceUntil: graceUntil,
+      licenseSource: "hosted",
+      licenseSignedToken: signHostedLicenseToken(
+        buildHostedTokenPayload({
+          licenseId: "lic_integration",
+          plan,
+          status: "active",
+          instanceId: instance.id,
+          serverLimit: 1,
+          keyPrefix: "ARC_TST…0001",
+          expiresAt,
+          graceUntil,
+        }),
+        parseLicensePrivateKey("P1L5nJPd7wq0kUwqhU7SbXe0P4H2fT1YtGxWvBoNsRA"),
+        "arciin-lic-test",
+      ),
+    },
+  })
+  return instance.id
+}

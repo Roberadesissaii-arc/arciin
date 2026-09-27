@@ -9,7 +9,7 @@ import config from "./playwright.config"
  */
 const ciConfig = {
   ...config,
-  testMatch: /\/(login|users-admin|entitlement|transcript-card-realtime|files-upload|settings-lan|settings-devices|computers|desktop-download-prompt)\.spec\.ts$/,
+  testMatch: /\/(login|users-admin|entitlement|transcript-card-realtime|files-upload|settings-lan|settings-devices|computers|desktop-download-prompt|file-request-large-upload)\.spec\.ts$/,
   webServer: config.webServer?.map((server) => ({
     ...server,
     reuseExistingServer: !process.env.CI,

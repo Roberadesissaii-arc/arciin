@@ -251,6 +251,8 @@ export function serializeApiKey(apiKey: ApiKey) {
     expiresAt: apiKey.expiresAt?.toISOString() ?? null,
     createdAt: apiKey.createdAt.toISOString(),
     revokedAt: apiKey.revokedAt?.toISOString() ?? null,
+    /** Null = created before per-key limits; only the instance limit applies. */
+    rateLimitPerMinute: apiKey.rateLimitPerMinute ?? null,
   }
 }
 

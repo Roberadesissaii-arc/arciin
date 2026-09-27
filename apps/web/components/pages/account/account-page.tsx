@@ -39,6 +39,7 @@ import {
   getSessions,
   logout,
   removeProfileAvatar,
+  revokeOtherSessions,
   revokeSession,
   setupPasswordRecovery,
   updateProfile,
@@ -352,6 +353,8 @@ function PasswordPanel() {
   const [recoveryQuestion, setRecoveryQuestion] = useState("")
   const [recoveryAnswer, setRecoveryAnswer] = useState("")
 
+  const [signOutOthers, setSignOutOthers] = useState(true)
+
   const mutation = useMutation({
     mutationFn: changePassword,
     onSuccess: () => {
@@ -448,7 +451,35 @@ function PasswordPanel() {
               </p>
             )}
           </div>
-          <Button disabled={!canSubmit} onClick={() => mutation.mutateAsync({ currentPassword: current, newPassword: next })}>
+          {/*
+            On by default. The usual reason to change a password is that
+            somebody thinks it is known, and leaving the other sessions signed
+            in would defeat the change for exactly that case. The paired
+            Desktop keeps its pairing either way — that is a separate
+            credential, and this should not send anyone to another machine.
+          */}
+          <label className="flex items-start gap-2 text-[12px] text-muted-foreground">
+            <input
+              type="checkbox"
+              className="mt-0.5"
+              checked={signOutOthers}
+              onChange={(event) => setSignOutOthers(event.target.checked)}
+            />
+            <span>
+              <span className="font-medium text-foreground">Sign out all other sessions.</span>{" "}
+              Recommended. Your paired Desktop stays paired and signs back in on its own.
+            </span>
+          </label>
+          <Button
+            disabled={!canSubmit}
+            onClick={() =>
+              mutation.mutateAsync({
+                currentPassword: current,
+                newPassword: next,
+                signOutOtherSessions: signOutOthers,
+              })
+            }
+          >
             <KeyRound className="size-4" />
             {mutation.isPending ? "Updating…" : "Update password"}
           </Button>
@@ -599,8 +630,11 @@ function SessionsPanel() {
   const revokeAll = async () => {
     setRevokingAll(true)
     try {
-      await Promise.all(others.map((s) => revokeMutation.mutateAsync(s.id)))
-      notifyAccount("sessions_revoked_all", { count: others.length })
+      // One call rather than one per session: a loop could half-finish and
+      // leave some of the very sessions this is meant to end still signed in.
+      const result = await revokeOtherSessions()
+      notifyAccount("sessions_revoked_all", { count: result.revoked })
+      await queryClient.invalidateQueries({ queryKey: queryKeys.sessions })
     } catch {
       notifyAccountError("session")
     } finally {

@@ -4,6 +4,7 @@ import type { Dispatch, SetStateAction } from "react"
 import { Database, Loader2, RefreshCw, Trash2, X } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
+import { ConfirmDestructiveButton } from "@/components/shared/confirm-destructive-button"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -29,6 +30,7 @@ import { RelativeTime } from "@/components/shared/relative-time"
 type MutationLike<TVariables = void> = {
   isPending: boolean
   mutate: (variables: TVariables) => void
+  mutateAsync: (variables: TVariables) => Promise<unknown>
 }
 
 export function AppDatabaseRowsPanel({
@@ -136,12 +138,19 @@ export function AppDatabaseRowsPanel({
                             {previewRecordId === r.id ? "Hide" : "Open"}
                           </Button>
                           {canMutate ? (
-                            <Button type="button" variant="default" size="sm" className="border-0 bg-[#EF4444] text-white shadow-none hover:bg-[#DC2626]"
-                              disabled={deleteRecordMutation.isPending}
-                              onClick={() => { if (window.confirm(`Delete row "${r.name}"?`)) deleteRecordMutation.mutate(r.id) }}>
+                            <ConfirmDestructiveButton
+                              title={`Delete row “${r.name}”?`}
+                              description="The row and its JSON payload are deleted permanently. This cannot be undone."
+                              confirmLabel="Delete row"
+                              className="shadow-none"
+                              pending={deleteRecordMutation.isPending}
+                              onConfirm={() => deleteRecordMutation.mutateAsync(r.id)}
+                              aria-label={`Delete row ${r.name}`}
+                              data-testid="app-row-delete"
+                            >
                               <Trash2 className="size-4" />
                               Delete
-                            </Button>
+                            </ConfirmDestructiveButton>
                           ) : null}
                         </div>
                       </TableCell>

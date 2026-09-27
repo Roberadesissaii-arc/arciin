@@ -59,6 +59,11 @@ export type AppearancePreferences = {
   /** Animated border ring on live toasts and action alerts. */
   toastOrbitColor: string
   uiRadius: UiRadius
+  /**
+   * The user's own choice for the desktop sidebar. Automatic collapses (a
+   * tablet-width window) never write this — only the person toggling it.
+   */
+  sidebarCollapsed: boolean
 }
 
 export type AccessibilityPreferences = {
@@ -98,6 +103,7 @@ export const DEFAULT_USER_PREFERENCES: UserPreferences = {
     toastShowIcons: true,
     toastOrbitColor: "#FF4F12",
     uiRadius: "comfortable",
+    sidebarCollapsed: false,
   },
   accessibility: {
     fontSize: "Normal",
@@ -189,6 +195,7 @@ export function parseUserPreferences(raw: unknown): UserPreferences {
       toastShowIcons: asBool(appearance.toastShowIcons, defaults.appearance.toastShowIcons),
       toastOrbitColor: asAccent(appearance.toastOrbitColor, defaults.appearance.toastOrbitColor),
       uiRadius: asUiRadius(appearance.uiRadius, defaults.appearance.uiRadius),
+      sidebarCollapsed: asBool(appearance.sidebarCollapsed, defaults.appearance.sidebarCollapsed),
     },
     accessibility: {
       fontSize: asFontSize(accessibility.fontSize, defaults.accessibility.fontSize),

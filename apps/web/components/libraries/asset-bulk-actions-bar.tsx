@@ -202,15 +202,15 @@ export function AssetBulkActionsBar({ defaultLibraryId }: { defaultLibraryId?: s
               Delete {count} selected {count === 1 ? "file" : "files"}?
             </AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete everything you selected? This removes{" "}
-              {count === 1 ? "this file" : `all ${count} files`} from your libraries. You can&apos;t
-              undo this from the UI.
+              This moves {count === 1 ? "this file" : `all ${count} files`} to Trash. You can
+              restore {count === 1 ? "it" : "them"} from Settings → Trash for 30 days, after which
+              Arciin removes {count === 1 ? "it" : "them"} from this server permanently.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              className="bg-destructive text-white hover:bg-destructive/90"
+              variant="destructive"
               disabled={deleting}
               onClick={(event) => {
                 event.preventDefault()

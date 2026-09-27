@@ -46,6 +46,7 @@ import {
 } from "@/services/media/thumbnail-cache"
 import { generateAssetCoverImage } from "@/services/media/generate-cover-image"
 import { ensureBrowserPlayableVideo } from "@/services/media/browser-playable-video"
+import { INLINE_SAFE_MIME_TYPES } from "@/services/media/inline-safety"
 import { streamFileResponse } from "@/services/media/stream-file-response"
 import {
   assetIsInJellyfinFolder,
@@ -85,33 +86,6 @@ async function loadAiSummariesForPage(fastify: FastifyInstance, assetIds: string
     },
   })
 }
-
-/**
- * MIME types safe to render inline in the browser. Everything else (SVG, HTML,
- * XML, unknown) is served as a download so uploaded active content can't run
- * script on the app origin. SVG is deliberately excluded despite being image/*.
- */
-const INLINE_SAFE_MIME_TYPES = new Set([
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-  "image/gif",
-  "image/avif",
-  "image/bmp",
-  "image/x-icon",
-  "video/mp4",
-  "video/webm",
-  "video/quicktime",
-  "audio/mpeg",
-  "audio/mp4",
-  "audio/aac",
-  "audio/ogg",
-  "audio/wav",
-  "audio/x-wav",
-  "audio/flac",
-  "application/pdf",
-  "text/plain",
-])
 
 const assetUpdateSchema = z.object({
   title: z.string().max(200).optional(),
@@ -463,6 +437,76 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
         },
       })
     }
+  )
+
+  /**
+   * The counts the All Files header shows.
+   *
+   * It used to count the array the browser happened to have — one page of
+   * results — so "Total files" and the Videos/Images chips disagreed with the
+   * sidebar in both directions depending on what that page contained. These
+   * come from the database through the same buildVisibleAssetWhere the listing
+   * uses, so a number and the list beneath it describe the same set.
+   *
+   * "Active" is the contract: not trashed, not archived, not inside a deleted
+   * or hidden folder. Archived is reported separately rather than folded in,
+   * because a count that silently includes archived files is the thing that
+   * made these disagree in the first place.
+   */
+  fastify.get(
+    "/assets/stats",
+    {
+      preHandler: requireSessionRolesOrApiKeyScopes(
+        ["OWNER", "ADMIN", "MEMBER", "VIEWER"],
+        ["assets:read"],
+      ),
+    },
+    async (request, reply) => {
+      const hiddenFolderIds = await resolveHiddenFromAllFilesFolderIds(fastify.prisma)
+      const restrictComputerOwnerId = request.auth
+        ? computerOwnerRestriction(request.auth.user)
+        : null
+
+      const base = {
+        scope: { kind: "all" as const },
+        hiddenFolderIds,
+        restrictComputerOwnerId,
+      }
+
+      /**
+       * The All Files list an undirected browse shows leaves Inbox out (see
+       * the /assets route), so the header's totals must too — otherwise
+       * "Active files 92" sat above a list of 91 whenever Inbox held a file.
+       * Archived keeps Inbox, because the Archives chip lists it.
+       */
+      const inboxIds = (
+        await fastify.prisma.library.findMany({ where: { kind: "INBOX" }, select: { id: true } })
+      ).map((l) => l.id)
+
+      const countActive = (mediaType?: string) =>
+        fastify.prisma.asset.count({
+          where: buildVisibleAssetWhere({
+            ...base,
+            excludeLibraryIds: inboxIds,
+            ...(mediaType ? { mediaType } : {}),
+          }),
+        })
+
+      const [active, images, videos, audio, documents, archived] = await Promise.all([
+        countActive(),
+        countActive("IMAGE"),
+        countActive("VIDEO"),
+        countActive("AUDIO"),
+        countActive("DOCUMENT"),
+        fastify.prisma.asset.count({
+          where: buildVisibleAssetWhere({ ...base, archived: "only" }),
+        }),
+      ])
+
+      reply.send({
+        data: { active, images, videos, audio, documents, archived },
+      })
+    },
   )
 
   fastify.get(

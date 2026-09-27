@@ -30,7 +30,9 @@ export * from "./grok-models"
 
 /** Backward-compatible barrel — prefer `@arciin/types`, `@arciin/config`, `@arciin/ui`. */
 export * from "@arciin/types"
-export * from "@arciin/config"
+// Browser-safe config only. Server code that needs the env schema, licence
+// signing, or namespace isolation imports "@arciin/config" directly.
+export * from "@arciin/config/client"
 export * from "@arciin/ui"
 
 export * from "./cover-prompt"

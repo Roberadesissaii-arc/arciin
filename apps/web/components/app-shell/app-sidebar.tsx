@@ -517,6 +517,9 @@ function AppSidebarInner({ auth }: { auth: AuthSession }) {
             <button
               type="button"
               onClick={toggleSidebar}
+              aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+              aria-expanded={!collapsed}
+              data-testid="sidebar-collapse-toggle"
               className={cn(
                 "flex h-8 shrink-0 items-center rounded-lg px-2 text-[11px] transition-colors",
                 collapsed ? "w-full justify-center" : "justify-end gap-1",

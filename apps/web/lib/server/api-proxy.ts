@@ -17,6 +17,13 @@ const HOP_BY_HOP = new Set([
   "upgrade",
   "host",
   "content-length",
+  /**
+   * `Expect: 100-continue` is a conversation between the client and *this*
+   * hop. Undici's fetch refuses to send it at all (UND_ERR_NOT_SUPPORTED), so
+   * forwarding it turned every upload from curl (>1 MB), .NET HttpClient, and
+   * many Java clients into a bodyless 500 before Fastify saw the request.
+   */
+  "expect",
 ])
 
 function methodAllowsBody(method: string) {
@@ -61,14 +68,27 @@ export async function proxyApiRequest(request: Request, targetPathWithQuery: str
   const method = request.method.toUpperCase()
   const hasBody = methodAllowsBody(method)
 
-  const upstream = await fetch(`${apiOrigin}${targetPathWithQuery}`, {
-    method,
-    headers,
-    body: hasBody ? request.body : undefined,
-    // Required when streaming a request body to Node fetch.
-    ...(hasBody && request.body ? { duplex: "half" as const } : {}),
-    cache: "no-store",
-  })
+  let upstream: Response
+  try {
+    upstream = await fetch(`${apiOrigin}${targetPathWithQuery}`, {
+      method,
+      headers,
+      body: hasBody ? request.body : undefined,
+      // Required when streaming a request body to Node fetch.
+      ...(hasBody && request.body ? { duplex: "half" as const } : {}),
+      cache: "no-store",
+    })
+  } catch (error) {
+    // A thrown fetch used to surface as Next's bare 500 with no body, which an
+    // API client cannot tell apart from a crash. Always answer in the API's
+    // own envelope. The cause stays in the server log, not in the response.
+    console.error("[api-proxy] upstream request failed", {
+      method,
+      path: targetPathWithQuery.split("?")[0],
+      code: (error as { cause?: { code?: string } })?.cause?.code,
+    })
+    return proxyFailure()
+  }
 
   const responseHeaders = new Headers()
   for (const [key, value] of upstream.headers.entries()) {
@@ -81,4 +101,17 @@ export async function proxyApiRequest(request: Request, targetPathWithQuery: str
     statusText: upstream.statusText,
     headers: responseHeaders,
   })
+}
+
+/** The API's JSON error envelope, for when the API itself could not be reached. */
+export function proxyFailure(): Response {
+  return new Response(
+    JSON.stringify({
+      error: {
+        code: "UPSTREAM_UNAVAILABLE",
+        message: "The Arciin API could not complete this request. Try again in a moment.",
+      },
+    }),
+    { status: 502, headers: { "content-type": "application/json; charset=utf-8" } },
+  )
 }

@@ -50,11 +50,19 @@ describe("every file-request API wrapper has a caller", () => {
     "revokeFileRequest",
     "extendFileRequest",
     "getPublicFileRequest",
-    "submitFileToRequest",
     "completeFileRequestSubmission",
   ])("%s is used somewhere in the app", (name) => {
     expect(exported).toContain(name)
     expect(callersOf(name).length, `${name} has no caller`).toBeGreaterThan(0)
+  })
+
+  it("the request page uploads through the resumable protocol, not one multipart POST", () => {
+    // The multipart route stays for API clients; the browser no longer sends a
+    // whole multi-GB file in one request that a dropped connection throws away.
+    expect(exported).not.toContain("submitFileToRequest")
+    const page = read("apps/web/components/file-requests/public-file-request-page.tsx")
+    expect(page).toMatch(/runResumableUpload\(/)
+    expect(page).not.toMatch(/\/submissions/)
   })
 
   it("no longer ships the submissions wrapper nothing consumed", () => {

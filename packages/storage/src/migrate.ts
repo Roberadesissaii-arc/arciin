@@ -1,5 +1,7 @@
-import { access, cp, mkdir, readdir, stat } from "node:fs/promises"
+import { access, mkdir, readdir, stat } from "node:fs/promises"
 import path from "node:path"
+
+import { copyTreeVerified } from "./verify-copy"
 
 import type { PrismaClient } from "@prisma/client"
 
@@ -69,6 +71,7 @@ export async function runStorageMigration(
 ): Promise<{ foldersCopied: number; fromRoot: string; toRoot: string }> {
   const { fromRoot, toRoot, jobRecordId, displayRootLabel } = input
   let foldersCopied = 0
+  const verified = { filesCopied: 0, filesReused: 0, filesReplaced: 0, bytesCopied: 0 }
   const steps = COPY_SUBDIRS.length + 2
   let step = 0
 
@@ -84,11 +87,31 @@ export async function runStorageMigration(
       continue
     }
     await onProgress(Math.round((step / steps) * 100), `copying_${sub}`)
-    await cp(src, dest, { recursive: true, force: false, errorOnExist: false })
+    /**
+     * Was `cp(..., { force: false, errorOnExist: false })`, which silently
+     * leaves any file already at the destination untouched. That is exactly
+     * the state an interrupted transfer leaves behind: the half-written file
+     * from the moment the process died is treated as done, and the database is
+     * then pointed at it.
+     *
+     * Every file is now accounted for — reused only when size and SHA-256
+     * match, rewritten otherwise, and re-checked after writing.
+     */
+    const result = await copyTreeVerified(src, dest)
+    verified.filesCopied += result.filesCopied
+    verified.filesReused += result.filesReused
+    verified.filesReplaced += result.filesReplaced
+    verified.bytesCopied += result.bytesCopied
     foldersCopied += 1
   }
 
   step += 1
+  /**
+   * The database moves only after every file has been copied and verified.
+   * Reversing these two would point the instance at data that might not be
+   * there — and the source is never deleted here, so a failed verification
+   * leaves the old location intact and still authoritative.
+   */
   await onProgress(Math.round((step / steps) * 100), "updating_database")
 
   await prisma.$transaction(async (tx) => {

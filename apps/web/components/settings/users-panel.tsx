@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "@/lib/notifications/arciin-toast"
 
 import { PageHeader } from "@/components/app-shell/page-header"
+import { ConfirmDestructiveButton } from "@/components/shared/confirm-destructive-button"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -261,19 +262,18 @@ export function UsersPanel({
                       </SelectContent>
                     </Select>
                     {user.status === "ACTIVE" ? (
-                      <Button
-                        type="button"
+                      <ConfirmDestructiveButton
                         variant="outline"
-                        size="sm"
-                        disabled={patchMutation.isPending}
-                        onClick={() => {
-                          if (window.confirm(`Disable ${user.email}? They will be signed out.`)) {
-                            patchMutation.mutate({ id: user.id, body: { status: "DISABLED" } })
-                          }
-                        }}
+                        title={`Disable ${user.email}?`}
+                        description="They are signed out everywhere and cannot sign in until you enable the account again. Their files are kept."
+                        confirmLabel="Disable account"
+                        pending={patchMutation.isPending}
+                        onConfirm={() =>
+                          patchMutation.mutateAsync({ id: user.id, body: { status: "DISABLED" } })
+                        }
                       >
                         Disable
-                      </Button>
+                      </ConfirmDestructiveButton>
                     ) : (
                       <Button
                         type="button"
@@ -287,19 +287,15 @@ export function UsersPanel({
                         Enable
                       </Button>
                     )}
-                    <Button
-                      type="button"
-                      variant="destructive"
-                      size="sm"
-                      disabled={deleteMutation.isPending}
-                      onClick={() => {
-                        if (window.confirm(`Remove ${user.email}? This cannot be undone.`)) {
-                          deleteMutation.mutate(user.id)
-                        }
-                      }}
+                    <ConfirmDestructiveButton
+                      title={`Remove ${user.email}?`}
+                      description="The account is deleted and signed out everywhere. This cannot be undone."
+                      confirmLabel="Remove account"
+                      pending={deleteMutation.isPending}
+                      onConfirm={() => deleteMutation.mutateAsync(user.id)}
                     >
                       Remove
-                    </Button>
+                    </ConfirmDestructiveButton>
                   </div>
                 ) : null}
               </div>

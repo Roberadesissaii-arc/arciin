@@ -18,7 +18,11 @@ import { getStorageSettings } from "@/lib/api/settings"
 import { queryKeys } from "@/lib/api/query-keys"
 import { useLibraries } from "@/hooks/use-libraries"
 import { formatBytes } from "@/lib/utils/format-bytes"
-import { resolveStorageUsagePercent } from "@/lib/utils/storage-usage"
+import {
+  resolveFilesystemTotalBytes,
+  resolveFilesystemUsedBytes,
+  resolveStorageUsagePercent,
+} from "@/lib/utils/storage-usage"
 import type { StorageSettings } from "@/lib/types/models"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -117,11 +121,14 @@ export function StorageDonutCard({ className }: { className?: string }) {
     if (storageQuery.data) {
       const storage = storageQuery.data
       const meta = deriveVolumeMeta(storage)
-      const totalBytes = resolveTotalBytes(storage)
-      const usedBytes = storage.usageBytes
+      const totalBytes = resolveFilesystemTotalBytes(storage) ?? resolveTotalBytes(storage)
+      // The disk's own used figure; Arciin's share is shown separately.
+      const usedBytes = resolveFilesystemUsedBytes(storage) ?? storage.usageBytes
+      const arciinBytes = storage.arciinUsageBytes ?? storage.usageBytes
+      const reportedAvailable = storage.filesystemAvailableBytes ?? storage.availableBytes
       const availableBytes =
-        storage.availableBytes != null && storage.availableBytes >= 0
-          ? storage.availableBytes
+        reportedAvailable != null && reportedAvailable >= 0
+          ? reportedAvailable
           : totalBytes > 0
             ? Math.max(0, totalBytes - usedBytes)
             : 0
@@ -131,6 +138,7 @@ export function StorageDonutCard({ className }: { className?: string }) {
       return {
         ...meta,
         usedBytes,
+        arciinBytes,
         totalBytes,
         availableBytes,
         writable: storage.writable,
@@ -274,8 +282,13 @@ export function StorageDonutCard({ className }: { className?: string }) {
           </div>
 
           <div className="mt-2.5 flex justify-between text-[10px] tabular-nums">
-            <span className="font-medium text-zinc-600">
+            <span className="font-medium text-zinc-600" data-testid="storage-disk-used">
               {formatBytes(storageView.usedBytes)} used
+              {"arciinBytes" in storageView ? (
+                <span className="font-normal text-zinc-400">
+                  {" "}· Arciin {formatBytes(storageView.arciinBytes)}
+                </span>
+              ) : null}
             </span>
             <span className="text-zinc-400">
               {storageView.totalBytes > 0

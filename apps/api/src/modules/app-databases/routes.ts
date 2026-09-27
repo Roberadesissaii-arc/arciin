@@ -3,6 +3,7 @@ import type { Prisma } from "@prisma/client"
 import { z } from "zod"
 
 import { recordAndBroadcastActivity } from "@/services/activity/record-and-broadcast-activity"
+import { mergeRecordPayload } from "@/services/app-databases/merge-payload"
 import { requireFeature, requireSessionRolesOrApiKeyScopes } from "@/services/security/auth"
 import {
   serializeAppDatabase,
@@ -37,6 +38,13 @@ const createRecordSchema = z.object({
 const updateRecordSchema = z.object({
   name: z.string().min(1).max(200).optional(),
   payload: z.record(z.string(), z.unknown()).optional(),
+  mimeType: z.string().max(120).nullable().optional(),
+})
+
+/** PUT replaces the row: payload is required and becomes the whole payload. */
+const replaceRecordSchema = z.object({
+  name: z.string().min(1).max(200).optional(),
+  payload: z.record(z.string(), z.unknown()),
   mimeType: z.string().max(120).nullable().optional(),
 })
 
@@ -576,49 +584,82 @@ export async function registerAppDatabaseRoutes(fastify: FastifyInstance) {
     }
   )
 
-  fastify.patch(
-    "/app-database-rows/:rowId",
-    { preHandler: [writeRecords, requireFeature("developer.app_databases")] },
-    async (request, reply) => {
-      const params = z.object({ rowId: z.string() }).parse(request.params)
-      const parsed = updateRecordSchema.safeParse(request.body)
+  /**
+   * PATCH merges; PUT replaces. See services/app-databases/merge-payload.ts
+   * for the merge rules — PATCH used to overwrite the whole payload, so
+   * changing one price erased the rest of the row.
+   */
+  async function updateRow(
+    request: import("fastify").FastifyRequest,
+    reply: import("fastify").FastifyReply,
+    mode: "merge" | "replace",
+  ) {
+    const params = z.object({ rowId: z.string() }).parse(request.params)
+    const parsed = (mode === "merge" ? updateRecordSchema : replaceRecordSchema).safeParse(request.body)
 
-      if (!parsed.success) {
-        reply.status(400).send({
-          error: {
-            code: "VALIDATION_ERROR",
-            message: "Invalid row payload.",
-            details: parsed.success ? undefined : parsed.error.flatten(),
-          },
-        })
-        return
-      }
+    if (!parsed.success) {
+      reply.status(400).send({
+        error: {
+          code: "VALIDATION_ERROR",
+          message:
+            mode === "replace" ? "PUT needs the complete row, including payload." : "Invalid row payload.",
+          details: parsed.error.flatten(),
+        },
+      })
+      return
+    }
+    const data = parsed.data
 
-      const existing = await fastify.prisma.appDatabaseRecord.findUnique({
+    const updated = await fastify.prisma.$transaction(async (tx) => {
+      // Lock the row for the read-merge-write, so two partial updates at once
+      // cannot each read the old payload and drop the other's change.
+      const locked = await tx.$queryRaw<Array<{ id: string }>>`
+        SELECT id FROM "AppDatabaseRecord" WHERE id = ${params.rowId} FOR UPDATE`
+      if (!locked.length) return null
+
+      const existing = await tx.appDatabaseRecord.findUnique({
         where: { id: params.rowId },
         include: { folder: true },
       })
+      if (!existing || existing.folder.deletedAt) return null
 
-      if (!existing || existing.folder.deletedAt) {
-        reply.status(404).send({
-          error: { code: "NOT_FOUND", message: "Row not found." },
-        })
-        return
-      }
+      const payload =
+        data.payload === undefined
+          ? undefined
+          : mode === "replace"
+            ? data.payload
+            : mergeRecordPayload(existing.payload, data.payload)
 
-      const updated = await fastify.prisma.appDatabaseRecord.update({
+      return tx.appDatabaseRecord.update({
         where: { id: params.rowId },
         data: {
-          ...(parsed.data.name !== undefined ? { name: parsed.data.name } : {}),
-          ...(parsed.data.payload !== undefined
-            ? { payload: parsed.data.payload as Prisma.InputJsonValue }
-            : {}),
-          ...(parsed.data.mimeType !== undefined ? { mimeType: parsed.data.mimeType } : {}),
+          ...(data.name !== undefined ? { name: data.name } : {}),
+          ...(payload !== undefined ? { payload: payload as Prisma.InputJsonValue } : {}),
+          ...(data.mimeType !== undefined ? { mimeType: data.mimeType } : {}),
         },
       })
+    })
 
-      reply.send({ data: serializeAppDatabaseRecord(updated) })
+    if (!updated) {
+      reply.status(404).send({
+        error: { code: "NOT_FOUND", message: "Row not found." },
+      })
+      return
     }
+
+    reply.send({ data: serializeAppDatabaseRecord(updated) })
+  }
+
+  fastify.patch(
+    "/app-database-rows/:rowId",
+    { preHandler: [writeRecords, requireFeature("developer.app_databases")] },
+    (request, reply) => updateRow(request, reply, "merge"),
+  )
+
+  fastify.put(
+    "/app-database-rows/:rowId",
+    { preHandler: [writeRecords, requireFeature("developer.app_databases")] },
+    (request, reply) => updateRow(request, reply, "replace"),
   )
 
   fastify.delete(
