@@ -119,5 +119,14 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/webpack-hmr|__nextjs).*)"],
+  /**
+   * Not /api or /socket.io. Those always stay on this app (see
+   * DESKTOP_ONLY_PREFIXES), so running the proxy on them decided nothing — but
+   * a proxy that runs on a request makes Next buffer the request body first
+   * (experimental.proxyClientMaxBodySize). With the cap raised to the upload
+   * limit, a 2 GB File Request upload sat whole in the web process's memory
+   * before Fastify saw a byte. Excluded, /api bodies stream straight through
+   * app/api/[...path]/route.ts to the API.
+   */
+  matcher: ["/((?!_next/webpack-hmr|__nextjs|api(?:/|$)|socket\\.io).*)"],
 }

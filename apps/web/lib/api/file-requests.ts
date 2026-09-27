@@ -90,6 +90,12 @@ export type PublicFileRequestView = {
   remainingFileCount: number | null
   remainingBytes: number | null
   allowSubmitterViewOwn: boolean
+  /** Upload terms from the server: chunked, resumable, and the effective per-file limit. */
+  upload?: {
+    resumable: boolean
+    chunkSize: number
+    maximumUploadBytes: number
+  }
 }
 
 export function getPublicFileRequest(token: string, signal?: AbortSignal) {
