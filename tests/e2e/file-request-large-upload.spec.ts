@@ -83,9 +83,14 @@ async function createRequestLinkThroughUi(page: Page, request: APIRequestContext
 }
 
 async function cleanup(request: APIRequestContext, folderId: string, assetIds: string[]) {
-  const requests = (await (await request.get("/api/file-requests")).json()).data as Array<{ id: string; tokenPrefix?: string; folderId?: string }>
-  for (const fr of requests.filter((r) => r.folderId === folderId)) {
-    await request.post(`/api/file-requests/${fr.id}/revoke`)
+  const requests = (await (await request.get("/api/file-requests")).json()).data as Array<{
+    id: string
+    destination?: { folderId?: string }
+  }>
+  const mine = requests.filter((r) => r.destination?.folderId === folderId)
+  expect(mine.length, "the link this test made is found for revocation").toBeGreaterThan(0)
+  for (const fr of mine) {
+    expect((await request.post(`/api/file-requests/${fr.id}/revoke`)).ok()).toBe(true)
   }
   for (const id of assetIds) {
     await request.delete(`/api/assets/${id}`)
