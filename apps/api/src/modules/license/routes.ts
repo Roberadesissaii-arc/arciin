@@ -10,6 +10,7 @@ import {
   syncLicenseStatusIfNeeded,
 } from "@/services/license/license-service"
 import { licenseServerBaseUrl } from "@/services/license/hosted-client"
+import { reconcilePublicRemoteAccess } from "@/services/remote-access/tunnel-boot"
 import { requireSessionRole } from "@/services/security/auth"
 
 const activateSchema = z.object({
@@ -29,6 +30,16 @@ const activateSchema = z.object({
  */
 
 export async function registerLicenseRoutes(fastify: FastifyInstance) {
+  /**
+   * After anything that can change the plan, bring public Remote Access in line
+   * before answering — a downgrade stops Arciin's quick tunnel here rather than
+   * at the next restart. Never fails the license request itself.
+   */
+  const settleRemoteAccess = (reason: string) =>
+    reconcilePublicRemoteAccess(fastify, reason).catch((err) =>
+      fastify.log.warn({ err: err instanceof Error ? err.message : String(err), reason }, "Remote Access entitlement reconcile failed"),
+    )
+
   fastify.get(
     "/license/status",
     { preHandler: requireSessionRole(["OWNER", "ADMIN", "MEMBER", "VIEWER"]) },
@@ -37,6 +48,7 @@ export async function registerLicenseRoutes(fastify: FastifyInstance) {
       // stale Pro plan from the local row alone. Offline keeps signed token grace.
       let snapshot = await refreshLicense(fastify.prisma)
       snapshot = await syncLicenseStatusIfNeeded(fastify.prisma, snapshot)
+      await settleRemoteAccess("license-status")
       const view = publicLicenseView(snapshot)
       reply.send({
         data: {
@@ -78,6 +90,7 @@ export async function registerLicenseRoutes(fastify: FastifyInstance) {
         return
       }
 
+      await settleRemoteAccess("license-activate")
       reply.send({
         data: {
           ...publicLicenseView(result.snapshot),
@@ -92,6 +105,7 @@ export async function registerLicenseRoutes(fastify: FastifyInstance) {
     { preHandler: requireSessionRole(["OWNER", "ADMIN"]) },
     async (_request, reply) => {
       const snapshot = await refreshLicense(fastify.prisma)
+      await settleRemoteAccess("license-refresh")
       reply.send({
         data: {
           ...publicLicenseView(snapshot),
@@ -106,6 +120,7 @@ export async function registerLicenseRoutes(fastify: FastifyInstance) {
     { preHandler: requireSessionRole(["OWNER", "ADMIN"]) },
     async (_request, reply) => {
       const snapshot = await deactivateLicense(fastify.prisma)
+      await settleRemoteAccess("license-deactivate")
       reply.send({
         data: {
           ...publicLicenseView(snapshot),

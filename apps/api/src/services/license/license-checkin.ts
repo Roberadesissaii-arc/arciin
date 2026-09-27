@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify"
 
 import { licenseServerBaseUrl } from "@/services/license/hosted-client"
 import { loadLicenseSnapshot, refreshLicense } from "@/services/license/license-service"
+import { reconcilePublicRemoteAccess } from "@/services/remote-access/tunnel-boot"
 
 /**
  * Background license check-in.
@@ -60,10 +61,15 @@ export function scheduleLicenseCheckIn(fastify: FastifyInstance): void {
   scheduled = true
 
   const run = () => {
-    void checkInOnce(fastify).catch((error) => {
-      // Licensing must never take the API down with it.
-      fastify.log.warn({ err: error }, "[license] scheduled check-in failed")
-    })
+    void checkInOnce(fastify)
+      .catch((error) => {
+        // Licensing must never take the API down with it.
+        fastify.log.warn({ err: error }, "[license] scheduled check-in failed")
+      })
+      // Runs even for Free and local keys, which checkInOnce skips: a grace
+      // period can lapse without the authority saying anything.
+      .then(() => reconcilePublicRemoteAccess(fastify, "license-check-in"))
+      .catch((error) => fastify.log.warn({ err: error }, "[license] Remote Access reconcile failed"))
   }
 
   const first = setTimeout(() => {
