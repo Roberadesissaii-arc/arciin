@@ -132,11 +132,15 @@ export function PublicFileRequestPage({ token }: { token: string }) {
   const submissionIdRef = useRef<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const controllersRef = useRef(new Map<string, AbortController>())
-  // The upload loop reads the latest queue between awaits, not during render.
+  // The upload loop reads the queue between awaits, before React has
+  // re-rendered, so the ref is the source of truth and state mirrors it. A ref
+  // synced in an effect lagged one render behind: the last file still looked
+  // "verifying" when the loop finished, and the submission was never closed.
   const queueRef = useRef<QueuedFile[]>([])
-  useEffect(() => {
-    queueRef.current = queue
-  }, [queue])
+  const updateQueue = useCallback((change: (prev: QueuedFile[]) => QueuedFile[]) => {
+    queueRef.current = change(queueRef.current)
+    setQueue(queueRef.current)
+  }, [])
 
   const {
     data: request,
@@ -158,7 +162,7 @@ export function PublicFileRequestPage({ token }: { token: string }) {
       const incoming = Array.from(files)
       if (incoming.length === 0) return
 
-      setQueue((prev) => {
+      updateQueue((prev) => {
         const next = [...prev]
         for (const file of incoming) {
           // Local pre-checks are a courtesy so the sender sees the problem
@@ -181,7 +185,7 @@ export function PublicFileRequestPage({ token }: { token: string }) {
         return next
       })
     },
-    [request],
+    [request, updateQueue],
   )
 
   useEffect(() => {
@@ -238,7 +242,7 @@ export function PublicFileRequestPage({ token }: { token: string }) {
           variant="outline"
           onClick={() => {
             setConfirmed(null)
-            setQueue([])
+            updateQueue(() => [])
             submissionIdRef.current = null
           }}
         >
@@ -257,7 +261,7 @@ export function PublicFileRequestPage({ token }: { token: string }) {
   const maximumUploadBytes = request.upload?.maximumUploadBytes ?? request.maxFileSizeBytes
 
   const patch = (id: string, change: Partial<QueuedFile>) =>
-    setQueue((prev) => prev.map((q) => (q.id === id ? { ...q, ...change } : q)))
+    updateQueue((prev) => prev.map((q) => (q.id === id ? { ...q, ...change } : q)))
 
   /** Upload one file to completion, or until it pauses, stalls or fails. */
   async function uploadOne(item: QueuedFile): Promise<void> {
@@ -299,7 +303,7 @@ export function PublicFileRequestPage({ token }: { token: string }) {
             const instant = Math.max(0, bytes - lastBytes) / elapsed
             lastBytes = bytes
             lastAt = now
-            setQueue((prev) =>
+            updateQueue((prev) =>
               prev.map((q) =>
                 q.id === item.id
                   ? { ...q, uploadedBytes: bytes, speed: q.speed == null ? instant : q.speed * 0.7 + instant * 0.3 }
@@ -700,7 +704,7 @@ export function PublicFileRequestPage({ token }: { token: string }) {
                     <button
                       type="button"
                       aria-label={`Remove ${item.file.name}`}
-                      onClick={() => setQueue((prev) => prev.filter((q) => q.id !== item.id))}
+                      onClick={() => updateQueue((prev) => prev.filter((q) => q.id !== item.id))}
                       className="rounded p-1 text-muted-foreground hover:text-foreground"
                     >
                       <X className="size-4" />
