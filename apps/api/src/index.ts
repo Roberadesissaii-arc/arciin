@@ -3,6 +3,7 @@ import os from "node:os"
 import { createServer } from "@/server"
 import { apiConfig } from "@/config"
 import { scheduleLicenseCheckIn } from "@/services/license/license-checkin"
+import { scheduleResumableUploadCleanup } from "@/services/file-requests/resumable-cleanup"
 import { scheduleCloudflareTunnelBoot } from "@/services/remote-access/tunnel-boot"
 
 function getLanIps(): string[] {
@@ -38,6 +39,7 @@ async function start() {
     server.log.info("─────────────────────────────────────────")
     scheduleCloudflareTunnelBoot(server)
     scheduleLicenseCheckIn(server)
+    scheduleResumableUploadCleanup(server)
   } catch (error) {
     server.log.error(error)
     process.exit(1)
