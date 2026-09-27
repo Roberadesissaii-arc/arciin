@@ -50,6 +50,7 @@ async function buildApp() {
   const { registerJsonBodyParser } = await import("../../apps/api/src/plugins/json-body")
   const { registerErrorHandler } = await import("../../apps/api/src/plugins/error-handler")
   const { registerFileRequestRoutes } = await import("../../apps/api/src/modules/file-requests/routes")
+  const { registerMultipart } = await import("../../apps/api/src/plugins/multipart")
   const a = Fastify({ logger: false })
   a.decorate("prisma", prisma)
   a.decorate("redis", redis)
@@ -57,6 +58,7 @@ async function buildApp() {
   registerJsonBodyParser(a)
   await registerErrorHandler(a)
   await registerCookies(a)
+  await registerMultipart(a)
   await a.register(async (api) => registerFileRequestRoutes(api), { prefix: "/api" })
   await a.ready()
   return a
@@ -253,6 +255,10 @@ describe("interruption and resume", () => {
     const st = (await status(uploadId)).json().data
     expect(st.uploadedBytes).toBe(dropAt)
     expect(st.status).toBe("UPLOADING")
+    // Half a file is never a file: no asset, and the partial lives only under
+    // the hidden temp/resumable directory, not in objects/ or libraries/.
+    expect(await prisma.asset.count({ where: { fileRequestId } })).toBe(0)
+    expect(existsSync(partialFile(uploadId))).toBe(true)
 
     await sendRange(uploadId, 3, size, st.uploadedBytes, size)
     const done = await complete(uploadId)
@@ -536,5 +542,54 @@ describe("cancel and cleanup", () => {
     expect((await prisma.resumableUpload.findUniqueOrThrow({ where: { id: abandoned } })).status).toBe("EXPIRED")
     const left = await readdir(path.join(root, "temp", "resumable"))
     expect(left).toContain(`${live}.partial`)
+  })
+})
+
+describe("compatibility with the one-request path, and processing after finalize", () => {
+  // 1×1 transparent PNG: a real image, so the worker pipeline is engaged.
+  const PNG = Buffer.from(
+    "89504e470d0a1a0a0000000d4948445200000001000000010806000000" +
+      "1f15c4890000000d49444154789c6360000002000154a24f5d0000000049454e44ae426082",
+    "hex",
+  )
+
+  async function processingQueuedFor(assetId: string) {
+    return prisma.uploadOutbox.count({ where: { payload: { path: ["assetId"], equals: assetId } } })
+  }
+
+  it("a small file sent as one multipart POST to /submissions still lands and is queued for processing", async () => {
+    const boundary = "----arciin-compat"
+    const body = Buffer.concat([
+      Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="small.png"\r\nContent-Type: image/png\r\n\r\n`),
+      PNG,
+      Buffer.from(`\r\n--${boundary}--\r\n`),
+    ])
+    const res = await app.inject({
+      method: "POST",
+      url: `/api/public/file-requests/${token}/submissions`,
+      headers: { "content-type": `multipart/form-data; boundary=${boundary}`, "idempotency-key": crypto.randomUUID() },
+      payload: body,
+    })
+    expect(res.statusCode, res.body).toBe(201)
+    expect(res.json().data).toMatchObject({ fileName: "small.png", sizeBytes: PNG.length })
+    const asset = await prisma.asset.findFirstOrThrow({
+      where: { folderId, originalFilename: "small.png" },
+      include: { storageObject: true },
+    })
+    expect(Number(asset.sizeBytes)).toBe(PNG.length)
+    expect(asset.storageObject?.checksumSha256).toBe(createHash("sha256").update(PNG).digest("hex"))
+    expect(await processingQueuedFor(asset.id)).toBeGreaterThan(0)
+  })
+
+  it("a resumable upload hands the finalized asset to the same processing pipeline", async () => {
+    const created = await create({ filename: "resumable.png", sizeBytes: PNG.length })
+    expect(created.statusCode, created.body).toBe(201)
+    const { uploadId } = created.json().data
+    expect((await putChunk(uploadId, 0, PNG)).statusCode).toBe(200)
+    const done = await complete(uploadId)
+    expect(done.statusCode, done.body).toBe(200)
+    const asset = await assetFor(uploadId)
+    expect(asset.folderId).toBe(folderId)
+    expect(await processingQueuedFor(asset.id)).toBeGreaterThan(0)
   })
 })
