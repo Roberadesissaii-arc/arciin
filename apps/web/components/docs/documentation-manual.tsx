@@ -1522,9 +1522,9 @@ curl -sS -X POST "$API/assets/$ASSET_ID/move" \\
             </DocP>
             <Callout variant="tip" title="Large files">
               One multipart POST is best for small and medium files. It cannot resume: a dropped
-              connection loses the whole upload, and through a Cloudflare tunnel one request body is
-              capped at about 100&nbsp;MB. Do not send a multi-GB file as a single request over Remote
-              Access. File Request links (<IC>/request/…</IC>) already upload in resumable 16&nbsp;MiB
+              connection loses the whole upload, and a Cloudflare-proxied domain on the Free or Pro plan
+              rejects any request body over 100&nbsp;MB. Do not send a multi-GB file as a single request
+              over Remote Access. File Request links (<IC>/request/…</IC>) already upload in resumable 16&nbsp;MiB
               chunks — create a session, <IC>PUT</IC> each chunk at its offset, resume from the
               server&apos;s <IC>uploadedBytes</IC> after any failure, then <IC>complete</IC>. The full
               protocol and its error codes (<IC>INVALID_UPLOAD_OFFSET</IC>, <IC>INSUFFICIENT_STORAGE</IC>,{" "}

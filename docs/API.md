@@ -97,9 +97,9 @@ asset. Clients sending `Expect: 100-continue` (curl for bodies over 1 MB, .NET
 
 `POST /api/uploads` sends the whole file in **one request**. It is the right
 choice for small and medium files. It is not the right choice for multi-GB
-files: one dropped connection loses the whole upload, and through a Cloudflare
-tunnel a single request body is capped at about 100 MB. Do not send a 2 GB file
-as one multipart request over Remote Access.
+files: one dropped connection loses the whole upload, and a Cloudflare-proxied
+domain on the Free or Pro plan rejects any request body over 100 MB. Do not send
+a 2 GB file as one multipart request over Remote Access.
 
 ### `GET /api/uploads`
 ### `GET /api/uploads/:uploadId`
@@ -153,7 +153,8 @@ key, by design.
 
 Public File Request links (`/request/:token`) upload through a resumable,
 chunked protocol, so a multi-GB file survives dropped connections, page
-reloads, server restarts, and Cloudflare's per-request body limit. Every call
+reloads, server restarts, and Cloudflare's per-request body limit on proxied
+domains. Every call
 is scoped by the request token: an upload id on its own is useless, and the
 client cannot choose the destination folder, library, owner, or path.
 

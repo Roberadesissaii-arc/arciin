@@ -8,10 +8,12 @@ export const MIB = 1024 * 1024
 export const GIB = 1024 * MIB
 
 /**
- * 16 MiB: far below Cloudflare's proxied request-body ceiling (100 MB on the
- * plans a Quick Tunnel runs under), small enough that a retry after a dropped
- * connection repeats seconds of work rather than minutes, and large enough
- * that a 2 GB file is 128 requests rather than thousands.
+ * 16 MiB: far below the 100 MB request-body cap Cloudflare applies to proxied
+ * custom domains on its Free and Pro plans (a quick tunnel accepted 300 MB in
+ * one request when tested, but that is not a documented guarantee), small
+ * enough that a retry after a dropped connection repeats seconds of work
+ * rather than minutes, and large enough that a 2 GB file is 128 requests
+ * rather than thousands.
  */
 export const DEFAULT_CHUNK_SIZE_BYTES = 16 * MIB
 const MIN_CHUNK_MB = 1
