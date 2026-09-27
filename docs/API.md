@@ -95,6 +95,12 @@ Success is **`201 Created`** with the upload session; `data.assetId` is the new
 asset. Clients sending `Expect: 100-continue` (curl for bodies over 1 MB, .NET
 `HttpClient`) are supported through the web surface.
 
+`POST /api/uploads` sends the whole file in **one request**. It is the right
+choice for small and medium files. It is not the right choice for multi-GB
+files: one dropped connection loses the whole upload, and through a Cloudflare
+tunnel a single request body is capped at about 100 MB. Do not send a 2 GB file
+as one multipart request over Remote Access.
+
 ### `GET /api/uploads`
 ### `GET /api/uploads/:uploadId`
 ### `POST /api/uploads/:uploadId/complete`
@@ -143,7 +149,73 @@ replace, an explicit `null` is stored, and omitted keys are left unchanged. Use
 an uploaded file by storing its `assetId` in the payload; there is no foreign
 key, by design.
 
+## Resumable File Request uploads
+
+Public File Request links (`/request/:token`) upload through a resumable,
+chunked protocol, so a multi-GB file survives dropped connections, page
+reloads, server restarts, and Cloudflare's per-request body limit. Every call
+is scoped by the request token: an upload id on its own is useless, and the
+client cannot choose the destination folder, library, owner, or path.
+
+`GET /api/public/file-requests/:token` returns:
+
+```json
+"upload": { "resumable": true, "chunkSize": 16777216, "maximumUploadBytes": 21474836480 }
+```
+
+`chunkSize` is set by the server (`ARCIIN_UPLOAD_CHUNK_SIZE_MB`, default 16,
+1–64). `maximumUploadBytes` is the smaller of the request's own limit and the
+instance limit from **Settings → Storage → Maximum upload file size**.
+
+| Call | Purpose |
+|---|---|
+| `POST /api/public/file-requests/:token/uploads` | Create (or resume) a session. Body: `filename`, `sizeBytes`, `mimeType?`, `lastModified?`, `submitterName?`, `submitterEmail?`, `accessCode?`. `201` new, `200` with `resumed: true` for the same file from the same sender. |
+| `GET /api/public/file-requests/:token/uploads/:uploadId` | Status: `uploadedBytes`, `totalBytes`, `chunkSize`, `status`, `expiresAt`. Resume from `uploadedBytes`. |
+| `PUT /api/public/file-requests/:token/uploads/:uploadId/chunks?offset=N` | `Content-Type: application/octet-stream`; body is exactly `chunkSize` bytes (the final chunk may be shorter). Optional `X-Chunk-SHA256` header (hex). |
+| `POST /api/public/file-requests/:token/uploads/:uploadId/complete` | Verifies the streamed SHA-256 (optional body `sha256`), then files the upload. Idempotent. |
+| `DELETE /api/public/file-requests/:token/uploads/:uploadId` | Cancel and remove the partial data. |
+
+Rules:
+
+- Chunks are sequential. Resending a chunk the server already has returns
+  `200` with `duplicate: true` and changes nothing. Any other offset returns
+  `409 INVALID_UPLOAD_OFFSET` with `details.expectedOffset`.
+- Free disk space is checked, and reserved for the session, before the first
+  byte is accepted: `507 INSUFFICIENT_STORAGE` with `details.requiredBytes` and
+  `details.availableBytes`.
+- A session may finish after its request expires if it was started before
+  expiry, but only within its own lifetime (`ARCIIN_UPLOAD_SESSION_HOURS`,
+  default 24). New uploads after expiry get `410 REQUEST_EXPIRED`. Revoking the
+  request stops every open session immediately (`410 REQUEST_REVOKED`).
+- Unfinished partials are hidden under `temp/resumable/` and removed when their
+  session expires or is cancelled. Processing (thumbnails, metadata) runs in
+  the background after `complete`.
+
+Client pseudocode:
+
+```text
+view    = GET  /public/file-requests/:token
+session = POST /public/file-requests/:token/uploads {filename, sizeBytes, lastModified}
+offset  = session.uploadedBytes
+while offset < size:
+  try:
+    r = PUT .../uploads/:id/chunks?offset={offset}  body=file[offset : offset+chunkSize]
+    offset = r.uploadedBytes
+  except network error or 5xx:
+    wait 1s, 2s, 4s, 8s, 16s; then offset = GET .../uploads/:id .uploadedBytes
+  except 409 INVALID_UPLOAD_OFFSET as e:
+    offset = e.details.expectedOffset
+POST .../uploads/:id/complete {sha256?}
+```
+
 ## Settings
+
+### `GET /api/settings/uploads`
+### `PATCH /api/settings/uploads`
+
+`maxUploadSizeMb` is the largest single file accepted (owner or admin to
+change). It is a ceiling only; every upload is also checked against free disk
+space.
 
 ### `GET /api/settings/storage`
 ### `PATCH /api/settings/storage`
@@ -172,7 +244,15 @@ body.
 | 403 | `FORBIDDEN` | valid key without the route's scope |
 | 404 | `NOT_FOUND` | missing, or not visible to this caller |
 | 409 | `ALREADY_EXISTS` | unique name already used |
+| 409 | `INVALID_UPLOAD_OFFSET` | chunk sent at the wrong offset; see `details.expectedOffset` |
+| 409 | `UPLOAD_INCOMPLETE` | `complete` called before every byte arrived |
+| 410 | `UPLOAD_SESSION_EXPIRED` | the resumable session outlived its lifetime |
+| 410 | `REQUEST_EXPIRED` / `REQUEST_REVOKED` | the File Request no longer accepts uploads |
+| 413 | `UPLOAD_TOO_LARGE` | file exceeds the maximum upload size; see `details.maximumUploadBytes` |
+| 422 | `CHECKSUM_MISMATCH` | the assembled file does not match the declared SHA-256 |
 | 429 | `RATE_LIMITED` | per-key limit reached; see `Retry-After` |
+| 429 | `TOO_MANY_UPLOADS` | too many unfinished uploads on one request or from one sender |
+| 507 | `INSUFFICIENT_STORAGE` | not enough free disk space for this file |
 | 502 | `UPSTREAM_UNAVAILABLE` | the web surface could not reach the API |
 
 Keyed responses carry `X-RateLimit-Limit`, `X-RateLimit-Remaining`, and

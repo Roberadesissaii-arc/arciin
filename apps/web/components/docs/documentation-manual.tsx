@@ -1520,6 +1520,18 @@ curl -sS -X POST "$API/assets/$ASSET_ID/move" \\
               Send the file in <strong className="text-zinc-900">one multipart POST</strong> to{" "}
               <IC>{BASE}/uploads</IC>. Arciin classifies by MIME, runs workers when needed, and emits Socket.IO events.
             </DocP>
+            <Callout variant="tip" title="Large files">
+              One multipart POST is best for small and medium files. It cannot resume: a dropped
+              connection loses the whole upload, and through a Cloudflare tunnel one request body is
+              capped at about 100&nbsp;MB. Do not send a multi-GB file as a single request over Remote
+              Access. File Request links (<IC>/request/…</IC>) already upload in resumable 16&nbsp;MiB
+              chunks — create a session, <IC>PUT</IC> each chunk at its offset, resume from the
+              server&apos;s <IC>uploadedBytes</IC> after any failure, then <IC>complete</IC>. The full
+              protocol and its error codes (<IC>INVALID_UPLOAD_OFFSET</IC>, <IC>INSUFFICIENT_STORAGE</IC>,{" "}
+              <IC>UPLOAD_TOO_LARGE</IC>, <IC>UPLOAD_SESSION_EXPIRED</IC>, <IC>CHECKSUM_MISMATCH</IC>…) are
+              in <IC>docs/API.md</IC> under “Resumable File Request uploads”. The largest accepted
+              file is set in Settings → Storage.
+            </Callout>
             <Callout variant="tip" title="Scopes &amp; ids">
               API keys need <IC>uploads:create</IC>. Resolve slug→id with <IC>GET {BASE}/libraries</IC> (
               <IC>libraries:read</IC>), then query <IC>targetLibraryId</IC> (cuid). Omit it for auto-routing.
