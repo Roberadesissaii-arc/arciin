@@ -625,7 +625,22 @@ export type MobilePairResult = {
   server: MobileServerEndpoints
 }
 
+/**
+ * Whether the current plan includes public Remote Access (Pro, Team, Business).
+ * LAN access never depends on it. The server enforces this on every tunnel
+ * path; the UI reads it so a locked feature is shown as locked, not as a
+ * button that fails after the click.
+ */
+export type PublicRemoteAccessEntitlement = {
+  entitled: boolean
+  plan: string
+  status: string
+  requiredPlans: string[]
+}
+
 export type RemoteAccessSettings = {
+  /** Absent from older servers; treat absence as "not reported", not as locked. */
+  publicRemoteAccess?: PublicRemoteAccessEntitlement
   publicUrl?: string | null
   mobilePublicUrl?: string | null
   localUrl?: string | null
@@ -667,6 +682,7 @@ export type CloudflareTunnelStatus = {
   cloudflareTunnelEnabled: boolean
   publicUrl?: string | null
   mobilePublicUrl?: string | null
+  publicRemoteAccess?: PublicRemoteAccessEntitlement
 }
 
 export type PasswordImportEntry = {

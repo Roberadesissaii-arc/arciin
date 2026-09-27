@@ -8,6 +8,7 @@ import { toast } from "@/lib/notifications/arciin-toast"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { isPublicRemoteAccessLocked } from "@/components/settings/public-remote-access-locked"
 import { getRemoteAccessSettings, updateRemoteAccessSettings } from "@/lib/api/settings"
 import { queryKeys } from "@/lib/api/query-keys"
 
@@ -16,17 +17,21 @@ function ToggleRow({
   description,
   checked,
   onChange,
+  disabled = false,
 }: {
   label: string
   description: string
   checked: boolean
   onChange: (v: boolean) => void
+  disabled?: boolean
 }) {
   return (
     <button
       type="button"
+      disabled={disabled}
+      aria-disabled={disabled}
       onClick={() => onChange(!checked)}
-      className="flex w-full cursor-pointer items-start gap-4 rounded-xl border px-4 py-3.5 text-left transition-colors"
+      className="flex w-full cursor-pointer items-start gap-4 rounded-xl border px-4 py-3.5 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-60"
       style={{
         background: checked ? "rgba(255,75,51,0.06)" : "transparent",
         borderColor: checked ? "rgba(255,75,51,0.25)" : "var(--border)",
@@ -75,7 +80,10 @@ export function RemoteAccessPanel() {
 
   const data = settingsQuery.data
   const effectiveReverseProxy = reverseProxy ?? data?.reverseProxyEnabled ?? false
-  const effectiveCloudflareTunnel = cloudflareTunnel ?? data?.cloudflareTunnelEnabled ?? false
+  // Without public Remote Access in the plan the tunnel cannot run, so the
+  // toggle is shown off and locked rather than accepted and refused on save.
+  const tunnelLocked = isPublicRemoteAccessLocked(data?.publicRemoteAccess)
+  const effectiveCloudflareTunnel = tunnelLocked ? false : (cloudflareTunnel ?? data?.cloudflareTunnelEnabled ?? false)
 
   return (
     <Card className="border-border bg-card">
@@ -143,8 +151,13 @@ export function RemoteAccessPanel() {
           <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">Access mode</p>
           <ToggleRow
             label="Cloudflare Tunnel mode"
-            description="Use when cloudflared forwards HTTPS (and WebSockets) to this machine. Enables the free trycloudflare.com flow above; Arciin still does not bundle the Cloudflare agent."
+            description={
+              tunnelLocked
+                ? "Public Remote Access is available with Pro, Team, or Business. Your server stays reachable on your own network."
+                : "Use when cloudflared forwards HTTPS (and WebSockets) to this machine. Enables the free trycloudflare.com flow above; Arciin still does not bundle the Cloudflare agent."
+            }
             checked={effectiveCloudflareTunnel}
+            disabled={tunnelLocked}
             onChange={(v) => { setCloudflareTunnel(v); if (v) setReverseProxy(false) }}
           />
           <ToggleRow
@@ -163,7 +176,8 @@ export function RemoteAccessPanel() {
               await updateMutation.mutateAsync({
                 mode: effectiveCloudflareTunnel ? "cloudflare-tunnel" : effectiveReverseProxy ? "reverse-proxy" : "local",
                 reverseProxyEnabled: effectiveReverseProxy,
-                cloudflareTunnelEnabled: effectiveCloudflareTunnel,
+                // Locked: leave the stored preference alone so an upgrade picks it back up.
+                ...(tunnelLocked ? {} : { cloudflareTunnelEnabled: effectiveCloudflareTunnel }),
               })
               toast.success("WebSockets settings updated.", {
                 description: "Realtime updates will use the new connection mode.",
