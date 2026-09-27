@@ -8,9 +8,11 @@ const execFileAsync = promisify(execFile)
 import {
   getCloudflareTunnelState,
   setTunnelLifecycleHooks,
+  stopCloudflareQuickTunnel,
 } from "@/services/remote-access/cloudflare-tunnel"
 import {
   PublicRemoteAccessDeniedError,
+  readRemoteAccessEntitlement,
   startPublicTunnel,
 } from "@/services/remote-access/public-tunnel"
 import {
@@ -101,8 +103,10 @@ async function tryStartTunnel(fastify: FastifyInstance, reason: string): Promise
   } catch (err) {
     if (err instanceof PublicRemoteAccessDeniedError) {
       fastify.log.warn(
-        { reason },
-        "Public Remote Access is paused until the owner enrolls two-factor authentication; the server stays reachable on the local network",
+        { reason, code: err.code },
+        err.code === "LICENSE_REQUIRED"
+          ? "Public Remote Access is not included in the current plan; the server stays reachable on the local network"
+          : "Public Remote Access is paused until the owner enrolls two-factor authentication; the server stays reachable on the local network",
       )
       // Returning true stops the boot retries: nothing will change until the
       // owner enrols, and retrying would only repeat this warning.
@@ -152,7 +156,67 @@ async function runBootRetries(fastify: FastifyInstance) {
 export function scheduleCloudflareTunnelBoot(fastify: FastifyInstance) {
   if (bootScheduled) return
   bootScheduled = true
-  void runBootRetries(fastify)
+  void (async () => {
+    // Withdraw a quick-tunnel address left over from a plan that has since
+    // lapsed before anything can read it back as the server's public URL.
+    await reconcilePublicRemoteAccess(fastify, "boot").catch((err) =>
+      fastify.log.warn({ err: err instanceof Error ? err.message : String(err) }, "Remote Access entitlement check failed at boot"),
+    )
+    await runBootRetries(fastify)
+  })()
+}
+
+const QUICK_TUNNEL_HOST = /^https:\/\/[a-z0-9-]+\.trycloudflare\.com\/?$/i
+
+/**
+ * Bring Arciin's own public tunnel in line with the current plan.
+ *
+ * Called whenever the license may have changed — activation, deactivation,
+ * refresh, the periodic check-in — and once at boot. When the plan no longer
+ * includes public Remote Access it stops Arciin's quick tunnel (which also
+ * suppresses the restart-after-exit) and forgets the trycloudflare.com address,
+ * so nothing presents a dead link as live. A custom domain the owner typed in
+ * is theirs and is left alone, as is the "tunnel enabled" preference: after an
+ * upgrade the controls simply unlock again, with nothing to reinstall.
+ *
+ * Only the cloudflared process this API started is touched. The licensing
+ * tunnel (~/.cloudflared/config.yml) is a different process Arciin never owns.
+ */
+export async function reconcilePublicRemoteAccess(
+  fastify: FastifyInstance,
+  reason: string,
+): Promise<{ entitled: boolean; stopped: boolean }> {
+  const entitlement = await readRemoteAccessEntitlement(fastify.prisma)
+  if (entitlement.entitled) return { entitled: true, stopped: false }
+
+  const running = getCloudflareTunnelState().running
+  if (running) {
+    clearRestartTimer()
+    stopCloudflareQuickTunnel()
+    fastify.log.warn(
+      { reason, plan: entitlement.plan, status: entitlement.status },
+      "Public Remote Access stopped: the current plan does not include it",
+    )
+  }
+
+  const instance = await fastify.prisma.instanceConfig.findFirst({
+    select: { id: true, publicUrl: true, remoteAccessConfig: true },
+  })
+  if (instance) {
+    const config = readRemoteAccessConfig(instance.remoteAccessConfig)
+    const staleMobile = typeof config.mobilePublicUrl === "string" && QUICK_TUNNEL_HOST.test(config.mobilePublicUrl)
+    const staleDesktop = Boolean(instance.publicUrl && QUICK_TUNNEL_HOST.test(instance.publicUrl))
+    if (staleMobile || staleDesktop) {
+      await fastify.prisma.instanceConfig.update({
+        where: { id: instance.id },
+        data: {
+          ...(staleDesktop ? { publicUrl: null } : {}),
+          ...(staleMobile ? { remoteAccessConfig: { ...config, mobilePublicUrl: null } } : {}),
+        },
+      })
+    }
+  }
+  return { entitled: false, stopped: running }
 }
 
 /** Start tunnel soon after settings enable Cloudflare mode (same process). */

@@ -74,10 +74,15 @@ describe("the public door is where it becomes a requirement", () => {
   it("leaves LAN use alone", async () => {
     // The check lives on the tunnel-start route, not on sign-in. If it ever
     // moves, an upgraded owner loses access to their own server at home.
+    // It now arrives through the combined plan + MFA policy in public-tunnel.ts.
     const settings = readFileSync("apps/api/src/modules/settings/routes.ts", "utf8")
+    const policy = readFileSync("apps/api/src/services/remote-access/public-tunnel.ts", "utf8")
     const auth = readFileSync("apps/api/src/modules/auth/routes.ts", "utf8")
-    expect(settings).toContain("canEnablePublicRemoteAccess")
-    expect(auth).not.toContain("canEnablePublicRemoteAccess")
+    expect(settings).toContain("evaluatePublicRemoteAccess")
+    expect(policy).toContain("canEnablePublicRemoteAccess")
+    for (const name of ["canEnablePublicRemoteAccess", "evaluatePublicRemoteAccess", "readRemoteAccessEntitlement"]) {
+      expect(auth).not.toContain(name)
+    }
   })
 
   it("offers no flag that switches enforcement off for good", () => {

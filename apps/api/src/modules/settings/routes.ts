@@ -37,10 +37,7 @@ import {
   resolveMobileLocalAccessUrls,
 } from "@/services/remote-access/local-access-urls"
 import { resolveCloudflareTunnelTarget } from "@/services/remote-access/tunnel-target"
-import {
-  canEnablePublicRemoteAccess,
-  readOwnerMfaState,
-} from "@/services/security/owner-mfa-policy"
+import { readOwnerMfaState } from "@/services/security/owner-mfa-policy"
 import {
   emailConfigSchema,
   mergeEmailConfig,
@@ -72,10 +69,15 @@ import {
   parseLinuxMounts,
 } from "@/services/storage/discover-storage"
 import {
-  requireOwnerMfaForPublicRemoteAccess,
+  evaluatePublicRemoteAccess,
+  readRemoteAccessEntitlement,
+  requirePublicRemoteAccessPolicy,
   startPublicTunnel,
 } from "@/services/remote-access/public-tunnel"
-import { requestCloudflareTunnelStart } from "@/services/remote-access/tunnel-boot"
+import {
+  reconcilePublicRemoteAccess,
+  requestCloudflareTunnelStart,
+} from "@/services/remote-access/tunnel-boot"
 import {
   loadEffectiveStorageRoot,
 } from "@/services/storage/effective-storage-root"
@@ -614,6 +616,10 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
       preHandler: requireSessionRole(["OWNER", "ADMIN"]),
     },
     async (request, reply) => {
+      // A plan that lapsed since the last check must not leave a quick tunnel
+      // running, or its address on this page as if it still worked.
+      await reconcilePublicRemoteAccess(fastify, "settings-read")
+      const remoteAccessEntitlement = await readRemoteAccessEntitlement(fastify.prisma)
       const instance = await fastify.prisma.instanceConfig.findFirst()
       const config = (instance?.remoteAccessConfig as Record<string, unknown> | null) || {}
       const urls = await resolveMobileServerUrls(fastify.prisma, request)
@@ -659,6 +665,8 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
            * pressed, rather than answering with a 403 after.
            */
           ownerMfa: await readOwnerMfaState(fastify.prisma),
+          /** Whether the current plan includes public Remote Access. LAN never depends on it. */
+          publicRemoteAccess: remoteAccessEntitlement,
         },
       })
     }
@@ -731,11 +739,11 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
           : (instance.publicUrl ?? null)
 
       // Turning the tunnel on here starts it (requestCloudflareTunnelStart
-      // below), so it is public Remote Access and needs the same owner-MFA
-      // policy as the Start buttons. Turning it off, or saving other settings
-      // while it stays off, is never blocked.
+      // below), so it is public Remote Access and needs the same plan and
+      // owner-MFA policy as the Start buttons. Turning it off, or saving other
+      // settings while it stays off, is never blocked.
       if (parsed.data.cloudflareTunnelEnabled === true) {
-        const verdict = await canEnablePublicRemoteAccess(fastify.prisma)
+        const verdict = await evaluatePublicRemoteAccess(fastify.prisma)
         if (!verdict.allowed) {
           reply.status(403).send({ error: { code: verdict.code, message: verdict.message } })
           return
@@ -797,12 +805,15 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
     "/settings/cloudflare-tunnel",
     { preHandler: requireSessionRole(["OWNER", "ADMIN"]) },
     async (_request, reply) => {
+      await reconcilePublicRemoteAccess(fastify, "status-read")
+      const publicRemoteAccess = await readRemoteAccessEntitlement(fastify.prisma)
       const tunnel = getCloudflareTunnelState()
       const instance = await fastify.prisma.instanceConfig.findFirst()
       const raw = (instance?.remoteAccessConfig as Record<string, unknown> | null) || {}
       reply.send({
         data: {
           ...tunnel,
+          publicRemoteAccess,
           cloudflareTunnelEnabled: Boolean(raw.cloudflareTunnelEnabled),
           publicUrl: instance?.publicUrl ?? null,
           mobilePublicUrl:
@@ -823,7 +834,7 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
         requireFeature("ops.remote_access_helper"),
         // Owner MFA is required to open public Remote Access — desktop or
         // mobile alike. Same policy, same code, for every start route.
-        requireOwnerMfaForPublicRemoteAccess,
+        requirePublicRemoteAccessPolicy,
       ],
     },
     async (request, reply) => {
@@ -885,7 +896,7 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
         requireFeature("ops.remote_access_helper"),
         // Owner MFA is required to open public Remote Access — desktop or
         // mobile alike. Same policy, same code, for every start route.
-        requireOwnerMfaForPublicRemoteAccess,
+        requirePublicRemoteAccessPolicy,
       ],
     },
     async (request, reply) => {
