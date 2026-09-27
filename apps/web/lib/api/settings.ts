@@ -45,6 +45,21 @@ export function updateStorageSettings(storageRoot: string) {
   })
 }
 
+/** Instance-wide upload ceiling. Free disk space is checked separately, per upload. */
+export type UploadLimits = {
+  maxUploadSizeMb: number
+  maxUploadSizeBytes: number
+  uploadRateLimitPerMinute: number
+}
+
+export function getUploadLimits(signal?: AbortSignal) {
+  return fetchApi<UploadLimits>("/settings/uploads", { method: "GET", signal })
+}
+
+export function updateUploadLimits(input: { maxUploadSizeMb: number }) {
+  return fetchApi<UploadLimits>("/settings/uploads", { method: "PATCH", body: input })
+}
+
 export type StorageVolumesResponse = StorageDiscovery & {
   currentStorageRoot: string
   currentEffectiveRoot: string

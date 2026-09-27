@@ -20,6 +20,7 @@ import { getStorageSettings, updateStorageSettings } from "@/lib/api/settings"
 import { queryKeys } from "@/lib/api/query-keys"
 import { formatBytes } from "@/lib/utils/format-bytes"
 import { SettingsPanelError } from "@/components/settings/settings-panel-error"
+import { UploadLimitSettings } from "@/components/settings/upload-limit-settings"
 import { cn } from "@/lib/utils"
 
 const FOLDERS = ["objects", "libraries", "thumbnails", "temp", "logs"] as const
@@ -222,6 +223,8 @@ export function StorageSettingsForm() {
           ) : null}
         </div>
       </SettingsCard>
+
+      <UploadLimitSettings availableBytes={d.filesystemAvailableBytes ?? null} />
 
       <Link
         href="/settings?tab=attached-disks"

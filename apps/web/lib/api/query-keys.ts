@@ -37,6 +37,7 @@ export const queryKeys = {
   licenseStatusFor: (userId: string | null) => ["license", "status", userId ?? "anonymous"] as const,
   generalSettings: ["settings", "general"] as const,
   storageSettings: ["settings", "storage"] as const,
+  uploadLimits: ["settings", "uploads"] as const,
   storageVolumes: ["settings", "storage", "volumes"] as const,
   storageMigrateStatus: ["settings", "storage", "migrate"] as const,
   remoteAccessSettings: ["settings", "remote-access"] as const,
