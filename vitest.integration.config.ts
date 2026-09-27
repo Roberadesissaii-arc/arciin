@@ -98,6 +98,14 @@ export default defineConfig({
        */
       API_PORT: "4100",
       PORT: "3100",
+      /**
+       * These win over PORT when code resolves "the web app" (tunnel target,
+       * advertised URLs). Left to .env they are production's :3002/:3003, and
+       * a tunnel test health-checked production. Dev ports, like the rest.
+       */
+      ARCIIN_WEB_PORT: "3100",
+      ARCIIN_MOBILE_PORT: "3103",
+      ARCIIN_MOBILE_ORIGIN: "http://127.0.0.1:3103",
       ARCIIN_QUEUE_PREFIX: "bull_test",
       ARCIIN_LICENSE_PUBLIC_KEYS: `${LICENSE_TEST_KID}:${licensePublicKeyFromPrivate(LICENSE_TEST_SIGNING_KEY)}`,
       /**

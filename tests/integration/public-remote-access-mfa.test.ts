@@ -16,6 +16,15 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 
 const spawned: Array<{ cmd: string; args: string[] }> = []
 
+/**
+ * Hermetic: the tunnel target is a port nothing listens on, and fetch is
+ * stubbed. Without this, starting a (fake) tunnel health-checked the web port
+ * from .env — production's :3002 on the server — and probed the made-up public
+ * hostname over the internet. A test must never reach either.
+ */
+const ISOLATED_TARGET = "http://127.0.0.1:59999"
+const fetched: string[] = []
+
 vi.mock("node:child_process", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:child_process")>()
   return {
@@ -78,6 +87,15 @@ async function setOwnerMfa(enabled: boolean) {
 }
 
 beforeAll(async () => {
+  process.env.ARCIIN_TUNNEL_TARGET = ISOLATED_TARGET
+  vi.stubGlobal("fetch", async (input: string | URL | Request) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
+    fetched.push(url)
+    if (url.startsWith(`${ISOLATED_TARGET}/`) || url.includes("fake-policy-test.trycloudflare.com")) {
+      return new Response("{}", { status: 200, headers: { "content-type": "application/json" } })
+    }
+    throw new Error(`test attempted a real network call: ${url}`)
+  })
   const root = await createTestStorageRoot()
   await resetDatabase()
   fixtures = await seedBaseFixtures(root)
@@ -92,6 +110,8 @@ beforeAll(async () => {
 })
 
 afterAll(async () => {
+  vi.unstubAllGlobals()
+  delete process.env.ARCIIN_TUNNEL_TARGET
   const { stopCloudflareQuickTunnel } = await import("../../apps/api/src/services/remote-access/cloudflare-tunnel")
   stopCloudflareQuickTunnel()
   await app?.close()
@@ -103,6 +123,7 @@ afterAll(async () => {
 
 beforeEach(() => {
   spawned.length = 0
+  fetched.length = 0
 })
 
 afterEach(async () => {
@@ -179,6 +200,11 @@ describe("owner with MFA enrolled", () => {
     // Isolated quick-tunnel config — never the licensing tunnel's ~/.cloudflared/config.yml.
     expect(spawned[0]!.args.join(" ")).not.toContain(".cloudflared/config.yml")
     expect(spawned[0]!.args).toContain("--config")
+    // Pointed only at the isolated target; nothing but it (and the fake
+    // hostname) was contacted.
+    expect(spawned[0]!.args).toContain(ISOLATED_TARGET)
+    expect(fetched.every((u) => u.startsWith(ISOLATED_TARGET) || u.includes("fake-policy-test"))).toBe(true)
+    expect(fetched.some((u) => u.includes(":3002") || u.includes(":3003"))).toBe(false)
   })
 
   it("no TOTP code is demanded per start — enrolment is the requirement", async () => {
