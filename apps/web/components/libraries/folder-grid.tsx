@@ -4,6 +4,7 @@ import { useMemo, useState } from "react"
 import { ChevronDown, ChevronUp } from "lucide-react"
 
 import { FolderCard } from "@/components/libraries/folder-card"
+import { useIncomingUploads } from "@/hooks/use-incoming-uploads"
 import type { FolderSummary } from "@/lib/types/models"
 import { cn } from "@/lib/utils"
 
@@ -86,10 +87,12 @@ export function FolderGrid({
   folders: FolderSummary[]
   librarySlug: string
 }) {
+  // One snapshot for every card; realtime keeps it current.
+  const incoming = useIncomingUploads()
   return (
     <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 sm:gap-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4">
       {folders.map((folder) => (
-        <FolderCard key={folder.id} folder={folder} librarySlug={librarySlug} />
+        <FolderCard key={folder.id} folder={folder} librarySlug={librarySlug} incomingFolders={incoming.data?.folders} />
       ))}
     </div>
   )

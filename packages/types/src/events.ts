@@ -30,6 +30,8 @@ export const SOCKET_EVENT_TYPES = [
   "plex.sync.started",
   "plex.sync.completed",
   "plex.sync.failed",
+  /** A folder's incoming File Request uploads changed. Owner-only; carries a FolderIncomingSummary. */
+  "file-request.incoming",
 ] as const
 
 export type SocketEventType = (typeof SOCKET_EVENT_TYPES)[number]
@@ -46,5 +48,30 @@ export type RealtimeEvent = {
   progress?: number
   message?: string
   data?: Record<string, unknown>
+  /**
+   * "user": deliver to `user:{userId}` only — not to the library room, and not
+   * to the instance feed OWNER/ADMIN sockets otherwise receive. For events
+   * about one person's own things.
+   */
+  audience?: "user"
   createdAt: string
+}
+
+/** Lifecycle step of one incoming File Request upload, as announced to the owner. */
+export type IncomingPhase = "started" | "progress" | "verifying" | "completed" | "ended"
+
+/**
+ * What one folder is receiving through File Requests. Counts and bytes only:
+ * no token, submitter or file name.
+ */
+export type FolderIncomingSummary = {
+  folderId: string
+  libraryId: string
+  activeUploadCount: number
+  totalBytes: number
+  receivedBytes: number
+  /** receivedBytes / totalBytes, 0–100, floored. */
+  progressPercent: number
+  /** RECEIVING: bytes arrived recently. VERIFYING: checking the finished file. WAITING: open but quiet. IDLE: nothing open. */
+  state: "RECEIVING" | "VERIFYING" | "WAITING" | "IDLE"
 }

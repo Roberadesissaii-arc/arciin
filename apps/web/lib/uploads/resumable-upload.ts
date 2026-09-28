@@ -114,6 +114,13 @@ export async function runResumableUpload(input: {
   knownUploadId?: string | null
   onSession?: (session: UploadSession) => void
   onProgress?: (uploadedBytes: number, totalBytes: number) => void
+  /**
+   * Bytes the server has confirmed holding — at the start or resume of the
+   * session and after every acknowledged chunk. Unlike onProgress, which
+   * counts bytes handed to the network, this only ever reports delivered
+   * bytes, so it is what speed and time-remaining are measured from.
+   */
+  onConfirmed?: (confirmedBytes: number, totalBytes: number) => void
   onState?: (state: UploadState) => void
   /** Read at completion time: the submission another file may have created meanwhile. */
   submissionId?: () => string | null
@@ -140,11 +147,15 @@ export async function runResumableUpload(input: {
   const total = session.totalBytes
   let offset = session.uploadedBytes
   input.onProgress?.(offset, total)
+  input.onConfirmed?.(offset, total)
 
   let failures = 0
   const recover = async (error: unknown) => {
     if (!isRetryable(error)) throw error
     if (failures >= BACKOFF_MS.length) throw new UploadStalledError(error)
+    // Roll the shown progress back to what the server last confirmed: the
+    // bytes of the chunk in flight may never have arrived.
+    input.onProgress?.(offset, total)
     input.onState?.("reconnecting")
     await sleep(BACKOFF_MS[failures]!)
     failures += 1
@@ -153,6 +164,7 @@ export async function runResumableUpload(input: {
     const fresh = await input.transport.status(session!.uploadId)
     offset = fresh.uploadedBytes
     input.onProgress?.(offset, total)
+    input.onConfirmed?.(offset, total)
   }
 
   if (session.status !== "COMPLETE") {
@@ -175,6 +187,7 @@ export async function runResumableUpload(input: {
         offset = result.uploadedBytes
         failures = 0
         input.onProgress?.(offset, total)
+        input.onConfirmed?.(offset, total)
       } catch (error) {
         if (signal.aborted) checkAbort()
         if (error instanceof UploadHttpError && error.code === "INVALID_UPLOAD_OFFSET") {
@@ -182,6 +195,8 @@ export async function runResumableUpload(input: {
           const expected = Number(error.details?.expectedOffset)
           if (Number.isFinite(expected)) {
             offset = expected
+            input.onProgress?.(offset, total)
+            input.onConfirmed?.(offset, total)
             continue
           }
         }

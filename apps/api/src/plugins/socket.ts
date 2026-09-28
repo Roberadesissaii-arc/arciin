@@ -6,40 +6,8 @@ import { isSelfHostedLanOrigin, type RealtimeEvent } from "@arciin/shared"
 
 import { apiConfig } from "@/config"
 import { isActiveTunnelOrigin } from "@/plugins/cors-origins"
+import { emitRealtimeEvent } from "@/plugins/socket-emit"
 import { hashApiKey, hashToken, scopeAllows } from "@/services/security/auth"
-
-function emitRealtimeEvent(io: Server, event: RealtimeEvent) {
-  let emitted = false
-
-  if (event.userId) {
-    io.to(`user:${event.userId}`).emit(event.type, event)
-    emitted = true
-  }
-
-  if (event.libraryId) {
-    io.to(`library:${event.libraryId}`).emit(event.type, event)
-    emitted = true
-  }
-
-  if (event.uploadId) {
-    io.to(`upload:${event.uploadId}`).emit(event.type, event)
-    emitted = true
-  }
-
-  if (event.jobId) {
-    io.to(`job:${event.jobId}`).emit(event.type, event)
-    emitted = true
-  }
-
-  if (event.instanceId) {
-    io.to(`instance:${event.instanceId}`).emit(event.type, event)
-    emitted = true
-  }
-
-  if (!emitted) {
-    io.emit(event.type, event)
-  }
-}
 
 export async function registerSocket(fastify: FastifyInstance) {
   const instance = await fastify.prisma.instanceConfig.findFirst()

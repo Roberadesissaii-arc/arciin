@@ -10,6 +10,7 @@ import {
   isTranscriptRealtimeType,
 } from "@/lib/realtime/apply-transcript-activity"
 import { refreshLibraryQueries } from "@/lib/realtime/refresh-library-queries"
+import { applyIncomingEvent } from "@/lib/realtime/incoming-uploads"
 import { buildLiveSocketEvent, useEventsFeedStore } from "@/lib/stores/events-feed-store"
 import { useSocketStore } from "@/lib/stores/socket-store"
 import { useUploadStore } from "@/lib/stores/upload-store"
@@ -61,6 +62,8 @@ export function useSocketEvents(socket: Socket | null) {
       // always request it — members simply keep their user-scoped stream.
       // Re-emitted on every (re)connect so the room is rejoined after drops.
       socket.emit("subscribe:instance-events")
+      // Events sent while disconnected are gone; the snapshot is not.
+      void queryClient.invalidateQueries({ queryKey: queryKeys.incomingUploadsRoot })
     }
     const onDisconnect = () => setConnected(false)
 
@@ -75,6 +78,14 @@ export function useSocketEvents(socket: Socket | null) {
       }
 
       setLastEventAt(new Date().toISOString())
+
+      if (type === "file-request.incoming") {
+        applyIncomingEvent(queryClient, payload.data)
+        // Progress arrives every second or two per upload; only the lifecycle
+        // steps belong in the live events feed.
+        if (payload.data?.phase === "progress") return
+      }
+
       pushFeedEvent(buildLiveSocketEvent(type, payload))
 
       if (payload.uploadId) {
