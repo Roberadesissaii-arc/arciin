@@ -75,6 +75,10 @@ import {
   startPublicTunnel,
 } from "@/services/remote-access/public-tunnel"
 import {
+  applyCustomPublicOriginState,
+  decideCustomPublicOrigin,
+} from "@/services/remote-access/custom-public-origin"
+import {
   reconcilePublicRemoteAccess,
   requestCloudflareTunnelStart,
 } from "@/services/remote-access/tunnel-boot"
@@ -750,6 +754,49 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
         }
       }
 
+      // A custom public URL becomes the trusted origin for signing in (see
+      // services/remote-access/custom-public-origin.ts). On the public internet
+      // that is public Remote Access by the owner's own route, so it needs the
+      // owner's second factor, like every other public path. Clearing it, or a
+      // LAN hostname, never does.
+      const publicUrlChanged = (nextPublicUrl ?? null) !== (instance.publicUrl ?? null)
+      const ownerMfa = await readOwnerMfaState(fastify.prisma)
+      if (publicUrlChanged && nextPublicUrl) {
+        const custom = decideCustomPublicOrigin(nextPublicUrl, ownerMfa.ownerHasMfa)
+        if (!custom.trusted && custom.reason === "owner-mfa-required") {
+          reply.status(403).send({
+            error: {
+              code: "OWNER_MFA_REQUIRED",
+              message:
+                "Set up two-factor authentication before using a public custom domain. " +
+                "Settings → Two-factor authentication. Your server stays reachable on your own network in the meantime.",
+            },
+          })
+          return
+        }
+        if (!custom.trusted && ["malformed", "scheme", "credentials", "insecure"].includes(custom.reason)) {
+          reply.status(400).send({
+            error: {
+              code: "VALIDATION_ERROR",
+              message:
+                custom.reason === "insecure"
+                  ? "A public custom domain must use https://."
+                  : "Enter the address as https://your-domain, without a username or password.",
+            },
+          })
+          return
+        }
+        // A saved custom domain replaces a leftover quick-tunnel address as the
+        // mobile entry point too, so phones and this page agree on one address.
+        if (
+          custom.trusted &&
+          typeof nextConfig.mobilePublicUrl === "string" &&
+          /\.trycloudflare\.com\/?$/i.test(nextConfig.mobilePublicUrl)
+        ) {
+          nextConfig.mobilePublicUrl = null
+        }
+      }
+
       const updated = await fastify.prisma.instanceConfig.update({
         where: {
           id: instance.id,
@@ -760,6 +807,13 @@ export async function registerSettingsRoutes(fastify: FastifyInstance) {
           remoteAccessConfig: nextConfig,
         },
       })
+
+      // Only after the row is written: the trusted origin follows what is
+      // stored, never what was merely requested.
+      applyCustomPublicOriginState(
+        decideCustomPublicOrigin(updated.publicUrl, ownerMfa.ownerHasMfa),
+        fastify.log,
+      )
 
       const urls = await resolveMobileServerUrls(fastify.prisma, request)
       const raw = (updated.remoteAccessConfig as Record<string, unknown> | null) || {}
