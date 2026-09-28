@@ -15,6 +15,8 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
+# shellcheck source=lib/backup-snapshots.sh
+source "${ROOT}/scripts/lib/backup-snapshots.sh"
 
 [[ -f .env ]] && set -a && . ./.env && set +a
 
@@ -43,9 +45,16 @@ fi
 # while still being a complete, independently restorable tree.
 if [[ -d "${STORAGE}" ]]; then
   echo "[backup] syncing storage from ${STORAGE}…"
-  PREV="$(find "${DEST}" -maxdepth 1 -mindepth 1 -type d -name '20*' ! -name "${STAMP}" | sort | tail -1)"
+  # Only a complete nightly snapshot may be the hard-link reference; a manual
+  # DB-only dump or a partial run would force a full copy of storage.
+  PREV="$(backup_latest_complete_snapshot "${DEST}" "${STAMP}")"
   LINK_ARG=()
-  [[ -n "${PREV}" && -d "${PREV}/storage" ]] && LINK_ARG=(--link-dest="${PREV}/storage")
+  if [[ -n "${PREV}" ]]; then
+    LINK_ARG=(--link-dest="${PREV}/storage")
+    echo "[backup]   hard-linking unchanged files against ${PREV}"
+  else
+    echo "[backup]   no complete previous snapshot — full copy" >&2
+  fi
 
   # thumbnails and temp are regenerable; objects are the irreplaceable part.
   rsync -a --delete "${LINK_ARG[@]}" \
@@ -65,11 +74,17 @@ if [[ -f .env ]]; then
   echo "[backup]   env.backup (chmod 600 — contains secrets)"
 fi
 
-printf 'arciin backup\ncreated: %s\nhost: %s\nstorage: %s\n' \
+printf 'arciin backup\nformat: 2\ncreated: %s\nhost: %s\nstorage: %s\n' \
   "$(date -Is)" "$(hostname)" "${STORAGE}" > "${OUT}/MANIFEST.txt"
 
+# Last step of a successful run (set -e stops before this on any failure). Only
+# a snapshot carrying it can be the next run's link source or be pruned.
+date -Is > "${OUT}/COMPLETE"
+
 # ── Retention ─────────────────────────────────────────────────────────────────
-mapfile -t OLD < <(find "${DEST}" -maxdepth 1 -mindepth 1 -type d -name '20*' | sort | head -n "-${KEEP}")
+# Only complete nightly snapshots are counted and pruned; manual-*, named
+# pre-deploy dumps and partial runs are left for a person to decide about.
+mapfile -t OLD < <(backup_prunable_snapshots "${DEST}" "${KEEP}")
 for dir in "${OLD[@]:-}"; do
   [[ -n "${dir}" ]] || continue
   echo "[backup] pruning ${dir}"
