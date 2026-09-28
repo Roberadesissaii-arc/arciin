@@ -2,6 +2,7 @@ import "server-only"
 
 import { clientIpFromIncomingRequest } from "@/lib/server/client-ip"
 import { getServerApiOrigin } from "@/lib/server/api-origin"
+import { redactTokenPath } from "@/lib/server/redact-token-path"
 
 /** Set by the Next.js API proxy so Fastify can trust the real client on loopback hops. */
 export const ARCIIN_CLIENT_IP_HEADER = "x-arciin-client-ip"
@@ -84,7 +85,8 @@ export async function proxyApiRequest(request: Request, targetPathWithQuery: str
     // own envelope. The cause stays in the server log, not in the response.
     console.error("[api-proxy] upstream request failed", {
       method,
-      path: targetPathWithQuery.split("?")[0],
+      // Never the token of a File Request or share link: the path is the link.
+      path: redactTokenPath(targetPathWithQuery.split("?")[0] ?? ""),
       code: (error as { cause?: { code?: string } })?.cause?.code,
     })
     return proxyFailure()
