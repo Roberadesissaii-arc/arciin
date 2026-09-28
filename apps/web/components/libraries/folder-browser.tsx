@@ -17,6 +17,7 @@ import {
 } from "@/components/libraries/folder-grid"
 import { FoldersEmptyPlaceholder } from "@/components/libraries/folders-empty-placeholder"
 import { LibraryBrowserToolbar } from "@/components/libraries/library-browser-toolbar"
+import { SemanticSearchHint } from "@/components/libraries/semantic-search-hint"
 import { GridPaginationBar } from "@/components/ui/app-pagination"
 import {
   AssetGridSkeleton,
@@ -180,6 +181,7 @@ export function FolderBrowser({
           sourceOptions={sourceOptions}
           placeholder="Search files in this folder"
         />
+        <SemanticSearchHint search={search} semantic={assetsQuery.data?.pages[0]?.semantic} />
 
         <div className="border-b border-zinc-200/90" aria-hidden />
 

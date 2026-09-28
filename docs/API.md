@@ -71,6 +71,14 @@ Query params:
 - `mediaType`
 - `search`
 
+With `search`, results are keyword matches (exact name or title first). When
+local semantic search is on, matches *by meaning* follow them, each with a
+`searchMatch: { kind: "semantic", label }` field; the response header
+`x-arciin-semantic` (and `semantic` on `GET /api/assets/page`) says whether
+they were included: `used`, `disabled`, `unavailable` or `not_indexed`.
+Semantic matches obey exactly the same visibility rules as the listing. See
+[SEMANTIC_SEARCH.md](SEMANTIC_SEARCH.md).
+
 ### `GET /api/assets/:assetId`
 ### `PATCH /api/assets/:assetId`
 ### `DELETE /api/assets/:assetId`
@@ -111,6 +119,18 @@ a 2 GB file as one multipart request over Remote Access.
 ### `GET /api/activity`
 ### `GET /api/jobs`
 ### `GET /api/jobs/:jobId`
+
+## Semantic search (owner only)
+
+Local only — every call goes to the Ollama on this server. See
+[SEMANTIC_SEARCH.md](SEMANTIC_SEARCH.md).
+
+### `GET /api/semantic-search/status`
+### `PATCH /api/semantic-search/settings` — `{ "enabled": boolean }`
+### `POST /api/semantic-search/index` — start (or resume) indexing
+### `POST /api/semantic-search/pause`
+### `POST /api/semantic-search/rebuild` — re-embed everything
+### `POST /api/semantic-search/model/install` — `{ "confirm": true }`; installs the embedding model into the local Ollama
 
 ## API keys
 

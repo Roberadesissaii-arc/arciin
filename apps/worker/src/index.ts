@@ -24,6 +24,7 @@ import {
 } from "@/processors/worker-handlers"
 import { maybeRunScheduledStage } from "@/services/auto-update"
 import { handleImportUrl } from "@/services/url-import"
+import { startSemanticIndexing } from "@/services/semantic-worker"
 
 const redisUrl = new URL(workerConfig.REDIS_URL)
 
@@ -134,6 +135,10 @@ async function start() {
 
   // Checks once an hour whether it's the user's configured auto-update
   // window; stages (never applies) at most once per available version.
+  // Local semantic indexing: its own queue, one asset at a time, and only
+  // after the owner has turned it on and started it.
+  const semantic = startSemanticIndexing({ connection, prefix: workerConfig.queuePrefix })
+
   const autoUpdateCheck = setInterval(() => {
     void maybeRunScheduledStage(redis).catch((error) => {
       console.error("[auto-update] scheduled stage check failed", error)
@@ -188,6 +193,7 @@ async function start() {
     clearInterval(heartbeat)
     clearInterval(autoUpdateCheck)
     await Promise.all([
+      semantic.close(),
       mediaWorker.close(),
       storageWorker.close(),
       integrationsWorker.close(),

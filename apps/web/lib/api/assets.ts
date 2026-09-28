@@ -49,6 +49,8 @@ export type AssetPage = {
   hasMore: boolean
   /** Only present when withTotal was requested (first page). */
   total?: number
+  /** First page of a search: whether matches by meaning were included. */
+  semantic?: "used" | "disabled" | "unavailable" | "not_indexed"
 }
 
 /** Cursor-paginated listing used by library and folder browsing. */
@@ -213,3 +215,4 @@ export type AssetStats = {
 export function getAssetStats(signal?: AbortSignal) {
   return fetchApi<AssetStats>("/assets/stats", { method: "GET", signal })
 }
+

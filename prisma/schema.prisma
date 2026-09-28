@@ -641,6 +641,7 @@ model Asset {
   fileRequestId           String?
   fileRequestSubmissionId String?
   transcript              MediaTranscript?
+  semanticIndex           AssetSemanticIndex?
   createdAt               DateTime               @default(now())
   updatedAt               DateTime               @updatedAt
   deletedAt               DateTime?
@@ -1225,3 +1226,65 @@ model ResumableUpload {
   @@index([fileRequestId, status])
   @@index([status, expiresAt])
 }
+
+enum SemanticIndexStatus {
+  PENDING
+  INDEXED
+  FAILED
+  /// Nothing meaningful to embed (no text at all), or the asset kind is not indexed.
+  SKIPPED
+}
+
+/// Local semantic search: one row per asset, never edited by users.
+///
+/// Holds what was embedded, the vector, and enough provenance to know when it
+/// is stale. AI-written captions live here, never in Asset.title/description.
+/// Deleting the asset deletes the row; a soft-deleted asset keeps its row (it
+/// can be restored from Trash) but search never returns it.
+model AssetSemanticIndex {
+  assetId               String              @id
+  status                SemanticIndexStatus @default(PENDING)
+  /// The bounded text that was embedded (see buildAssetSemanticText).
+  semanticText          String?
+  /// One-time local vision caption for images (and video thumbnails).
+  caption               String?
+  captionModel          String?
+  /// Asset checksum the caption was made from: a new file gets a new caption.
+  captionSourceChecksum String?
+  /// Unit-length float32 vector, little-endian.
+  embedding             Bytes?
+  embeddingModel        String?
+  /// Ollama model digest: vectors from different builds are not compared.
+  embeddingDigest       String?
+  dimension             Int?
+  indexVersion          Int                 @default(0)
+  /// sha256 of model, digest, index version and semantic text: unchanged means skip.
+  fingerprint           String?
+  attempts              Int                 @default(0)
+  /// A short code only ("OLLAMA_OFFLINE", "MODEL_MISSING", …) — never content.
+  errorCode             String?
+  indexedAt             DateTime?
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+  asset                 Asset               @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@index([embeddingModel, embeddingDigest, indexVersion])
+}
+
+/// Semantic search settings (a single row, id "default"). Off until the owner
+/// turns it on; indexing only runs after the owner starts it.
+model SemanticSearchConfig {
+  id              String    @id @default("default")
+  enabled         Boolean   @default(false)
+  /// The owner has started indexing: the worker keeps the index current.
+  indexingActive  Boolean   @default(false)
+  embeddingModel  String    @default("nomic-embed-text")
+  /// Local vision model for image captions; null = pick an installed one.
+  captionModel    String?
+  /// Bumped by "Rebuild": every row with an older value is re-embedded.
+  rebuildEpoch    Int       @default(0)
+  indexingStartedAt DateTime?
+  updatedAt       DateTime  @updatedAt
+}
+
