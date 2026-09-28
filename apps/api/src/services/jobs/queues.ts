@@ -59,3 +59,13 @@ export const integrationsQueue = new Queue(JOB_QUEUE_NAMES.integrations, {
   defaultJobOptions,
   prefix,
 })
+/** Link inspection (metadata only). Jobs are single-attempt and short-lived: a person is waiting. */
+export const inspectQueue = new Queue(JOB_QUEUE_NAMES.inspect, {
+  connection,
+  defaultJobOptions: {
+    attempts: 1,
+    removeOnComplete: { count: 200, age: 60 * 60 },
+    removeOnFail: { count: 200, age: 24 * 60 * 60 },
+  },
+  prefix,
+})

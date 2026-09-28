@@ -1,12 +1,22 @@
 import { createHash } from "node:crypto"
 import { createReadStream, createWriteStream, existsSync } from "node:fs"
 import { mkdir, readdir, rename, rm, stat } from "node:fs/promises"
-import os from "node:os"
 import path from "node:path"
 import type { Readable } from "node:stream"
 import { once } from "node:events"
 
 import { assertExternalDownloadUrlIsPublic, safeRequest } from "@/services/safe-fetch"
+import {
+  INSTAGRAM_HINT,
+  VIDEO_PLATFORM_HINT,
+  decodeHtmlEntities,
+  drmBlockedMessage,
+  extractEmbeddedPlayerUrls,
+  extractMetaContent,
+  htmlLooksLikeVideoPage,
+  isPublicHttpUrl,
+  resolveBinary,
+} from "@/services/link-extraction"
 
 import { Queue } from "bullmq"
 import { execa } from "execa"
@@ -24,6 +34,8 @@ import {
   type ImportUrlPayload,
   apiOwnsCompletionEvent,
   initialUploadSessionState,
+  promoteWaitingImports,
+  releaseImportSlot,
 } from "@arciin/shared"
 import { normalizeConfiguredStorageRoot } from "@arciin/storage"
 
@@ -39,18 +51,6 @@ const MAX_IMPORT_BYTES =
 /** OpenGraph tags live in the <head>; cap the HTML read so a huge body can't OOM us. */
 const MAX_HTML_BYTES = 5 * 1024 * 1024
 
-/** Video/social platforms yt-dlp handles far better than a raw fetch. */
-const VIDEO_PLATFORM_HINT =
-  /(youtube\.com|youtu\.be|vimeo\.com|linkedin\.com|tiktok\.com|twitter\.com|x\.com|facebook\.com|fb\.watch|dailymotion\.com|twitch\.tv|reddit\.com|streamable\.com)/i
-
-/**
- * Streaming hosts that use DRM (or equivalent closed apps). yt-dlp will never
- * return a usable file — fail fast with a clear message instead of a generic
- * "could not find a downloadable file".
- */
-const DRM_HOST_HINT =
-  /(^|\.)(spotify\.com|scdn\.co|spotifycdn\.com|audible\.com|audible\.co\.uk|audible\.ca|audible\.de|audible\.fr|audible\.com\.au|netflix\.com|disneyplus\.com|hulu\.com|max\.com|hbomax\.com|primevideo\.com|amazon\.com\/gp\/video|music\.apple\.com|tv\.apple\.com|tidal\.com|deezer\.com|pandora\.com|crunchyroll\.com|peacocktv\.com|paramountplus\.com)/i
-
 /** Instagram embed works with crawler UAs; the default Chrome UA often gets a login wall. */
 const INSTAGRAM_EMBED_USER_AGENT = "facebookexternalhit/1.1"
 const INSTAGRAM_EMBED_USER_AGENTS = [
@@ -58,9 +58,6 @@ const INSTAGRAM_EMBED_USER_AGENTS = [
   "Mozilla/5.0 (compatible; facebookexternalhit/1.1)",
   "Mozilla/5.0",
 ]
-
-/** Instagram image posts and carousels need embed scraping; yt-dlp only handles reels/video. */
-const INSTAGRAM_HINT = /instagram\.com|instagr\.am/i
 
 let mediaQueue: Queue | null = null
 function getMediaQueue(): Queue {
@@ -83,14 +80,6 @@ function getMediaQueue(): Queue {
   return mediaQueue
 }
 
-function resolveBinary(name: string, envVar: string): string {
-  const fromEnv = process.env[envVar]?.trim()
-  if (fromEnv) return fromEnv
-  const local = path.join(os.homedir(), ".local", "bin", name)
-  if (existsSync(local)) return local
-  return name
-}
-
 /** Optional yt-dlp cookie sources for sites that require login (e.g. private Facebook posts). */
 function ytDlpCookieArgs(): string[] {
   const fromBrowser = process.env.ARCIIN_YTDLP_COOKIES_FROM_BROWSER?.trim()
@@ -98,34 +87,6 @@ function ytDlpCookieArgs(): string[] {
   const cookiesFile = process.env.ARCIIN_YTDLP_COOKIES?.trim()
   if (cookiesFile && existsSync(cookiesFile)) return ["--cookies", cookiesFile]
   return []
-}
-
-function isPublicHttpUrl(rawUrl: string): boolean {
-  let url: URL
-  try {
-    url = new URL(rawUrl)
-  } catch {
-    return false
-  }
-  if (url.protocol !== "http:" && url.protocol !== "https:") return false
-  const host = url.hostname.toLowerCase().replace(/\.$/, "")
-  if (!host || host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local")) {
-    return false
-  }
-  const ipv4 = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/)
-  if (ipv4) {
-    const a = Number(ipv4[1])
-    const b = Number(ipv4[2])
-    if (a === 10 || a === 127 || a === 0) return false
-    if (a === 169 && b === 254) return false
-    if (a === 172 && b >= 16 && b <= 31) return false
-    if (a === 192 && b === 168) return false
-    if (a === 100 && b >= 64 && b <= 127) return false
-  }
-  if (host === "::1" || host.startsWith("fe80:") || host.startsWith("fc") || host.startsWith("fd")) {
-    return false
-  }
-  return true
 }
 
 type ResolvedDownload = {
@@ -397,28 +358,6 @@ async function findFileRecursive(dir: string, depth = 0): Promise<string | null>
   return null
 }
 
-function decodeHtmlEntities(value: string): string {
-  return value
-    .replace(/&amp;/g, "&")
-    .replace(/&#x2F;/g, "/")
-    .replace(/&#39;/g, "'")
-    .replace(/&quot;/g, '"')
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-}
-
-function extractMetaContent(html: string, key: string): string | null {
-  const patterns = [
-    new RegExp(`<meta[^>]+(?:property|name)=["']${key}["'][^>]*content=["']([^"']+)["']`, "i"),
-    new RegExp(`<meta[^>]+content=["']([^"']+)["'][^>]*(?:property|name)=["']${key}["']`, "i"),
-  ]
-  for (const re of patterns) {
-    const match = html.match(re)
-    if (match?.[1]) return decodeHtmlEntities(match[1])
-  }
-  return null
-}
-
 async function downloadMediaUrl(
   mediaUrl: string,
   workDir: string,
@@ -656,101 +595,6 @@ async function tryOpenGraphMedia(
   return null
 }
 
-function htmlLooksLikeVideoPage(html: string, finalUrl: string): boolean {
-  const ogType = (extractMetaContent(html, "og:type") || "").toLowerCase()
-  if (ogType.startsWith("video")) return true
-  return /\/(movie|watch|episode|film|video|stream)\b/i.test(finalUrl)
-}
-
-/**
- * Pull playable embeds out of an HTML page: JSON-LD VideoObject.embedUrl,
- * iframe players (YouTube/Vimeo/…), and direct .m3u8/.mp4 hrefs.
- * Movie aggregator pages (123movies clones, etc.) often only expose a trailer
- * or third-party player this way — better than failing with nothing.
- */
-function extractEmbeddedPlayerUrls(html: string, baseUrl: string): string[] {
-  const found: string[] = []
-  const push = (raw: string | undefined | null) => {
-    if (!raw) return
-    let absolute: string
-    try {
-      absolute = new URL(decodeHtmlEntities(raw.trim()), baseUrl).toString()
-    } catch {
-      return
-    }
-    if (!isPublicHttpUrl(absolute)) return
-    if (found.includes(absolute)) return
-    found.push(absolute)
-  }
-
-  // JSON-LD blocks — VideoObject.embedUrl / contentUrl
-  // Some hosts omit quotes: type=application/ld+json
-  for (const block of html.matchAll(
-    /<script[^>]+type\s*=\s*(?:["']application\/ld\+json["']|application\/ld\+json)[^>]*>([\s\S]*?)<\/script>/gi,
-  )) {
-    const raw = block[1]?.trim()
-    if (!raw) continue
-    try {
-      const parsed = JSON.parse(raw) as unknown
-      const nodes = Array.isArray(parsed) ? parsed : [parsed]
-      for (const node of nodes) {
-        walkJsonLdForMedia(node, push)
-      }
-    } catch {
-      // Some pages concatenate multiple JSON objects — ignore bad blocks.
-    }
-  }
-
-  // iframe / embed players
-  for (const match of html.matchAll(
-    /<(?:iframe|embed)[^>]+src=["']([^"']+)["']/gi,
-  )) {
-    push(match[1])
-  }
-
-  // Direct stream / file links in the markup
-  for (const match of html.matchAll(
-    /https?:\/\/[^"'<\s]+?\.(?:m3u8|mpd|mp4|webm|mkv)(?:\?[^"'<\s]*)?/gi,
-  )) {
-    push(match[0])
-  }
-
-  // Prefer known extractors first, then streams, then anything else.
-  return found.sort((a, b) => {
-    const score = (u: string) => {
-      if (VIDEO_PLATFORM_HINT.test(u)) return 0
-      if (/\.(m3u8|mpd)(\?|$)/i.test(u)) return 1
-      if (/\.(mp4|webm|mkv)(\?|$)/i.test(u)) return 2
-      return 3
-    }
-    return score(a) - score(b)
-  })
-}
-
-function walkJsonLdForMedia(
-  node: unknown,
-  push: (url: string | null | undefined) => void,
-  depth = 0,
-) {
-  if (!node || depth > 8) return
-  if (Array.isArray(node)) {
-    for (const child of node) walkJsonLdForMedia(child, push, depth + 1)
-    return
-  }
-  if (typeof node !== "object") return
-  const obj = node as Record<string, unknown>
-  push(typeof obj.embedUrl === "string" ? obj.embedUrl : null)
-  push(typeof obj.contentUrl === "string" ? obj.contentUrl : null)
-  if (typeof obj.url === "string" && VIDEO_PLATFORM_HINT.test(obj.url)) {
-    push(obj.url)
-  }
-  for (const value of Object.values(obj)) {
-    if (value && typeof value === "object") {
-      walkJsonLdForMedia(value, push, depth + 1)
-    }
-  }
-}
-
 async function tryEmbeddedPlayers(
   html: string,
   finalUrl: string,
@@ -784,46 +628,6 @@ async function tryEmbeddedPlayers(
     }
   }
   return null
-}
-
-function drmBlockedMessage(rawUrl: string): string | null {
-  let host = ""
-  try {
-    host = new URL(rawUrl).hostname.toLowerCase()
-  } catch {
-    return null
-  }
-  if (!DRM_HOST_HINT.test(host) && !DRM_HOST_HINT.test(rawUrl)) return null
-
-  if (/spotify/i.test(host) || /spotify/i.test(rawUrl)) {
-    return (
-      "Spotify is DRM-protected and cannot be downloaded. " +
-      "For podcasts, use the show’s public RSS / episode .mp3 if the publisher offers one, " +
-      "or a YouTube / SoundCloud link. Music tracks cannot be imported."
-    )
-  }
-  if (/audible/i.test(host) || /audible/i.test(rawUrl)) {
-    return (
-      "Audible audiobooks and podcasts are DRM-protected and cannot be downloaded. " +
-      "Arciin only imports files you already own as a direct file, or public hosts like YouTube / SoundCloud."
-    )
-  }
-  if (/netflix|disney|hulu|hbo|max\.com|primevideo|peacock|paramount|crunchyroll/i.test(host)) {
-    return (
-      "This streaming service uses DRM and cannot be imported. " +
-      "Paste a YouTube link or a direct video file URL instead."
-    )
-  }
-  if (/apple\.com|tidal|deezer|pandora/i.test(host)) {
-    return (
-      "This music service is DRM-protected and cannot be downloaded. " +
-      "Paste a direct audio file URL or a YouTube / SoundCloud link instead."
-    )
-  }
-  return (
-    "This site uses DRM protection, so Arciin cannot download the media. " +
-    "Try a YouTube link or a direct file URL."
-  )
 }
 
 /** Resolve any link to a concrete file on disk. Throws with a friendly message on failure. */
@@ -1065,6 +869,12 @@ export async function handleImportUrl(
     select: { status: true },
   })
   if (existing?.status === "FAILED") {
+    // Cancelled (or failed) before it ran — possibly while waiting. Whatever
+    // slot it was given goes to the next waiting import.
+    await releaseImportSlot(redis, userId, uploadId).catch(() => {})
+    await promoteWaitingImports<ImportUrlPayload & { jobRecordId?: string }>(redis, userId, async (next) => {
+      await getMediaQueue().add(JOB_TYPES.importUrl, next)
+    }).catch(() => {})
     return
   }
 
@@ -1309,9 +1119,14 @@ export async function handleImportUrl(
     throw error
   } finally {
     await rm(workDir, { recursive: true, force: true }).catch(() => {})
-    // Release this user's in-flight import slot (paired with the API-side gate).
-    const activeKey = `import:active:${userId}`
-    const remaining = await redis.decr(activeKey).catch(() => 0)
-    if (remaining < 0) await redis.set(activeKey, "0").catch(() => {})
+    // Give back this import's slot (paired with the API's admission) and start
+    // the next of this user's waiting imports, if any. Releasing is by upload
+    // id, so a retried attempt releasing again frees nothing it does not hold.
+    await releaseImportSlot(redis, userId, uploadId).catch(() => {})
+    await promoteWaitingImports<ImportUrlPayload & { jobRecordId?: string }>(redis, userId, async (next) => {
+      await getMediaQueue().add(JOB_TYPES.importUrl, next)
+    }).catch((error) => {
+      console.error("[url-import] could not start a waiting import", error)
+    })
   }
 }

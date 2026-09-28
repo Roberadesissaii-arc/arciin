@@ -25,6 +25,7 @@ export const queryKeys = {
   notificationsRoot: ["notifications"] as const,
   notifications: (params: { limit: number; offset: number }) =>
     ["notifications", params] as const,
+  importInspection: (url: string) => ["imports", "inspect", url] as const,
   uploads: ["uploads"] as const,
   upload: (uploadId: string) => ["upload", uploadId] as const,
   jobs: ["jobs"] as const,
