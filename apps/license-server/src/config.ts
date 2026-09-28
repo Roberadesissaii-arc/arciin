@@ -12,12 +12,14 @@ import {
   LICENSE_PUBLIC_KEYS,
 } from "@arciin/config"
 
+import { loadLicenseServerEnvFile } from "./env-files.js"
+
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
 /** The monorepo root, from this file rather than from wherever it was launched. */
 const repoRoot = path.resolve(rootDir, "..", "..")
 
 /**
- * This app's own .env first, then the monorepo's.
+ * This app's own .env first, then this server's keys from the monorepo's.
  *
  * The root file used to be loaded as a bare `loadEnv()`, which resolves against
  * `process.cwd()` — and `pnpm --filter @arciin/license-server start` runs with
@@ -30,7 +32,9 @@ const repoRoot = path.resolve(rootDir, "..", "..")
  * real environment still wins over both files.
  */
 loadEnv({ path: path.join(rootDir, ".env") })
-loadEnv({ path: path.join(repoRoot, ".env") })
+// The root file is the self-hosted Arciin API's (DATABASE_URL, session and
+// vault secrets). Only LICENSE_SERVER_ENV_KEYS are taken from it.
+loadLicenseServerEnvFile(path.join(repoRoot, ".env"))
 
 /**
  * Comma-separated service credentials, so rotation is add-then-remove rather
