@@ -83,3 +83,58 @@ export function getAdminTableData(
     signal,
   })
 }
+
+type TreeUsage = {
+  available: boolean
+  files: number
+  apparentBytes: number
+  uniqueBytes: number
+  symlinksSkipped: number
+  unreadable: number
+  truncated: boolean
+}
+
+/** The read-only storage audit. Counts and labels only — never a path. */
+export type StorageAudit = {
+  generatedAt: string
+  durationMs: number
+  truncated: boolean
+  filesystem: { totalBytes: number; usedBytes: number; freeBytes: number } | null
+  database: {
+    sizeBytes: number | null
+    storageObjects: { count: number; bytes: number }
+    byState: Record<"active" | "archived" | "failed" | "trash", { count: number; bytes: number }>
+    orphanCandidates: { count: number; bytes: number }
+    recentUnreferenced: { count: number; bytes: number }
+    missingFiles: number
+    elsewhere: number
+  }
+  physical: {
+    objects: TreeUsage & { orphanCandidates: { count: number; bytes: number } }
+    thumbnails: TreeUsage
+    temp: TreeUsage
+    resumablePartials: TreeUsage & { withActiveUpload: number; stale: number }
+    storageLogs: TreeUsage
+    appLogs: TreeUsage
+    other: TreeUsage
+  }
+  backups: (TreeUsage & { snapshots: number; sharedWithStorageBytes: number }) | null
+  ollamaModels: TreeUsage | null
+}
+
+export type StorageAuditRun = {
+  id: string
+  status: "running" | "done" | "failed"
+  startedAt: string
+  finishedAt: string | null
+  result: StorageAudit | null
+  error: string | null
+}
+
+export function startStorageAudit() {
+  return fetchApi<StorageAuditRun>("/admin/storage-audit", { method: "POST" })
+}
+
+export function getLatestStorageAudit(signal?: AbortSignal) {
+  return fetchApi<StorageAuditRun | null>("/admin/storage-audit/latest", { method: "GET", signal })
+}

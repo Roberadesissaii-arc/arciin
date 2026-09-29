@@ -63,6 +63,7 @@
     "test:all": "pnpm test && pnpm test:license && pnpm test:integration",
     "test:db:setup": "bash scripts/setup-test-db.sh",
     "dev:doctor": "tsx scripts/dev-doctor.ts",
+    "storage:audit": "tsx --tsconfig apps/api/tsconfig.json scripts/storage-audit.ts",
     "dev:db:setup": "bash scripts/setup-dev-db.sh",
     "deploy:lock:status": "node scripts/deploy-lock.mjs status",
     "deploy:lock:release": "node scripts/deploy-lock.mjs release",

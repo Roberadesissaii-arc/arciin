@@ -6,6 +6,7 @@ import pino from "pino"
 
 import { apiConfig } from "@/config"
 import { registerAdminRoutes } from "@/modules/admin/routes"
+import { registerStorageAuditRoutes } from "@/modules/admin/storage-audit.routes"
 import { registerChatRoutes } from "@/modules/chat/routes"
 import { registerModelRoutes } from "@/modules/models/routes"
 import { registerActivityRoutes } from "@/modules/activity/routes"
@@ -266,6 +267,7 @@ export async function createServer() {
       await registerIntegrationRoutes(api)
       await registerAppDatabaseRoutes(api)
       await registerAdminRoutes(api)
+      await registerStorageAuditRoutes(api)
       await registerModelRoutes(api)
       await registerChatRoutes(api)
     },

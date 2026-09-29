@@ -64,6 +64,8 @@ export const queryKeys = {
   adminTables: ["admin", "tables"] as const,
   /** Database → Folders: current vs legacy Computer Backup vs deleted. */
   folderAudit: ["admin", "folders", "audit"] as const,
+  /** The latest read-only storage audit run. */
+  storageAudit: ["admin", "storage-audit"] as const,
   adminTableData: (table: string, page: number, status = "all") =>
     ["admin", "table", table, page, status] as const,
   appDatabases: ["app-databases"] as const,
