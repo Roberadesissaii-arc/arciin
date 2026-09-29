@@ -48,11 +48,10 @@ if (!fs.existsSync(LOG_DIR)) {
 
 const dotenv = parseEnvFile(path.join(ROOT, ".env"))
 
-const sharedEnv = {
-  ...dotenv,
-  NODE_ENV: "production",
-  ARCIIN_ENV_NAMESPACE: "production",
-}
+// Each vendor service gets only the keys its code reads — never the whole
+// Arciin .env (DATABASE_URL, session and vault secrets). See scripts/lib/vendor-env.cjs.
+const { buildVendorEnvs } = require("./scripts/lib/vendor-env.cjs")
+const vendorEnv = buildVendorEnvs(dotenv)
 
 function appLogFiles(name) {
   return {
@@ -75,7 +74,7 @@ module.exports = {
       max_memory_restart: "512M",
       max_restarts: 20,
       min_uptime: "5s",
-      env: sharedEnv,
+      env: vendorEnv.licenseServer,
       ...appLogFiles("arciin-license-server"),
     },
     {
@@ -89,7 +88,7 @@ module.exports = {
       max_memory_restart: "512M",
       max_restarts: 20,
       min_uptime: "5s",
-      env: sharedEnv,
+      env: vendorEnv.account,
       ...appLogFiles("arciin-account"),
     },
   ],
