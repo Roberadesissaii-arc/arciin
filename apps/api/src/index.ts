@@ -1,23 +1,10 @@
-import os from "node:os"
-
 import { createServer } from "@/server"
 import { apiConfig } from "@/config"
 import { scheduleLicenseCheckIn } from "@/services/license/license-checkin"
 import { scheduleResumableUploadCleanup } from "@/services/file-requests/resumable-cleanup"
+import { getLanIpv4Addresses } from "@/services/remote-access/local-access-urls"
+import { startupBannerLines } from "@/services/remote-access/startup-banner"
 import { scheduleCloudflareTunnelBoot } from "@/services/remote-access/tunnel-boot"
-
-function getLanIps(): string[] {
-  const interfaces = os.networkInterfaces()
-  const ips: string[] = []
-  for (const iface of Object.values(interfaces)) {
-    for (const addr of iface ?? []) {
-      if (addr.family === "IPv4" && !addr.internal) {
-        ips.push(addr.address)
-      }
-    }
-  }
-  return ips
-}
 
 async function start() {
   const server = await createServer()
@@ -28,15 +15,14 @@ async function start() {
       host: "0.0.0.0",
     })
 
-    const lanIps = getLanIps()
-    server.log.info("─────────────────────────────────────────")
-    server.log.info(`  Arciin API v${apiConfig.appVersion} — ready`)
-    server.log.info(`  Local:    http://127.0.0.1:${apiConfig.API_PORT}`)
-    for (const ip of lanIps) {
-      server.log.info(`  Network:  http://${ip}:${apiConfig.API_PORT}`)
-    }
-    server.log.info(`  Public:   ${apiConfig.ARCIIN_PUBLIC_URL}`)
-    server.log.info("─────────────────────────────────────────")
+    const banner = startupBannerLines({
+      appVersion: apiConfig.appVersion,
+      apiPort: apiConfig.API_PORT,
+      lanHosts: getLanIpv4Addresses(),
+      publicUrl: apiConfig.ARCIIN_PUBLIC_URL,
+    })
+    for (const line of banner.info) server.log.info(line)
+    for (const line of banner.warnings) server.log.warn(line)
     scheduleCloudflareTunnelBoot(server)
     scheduleLicenseCheckIn(server)
     scheduleResumableUploadCleanup(server)
