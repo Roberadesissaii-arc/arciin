@@ -1,4 +1,4 @@
-import { isSelfHostedLanOrigin } from "@arciin/shared"
+import { isSelfHostedLanHostname, isSelfHostedLanOrigin } from "@arciin/shared"
 
 /**
  * The CORS allowlist rule, with nothing environmental in it.
@@ -40,6 +40,51 @@ export function isLocalDevOrigin(origin: string): boolean {
   }
 }
 
+/** Why a stored public URL was not turned into a trusted origin. */
+export type CustomOriginRejection = "empty" | "malformed" | "scheme" | "credentials" | "quick-tunnel" | "insecure"
+
+const QUICK_TUNNEL_HOST = /(^|\.)trycloudflare\.com$/i
+
+function isPrivateOrLocalHostname(hostname: string): boolean {
+  if (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]") return true
+  return isSelfHostedLanHostname(hostname)
+}
+
+/**
+ * The exact origin the owner's configured custom public URL stands for.
+ *
+ * Settings → Domain stores it in InstanceConfig.publicUrl, and until now it
+ * advertised the address without trusting it: https://app.arciin.com served
+ * the sign-in page and then had every login answered 403 "Origin not allowed".
+ *
+ * Only the origin is taken — scheme, lower-cased host, non-default port. A
+ * trycloudflare.com address is never a custom domain: it is trusted only while
+ * that exact tunnel is running (activeTunnelOrigin), because a dead tunnel's
+ * hostname can be handed to someone else. Credentials in the URL, non-web
+ * schemes, and plain http for a public hostname in production are refused.
+ */
+export function customOriginFromPublicUrl(
+  raw: string | null | undefined,
+  opts: { isProduction: boolean },
+): { origin: string; publicHost: boolean } | { origin: null; reason: CustomOriginRejection } {
+  const value = raw?.trim()
+  if (!value) return { origin: null, reason: "empty" }
+  let url: URL
+  try {
+    url = new URL(value)
+  } catch {
+    return { origin: null, reason: "malformed" }
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") return { origin: null, reason: "scheme" }
+  if (url.username || url.password) return { origin: null, reason: "credentials" }
+  if (QUICK_TUNNEL_HOST.test(url.hostname)) return { origin: null, reason: "quick-tunnel" }
+  const publicHost = !isPrivateOrLocalHostname(url.hostname)
+  if (publicHost && opts.isProduction && url.protocol !== "https:") return { origin: null, reason: "insecure" }
+  const origin = normalizeOrigin(url.origin)
+  if (!origin) return { origin: null, reason: "malformed" }
+  return { origin, publicHost }
+}
+
 export type CorsDecisionContext = {
   /** ARCIIN_PUBLIC_URL / ARCIIN_API_URL, normalized. */
   instanceOrigins: Set<string>
@@ -47,6 +92,8 @@ export type CorsDecisionContext = {
   configuredOrigins: Set<string>
   /** The live cloudflared URL, normalized — null when no tunnel is running. */
   activeTunnelOrigin: string | null
+  /** The owner's custom public domain (Settings → Domain), exact origin — null when none is trusted. */
+  customPublicOrigin?: string | null
   /** True when this instance is itself served on a private network. */
   selfHostedInstance: boolean
   isProduction: boolean
@@ -66,6 +113,7 @@ export function evaluateCorsOrigin(
   if (ctx.instanceOrigins.has(normalized)) return true
   if (ctx.configuredOrigins.has(normalized)) return true
   if (ctx.activeTunnelOrigin && ctx.activeTunnelOrigin === normalized) return true
+  if (ctx.customPublicOrigin && ctx.customPublicOrigin === normalized) return true
 
   // A LAN-hosted instance is commonly reached by more than one private address
   // (hostname, 192.168.x.x, Tailscale). Allow other private-network origins in

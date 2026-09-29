@@ -2,10 +2,10 @@ import { parse } from "cookie"
 import type { FastifyInstance } from "fastify"
 import { Server } from "socket.io"
 
-import { isSelfHostedLanOrigin, type RealtimeEvent } from "@arciin/shared"
+import { type RealtimeEvent } from "@arciin/shared"
 
 import { apiConfig } from "@/config"
-import { isActiveTunnelOrigin } from "@/plugins/cors-origins"
+import { isCorsOriginAllowed } from "@/plugins/cors-origins"
 import { hashApiKey, hashToken, scopeAllows } from "@/services/security/auth"
 
 function emitRealtimeEvent(io: Server, event: RealtimeEvent) {
@@ -42,17 +42,8 @@ function emitRealtimeEvent(io: Server, event: RealtimeEvent) {
 }
 
 export async function registerSocket(fastify: FastifyInstance) {
-  const instance = await fastify.prisma.instanceConfig.findFirst()
-  const instancePublic = instance?.publicUrl?.replace(/\/+$/, "") ?? null
+  const instance = await fastify.prisma.instanceConfig.findFirst({ select: { id: true } })
   const cachedInstanceId = instance?.id ?? null
-
-  const corsOrigins = [
-    apiConfig.ARCIIN_PUBLIC_URL,
-    apiConfig.ARCIIN_API_URL,
-    instancePublic,
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-  ].filter((v, i, a) => Boolean(v) && a.indexOf(v) === i)
 
   const io = new Server(fastify.server, {
     cors: {
@@ -61,16 +52,14 @@ export async function registerSocket(fastify: FastifyInstance) {
           callback(null, true)
           return
         }
-        // Strict allowlist: configured origins, an origin that is itself a LAN
-        // address (app reached via 192.168.x.x), or the instance's Cloudflare
-        // quick-tunnel. The old "!isProduction / isSelfHostedInstance()" escape
-        // hatches let ANY origin open an authenticated socket (cross-site
-        // WebSocket hijacking) and are removed.
-        if (
-          corsOrigins.includes(origin) ||
-          isSelfHostedLanOrigin(origin) ||
-          isActiveTunnelOrigin(origin)
-        ) {
+        // The same rule as every HTTP request (plugins/cors-origins.ts). This
+        // used to be a separate list built once at boot: it froze whatever
+        // public URL was stored then (often a quick-tunnel address long since
+        // gone), trusted localhost:3000 even in production, accepted any LAN
+        // origin whether or not the instance lives on a LAN, and ignored the
+        // operator's extra origins — so a custom domain could sign in and
+        // then never get realtime updates.
+        if (isCorsOriginAllowed(origin)) {
           callback(null, true)
           return
         }

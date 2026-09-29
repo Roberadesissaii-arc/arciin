@@ -61,6 +61,30 @@ export async function persistTunnelPublicUrl(
   const mobileOnly = isMobileTunnelTarget(localTarget)
 
   const prevConfig = readRemoteAccessConfig(instance.remoteAccessConfig)
+
+  // The owner's custom domain (Settings → Domain) is the advertised address and
+  // the trusted sign-in origin. A quick tunnel starting — which happens on every
+  // API restart with auto-start on — used to overwrite it here, silently
+  // replacing app.example.com with a random trycloudflare.com name. The tunnel's
+  // own URL stays in the in-memory tunnel state (and in the Quick tunnel card);
+  // it no longer displaces a domain the owner chose.
+  if (instance.publicUrl && !/\.trycloudflare\.com\/?$/i.test(instance.publicUrl)) {
+    await fastify.prisma.instanceConfig.update({
+      where: { id: instance.id },
+      data: {
+        remoteAccessMode: "cloudflare-tunnel",
+        remoteAccessConfig: {
+          ...prevConfig,
+          mobilePublicUrl: null,
+          cloudflareTunnelEnabled: true,
+          cloudflareTunnelAutoStart: prevConfig.cloudflareTunnelAutoStart !== false,
+          reverseProxyEnabled: false,
+        },
+      },
+    })
+    return
+  }
+
   const previousPublicUrl =
     (typeof prevConfig.mobilePublicUrl === "string" ? prevConfig.mobilePublicUrl : null) ??
     (instance.publicUrl ? instance.publicUrl : null)
