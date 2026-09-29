@@ -3,6 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Loader2, Search } from "lucide-react"
 
+import { ConfirmDestructiveButton } from "@/components/shared/confirm-destructive-button"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { ApiError } from "@/lib/api/errors"
@@ -161,14 +162,22 @@ export function SemanticSearchCard() {
 
           <div className="mt-3 flex flex-wrap gap-2">
             {status.model.state === "missing" ? (
-              <Button
-                size="sm"
+              <ConfirmDestructiveButton
+                variant="default"
+                title={`Install ${status.embeddingModel}?`}
+                description={
+                  <>
+                    Downloads the {status.embeddingModel} embedding model (about 275 MB) into this
+                    server&apos;s Ollama. It runs locally; nothing from your library is sent anywhere.
+                  </>
+                }
+                confirmLabel="Install model"
                 disabled={busy || status.install?.state === "running"}
-                onClick={() => act.mutate(installSemanticModel)}
+                onConfirm={() => act.mutateAsync(installSemanticModel)}
                 data-testid="semantic-install"
               >
                 Install model
-              </Button>
+              </ConfirmDestructiveButton>
             ) : null}
             {status.enabled && status.model.state === "installed" ? (
               status.indexingActive ? (

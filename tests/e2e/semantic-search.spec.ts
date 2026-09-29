@@ -51,6 +51,15 @@ test("model missing: explains, and installs only when asked", async ({ page }) =
   await expect(el.getByTestId("semantic-model-state")).toHaveText("Not installed")
   expect(calls.filter((c) => c.startsWith("POST"))).toEqual([])
   await el.getByTestId("semantic-install").click()
+  // A confirmation first, saying what is downloaded; nothing is sent yet.
+  const dialog = page.getByRole("alertdialog")
+  await expect(dialog).toContainText("Install nomic-embed-text?")
+  await expect(dialog).toContainText("nothing from your library is sent anywhere")
+  expect(calls.filter((c) => c.startsWith("POST"))).toEqual([])
+  await dialog.getByRole("button", { name: "Cancel" }).click()
+  expect(calls.filter((c) => c.startsWith("POST"))).toEqual([])
+  await el.getByTestId("semantic-install").click()
+  await page.getByTestId("semantic-install-confirm").click()
   await expect.poll(() => calls).toContain("POST /model/install")
 })
 
