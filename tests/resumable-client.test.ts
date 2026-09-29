@@ -110,6 +110,61 @@ describe("runResumableUpload", () => {
     expect(server.puts.filter((p) => p === 0)).toHaveLength(1)
   })
 
+  it("reports confirmed bytes only when the server acknowledges them", async () => {
+    const server = fakeServer(10_000, 4096)
+    const confirmed: number[] = []
+    const progress: number[] = []
+    await runResumableUpload({
+      file: source(10_000),
+      meta: meta(10_000),
+      transport: {
+        ...server.transport,
+        putChunk: async (args) => {
+          args.onProgress(args.body.size) // the browser "sent" the whole chunk…
+          return server.transport.putChunk(args) // …before the server confirmed it
+        },
+      },
+      onConfirmed: (b) => confirmed.push(b),
+      onProgress: (b) => progress.push(b),
+      sleep: async () => {},
+    })
+    expect(confirmed).toEqual([0, 4096, 8192, 10_000])
+    // Every confirmed value was reached only after a progress report of it.
+    for (const c of confirmed) expect(progress).toContain(c)
+  })
+
+  it("on a dropped connection, shown progress falls back to what the server confirmed", async () => {
+    const server = fakeServer(12_000, 4096)
+    const progress: Array<[string, number]> = []
+    let state = ""
+    let first = true
+    await runResumableUpload({
+      file: source(12_000),
+      meta: meta(12_000),
+      transport: {
+        ...server.transport,
+        putChunk: async (args) => {
+          args.onProgress(3000) // most of the chunk handed to the network
+          if (args.offset === 4096 && first) {
+            first = false
+            server.failFor(1)
+          }
+          return server.transport.putChunk(args)
+        },
+      },
+      onState: (s) => {
+        state = s
+      },
+      onProgress: (b) => progress.push([state, b]),
+      sleep: async () => {},
+    })
+    // 4096 + 3000 was shown while sending; before "reconnecting" it drops back to 4096.
+    const i = progress.findIndex(([, b]) => b === 7096)
+    expect(i).toBeGreaterThan(-1)
+    expect(progress[i + 1]).toEqual(["uploading", 4096])
+    expect(progress.filter(([s]) => s === "reconnecting").every(([, b]) => b === 4096)).toBe(true)
+  })
+
   it("a stored chunk whose reply was lost is not sent again after resync", async () => {
     const server = fakeServer(8192, 4096)
     server.loseNextResponse()

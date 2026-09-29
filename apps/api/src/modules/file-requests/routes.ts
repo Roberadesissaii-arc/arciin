@@ -28,6 +28,7 @@ import {
 
 import { recordAndBroadcastActivity } from "@/services/activity/record-and-broadcast-activity"
 import { commitFileRequestFile } from "@/services/file-requests/file-request-commit"
+import { loadIncomingForUser, publishIncoming } from "@/services/file-requests/incoming-uploads"
 import { resolveChunkSizeBytes } from "@/services/file-requests/resumable-policy"
 import { getUploadLimits } from "@/services/config/upload-limits"
 import { registerResumableFileRequestRoutes } from "@/modules/file-requests/resumable-routes"
@@ -152,6 +153,29 @@ export async function registerFileRequestRoutes(fastify: FastifyInstance) {
   // -------------------------------------------------------------------------
   // Owner management
   // -------------------------------------------------------------------------
+
+  /**
+   * Uploads arriving right now into folders this user's requests point at.
+   * Session-authenticated and scoped to requests the caller created, like
+   * every other owner route here; carries counts and bytes only.
+   */
+  fastify.get(
+    "/file-requests/incoming",
+    { preHandler: requireSessionRole(["OWNER", "ADMIN", "MEMBER"]) },
+    async (request, reply) => {
+      if (!request.auth) return
+      const query = z
+        .object({ libraryId: z.string().min(1).max(64).optional(), folderId: z.string().min(1).max(64).optional() })
+        .safeParse(request.query ?? {})
+      if (!query.success) {
+        reply.status(400).send({ error: { code: "VALIDATION_ERROR", message: "Invalid filter." } })
+        return
+      }
+      const folders = await loadIncomingForUser(fastify, { userId: request.auth.user.id, ...query.data })
+      reply.header("Cache-Control", "no-store")
+      reply.send({ data: { folders } })
+    },
+  )
 
   fastify.get(
     "/file-requests",
@@ -307,6 +331,22 @@ export async function registerFileRequestRoutes(fastify: FastifyInstance) {
           error: { code: "NOT_FOUND", message: "File request not found." },
         })
         return
+      }
+
+      // Uploads still open on this link stop counting as incoming now; the
+      // sessions themselves are closed on their next request or by cleanup.
+      const revoked = await fastify.prisma.fileRequest.findUnique({
+        where: { id: params.id },
+        select: { createdByUserId: true, destinationFolderId: true, destinationLibraryId: true },
+      })
+      if (revoked) {
+        await publishIncoming(fastify, {
+          phase: "ended",
+          uploadId: `revoke:${params.id}`,
+          ownerUserId: revoked.createdByUserId,
+          folderId: revoked.destinationFolderId,
+          libraryId: revoked.destinationLibraryId,
+        })
       }
 
       reply.send({ data: { success: true } })

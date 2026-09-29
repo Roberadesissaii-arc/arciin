@@ -21,12 +21,14 @@ import {
   type ResolvedFileRequest,
 } from "@/services/file-requests/file-request-access"
 import { commitFileRequestFile } from "@/services/file-requests/file-request-commit"
+import { progressDue, publishIncoming } from "@/services/file-requests/incoming-uploads"
 import {
   MAX_ACTIVE_SESSIONS_PER_REQUEST,
   MAX_ACTIVE_SESSIONS_PER_SUBMITTER,
   MAX_CHUNK_REQUESTS_PER_MINUTE,
   capacityDecision,
   expectedChunkLength,
+  extendedExpiry,
   isSafeUploadId,
   placeChunk,
   resolveChunkSizeBytes,
@@ -145,7 +147,19 @@ async function resolveForSession(fastify: FastifyInstance, rawToken: string) {
   return { ok: false as const, code: availability.code }
 }
 
+type IncomingOwner = Pick<ResolvedFileRequest, "createdByUserId" | "destinationFolderId" | "destinationLibraryId">
+
 export async function registerResumableFileRequestRoutes(fastify: FastifyInstance) {
+  /** Tell the request's owner their folder's incoming state changed. Never throws. */
+  const announce = (phase: Parameters<typeof publishIncoming>[1]["phase"], owner: IncomingOwner, uploadId: string) =>
+    publishIncoming(fastify, {
+      phase,
+      uploadId,
+      ownerUserId: owner.createdByUserId,
+      folderId: owner.destinationFolderId,
+      libraryId: owner.destinationLibraryId,
+    })
+
   // Chunk bodies arrive as a raw stream and are written straight to disk. A
   // scoped parser: no other route sees application/octet-stream this way.
   fastify.addContentTypeParser("application/octet-stream", (_request, payload, done) => done(null, payload))
@@ -172,13 +186,19 @@ export async function registerResumableFileRequestRoutes(fastify: FastifyInstanc
       // A revoked request ends its uploads now, not when they expire.
       if (resolved.code === "REVOKED") {
         const hash = hashToken(params.data.token.trim())
-        const fr = await fastify.prisma.fileRequest.findUnique({ where: { tokenHash: hash }, select: { id: true } })
+        const fr = await fastify.prisma.fileRequest.findUnique({
+          where: { tokenHash: hash },
+          select: { id: true, createdByUserId: true, destinationFolderId: true, destinationLibraryId: true },
+        })
         if (fr) {
           const cancelled = await fastify.prisma.resumableUpload.updateMany({
             where: { id: params.data.uploadId, fileRequestId: fr.id, status: { in: [...ACTIVE] } },
             data: { status: "CANCELLED", errorCode: "REQUEST_REVOKED" },
           })
-          if (cancelled.count) await removePartial(storageRoot, params.data.uploadId)
+          if (cancelled.count) {
+            await removePartial(storageRoot, params.data.uploadId)
+            await announce("ended", fr, params.data.uploadId)
+          }
         }
       }
       const { status, body } = publicFileRequestError(resolved.code)
@@ -199,6 +219,7 @@ export async function registerResumableFileRequestRoutes(fastify: FastifyInstanc
         data: { status: "EXPIRED" },
       })
       await removePartial(storageRoot, session.id)
+      await announce("ended", resolved.request, session.id)
       sendError(reply, 410, "UPLOAD_SESSION_EXPIRED", "This upload expired before it finished. Start it again.")
       return null
     }
@@ -294,6 +315,7 @@ export async function registerResumableFileRequestRoutes(fastify: FastifyInstanc
         orderBy: { createdAt: "desc" },
       })
       if (existing) {
+        await announce("started", fileRequest, existing.id)
         reply.header("Cache-Control", "no-store")
         return reply.status(200).send({ data: { ...sessionView(existing), resumed: true } })
       }
@@ -364,6 +386,7 @@ export async function registerResumableFileRequestRoutes(fastify: FastifyInstanc
     }
 
     await createPartialFile(storageRoot, created.session.id)
+    await announce("started", fileRequest, created.session.id)
     reply.header("Cache-Control", "no-store")
     reply.status(201).send({ data: { ...sessionView(created.session), resumed: false } })
   })
@@ -381,7 +404,11 @@ export async function registerResumableFileRequestRoutes(fastify: FastifyInstanc
   // ---------------------------------------------------------------------------
   // One chunk, written at its offset
   // ---------------------------------------------------------------------------
-  fastify.put("/public/file-requests/:token/uploads/:uploadId/chunks", async (request, reply) => {
+  // A multi-gigabyte upload is hundreds of these: request/response lines for
+  // each would bury everything else at info. Failures still log at warn, and
+  // LOG_LEVEL=debug brings back both the request lines and per-chunk timings.
+  const chunkLogLevel = process.env.LOG_LEVEL === "debug" || process.env.LOG_LEVEL === "trace" ? process.env.LOG_LEVEL : "warn"
+  fastify.put("/public/file-requests/:token/uploads/:uploadId/chunks", { logLevel: chunkLogLevel }, async (request, reply) => {
     const body = request.body as Readable | undefined
     const drain = async () => {
       if (body && typeof (body as Readable).resume === "function") (body as Readable).resume()
@@ -389,7 +416,7 @@ export async function registerResumableFileRequestRoutes(fastify: FastifyInstanc
 
     const loaded = await loadSession(request, reply)
     if (!loaded) return drain()
-    const { session, storageRoot } = loaded
+    const { session, storageRoot, fileRequest } = loaded
 
     if (session.status !== "UPLOADING") {
       await drain()
@@ -434,7 +461,7 @@ export async function registerResumableFileRequestRoutes(fastify: FastifyInstanc
       return sendError(reply, 415, "INVALID_CHUNK_BODY", "Send the chunk as application/octet-stream.")
     }
 
-    let written: { bytes: number; sha256: string }
+    let written: Awaited<ReturnType<typeof writeChunkAt>>
     try {
       written = await writeChunkAt({ file: partialPath(storageRoot, session.id), offset, expectedLength: expected, body })
     } catch (error) {
@@ -457,17 +484,44 @@ export async function registerResumableFileRequestRoutes(fastify: FastifyInstanc
     }
 
     // Advance only from the offset this chunk was written at, so two copies of
-    // the same chunk racing each other cannot both count.
+    // the same chunk racing each other cannot both count. Progress also moves
+    // the expiry out: the lifetime limits idleness, not a slow but live transfer.
+    const t0 = performance.now()
     const advanced = await fastify.prisma.resumableUpload.updateMany({
       where: { id: session.id, status: "UPLOADING", receivedBytes: BigInt(offset) },
-      data: { receivedBytes: BigInt(offset + written.bytes) },
+      data: {
+        receivedBytes: BigInt(offset + written.bytes),
+        expiresAt: extendedExpiry({
+          createdAt: session.createdAt,
+          expiresAt: session.expiresAt,
+          now: Date.now(),
+          lifetimeMs: resolveSessionLifetimeMs(),
+        }),
+      },
     })
+    // Debug level: one line per chunk is too many for a normal log, and the
+    // upload id is the only identifier here — no token, name, email or bytes.
+    request.log.debug(
+      {
+        uploadId: session.id,
+        chunkBytes: written.bytes,
+        offset,
+        receiveMs: Math.round(written.timings.receiveMs),
+        diskWriteMs: Math.round(written.timings.writeMs),
+        fsyncMs: Math.round(written.timings.syncMs),
+        recordMs: Math.round(performance.now() - t0),
+      },
+      "file request chunk stored",
+    )
     const current = advanced.count
       ? offset + written.bytes
       : Number(
           (await fastify.prisma.resumableUpload.findUnique({ where: { id: session.id }, select: { receivedBytes: true } }))
             ?.receivedBytes ?? received,
         )
+    if (advanced.count && progressDue(session.id, Date.now(), current >= total)) {
+      void announce("progress", fileRequest, session.id)
+    }
     reply.send({ data: { uploadedBytes: current, totalBytes: total } })
   })
 
@@ -508,6 +562,9 @@ export async function registerResumableFileRequestRoutes(fastify: FastifyInstanc
       return sendError(reply, 409, "UPLOAD_VERIFYING", "This upload is already being finalised.")
     }
     session = (await fastify.prisma.resumableUpload.findUnique({ where: { id: session.id } }))!
+    await announce("verifying", fileRequest, session.id)
+    const finalizeStarted = performance.now()
+    let verifyMs = 0
 
     const file = partialPath(storageRoot, session.id)
     const size = Number(session.sizeBytes)
@@ -533,6 +590,7 @@ export async function registerResumableFileRequestRoutes(fastify: FastifyInstanc
             data: { status: "COMPLETE", assetId: committed.id, submissionId: committed.fileRequestSubmissionId },
           })
           await removePartial(storageRoot, session.id)
+          await announce("completed", fileRequest, session.id)
           return reply.send({ data: { ...sessionView(done), recovered: true } })
         }
         // Moved into object storage but not committed: link the verified object
@@ -553,13 +611,16 @@ export async function registerResumableFileRequestRoutes(fastify: FastifyInstanc
       const actualSize = await trimPartial(file, size)
       if (actualSize !== size) {
         await fastify.prisma.resumableUpload.update({ where: { id: session.id }, data: { status: "UPLOADING" } })
+        await announce("progress", fileRequest, session.id)
         return sendError(reply, 409, "UPLOAD_INCOMPLETE", "The assembled file is the wrong size.", {
           uploadedBytes: actualSize,
           totalBytes: size,
         })
       }
 
+      const verifyStarted = performance.now()
       const checksum = await sha256OfFile(file)
+      verifyMs = performance.now() - verifyStarted
       const body = z
         .object({
           sha256: z.string().regex(/^[a-f0-9]{64}$/i).optional(),
@@ -575,6 +636,7 @@ export async function registerResumableFileRequestRoutes(fastify: FastifyInstanc
           data: { status: "FAILED", errorCode: "CHECKSUM_MISMATCH" },
         })
         await removePartial(storageRoot, session.id)
+        await announce("ended", fileRequest, session.id)
         return sendError(reply, 422, "CHECKSUM_MISMATCH", "The file on the server does not match the one you sent. Upload it again.")
       }
       await fastify.prisma.resumableUpload.update({ where: { id: session.id }, data: { checksumSha256: checksum } })
@@ -599,6 +661,7 @@ export async function registerResumableFileRequestRoutes(fastify: FastifyInstanc
           data: { status: "FAILED", errorCode: result.code },
         })
         await removePartial(storageRoot, session.id)
+        await announce("ended", fileRequest, session.id)
         return sendError(reply, result.status, result.code, result.message)
       }
 
@@ -606,6 +669,21 @@ export async function registerResumableFileRequestRoutes(fastify: FastifyInstanc
         where: { id: session.id },
         data: { status: "COMPLETE", assetId: result.assetId, submissionId: result.submissionId },
       })
+      await announce("completed", fileRequest, session.id)
+      // One line per finished upload: enough to see where a slow one spent its time.
+      const sinceStartSeconds = (done.updatedAt.getTime() - done.createdAt.getTime()) / 1000
+      request.log.info(
+        {
+          uploadId: session.id,
+          sizeBytes: size,
+          chunkSize: session.chunkSize,
+          sinceStartSeconds: Math.round(sinceStartSeconds),
+          averageMiBps: sinceStartSeconds > 0 ? +(size / 1048576 / sinceStartSeconds).toFixed(2) : null,
+          verifyMs: Math.round(verifyMs),
+          finalizeMs: Math.round(performance.now() - finalizeStarted),
+        },
+        "file request upload completed",
+      )
       reply.status(200).send({
         data: {
           ...sessionView(done),
@@ -622,6 +700,7 @@ export async function registerResumableFileRequestRoutes(fastify: FastifyInstanc
       await fastify.prisma.resumableUpload
         .updateMany({ where: { id: session.id, status: "VERIFYING" }, data: { status: "UPLOADING" } })
         .catch(() => {})
+      await announce("progress", fileRequest, session.id)
       sendError(reply, 500, "UPLOAD_FAILED", "The upload could not be finalised. Try completing it again.")
     }
   })
@@ -636,7 +715,10 @@ export async function registerResumableFileRequestRoutes(fastify: FastifyInstanc
       where: { id: loaded.session.id, status: "UPLOADING" },
       data: { status: "CANCELLED" },
     })
-    if (cancelled.count) await removePartial(loaded.storageRoot, loaded.session.id)
+    if (cancelled.count) {
+      await removePartial(loaded.storageRoot, loaded.session.id)
+      await announce("ended", loaded.fileRequest, loaded.session.id)
+    }
     reply.send({ data: { uploadId: loaded.session.id, status: cancelled.count ? "CANCELLED" : loaded.session.status } })
   })
 }
