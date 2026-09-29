@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs"
 
 import { expect, test, type Browser, type Page } from "@playwright/test"
 
+import { suppressWindowsDesktopPromo } from "./desktop-promo"
+
 /**
  * What a second computer *sees*, without spending a book.
  *
@@ -177,6 +179,11 @@ async function secondComputer(browser: Browser) {
    * server cheerfully reported the observer as the executor.
    */
   const context = await browser.newContext({ storageState: undefined })
+  // A fresh browser on the Windows device profile gets the one-time Desktop
+  // prompt, a modal that hides the sidebar from the accessibility tree and
+  // blocks the hover below. Every other context in the suite dismisses it; this
+  // one did not, so the test failed at whichever step met the dialog first.
+  await suppressWindowsDesktopPromo(context)
   await context.clearCookies()
   const page = await context.newPage()
 
