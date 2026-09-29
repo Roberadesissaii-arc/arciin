@@ -311,6 +311,9 @@ model User {
   /// Everything up to this moment counts as read. Lets "mark all read" be one
   /// write instead of a row per event.
   notificationsReadThrough DateTime?
+  /// Inbox "Clear": events at or before this time are hidden from this user's
+  /// notification inbox. ActivityEvent rows are never deleted by it.
+  notificationsClearedThrough DateTime?
 }
 
 /// Read state for one activity event, for one person.

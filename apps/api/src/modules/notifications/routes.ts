@@ -21,6 +21,11 @@ import { authenticate } from "@/services/security/auth"
  * all read" is one write rather than a row per event — including for events
  * this client has never loaded. NotificationRead rows cover anything read
  * individually after that cursor.
+ *
+ * Clearing is a third cursor, `notificationsClearedThrough`: events at or
+ * before it leave this person's inbox. It hides; it never deletes. The
+ * ActivityEvent rows stay exactly as they were, so Activity, the audit trail
+ * and every other user's inbox are unchanged.
  */
 
 /** Keys whose values are never worth showing in an inbox. */
@@ -84,12 +89,19 @@ export async function registerNotificationRoutes(fastify: FastifyInstance) {
 
     const user = await fastify.prisma.user.findUnique({
       where: { id: userId },
-      select: { notificationsReadThrough: true },
+      select: { notificationsReadThrough: true, notificationsClearedThrough: true },
     })
     const readThrough = user?.notificationsReadThrough ?? null
+    const clearedThrough = user?.notificationsClearedThrough ?? null
 
-    // Instance-wide events (userId null) are addressed to whoever is looking.
-    const where = { OR: [{ userId }, { userId: null }] }
+    // Instance-wide events (userId null) are addressed to whoever is looking;
+    // anything this person cleared is gone from their inbox only.
+    const where = {
+      OR: [{ userId }, { userId: null }],
+      ...(clearedThrough ? { createdAt: { gt: clearedThrough } } : {}),
+    }
+    // Unread: after both cursors.
+    const unreadAfter = latest(readThrough, clearedThrough)
 
     const [events, total] = await Promise.all([
       fastify.prisma.activityEvent.findMany({
@@ -116,7 +128,7 @@ export async function registerNotificationRoutes(fastify: FastifyInstance) {
     const unreadCount = await fastify.prisma.activityEvent.count({
       where: {
         ...where,
-        ...(readThrough ? { createdAt: { gt: readThrough } } : {}),
+        ...(unreadAfter ? { createdAt: { gt: unreadAfter } } : {}),
         NOT: { notificationReads: { some: { userId } } },
       },
     })
@@ -181,6 +193,47 @@ export async function registerNotificationRoutes(fastify: FastifyInstance) {
     await announceReadStateChanged(fastify, userId)
     reply.send({ data: { unreadCount: 0 } })
   })
+
+  /**
+   * Clear inbox: hide everything currently in this person's inbox.
+   *
+   * The cursor is the newest event they can see, not the wall clock: an event
+   * written a moment after the click (or stamped by a clock slightly behind
+   * the database's) is newer than it and shows up. It only ever moves
+   * forward. Read markers for the events now hidden serve no purpose and are
+   * removed in the same transaction; ActivityEvent is not touched.
+   */
+  fastify.post("/notifications/clear", auth, async (request, reply) => {
+    if (!request.auth) return
+    const userId = request.auth.user.id
+    const clearedThrough = await fastify.prisma.$transaction(async (tx) => {
+      const [row] = await tx.$queryRaw<Array<{ cleared: Date | null }>>`
+        UPDATE "User" u
+        SET "notificationsClearedThrough" = GREATEST(u."notificationsClearedThrough", m.latest)
+        FROM (
+          SELECT max("createdAt") AS latest FROM "ActivityEvent"
+          WHERE "userId" = ${userId} OR "userId" IS NULL
+        ) m
+        WHERE u.id = ${userId} AND m.latest IS NOT NULL
+        RETURNING u."notificationsClearedThrough" AS cleared
+      `
+      const cursor = row?.cleared ?? null
+      if (cursor) {
+        await tx.notificationRead.deleteMany({
+          where: { userId, activityEvent: { createdAt: { lte: cursor } } },
+        })
+      }
+      return cursor
+    })
+    await announceInboxChanged(fastify, userId, "notifications.cleared")
+    reply.send({ data: { cleared: true, clearedThrough: clearedThrough?.toISOString() ?? null } })
+  })
+}
+
+function latest(a: Date | null, b: Date | null): Date | null {
+  if (!a) return b
+  if (!b) return a
+  return a > b ? a : b
 }
 
 /**
@@ -189,10 +242,19 @@ export async function registerNotificationRoutes(fastify: FastifyInstance) {
  * Best effort: a Redis hiccup must not turn a successful write into a 500.
  */
 async function announceReadStateChanged(fastify: FastifyInstance, userId: string) {
+  await announceInboxChanged(fastify, userId, "notifications.read")
+}
+
+async function announceInboxChanged(
+  fastify: FastifyInstance,
+  userId: string,
+  type: "notifications.read" | "notifications.cleared",
+) {
   if (typeof fastify.publishRealtimeEvent !== "function") return
   try {
-    await fastify.publishRealtimeEvent(buildRealtimeEvent("notifications.read", { userId }))
+    // Private to this person, and only "something changed": no titles, no counts.
+    await fastify.publishRealtimeEvent(buildRealtimeEvent(type, { userId, audience: "user" }))
   } catch (error) {
-    fastify.log.warn({ err: error }, "notifications.read broadcast failed")
+    fastify.log.warn({ err: error }, `${type} broadcast failed`)
   }
 }

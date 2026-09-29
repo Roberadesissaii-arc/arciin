@@ -283,8 +283,9 @@ export function useSocketEvents(socket: Socket | null) {
         }
       }
 
-      // Another tab or device changed read state; the server holds the answer.
-      if (type === "notifications.read") {
+      // Another tab or device changed read state or cleared the inbox; the
+      // server holds the answer.
+      if (type === "notifications.read" || type === "notifications.cleared") {
         queryClient.invalidateQueries({ queryKey: queryKeys.notificationsRoot })
       }
 

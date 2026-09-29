@@ -25,6 +25,8 @@ export const SOCKET_EVENT_TYPES = [
   "activity.created",
   /** Read state changed for one user; every tab/device of theirs refetches. */
   "notifications.read",
+  /** This user cleared their inbox; every tab/device of theirs refetches. Carries no content. */
+  "notifications.cleared",
   "instance.urls.updated",
   "plex.connected",
   "plex.sync.started",

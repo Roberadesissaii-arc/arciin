@@ -3,6 +3,7 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query"
 
 import {
+  clearNotifications,
   getNotifications,
   markAllNotificationsRead,
   markNotificationRead,
@@ -14,8 +15,9 @@ import { queryKeys } from "@/lib/api/query-keys"
  * The server is the only inbox.
  *
  * Every tab and device reads the same list and the same unread count. Nothing
- * here is persisted locally: a socket `notifications.read` or `activity.*`
- * event invalidates the prefix, and each tab refetches.
+ * here is persisted locally: a socket `notifications.read`,
+ * `notifications.cleared` or `activity.*` event invalidates the prefix, and
+ * each tab refetches.
  */
 
 const BADGE_PARAMS = { limit: 1, offset: 0 }
@@ -94,6 +96,18 @@ export function useMarkAllNotificationsRead() {
         items: page.items.map((item) => ({ ...item, read: true })),
         unreadCount: 0,
       })),
+    onError: (_error, _vars, context) => rollback(queryClient, context),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: queryKeys.notificationsRoot }),
+  })
+}
+
+/** Clear inbox: every page empties at once; the server's answer is refetched. */
+export function useClearNotifications() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: () => clearNotifications(),
+    onMutate: () =>
+      optimistic(queryClient, (page) => ({ ...page, items: [], unreadCount: 0, total: 0 })),
     onError: (_error, _vars, context) => rollback(queryClient, context),
     onSettled: () => queryClient.invalidateQueries({ queryKey: queryKeys.notificationsRoot }),
   })

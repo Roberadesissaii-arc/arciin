@@ -41,6 +41,11 @@ export function markNotificationRead(id: string) {
   })
 }
 
+/** Hides everything currently in this person's inbox. Activity history is kept. */
+export function clearNotifications() {
+  return fetchApi<{ cleared: true; clearedThrough: string | null }>("/notifications/clear", { method: "POST" })
+}
+
 export function markAllNotificationsRead() {
   return fetchApi<{ unreadCount: 0 }>("/notifications/mark-all-read", { method: "POST" })
 }
