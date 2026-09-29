@@ -157,9 +157,24 @@ test("a large upload survives a dropped connection, a long outage and Resume, an
     await expect(item).toContainText(/Unable to reconnect/)
     expect(outage).toBe(true)
 
+    // Meanwhile the owner's folder shows the file arriving — live, before it
+    // exists as an asset, from the owner-only snapshot plus realtime events.
+    await page.keyboard.press("Escape")
+    const ownerCard = page.getByRole("link", { name: new RegExp(folderName) })
+    const incoming = ownerCard.getByTestId("folder-incoming")
+    await expect(incoming).toBeVisible({ timeout: 30_000 })
+    const shown = Number(await incoming.getAttribute("aria-valuenow"))
+    expect(shown).toBeGreaterThan(0)
+    expect(shown).toBeLessThan(100)
+    await expect(ownerCard).not.toContainText(/\d+ files?$/)
+
     outageOver = true
     await pub.getByTestId("file-request-resume").click()
     await expect(pub.getByTestId("file-request-success")).toBeVisible({ timeout: Math.max(120_000, SIZE_MB * 1_000) })
+
+    // …and on completion the ring gives way to the file itself.
+    await expect(incoming).toBeHidden({ timeout: 30_000 })
+    await expect(ownerCard).toContainText("1 file", { timeout: 30_000 })
 
     expect(largestBody).toBeLessThanOrEqual(chunkSize)
     // Resumed, not restarted: offset 0 was sent exactly once.
@@ -219,6 +234,13 @@ test("reloading the request page mid-upload resumes from the server's offset", a
     await pub.reload()
     beforeReload = false
 
+    // The open folder tells its owner a file is on its way — and invents no
+    // file for it: the asset list stays empty until the upload commits.
+    await page.goto(`/documents/${folderName}`)
+    const banner = page.getByTestId("folder-incoming-banner")
+    await expect(banner).toContainText(/(Receiving|Waiting on) 1 file · \d+%/, { timeout: 30_000 })
+    expect((await (await request.get(`/api/assets?folderId=${folderId}`)).json()).data).toHaveLength(0)
+
     const afterReload: number[] = []
     pub.on("request", (req) => {
       const m = CHUNK_PATH.exec(req.url())
@@ -231,6 +253,7 @@ test("reloading the request page mid-upload resumes from the server's offset", a
     expect(afterReload.length).toBeGreaterThan(0)
     // Straight to the server's offset: nothing already stored is sent again.
     expect(afterReload[0]).toBe(2 * chunkSize)
+    await expect(banner).not.toContainText(/Receiving|Waiting/, { timeout: 30_000 })
 
     const assets = (await (await request.get(`/api/assets?folderId=${folderId}`)).json()).data as Array<{ id: string; sizeBytes: number | string }>
     expect(assets).toHaveLength(1)

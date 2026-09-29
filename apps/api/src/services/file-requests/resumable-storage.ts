@@ -54,25 +54,46 @@ export async function writeChunkAt(input: {
   offset: number
   expectedLength: number
   body: Readable | AsyncIterable<Buffer | Uint8Array>
-}): Promise<{ bytes: number; sha256: string }> {
+}): Promise<{ bytes: number; sha256: string; timings: ChunkTimings }> {
+  const started = performance.now()
   const handle = await open(input.file, "r+")
   const hash = createHash("sha256")
   let written = 0
+  let writeMs = 0
+  let syncMs = 0
   try {
     for await (const piece of input.body) {
       const buf = Buffer.isBuffer(piece) ? piece : Buffer.from(piece)
       if (written + buf.length > input.expectedLength) throw new ChunkTooLargeError()
+      const t = performance.now()
       await handle.write(buf, 0, buf.length, input.offset + written)
+      writeMs += performance.now() - t
       hash.update(buf)
       written += buf.length
     }
     if (written !== input.expectedLength) throw new ChunkTooShortError()
+    const t = performance.now()
     await handle.sync()
+    syncMs = performance.now() - t
   } finally {
     await handle.close()
   }
-  return { bytes: written, sha256: hash.digest("hex") }
+  const totalMs = performance.now() - started
+  return {
+    bytes: written,
+    sha256: hash.digest("hex"),
+    timings: {
+      // Streaming interleaves the two: time not spent in a disk write was
+      // spent waiting for the next piece of the body to arrive.
+      receiveMs: Math.max(0, totalMs - writeMs - syncMs),
+      writeMs,
+      syncMs,
+    },
+  }
 }
+
+/** Where one chunk's time went, for diagnosing slow uploads. */
+export type ChunkTimings = { receiveMs: number; writeMs: number; syncMs: number }
 
 /** SHA-256 of a file, streamed. Memory use does not depend on file size. */
 export async function sha256OfFile(file: string): Promise<string> {

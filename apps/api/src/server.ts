@@ -44,6 +44,7 @@ import { registerLicenseRoutes } from "@/modules/license/routes"
 import { registerApiProtection } from "@/plugins/api-protection"
 import { registerCookies } from "@/plugins/cookies"
 import { registerCors } from "@/plugins/cors"
+import { refreshTrustedCustomPublicOrigin } from "@/services/remote-access/custom-public-origin"
 import { registerErrorHandler } from "@/plugins/error-handler"
 import { registerHelmet } from "@/plugins/helmet"
 import { registerMultipart } from "@/plugins/multipart"
@@ -107,6 +108,9 @@ export async function createServer() {
   await registerCookies(fastify)
   await registerMultipart(fastify)
   await registerPrisma(fastify)
+  // The owner's custom domain (Settings → Domain) as a trusted origin — loaded
+  // before the server listens, so the first request already sees it.
+  await refreshTrustedCustomPublicOrigin(fastify.prisma, fastify.log)
   await registerRedis(fastify)
   await registerApiProtection(fastify)
   await registerSocket(fastify)

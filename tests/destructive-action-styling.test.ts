@@ -50,10 +50,9 @@ describe("one destructive language, and it is the token", () => {
 describe("the API key row", () => {
   const source = read("apps/web/components/settings/api-keys-table.tsx")
 
-  it("gives both actions one width so the column does not shift", () => {
-    expect(source).toContain("API_KEY_ACTION_WIDTH")
-    const applied = source.match(/API_KEY_ACTION_WIDTH/g) ?? []
-    // Declared once, applied to Rotate and to Revoke.
+  it("gives both actions one size so the column does not shift", () => {
+    // Declared once (lib/utils/api-key-display.ts), applied to Rotate and to Revoke.
+    const applied = source.match(/API_KEY_ACTION_BASE/g) ?? []
     expect(applied.length).toBeGreaterThanOrEqual(3)
   })
 
@@ -62,19 +61,24 @@ describe("the API key row", () => {
      * Anchored on the handler rather than the label: "Rotate" also appears as
      * the RotateCw icon import and as rotateMutation, and slicing backwards
      * from the first match landed on the import block.
+     *
+     * Rotate is a solid, dark neutral action (not outline, not red, not the
+     * orange primary); Revoke is the destructive one.
      */
     const buttonFor = (kind: "rotate" | "revoke") => {
       const at = source.indexOf(`setConfirm({ kind: "${kind}"`)
       expect(at, `no ${kind} handler found`).toBeGreaterThan(-1)
       return source.slice(Math.max(0, at - 500), at)
     }
-    expect(buttonFor("rotate")).toContain('variant="outline"')
+    expect(buttonFor("rotate")).toContain("API_KEY_ROTATE_CLASS")
     expect(buttonFor("rotate")).not.toContain('variant="destructive"')
     expect(buttonFor("revoke")).toContain('variant="destructive"')
+    expect(buttonFor("revoke")).toContain("API_KEY_REVOKE_CLASS")
   })
 
   it("still shows which keys never expire", () => {
-    expect(source).toContain("No expiration")
+    expect(read("apps/web/lib/utils/api-key-display.ts")).toContain("No expiration")
+    expect(source).toContain("apiKeyExpiryLabel(")
   })
 })
 

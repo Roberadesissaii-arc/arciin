@@ -1,4 +1,4 @@
-export const APP_VERSION = "1.1.0"
+export const APP_VERSION = "1.1.1"
 
 export const DEFAULT_LIBRARY_DEFINITIONS = [
   { name: "Videos", slug: "videos", kind: "VIDEO", icon: "video" },
@@ -118,6 +118,8 @@ export const JOB_QUEUE_NAMES = {
   media: "media",
   storage: "storage",
   integrations: "integrations",
+  /** Link inspection: metadata only, short-lived, kept off the media queue so it never waits behind a transcode. */
+  inspect: "inspect",
 } as const
 
 export const MEDIA_LIBRARY_SLUGS = ["videos", "images", "music"] as const
@@ -133,6 +135,7 @@ export const JOB_TYPES = {
   extractMetadata: "extract_metadata",
   generateThumbnail: "generate_thumbnail",
   importUrl: "import_url",
+  inspectUrl: "inspect_url",
   syncConnectorMirror: "sync_connector_mirror",
   cleanupTempFiles: "cleanup_temp_files",
   calculateStorageUsage: "calculate_storage_usage",

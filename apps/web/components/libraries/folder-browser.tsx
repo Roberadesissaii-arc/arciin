@@ -10,6 +10,7 @@ import { AssetTable } from "@/components/libraries/asset-table"
 import { SelectableAssetsContainer } from "@/components/libraries/selectable-assets-container"
 import { CreateFolderDialog } from "@/components/libraries/create-folder-dialog"
 import { FolderAccessGate } from "@/components/libraries/folder-access-gate"
+import { FolderIncomingBanner } from "@/components/libraries/folder-incoming"
 import {
   FolderGrid,
   FolderViewMoreButton,
@@ -143,6 +144,8 @@ export function FolderBrowser({
         title={folderName}
         description={`Contents of the ${folderName} folder.`}
       />
+
+      {folder?.id ? <FolderIncomingBanner folderId={folder.id} /> : null}
 
       <section className="space-y-2 pb-2">
         <div className="flex items-center justify-between gap-3 border-b border-zinc-200/90 pb-2">

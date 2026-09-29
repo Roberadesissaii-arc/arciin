@@ -4,6 +4,7 @@ import { useState } from "react"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import { useQuery } from "@tanstack/react-query"
+import type { FolderIncomingSummary } from "@arciin/types"
 import { Folder, FolderLock, Eye, EyeOff, Cloud, Inbox, PencilLine, Share2, Trash2, X } from "lucide-react"
 import {
   notifyDeleted,
@@ -19,6 +20,7 @@ import {
 import { FolderAccessDialog } from "@/components/libraries/folder-access-dialog"
 import { ShareDialog } from "@/components/shares/share-dialog"
 import { FileRequestDialog } from "@/components/file-requests/file-request-dialog"
+import { FolderIncomingIndicator } from "@/components/libraries/folder-incoming"
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -63,6 +65,7 @@ import {
   libraryGlassContextMenuItem,
   libraryGlassSheetPanel,
 } from "@/lib/library-glass-sheet"
+import { useIncomingStore } from "@/lib/stores/incoming-store"
 import type { FolderSummary } from "@/lib/types/models"
 import { cn } from "@/lib/utils"
 
@@ -73,7 +76,16 @@ function folderNeedsUnlock(folder: FolderSummary) {
   return Boolean(folder.isLocked && !folder.accessGranted)
 }
 
-export function FolderCard({ folder, librarySlug }: { folder: FolderSummary; librarySlug: string }) {
+export function FolderCard({
+  folder,
+  librarySlug,
+  incomingFolders,
+}: {
+  folder: FolderSummary
+  librarySlug: string
+  /** Owner-only snapshot of File Request uploads arriving now; see FolderIncomingIndicator. */
+  incomingFolders?: FolderIncomingSummary[]
+}) {
   const router = useRouter()
   const pathname = usePathname()
   const href = `/${librarySlug}/${folder.slug}`
@@ -99,6 +111,7 @@ export function FolderCard({ folder, librarySlug }: { folder: FolderSummary; lib
   const unlockMutation = useUnlockFolder()
   const removeLockMutation = useRemoveFolderLock()
 
+  const receivedFlash = useIncomingStore((s) => folder.id in s.receivedAt)
   const locked = Boolean(folder.isLocked)
   const needsUnlock = folderNeedsUnlock(folder)
   const isRemote = Boolean(folder.isRemote)
@@ -252,8 +265,10 @@ export function FolderCard({ folder, librarySlug }: { folder: FolderSummary; lib
                     <Folder className="size-[18px] fill-primary/15 text-primary transition-colors" />
                   </span>
                   <div className="truncate text-[13px] font-semibold text-zinc-900">{folder.name}</div>
-                  <div className="mt-0.5 text-[11px] font-medium text-zinc-500">
-                    {locked
+                  <div className="mt-0.5 flex min-h-[18px] items-center text-[11px] font-medium text-zinc-500">
+                    {incomingFolders?.some((f) => f.folderId === folder.id) || receivedFlash ? (
+                      <FolderIncomingIndicator folderId={folder.id} folders={incomingFolders} />
+                    ) : locked
                       ? "Locked folder"
                       : isRemote
                         ? "Remote folder"

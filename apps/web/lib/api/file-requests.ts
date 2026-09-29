@@ -1,3 +1,5 @@
+import type { FolderIncomingSummary } from "@arciin/types"
+
 import { fetchApi } from "@/lib/api/client"
 
 export type FileRequestDestination = {
@@ -56,6 +58,15 @@ export type CreateFileRequestInput = {
 
 export function listFileRequests(signal?: AbortSignal) {
   return fetchApi<FileRequestSummary[]>("/file-requests", { signal })
+}
+
+/** Uploads arriving now through this user's File Requests, per destination folder. */
+export function getIncomingUploads(filter: { libraryId?: string; folderId?: string } = {}, signal?: AbortSignal) {
+  const params = new URLSearchParams()
+  if (filter.libraryId) params.set("libraryId", filter.libraryId)
+  if (filter.folderId) params.set("folderId", filter.folderId)
+  const query = params.toString()
+  return fetchApi<{ folders: FolderIncomingSummary[] }>(`/file-requests/incoming${query ? `?${query}` : ""}`, { signal })
 }
 
 export function createFileRequest(input: CreateFileRequestInput) {

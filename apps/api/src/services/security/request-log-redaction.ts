@@ -41,13 +41,36 @@ const REDACTED_HEADER_NAMES = new Set([
 const REDACTED = "[redacted]"
 
 /**
- * Media and setup credentials must never appear in request-line logs.
+ * Media and setup credentials must never appear in request-line logs, and
+ * neither may a File Request or share link's token, which travels in the path.
  *
  * Setup tokens are refused from the query string by the authorization helper;
  * this still redacts them if a client sends one, so a mistake cannot persist
  * in api.log.
  */
+/**
+ * Routes whose path carries a bearer secret: anyone holding the URL can use it.
+ * The segment after each prefix is replaced, whatever follows it.
+ */
+const SECRET_PATH_PREFIXES = ["/public/file-requests/", "/shares/access/"]
+
+function redactSecretPath(pathPart: string): string {
+  for (const prefix of SECRET_PATH_PREFIXES) {
+    const at = pathPart.indexOf(prefix)
+    if (at === -1) continue
+    const start = at + prefix.length
+    const end = pathPart.indexOf("/", start)
+    if (end === start) continue
+    return `${pathPart.slice(0, start)}${REDACTED}${end === -1 ? "" : pathPart.slice(end)}`
+  }
+  return pathPart
+}
+
 export function redactSensitiveUrl(url: string): string {
+  const queryAt = url.indexOf("?")
+  const rawPath = queryAt === -1 ? url : url.slice(0, queryAt)
+  const safePath = redactSecretPath(rawPath)
+  if (safePath !== rawPath) url = safePath + (queryAt === -1 ? "" : url.slice(queryAt))
   const [pathPart, queryPart] = url.split("?")
   if (!queryPart || pathPart === undefined) return url
   try {
