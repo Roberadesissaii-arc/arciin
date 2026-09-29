@@ -28,6 +28,7 @@ export const queryKeys = {
   /** Prefix for every incoming-File-Request-uploads snapshot; realtime writes into all of them. */
   incomingUploadsRoot: ["file-requests", "incoming"] as const,
   incomingUploads: (libraryId?: string | null) => ["file-requests", "incoming", libraryId ?? "all"] as const,
+  importInspection: (url: string) => ["imports", "inspect", url] as const,
   uploads: ["uploads"] as const,
   upload: (uploadId: string) => ["upload", uploadId] as const,
   jobs: ["jobs"] as const,

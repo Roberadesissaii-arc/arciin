@@ -39,16 +39,21 @@ import { libraryGlassSheetPanel } from "@/lib/library-glass-sheet"
 import { notifyApiKey, notifyApiKeyError } from "@/lib/notifications/toast-actions"
 import { copyTextNow } from "@/lib/utils/clipboard"
 import { cn } from "@/lib/utils"
-import { formatRelativeDate } from "@/lib/utils/format-date"
+import {
+  API_KEY_ACTION_BASE,
+  API_KEY_REVOKE_CLASS,
+  API_KEY_ROTATE_CLASS,
+  apiKeyExpiryLabel,
+  apiKeyLastUsedLabel,
+  apiKeyRateLimitLabel,
+} from "@/lib/utils/api-key-display"
 
 /**
- * One width for every action in the key row, so the column does not shift
- * with the length of the label.
+ * Last used is one short line now, so it gives up width to Actions, which
+ * holds Rotate and Revoke side by side (2 × 104px + gap) instead of stacking.
  */
-const API_KEY_ACTION_WIDTH = "w-[104px] justify-center"
-
 const API_KEYS_GRID =
-  "lg:grid lg:grid-cols-[minmax(5.5rem,1.1fr)_minmax(6.5rem,1fr)_minmax(0,1.45fr)_minmax(5rem,0.85fr)_minmax(7.5rem,1fr)] lg:items-center lg:gap-x-3"
+  "lg:grid lg:grid-cols-[minmax(5.5rem,1.1fr)_minmax(6.5rem,1fr)_minmax(0,1.45fr)_minmax(5rem,0.7fr)_minmax(13.5rem,auto)] lg:items-center lg:gap-x-3"
 
 type ConfirmAction = {
   kind: "rotate" | "revoke"
@@ -153,51 +158,63 @@ export function ApiKeysTable() {
             {apiKeys.map((apiKey) => (
               <div
                 key={apiKey.id}
+                data-testid="api-key-row"
                 className={cn("grid grid-cols-1 gap-2 px-5 py-3.5", API_KEYS_GRID)}
               >
-                <div className="min-w-0">
-                  <p className="truncate text-[13px] font-semibold text-foreground">{apiKey.name}</p>
-                  <p className="mt-0.5 font-mono text-[11px] text-zinc-500 lg:hidden">{apiKey.keyPrefix}</p>
-                </div>
-                <span className="hidden font-mono text-[12px] leading-none text-foreground lg:inline">
-                  {apiKey.keyPrefix}
-                </span>
-                <ApiKeyScopeBadges scopes={apiKey.scopes} />
-                <span className="text-[12px] text-zinc-500 lg:text-zinc-600">
-                  {apiKey.lastUsedAt ? formatRelativeDate(apiKey.lastUsedAt) : "Never"}
+                {(() => {
+                  const rateLimit = apiKeyRateLimitLabel(apiKey.rateLimitPerMinute)
+                  // New keys expire after ninety days; older ones may not, and
+                  // a key that never expires is a standing credential — shown
+                  // in amber so it can be found.
+                  const expiry = apiKeyExpiryLabel(apiKey.expiresAt)
+                  const lastUsed = apiKeyLastUsedLabel(apiKey.lastUsedAt)
+                  return (
+                    <>
+                      <div className="min-w-0" data-testid="api-key-name">
+                        <p className="truncate text-[13px] font-semibold text-foreground">{apiKey.name}</p>
+                        {/* Narrow screens: no column headings, so each value says what it is. */}
+                        <p className="mt-0.5 font-mono text-[11px] text-zinc-500 lg:hidden">{apiKey.keyPrefix}</p>
+                        <p className="mt-0.5 text-[11px] text-zinc-500 lg:hidden" data-testid="api-key-mobile-rate">
+                          Rate limit · {rateLimit}
+                        </p>
+                      </div>
+                      <div className="hidden min-w-0 lg:block" data-testid="api-key-prefix">
+                        <p className="truncate font-mono text-[12px] leading-tight text-foreground">{apiKey.keyPrefix}</p>
+                        <p className="mt-1 text-[11px] leading-none text-zinc-500">{rateLimit}</p>
+                      </div>
+                      <div className="min-w-0" data-testid="api-key-scopes">
+                        <ApiKeyScopeBadges scopes={apiKey.scopes} />
+                        <p
+                          className={cn(
+                            "mt-1 text-[11px] leading-none",
+                            expiry.tone === "warning"
+                              ? "font-medium text-amber-600 dark:text-amber-400"
+                              : "text-zinc-500",
+                          )}
+                          data-tone={expiry.tone}
+                        >
+                          {expiry.text}
+                        </p>
+                      </div>
+                      <p className="text-[12px] text-zinc-500 lg:text-zinc-600" data-testid="api-key-last-used">
+                        <span className="lg:hidden">Last used · </span>
+                        {lastUsed}
+                      </p>
+                    </>
+                  )
+                })()}
+                <div className="flex flex-wrap items-center gap-2 lg:flex-nowrap lg:justify-end">
                   {/*
-                    New keys are given a ninety-day expiry. Keys created before
-                    that have none, and saying so is the point: a key that never
-                    expires is a standing credential, and the only way to know
-                    which ones those are is to show it.
-                  */}
-                  {apiKey.expiresAt ? (
-                    <span className="mt-0.5 block text-[11px] text-zinc-500">
-                      Expires {formatRelativeDate(apiKey.expiresAt)}
-                    </span>
-                  ) : (
-                    <span className="mt-0.5 block text-[11px] font-medium text-amber-600 dark:text-amber-400">
-                      No expiration
-                    </span>
-                  )}
-                  <span className="mt-0.5 block text-[11px] text-zinc-500">
-                    {apiKey.rateLimitPerMinute
-                      ? `${apiKey.rateLimitPerMinute.toLocaleString()} requests / min`
-                      : "No per-key rate limit"}
-                  </span>
-                </span>
-                <div className="flex flex-wrap items-center gap-2 lg:justify-end">
-                  {/*
-                    Both actions share one width so the column lines up down the
-                    list rather than shifting with the label. Rotate stays
-                    neutral; Revoke is destructive and says so — it invalidates
-                    the key immediately and nothing brings it back.
+                    Both actions share one size so the column lines up down the
+                    list. Rotate is solid and neutral; Revoke is destructive and
+                    says so — it invalidates the key immediately and nothing
+                    brings it back.
                   */}
                   <Button
                     type="button"
-                    variant="outline"
                     size="sm"
-                    className={cn(API_KEY_ACTION_WIDTH, "border-border bg-card text-foreground hover:bg-muted/50")}
+                    data-testid="api-key-rotate"
+                    className={cn(API_KEY_ACTION_BASE, API_KEY_ROTATE_CLASS)}
                     disabled={rotateMutation.isPending}
                     onClick={() => setConfirm({ kind: "rotate", id: apiKey.id, name: apiKey.name })}
                   >
@@ -208,7 +225,8 @@ export function ApiKeysTable() {
                     type="button"
                     variant="destructive"
                     size="sm"
-                    className={API_KEY_ACTION_WIDTH}
+                    data-testid="api-key-revoke"
+                    className={cn(API_KEY_ACTION_BASE, API_KEY_REVOKE_CLASS)}
                     disabled={revokeMutation.isPending}
                     onClick={() => setConfirm({ kind: "revoke", id: apiKey.id, name: apiKey.name })}
                   >

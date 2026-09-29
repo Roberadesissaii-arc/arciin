@@ -10,6 +10,8 @@ import {
   assetSupportsDocumentThumbnail,
   requiresWorkerProcessing,
   resolveUploadRoute,
+  promoteWaitingImports,
+  releaseImportSlot,
 } from "@arciin/shared"
 
 import { commitUpload } from "@/services/uploads/commit-upload"
@@ -703,11 +705,13 @@ export async function registerUploadRoutes(fastify: FastifyInstance) {
         },
       })
 
-      const activeKey = `import:active:${upload.userId}`
-      const remaining = await fastify.redis.decr(activeKey).catch(() => 0)
-      if (remaining < 0) {
-        await fastify.redis.set(activeKey, "0").catch(() => {})
-      }
+      // A cancelled link import gives its slot back at once (idempotent: the
+      // id is only in the set if it held one), and the next waiting import of
+      // this user starts.
+      await releaseImportSlot(fastify.redis, upload.userId, upload.id).catch(() => {})
+      await promoteWaitingImports(fastify.redis, upload.userId, async (next) => {
+        await mediaQueue.add(JOB_TYPES.importUrl, next)
+      }).catch((error) => request.log.warn({ err: error }, "could not start a waiting import"))
 
       await fastify.publishRealtimeEvent(
         buildRealtimeEvent("upload.failed", {

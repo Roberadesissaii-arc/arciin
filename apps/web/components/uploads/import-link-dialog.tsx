@@ -2,9 +2,11 @@
 /* eslint-disable react-hooks/set-state-in-effect -- intentional: sync the selected format when the resolved link preview or audio-only toggle changes. */
 
 import { useEffect, useMemo, useState } from "react"
+import { useQuery } from "@tanstack/react-query"
 import {
   FileText,
   Film,
+  Loader2,
   Music2,
   Link2,
   Video,
@@ -12,9 +14,12 @@ import {
   type LucideIcon,
 } from "lucide-react"
 
+import { IMPORT_BATCH_MAX_ITEMS, normalizeImportUrl } from "@arciin/shared"
+
 import { notifyImportFailed, notifyImportStarted } from "@/lib/notifications/toast-actions"
 import { useUploadStore } from "@/lib/stores/upload-store"
 
+import { ImportLinkCandidates } from "@/components/uploads/import-link-candidates"
 import {
   ImportLinkInspectSlot,
   linkSupportsFormatOptions,
@@ -34,13 +39,18 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet"
-import { importFromUrl } from "@/lib/api/imports"
+import { ApiError } from "@/lib/api/errors"
+import { importFromUrl, importInspectionItems, inspectImportLink } from "@/lib/api/imports"
+import { queryKeys } from "@/lib/api/query-keys"
 import { libraryGlassSheetPanel } from "@/lib/library-glass-sheet"
 import {
+  VIDEO_FORMATS,
   analyzeImportLink,
   formatToImportOptions,
   type LinkImportFormatId,
+  type LinkImportPreview,
 } from "@/lib/utils/link-import-preview"
+import { importSheetPhase, type ImportSheetPhase } from "@/lib/utils/import-sheet-phase"
 import { cn } from "@/lib/utils"
 
 const SUPPORTED = [
@@ -60,13 +70,14 @@ const headerControlH = "h-10"
 const floatChip =
   "pointer-events-auto rounded-xl border border-border bg-card shadow-sm ring-1 ring-black/[0.04] backdrop-blur-xl"
 
-function looksLikeUrl(value: string): boolean {
-  try {
-    const url = new URL(value.trim())
-    return url.protocol === "http:" || url.protocol === "https:"
-  } catch {
-    return false
-  }
+/** Wait this long after typing stops before asking the server to inspect a link. */
+const INSPECT_DEBOUNCE_MS = 600
+
+const PHASE_STATUS: Partial<Record<ImportSheetPhase, string>> = {
+  preparing: "Preparing link…",
+  inspecting: "Inspecting page…",
+  none: "No downloadable public media found on this page.",
+  error: "Could not inspect this link.",
 }
 
 function FormatSlot({
@@ -121,26 +132,92 @@ export function ImportLinkDialog() {
   const [audioOnlyEnabled, setAudioOnlyEnabled] = useState(false)
   const [error, setError] = useState<string | undefined>()
   const [submitting, setSubmitting] = useState(false)
+  const [inspectTarget, setInspectTarget] = useState<string | null>(null)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set())
+
+  // The same normalisation the server applies: "example.com" → https://example.com/.
+  const normalized = useMemo(() => normalizeImportUrl(url), [url])
+  const effectiveUrl = normalized.ok ? normalized.url : null
 
   const preview = useMemo(
-    () => (looksLikeUrl(url) ? analyzeImportLink(url.trim()) : null),
-    [url],
+    () => (effectiveUrl ? analyzeImportLink(effectiveUrl) : null),
+    [effectiveUrl],
   )
+  const clientBlocked = Boolean(preview?.importBlocked)
 
-  const formatOptionsEnabled = linkSupportsFormatOptions(preview)
+  // Inspect once typing settles, never on every keystroke.
+  useEffect(() => {
+    if (!effectiveUrl || clientBlocked) {
+      setInspectTarget(null)
+      return
+    }
+    const timer = window.setTimeout(() => setInspectTarget(effectiveUrl), INSPECT_DEBOUNCE_MS)
+    return () => window.clearTimeout(timer)
+  }, [effectiveUrl, clientBlocked])
 
-  const videoFormats = preview?.formats.filter((f) => VIDEO_FORMAT_IDS.includes(f.id)) ?? []
+  const inspectQuery = useQuery({
+    queryKey: queryKeys.importInspection(inspectTarget ?? ""),
+    queryFn: ({ signal }) => inspectImportLink(inspectTarget!, signal),
+    enabled: open && Boolean(inspectTarget),
+    retry: false,
+    staleTime: 5 * 60 * 1000,
+    gcTime: 10 * 60 * 1000,
+  })
+  const inspection = inspectTarget && inspectTarget === effectiveUrl ? inspectQuery.data : undefined
+  // A refusal of the address itself (private network, not a web link) is a
+  // "cannot import" with the server's reason, not a failed inspection.
+  const inspectRefusal =
+    inspectQuery.error instanceof ApiError &&
+    (inspectQuery.error.code === "IMPORT_URL_BLOCKED" || inspectQuery.error.code === "VALIDATION_ERROR")
+      ? inspectQuery.error.message
+      : null
+
+  const phase = importSheetPhase({
+    text: url,
+    normalizedOk: normalized.ok,
+    clientBlocked,
+    settled: Boolean(inspectTarget) && inspectTarget === effectiveUrl,
+    inspection,
+    inspecting: inspectQuery.isFetching,
+    inspectFailed: inspectQuery.isError,
+    inspectRefused: inspectRefusal != null,
+  })
+  const blockReason =
+    preview?.blockReason ?? (inspection?.kind === "blocked" ? inspection.reason : null) ?? inspectRefusal
+  const candidates = phase === "multiple" ? (inspection?.items ?? []) : []
+  const selectedCandidates = candidates.filter((item) => selectedIds.has(item.id))
+
+  // A new inspection starts with nothing chosen.
+  useEffect(() => {
+    setSelectedIds(new Set())
+  }, [inspection?.inspectionId])
+
+  // With several items, one output choice applies to the video items among
+  // those chosen; anything else imports as it is.
+  const anyVideoChosen = selectedCandidates.some((item) => item.category === "video")
+  const formatSource: Pick<LinkImportPreview, "formats"> | null =
+    phase === "multiple"
+      ? { formats: anyVideoChosen || selectedCandidates.length === 0 ? VIDEO_FORMATS : [] }
+      : preview
+  const formatOptionsEnabled =
+    phase === "multiple"
+      ? anyVideoChosen
+      : phase !== "blocked" && linkSupportsFormatOptions(preview)
+
+  const videoFormats = formatSource?.formats.filter((f) => VIDEO_FORMAT_IDS.includes(f.id)) ?? []
   // Memoised: the effect below depends on this list, and a new array each
   // render would re-run it forever.
   const audioFormats = useMemo(
-    () => preview?.formats.filter((f) => AUDIO_FORMAT_IDS.includes(f.id)) ?? [],
-    [preview],
+    () => formatSource?.formats.filter((f) => AUDIO_FORMAT_IDS.includes(f.id)) ?? [],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [phase, preview, anyVideoChosen, selectedCandidates.length],
   )
 
   const selectedFormat = useMemo(() => {
-    if (!preview) return null
-    return preview.formats.find((f) => f.id === formatId) ?? preview.formats[0]
-  }, [preview, formatId])
+    if (!formatSource || formatSource.formats.length === 0) return null
+    return formatSource.formats.find((f) => f.id === formatId) ?? formatSource.formats[0]
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, preview, anyVideoChosen, formatId])
 
   useEffect(() => {
     if (!preview) return
@@ -165,18 +242,84 @@ export function ImportLinkDialog() {
     setFormatId("video-mp4")
     setAudioOnlyEnabled(false)
     setError(undefined)
+    setInspectTarget(null)
+    setSelectedIds(new Set())
+  }
+
+  /** Show the full address once the person is done with the field — not while they type. */
+  function normalizeField(value = url) {
+    const result = normalizeImportUrl(value)
+    if (result.ok && result.url !== value) setUrl(result.url)
+  }
+
+  function toggleCandidate(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else if (next.size < IMPORT_BATCH_MAX_ITEMS) next.add(id)
+      return next
+    })
+  }
+
+  function toggleAllCandidates() {
+    setSelectedIds((prev) =>
+      candidates.every((item) => prev.has(item.id))
+        ? new Set()
+        : new Set(candidates.slice(0, IMPORT_BATCH_MAX_ITEMS).map((item) => item.id)),
+    )
+  }
+
+  async function submitBatch() {
+    if (!inspection || selectedCandidates.length === 0) return
+    const format = selectedFormat
+    const importOptions = format && anyVideoChosen ? formatToImportOptions(format) : {}
+    setSubmitting(true)
+    try {
+      const result = await importInspectionItems(
+        inspection.inspectionId,
+        selectedCandidates.map((item) => item.id),
+        importOptions,
+      )
+      for (const { upload, state } of result.accepted) {
+        useUploadStore.getState().addOrUpdate({
+          id: upload.id,
+          fileName: upload.originalFilename || inspection.url,
+          mimeType: upload.mimeType ?? undefined,
+          sizeBytes: Number(upload.sizeBytes) || 0,
+          progress: state === "started" ? Math.max(upload.progress ?? 0, 12) : 0,
+          status: state === "started" ? "UPLOADING" : "QUEUED",
+          destination: upload.targetLibrary?.name ?? "Inbox",
+          uploadId: upload.id,
+        })
+      }
+      notifyImportStarted(undefined, `${result.accepted.length} item${result.accepted.length === 1 ? "" : "s"}`)
+      if (result.rejected.length > 0) {
+        notifyImportFailed(undefined, `${result.rejected.length} item${result.rejected.length === 1 ? " was" : "s were"} not imported: ${result.rejected[0]!.message}`)
+      }
+      resetForm()
+      setOpen(false)
+    } catch (submitError) {
+      const message = submitError instanceof Error ? submitError.message : "Could not start the import."
+      setError(message)
+      notifyImportFailed(undefined, message)
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   async function submit() {
-    const trimmed = url.trim()
-    if (!looksLikeUrl(trimmed)) {
-      setError("Enter a valid link starting with http:// or https://")
+    if (phase === "multiple") return submitBatch()
+    // Defensive: normalise again at the moment of submitting.
+    const result = normalizeImportUrl(url)
+    if (!result.ok) {
+      setError(result.reason)
       return
     }
+    const target = result.url
 
-    const resolved = looksLikeUrl(trimmed) ? analyzeImportLink(trimmed) : null
-    if (resolved?.importBlocked) {
-      setError(resolved.blockReason ?? "This link cannot be imported.")
+    const resolved = analyzeImportLink(target)
+    if (resolved?.importBlocked || phase === "blocked") {
+      setError(resolved?.blockReason ?? blockReason ?? "This link cannot be imported.")
       return
     }
 
@@ -185,11 +328,11 @@ export function ImportLinkDialog() {
 
     setSubmitting(true)
     try {
-      const session = await importFromUrl(trimmed, importOptions)
+      const session = await importFromUrl(target, importOptions)
       notifyImportStarted(preview?.source.key, preview?.source.label)
       useUploadStore.getState().addOrUpdate({
         id: session.id,
-        fileName: session.originalFilename || trimmed,
+        fileName: session.originalFilename || target,
         mimeType: session.mimeType ?? undefined,
         sizeBytes: Number(session.sizeBytes) || 0,
         progress: Math.max(session.progress ?? 0, 12),
@@ -210,15 +353,48 @@ export function ImportLinkDialog() {
     }
   }
 
-  const optionsHint = !preview
-    ? "Paste a video link to unlock format choices."
-    : preview.importBlocked
-      ? "Format options are unavailable for this host."
-      : formatOptionsEnabled
-        ? audioOnlyEnabled
-          ? "Audio only — pick MP3 or M4A."
-          : "Full video or switch on Audio only."
-        : "This link downloads as-is (no format conversion)."
+  const optionsHint =
+    phase === "multiple"
+      ? selectedCandidates.length === 0
+        ? "Choose items, then one format for all of them."
+        : anyVideoChosen
+          ? selectedCandidates.every((item) => item.category === "video")
+            ? "Applies to every selected video."
+            : "Applies to the videos; other items import as they are."
+          : "These items download as they are (no conversion)."
+      : !preview
+        ? "Paste a video link to unlock format choices."
+        : phase === "blocked"
+          ? "Format options are unavailable for this host."
+          : formatOptionsEnabled
+            ? audioOnlyEnabled
+              ? "Audio only — pick MP3 or M4A."
+              : "Full video or switch on Audio only."
+            : "This link downloads as-is (no format conversion)."
+
+  const submitDisabled =
+    submitting ||
+    !normalized.ok ||
+    phase === "blocked" ||
+    phase === "preparing" ||
+    phase === "inspecting" ||
+    (phase === "multiple" && selectedCandidates.length === 0)
+
+  const submitLabel = submitting
+    ? "Starting…"
+    : phase === "blocked"
+      ? preview?.importBlocked || inspection?.kind === "blocked"
+        ? "Cannot import (DRM)"
+        : "Cannot import this link"
+      : phase === "multiple"
+        ? selectedCandidates.length === 0
+          ? "Select items to import"
+          : `Import ${selectedCandidates.length} item${selectedCandidates.length === 1 ? "" : "s"}`
+        : phase === "none" || phase === "error"
+          ? "Try importing anyway"
+          : preview
+            ? `Import from ${preview.source.label}`
+            : "Import link"
 
   return (
     <Sheet
@@ -291,13 +467,30 @@ export function ImportLinkDialog() {
               value={url}
               autoFocus
               inputMode="url"
-              placeholder="https://…"
+              placeholder="Paste a link or enter example.com"
+              autoComplete="off"
+              spellCheck={false}
+              data-testid="import-link-input"
               onChange={(event) => {
                 setUrl(event.target.value)
                 setError(undefined)
               }}
+              onBlur={() => normalizeField()}
+              onPaste={(event) => {
+                // A whole link pasted into an empty (or fully selected) field is
+                // shown in full at once; a paste mid-edit is left alone.
+                const input = event.currentTarget
+                const whole = input.selectionStart === 0 && input.selectionEnd === input.value.length
+                const pasted = event.clipboardData.getData("text")
+                const result = normalizeImportUrl(pasted)
+                if (whole && result.ok) {
+                  event.preventDefault()
+                  setUrl(result.url)
+                  setError(undefined)
+                }
+              }}
               onKeyDown={(event) => {
-                if (event.key === "Enter" && !submitting) {
+                if (event.key === "Enter" && !submitDisabled) {
                   event.preventDefault()
                   void submit()
                 }
@@ -314,14 +507,49 @@ export function ImportLinkDialog() {
             ) : null}
           </Field>
 
-          <ImportLinkInspectSlot url={url.trim()} />
+          {phase === "multiple" && inspection ? (
+            <ImportLinkCandidates
+              title={inspection.title}
+              items={candidates}
+              selected={selectedIds}
+              onToggle={toggleCandidate}
+              onToggleAll={toggleAllCandidates}
+              disabled={submitting}
+            />
+          ) : (
+            <ImportLinkInspectSlot url={effectiveUrl ?? ""} />
+          )}
 
-          {preview?.importBlocked && preview.blockReason ? (
+          {PHASE_STATUS[phase] ? (
+            <p
+              role="status"
+              data-testid="import-link-status"
+              data-phase={phase}
+              className={cn(
+                "flex min-w-0 items-center gap-1.5 text-[11.5px] leading-snug",
+                phase === "error" || phase === "none" ? "text-zinc-600" : "text-muted-foreground",
+              )}
+            >
+              {phase === "preparing" || phase === "inspecting" ? (
+                <Loader2 className="size-3.5 shrink-0 animate-spin motion-reduce:animate-none" />
+              ) : null}
+              {PHASE_STATUS[phase]}
+            </p>
+          ) : null}
+
+          {phase === "invalid" && !normalized.ok && url.trim().length > 3 ? (
+            <p className="text-[11.5px] leading-snug text-zinc-500" data-testid="import-link-status" data-phase="invalid">
+              {normalized.reason}
+            </p>
+          ) : null}
+
+          {phase === "blocked" && blockReason ? (
             <div
               role="status"
+              data-testid="import-link-blocked"
               className="min-w-0 break-words rounded-xl border border-amber-200/90 bg-amber-50 px-3 py-2.5 text-[12px] leading-snug text-amber-900"
             >
-              {preview.blockReason}
+              {blockReason}
             </div>
           ) : null}
 
@@ -329,7 +557,7 @@ export function ImportLinkDialog() {
           <section
             className={cn(
               "min-w-0 overflow-hidden rounded-2xl border border-zinc-200/90 bg-white p-3 shadow-sm",
-              preview?.importBlocked && "opacity-60",
+              phase === "blocked" && "opacity-60",
             )}
           >
             <div className="flex items-center justify-between gap-3">
@@ -449,16 +677,11 @@ export function ImportLinkDialog() {
         <SheetFooter className="shrink-0 border-t border-border p-3">
           <Button
             className="h-10 w-full bg-primary text-white hover:bg-primary/90"
-            disabled={submitting || !looksLikeUrl(url) || Boolean(preview?.importBlocked)}
+            disabled={submitDisabled}
             onClick={() => void submit()}
+            data-testid="import-link-submit"
           >
-            {submitting
-              ? "Starting…"
-              : preview?.importBlocked
-                ? "Cannot import (DRM)"
-                : preview
-                  ? `Import from ${preview.source.label}`
-                  : "Import link"}
+            {submitLabel}
           </Button>
         </SheetFooter>
       </SheetContent>
