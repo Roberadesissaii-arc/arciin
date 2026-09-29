@@ -43,8 +43,10 @@ test("Database → Folders separates current, legacy and deleted", async ({ page
   await page.goto("/database/folders")
   await expect(page.getByTestId("folder-audit-note")).toContainText("current")
   await expect(page.getByTestId("folder-audit-note")).toContainText("nothing is removed")
-  for (const label of ["historical records", "current", "legacy computer", "deleted"]) {
-    await expect(page.getByText(label, { exact: true }).first()).toBeVisible()
+  // Each chip is "<count> <label>"; the four sit together under the title.
+  const chips = page.getByText(/historical records/).first().locator("xpath=../..")
+  for (const label of [/\d[\d,]*\s*historical records/, /\d[\d,]*\s*current/, /\d[\d,]*\s*legacy computer/, /\d[\d,]*\s*deleted/]) {
+    await expect(chips).toContainText(label)
   }
   await page.getByTestId("folder-filter-current").click()
   await expect(page.getByTestId("folder-filter-current")).toHaveAttribute("aria-checked", "true")
