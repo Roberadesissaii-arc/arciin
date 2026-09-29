@@ -1,6 +1,14 @@
 import type { Prisma } from "@prisma/client"
 import type { FastifyInstance } from "fastify"
 
+import {
+  FOLDER_CLASS_FILTERS,
+  auditFolders,
+  classifyFolder,
+  folderClassWhere,
+  legacyComputerLibraryIds,
+  type FolderClassFilter,
+} from "@/services/folders/folder-audit"
 import { requireSessionRole } from "@/services/security/auth"
 
 // Tables exposed through the admin browser — order determines display order
@@ -122,13 +130,20 @@ async function summaryForTable(
         ]
       }
       case "folders": {
-        const [total, deleted] = await Promise.all([
+        // Legacy Computer Backup trees were kept when the feature was removed;
+        // counting them as folders made thousands of invisible rows look like
+        // the library's folders. Same classification as the audit.
+        const legacy = await legacyComputerLibraryIds(fastify.prisma)
+        const [total, current, legacyLive, deleted] = await Promise.all([
           fastify.prisma.folder.count(),
-          fastify.prisma.folder.count({ where: { deletedAt: { not: null } } }),
+          fastify.prisma.folder.count({ where: folderClassWhere("current", legacy) }),
+          fastify.prisma.folder.count({ where: folderClassWhere("legacy", legacy) }),
+          fastify.prisma.folder.count({ where: folderClassWhere("deleted", legacy) }),
         ])
         return [
-          { label: "records", value: total, tone: "neutral" },
-          { label: "live", value: total - deleted, tone: "success" },
+          { label: "historical records", value: total, tone: "neutral" },
+          { label: "current", value: current, tone: "success" },
+          { label: "legacy computer", value: legacyLive, tone: "warning" },
           { label: "deleted", value: deleted, tone: "danger" },
         ]
       }
@@ -154,6 +169,12 @@ function sanitizeRows(rows: Record<string, unknown>[]): Record<string, unknown>[
 
 export const API_KEY_STATUS_FILTERS = ["all", "active", "revoked", "expired"] as const
 export type ApiKeyStatusFilter = (typeof API_KEY_STATUS_FILTERS)[number]
+
+/** Tables whose rows can be narrowed by `?status=`; anything else accepts only "all" (and, as before, the API-key values). */
+const TABLE_STATUS_FILTERS: Record<string, readonly string[]> = {
+  "api-keys": API_KEY_STATUS_FILTERS,
+  folders: FOLDER_CLASS_FILTERS,
+}
 
 /**
  * The Database → API Keys filter, as a where clause.
@@ -181,7 +202,7 @@ async function rowsForTable(
   name: string,
   skip: number,
   take: number,
-  filters: { apiKeyStatus?: ApiKeyStatusFilter } = {},
+  filters: { apiKeyStatus?: ApiKeyStatusFilter; folderClass?: FolderClassFilter } = {},
 ): Promise<{ rows: Record<string, unknown>[]; total: number }> {
   switch (name) {
     case "users": {
@@ -251,15 +272,39 @@ async function rowsForTable(
       return { rows, total }
     }
     case "folders": {
+      const legacy = await legacyComputerLibraryIds(fastify.prisma)
+      const legacySet = new Set(legacy)
+      const where = folderClassWhere(filters.folderClass ?? "all", legacy)
       const [rows, total] = await Promise.all([
         fastify.prisma.folder.findMany({
+          where,
           skip, take,
           orderBy: { createdAt: "desc" },
-          select: { id: true, name: true, slug: true, libraryId: true, parentFolderId: true, pathCache: true, createdAt: true },
+          select: {
+            id: true, name: true, slug: true, libraryId: true, parentFolderId: true, pathCache: true,
+            createdAt: true, deletedAt: true,
+            library: { select: { name: true, kind: true } },
+          },
         }),
-        fastify.prisma.folder.count(),
+        fastify.prisma.folder.count({ where }),
       ])
-      return { rows, total }
+      // pathCache is the folder's path inside its library, never a disk path.
+      return {
+        rows: rows.map(({ library, deletedAt, ...row }) => ({
+          classification: classifyFolder({ deletedAt, libraryId: row.libraryId }, legacySet),
+          name: row.name,
+          library: library.name,
+          libraryKind: library.kind,
+          pathCache: row.pathCache,
+          id: row.id,
+          slug: row.slug,
+          libraryId: row.libraryId,
+          parentFolderId: row.parentFolderId,
+          createdAt: row.createdAt,
+          deletedAt,
+        })),
+        total,
+      }
     }
     case "assets": {
       const [rows, total] = await Promise.all([
@@ -409,6 +454,17 @@ export async function registerAdminRoutes(fastify: FastifyInstance) {
     }
   )
 
+  // GET /admin/folders/audit — current vs legacy Computer Backup vs deleted.
+  // Read-only aggregates: counts and folder names, never a disk path.
+  fastify.get(
+    "/admin/folders/audit",
+    { preHandler: requireSessionRole(["OWNER", "ADMIN"]) },
+    async (_request, reply) => {
+      reply.header("Cache-Control", "no-store")
+      reply.send({ data: await auditFolders(fastify.prisma) })
+    },
+  )
+
   // GET /admin/tables/:table?page=1&limit=20 — paginated rows
   fastify.get<{ Params: { table: string }; Querystring: { page?: string; limit?: string; status?: string } }>(
     "/admin/tables/:table",
@@ -425,15 +481,17 @@ export async function registerAdminRoutes(fastify: FastifyInstance) {
       }
 
       const status = request.query.status ?? "all"
-      if (!(API_KEY_STATUS_FILTERS as readonly string[]).includes(status)) {
+      const allowed: readonly string[] = TABLE_STATUS_FILTERS[table] ?? API_KEY_STATUS_FILTERS
+      if (!allowed.includes(status)) {
         reply.status(400).send({
-          error: { code: "VALIDATION_ERROR", message: "status must be all, active, revoked, or expired." },
+          error: { code: "VALIDATION_ERROR", message: `status must be ${allowed.join(", ")}.` },
         })
         return
       }
 
       const { rows, total } = await rowsForTable(fastify, table, skip, limit, {
         apiKeyStatus: table === "api-keys" ? (status as ApiKeyStatusFilter) : undefined,
+        folderClass: table === "folders" ? (status as FolderClassFilter) : undefined,
       })
       const totalPages = Math.max(1, Math.ceil(total / limit))
 

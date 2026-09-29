@@ -38,11 +38,44 @@ export function getAdminTables(signal?: AbortSignal) {
 export const API_KEY_STATUS_FILTERS = ["all", "active", "revoked", "expired"] as const
 export type ApiKeyStatusFilter = (typeof API_KEY_STATUS_FILTERS)[number]
 
+/** Database → Folders: current folders, kept Computer Backup trees, and deleted rows. */
+export const FOLDER_CLASS_FILTERS = ["all", "current", "legacy", "deleted"] as const
+export type FolderClassFilter = (typeof FOLDER_CLASS_FILTERS)[number]
+
+/** Which tables can be narrowed, and by what. The server applies the same lists. */
+export const TABLE_STATUS_FILTERS: Record<string, readonly string[]> = {
+  "api-keys": API_KEY_STATUS_FILTERS,
+  folders: FOLDER_CLASS_FILTERS,
+}
+
+export type FolderAudit = {
+  total: number
+  live: number
+  deleted: number
+  current: number
+  legacyComputer: number
+  legacyWithAssets: number
+  legacyWithoutAssets: number
+  legacyDeleted: number
+  legacyAssets: number
+  legacyAssetsInTrash: number
+  currentWithAssets: number
+  assetsInCurrentFolders: number
+  maxDepth: { current: number; legacy: number }
+  legacyRoots: { count: number; largest: Array<{ name: string; folders: number; assets: number }> }
+  perLibrary: Array<{ name: string; kind: string; current: number; legacy: number; deleted: number }>
+  diagnostics: { devTreeFolderNames: Array<{ name: string; folders: number }> }
+}
+
+export function getFolderAudit(signal?: AbortSignal) {
+  return fetchApi<FolderAudit>("/admin/folders/audit", { method: "GET", signal })
+}
+
 export function getAdminTableData(
   table: string,
   page = 1,
   signal?: AbortSignal,
-  filters: { status?: ApiKeyStatusFilter } = {},
+  filters: { status?: string } = {},
 ) {
   const status = filters.status && filters.status !== "all" ? `&status=${filters.status}` : ""
   return fetchApi<AdminTableData>(`/admin/tables/${table}?page=${page}&limit=20${status}`, {
