@@ -47,6 +47,9 @@ function allowedOrigins(): string[] {
 const origins = allowedOrigins()
 
 const nextConfig: NextConfig = {
+  // A deploy builds into a staging directory and swaps it in, so the live
+  // build is never half-written (scripts/deploy-account.sh).
+  distDir: process.env.NEXT_DIST_DIR || ".next",
   // Account portal is independent of the self-hosted app shell.
   transpilePackages: ["@arciin/config"],
   // Monorepo file tracing

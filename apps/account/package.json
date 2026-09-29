@@ -4,8 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev -p 3010 -H 127.0.0.1",
-    "build": "next build",
-    "start": "next start -p 3010 -H 127.0.0.1",
+    "build": "next build && node ../../scripts/next-build-stamp.mjs stamp",
+    "start": "node ../../scripts/next-build-stamp.mjs check && next start -p 3010 -H 127.0.0.1",
     "lint": "eslint ."
   },
   "dependencies": {
