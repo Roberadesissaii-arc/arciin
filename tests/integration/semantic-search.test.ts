@@ -298,6 +298,42 @@ describe("index job", () => {
     expect(ollama.embedCalls + ollama.chatCalls).toBe(0)
   })
 
+  it("paused: jobs still in the queue finish without touching Ollama", async () => {
+    const img = await imageAsset("IMG_0104.jpg", RED)
+    await prisma.semanticSearchConfig.update({ where: { id: "default" }, data: { indexingActive: false } })
+    expect(await indexAssetSemantics(img.id, deps())).toBe("paused")
+    expect(ollama.embedCalls + ollama.chatCalls).toBe(0)
+    expect(await prisma.assetSemanticIndex.findUnique({ where: { assetId: img.id } })).toBeNull()
+    await prisma.semanticSearchConfig.update({ where: { id: "default" }, data: { indexingActive: true } })
+    expect(await indexAssetSemantics(img.id, deps())).toBe("indexed")
+  })
+
+  it("a photo whose own words already say what it is is embedded without a vision caption", async () => {
+    const titled = await imageAsset("IMG_0105.jpg", RED)
+    await prisma.asset.update({ where: { id: titled.id }, data: { title: "Graduation ceremony" } })
+    const named = await imageAsset("lake-house-weekend.jpg", BLUE)
+    for (const a of [titled, named]) expect(await indexAssetSemantics(a.id, deps())).toBe("indexed")
+    expect(ollama.chatCalls).toBe(0)
+    expect(ollama.embedCalls).toBe(2)
+    // An opaque camera name still gets its caption.
+    const opaque = await imageAsset("DSC_1180.jpg", RED)
+    expect(await indexAssetSemantics(opaque.id, deps())).toBe("indexed")
+    expect(ollama.chatCalls).toBe(1)
+  })
+
+  it("the sweep puts cheap meaning first and photos that need a caption last", async () => {
+    const photo = await imageAsset("IMG_0600.jpg", RED)
+    const doc = await createAsset(fixtures, { librarySlug: "documents", mediaType: "DOCUMENT", originalFilename: "scan_0600.pdf" })
+    await prisma.asset.update({ where: { id: doc.id }, data: { documentInsight: { summary: "A lease agreement." } } })
+    const titled = await imageAsset("IMG_0601.jpg", BLUE)
+    await prisma.asset.update({ where: { id: titled.id }, data: { title: "Team offsite" } })
+    const named = await createAsset(fixtures, { librarySlug: "documents", mediaType: "DOCUMENT", originalFilename: "quarterly-report.pdf" })
+    const due = await findAssetsNeedingSemanticIndex(prisma, { model: "nomic-embed-text", digest: "digest-a", indexVersion: 10000, limit: 500 })
+    const order = [doc.id, titled.id, named.id, photo.id].map((id) => due.indexOf(id))
+    expect(order.every((i) => i >= 0)).toBe(true)
+    expect([...order].sort((a, b) => a - b)).toEqual(order)
+  })
+
   it("the backfill sweep finds un-indexed READY assets and nothing deleted or unfinished", async () => {
     const ready = await imageAsset("IMG_0200.jpg", RED)
     const processing = await createAsset(fixtures, { librarySlug: "images", mediaType: "IMAGE", status: "PROCESSING" })
@@ -404,6 +440,34 @@ describe("hybrid search keeps the listing's rules", () => {
     expect(res.items.map((i) => i.id)).toEqual([named.id])
     // Stored vectors are still there for when it comes back.
     expect(await prisma.assetSemanticIndex.count({ where: { status: "INDEXED" } })).toBeGreaterThan(0)
+  })
+
+  it("legacy Computer Backup files follow the listing: the owner finds them, another member does not", async () => {
+    // Computer Backup is gone as a product, but its files still show in the
+    // Images/Videos smart views and All Files for their owner — so they are
+    // searchable, by name and by meaning alike, and by nobody else.
+    const named = await imageAsset("birthday party backup.jpg", BLUE, { librarySlug: "computers" })
+    const img = await imageAsset("IMG_1200.jpg", RED, { librarySlug: "computers" })
+    await indexAssetSemantics(img.id, deps())
+    const owner = (await search("birthday party")).items.map((i) => i.id)
+    expect(owner).toContain(named.id)
+    expect(owner).toContain(img.id)
+    const member = (await search("birthday party", {}, memberCookie)).items.map((i) => i.id)
+    expect(member).not.toContain(named.id)
+    expect(member).not.toContain(img.id)
+  })
+
+  it("a locked folder: meaning never reaches further than a keyword does", async () => {
+    const locked = await createFolder(fixtures, { librarySlug: "images", name: `Locked ${Date.now()}`, lockedAt: new Date() })
+    const named = await imageAsset("birthday party locked.jpg", BLUE, { librarySlug: "images", folderId: locked.id })
+    const img = await imageAsset("IMG_1300.jpg", RED, { librarySlug: "images", folderId: locked.id })
+    await indexAssetSemantics(img.id, deps())
+    const all = (await search("birthday party")).items.map((i) => i.id)
+    expect(all.includes(img.id)).toBe(all.includes(named.id))
+    // Opening the folder itself still needs it unlocked, search or not.
+    const qs = new URLSearchParams({ search: "birthday party", folderId: locked.id })
+    const res = await app.inject({ method: "GET", url: `/api/assets/page?${qs}`, headers: { cookie: memberCookie } })
+    expect(res.statusCode).not.toBe(200)
   })
 
   it("a semantic query never needs the vision model", async () => {

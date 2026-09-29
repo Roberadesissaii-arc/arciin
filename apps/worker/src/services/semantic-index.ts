@@ -39,6 +39,7 @@ export type SemanticIndexDeps = {
 
 export type SemanticIndexOutcome =
   | "disabled"
+  | "paused"
   | "gone"
   | "skipped-unchanged"
   | "skipped-no-meaning"
@@ -91,6 +92,9 @@ export async function indexAssetSemantics(assetId: string, deps: SemanticIndexDe
   const { prisma } = deps
   const config = await prisma.semanticSearchConfig.findUnique({ where: { id: "default" } })
   if (!config?.enabled) return "disabled"
+  // Pause means stop now: jobs already queued finish as no-ops instead of
+  // keeping Ollama busy for another forty assets.
+  if (!config.indexingActive) return "paused"
 
   const asset = await prisma.asset.findUnique({
     where: { id: assetId },
@@ -125,24 +129,7 @@ export async function indexAssetSemantics(assetId: string, deps: SemanticIndexDe
     if (!status.installed) throw new SemanticOllamaError("MODEL_MISSING", `The model ${model} is not installed.`)
     const digest = status.model.digest
 
-    // 1. Caption — images, and videos that have a thumbnail. Once per file:
-    //    kept until the file itself changes.
-    let caption = existing?.caption ?? null
-    let captionModel = existing?.captionModel ?? null
-    const captionStale = existing?.captionSourceChecksum !== asset.checksumSha256
-    if ((asset.mediaType === "IMAGE" || asset.mediaType === "VIDEO") && (!caption || captionStale)) {
-      const visionModel = await findLocalVisionModel({ baseUrl: deps.baseUrl, preferred: config.captionModel, fetchImpl: deps.fetchImpl })
-      const image = visionModel ? await captionSource(deps.storageRoot, asset) : null
-      if (visionModel && image) {
-        caption = await captionImageLocally({ baseUrl: deps.baseUrl, model: visionModel, imageBase64: image, fetchImpl: deps.fetchImpl })
-        captionModel = visionModel
-        await record({ caption, captionModel, captionSourceChecksum: asset.checksumSha256 })
-      } else if (captionStale) {
-        caption = null
-      }
-    }
-
-    // 2. The one canonical text.
+    // 1. The one canonical text, first without any caption.
     const input = {
       originalFilename: asset.originalFilename,
       title: asset.title,
@@ -153,17 +140,37 @@ export async function indexAssetSemantics(assetId: string, deps: SemanticIndexDe
       documentAuthor: asset.documentAuthor,
       documentSubject: asset.documentSubject,
       documentInsight: asset.documentInsight,
-      caption,
+      caption: null as string | null,
       durationSeconds: asset.durationSeconds,
       width: asset.width,
       height: asset.height,
       transcriptText: asset.transcript?.status === "READY" ? asset.transcript.fullText : null,
       importSourceUrl: asset.importSourceUrl,
     }
+
+    // 2. Caption — images, and videos that have a thumbnail — only when the
+    //    words around the file say nothing about it (IMG_0042.jpg, VID_0022.mp4).
+    //    On a CPU-only host a caption costs tens of seconds; a titled photo or a
+    //    video with a transcript is findable without one. A caption already made
+    //    for this exact file is kept either way: keeping it costs nothing.
+    let caption = existing?.caption ?? null
+    if (existing?.captionSourceChecksum !== asset.checksumSha256) caption = null
+    const visual = asset.mediaType === "IMAGE" || asset.mediaType === "VIDEO"
+    if (visual && !caption && !hasMeaningfulSemanticText(input)) {
+      const visionModel = await findLocalVisionModel({ baseUrl: deps.baseUrl, preferred: config.captionModel, fetchImpl: deps.fetchImpl })
+      const image = visionModel ? await captionSource(deps.storageRoot, asset) : null
+      if (visionModel && image) {
+        caption = await captionImageLocally({ baseUrl: deps.baseUrl, model: visionModel, imageBase64: image, fetchImpl: deps.fetchImpl })
+        await record({ caption, captionModel: visionModel, captionSourceChecksum: asset.checksumSha256 })
+      }
+    }
+    input.caption = caption
+
     const semanticText = buildAssetSemanticText(input)
 
     if (!hasMeaningfulSemanticText(input)) {
-      // A camera file name and nothing else: nothing to find by meaning.
+      // A camera file name and nothing else, and no caption could be made:
+      // nothing to find by meaning.
       await record({
         status: "SKIPPED",
         semanticText,
@@ -224,11 +231,17 @@ export async function indexAssetSemantics(assetId: string, deps: SemanticIndexDe
 export const SEMANTIC_MAX_ATTEMPTS = 5
 
 /**
- * Assets whose index is missing or out of date, newest first. Out of date
- * means: never indexed; built for another model, model build or index
- * version; or the asset (or its transcript) changed since. The fingerprint
- * check in indexAssetSemantics then skips any whose text did not actually
- * change.
+ * Assets whose index is missing or out of date. Out of date means: never
+ * indexed; built for another model, model build or index version; or the
+ * asset (or its transcript) changed since. The fingerprint check in
+ * indexAssetSemantics then skips any whose text did not actually change.
+ *
+ * Cheapest meaning first, so search is useful long before the backlog is
+ * done: an embedding takes about a second on this host, a vision caption tens
+ * of seconds. Documents with real text, then anything titled or described,
+ * then audio/video with a transcript, then assets whose caption already
+ * exists, then name-only files (embedded or skipped in a moment), and last
+ * the photos and videos that need a caption made. Newest first within each.
  */
 export async function findAssetsNeedingSemanticIndex(
   prisma: PrismaClient,
@@ -259,7 +272,17 @@ export async function findAssetsNeedingSemanticIndex(
           AND s."updatedAt" < now() - (interval '1 minute' * power(2, s.attempts))
         )
       )
-    ORDER BY a."createdAt" DESC
+    ORDER BY
+      CASE
+        WHEN a."mediaType" = 'DOCUMENT' AND (a."documentInsight" IS NOT NULL OR a."documentSubject" IS NOT NULL
+          OR a.title IS NOT NULL OR a.description IS NOT NULL) THEN 0
+        WHEN a.title IS NOT NULL OR a.description IS NOT NULL THEN 1
+        WHEN a."mediaType" IN ('AUDIO', 'VIDEO') AND t.status = 'READY' THEN 2
+        WHEN s.caption IS NOT NULL THEN 3
+        WHEN a."mediaType" NOT IN ('IMAGE', 'VIDEO') THEN 4
+        ELSE 5
+      END,
+      a."createdAt" DESC
     LIMIT ${input.limit}
   `
   return rows.map((r) => r.id)

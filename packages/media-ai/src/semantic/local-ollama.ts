@@ -163,6 +163,17 @@ export type OllamaModelStatus =
   | { ollama: "online"; installed: false }
   | { ollama: "online"; installed: true; model: LocalModelInfo }
 
+/**
+ * An Ollama "cloud" model is listed by the local Ollama but runs on
+ * ollama.com: the request, image and text included, leaves the machine. Its
+ * name ends in `-cloud` / `:cloud`, and Ollama reports a remote host for it.
+ * Semantic search never uses one, whatever else is installed.
+ */
+export function isRemoteOllamaModel(entry: { name?: unknown; model?: unknown; remote_host?: unknown; remote_model?: unknown }): boolean {
+  const name = String(entry.name ?? entry.model ?? "").toLowerCase()
+  return /(?:[:-])cloud$/.test(name) || Boolean(entry.remote_host) || Boolean(entry.remote_model)
+}
+
 function sameModel(a: string, b: string): boolean {
   const n = (s: string) => (s.includes(":") ? s : `${s}:latest`)
   return n(a) === n(b)
@@ -177,7 +188,7 @@ export async function localModelStatus(input: {
 }): Promise<OllamaModelStatus> {
   assertLocal(input.baseUrl)
   const fetchImpl = input.fetchImpl ?? (fetch as FetchLike)
-  let tags: { models?: Array<{ name?: string; model?: string; digest?: string; size?: number }> }
+  let tags: { models?: Array<{ name?: string; model?: string; digest?: string; size?: number; remote_host?: string; remote_model?: string }> }
   try {
     const res = await call(fetchImpl, `${input.baseUrl}/api/tags`, undefined, input.timeoutMs ?? 4_000)
     if (!res.ok) return { ollama: "offline" }
@@ -186,13 +197,15 @@ export async function localModelStatus(input: {
     return { ollama: "offline" }
   }
   const found = (tags.models ?? []).find((m) => sameModel(String(m.name ?? m.model ?? ""), input.model))
-  if (!found) return { ollama: "online", installed: false }
+  // A cloud model is not "installed" as far as semantic search is concerned.
+  if (!found || isRemoteOllamaModel(found)) return { ollama: "online", installed: false }
   let capabilities: string[] = []
   let dimension: number | null = null
   try {
     const res = await call(fetchImpl, `${input.baseUrl}/api/show`, { model: input.model }, input.timeoutMs ?? 4_000)
     if (res.ok) {
-      const show = (await res.json()) as { capabilities?: unknown; model_info?: Record<string, unknown> }
+      const show = (await res.json()) as { capabilities?: unknown; model_info?: Record<string, unknown>; remote_host?: unknown; remote_model?: unknown }
+      if (isRemoteOllamaModel({ name: input.model, ...show })) return { ollama: "online", installed: false }
       capabilities = Array.isArray(show.capabilities) ? show.capabilities.map(String) : []
       const dim = Object.entries(show.model_info ?? {}).find(([k]) => k.endsWith(".embedding_length"))?.[1]
       dimension = typeof dim === "number" ? dim : null
@@ -225,8 +238,8 @@ export async function findLocalVisionModel(input: {
   try {
     const res = await call(fetchImpl, `${input.baseUrl}/api/tags`, undefined, 4_000)
     if (!res.ok) return null
-    const tags = (await res.json()) as { models?: Array<{ name?: string }> }
-    names = (tags.models ?? []).map((m) => String(m.name ?? "")).filter(Boolean)
+    const tags = (await res.json()) as { models?: Array<{ name?: string; remote_host?: string; remote_model?: string }> }
+    names = (tags.models ?? []).filter((m) => !isRemoteOllamaModel(m)).map((m) => String(m.name ?? "")).filter(Boolean)
   } catch {
     return null
   }
@@ -236,7 +249,8 @@ export async function findLocalVisionModel(input: {
     try {
       const res = await call(fetchImpl, `${input.baseUrl}/api/show`, { model: name }, 4_000)
       if (!res.ok) continue
-      const show = (await res.json()) as { capabilities?: unknown }
+      const show = (await res.json()) as { capabilities?: unknown; remote_host?: unknown; remote_model?: unknown }
+      if (isRemoteOllamaModel({ name, ...show })) continue
       if (Array.isArray(show.capabilities) && show.capabilities.includes("vision")) return name
     } catch {
       /* next */
@@ -284,7 +298,9 @@ export async function captionImageLocally(input: {
       keep_alive: "2m",
       // A thread cap keeps captioning from taking every core of a server that
       // also runs Arciin (and answers search queries meanwhile).
-      options: { temperature: 0.1, num_predict: 120, num_thread: semanticCaptionThreads() },
+      // A fixed seed: the same picture gets the same caption, so a rebuild
+      // does not quietly change what a file can be found by.
+      options: { temperature: 0.1, seed: 42, num_predict: 120, num_thread: semanticCaptionThreads() },
       messages: [{ role: "user", content: CAPTION_PROMPT, images: [input.imageBase64] }],
     },
     // A CPU-only host takes ~40 s per 256px caption; leave generous room.

@@ -24,6 +24,8 @@ import {
   SemanticOllamaError,
   captionImageLocally,
   embedTexts,
+  findLocalVisionModel,
+  isRemoteOllamaModel,
   localModelStatus,
   semanticFingerprint,
   semanticOllamaBaseUrl,
@@ -317,6 +319,30 @@ describe("embedding client", () => {
     expect(status).toMatchObject({ ollama: "online", installed: true, model: { digest: "abc123", sizeBytes: 274_000_000, dimension: 768 } })
     expect(await localModelStatus({ baseUrl: LOCAL, model: "nomic-embed-text", fetchImpl: fakeOllama({ tags: ["llama3:latest"] }).fetchImpl })).toEqual({ ollama: "online", installed: false })
     expect(await localModelStatus({ baseUrl: LOCAL, model: "nomic-embed-text", fetchImpl: fakeOllama({ throwOnFetch: new Error("x") }).fetchImpl })).toEqual({ ollama: "offline" })
+  })
+
+  it("never picks an Ollama cloud model, even when it is installed and preferred", async () => {
+    // Listed by the local Ollama, but served from ollama.com: images and text
+    // would leave the machine.
+    const models = [
+      { name: "qwen3-vl:235b-cloud", remote_host: "https://ollama.com:443", remote_model: "qwen3-vl:235b" },
+      { name: "gemma3:cloud" },
+      { name: "nomic-embed-text:latest", digest: "abc", size: 1, remote_host: "https://ollama.com:443" },
+      { name: "qwen3.5:0.8b", digest: "q", size: 1 },
+    ]
+    const fetchImpl = async (url: string, init?: RequestInit) => {
+      if (url.endsWith("/api/tags")) return Response.json({ models })
+      const { model } = JSON.parse(String(init?.body)) as { model: string }
+      const entry = models.find((m) => m.name === model)
+      return Response.json({ capabilities: ["completion", "vision"], ...(entry?.remote_host ? { remote_host: entry.remote_host } : {}) })
+    }
+    expect(isRemoteOllamaModel({ name: "gemma3:cloud" })).toBe(true)
+    expect(isRemoteOllamaModel({ name: "qwen3.5:0.8b" })).toBe(false)
+    expect(await findLocalVisionModel({ baseUrl: LOCAL, preferred: "qwen3-vl:235b-cloud", fetchImpl: fetchImpl as never })).toBe("qwen3.5:0.8b")
+    expect(await localModelStatus({ baseUrl: LOCAL, model: "nomic-embed-text", fetchImpl: fetchImpl as never })).toEqual({ ollama: "online", installed: false })
+    // With only cloud models, there is simply no vision model.
+    models.splice(3, 1)
+    expect(await findLocalVisionModel({ baseUrl: LOCAL, fetchImpl: fetchImpl as never })).toBeNull()
   })
 
   it("captions are single, trimmed, bounded, and free of thinking tags", async () => {
