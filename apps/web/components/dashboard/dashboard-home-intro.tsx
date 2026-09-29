@@ -8,7 +8,7 @@ import { useQuery } from "@tanstack/react-query"
 import { PlanBadge } from "@/components/license/plan-badge"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useAuth } from "@/hooks/use-auth"
-import { fetchHealth } from "@/lib/api/health"
+import { fetchPublicHealth } from "@/lib/api/health"
 import { getGeneralSettings } from "@/lib/api/settings"
 import { queryKeys } from "@/lib/api/query-keys"
 import { useLicense } from "@/lib/license/use-license"
@@ -54,9 +54,11 @@ export function DashboardHomeIntro() {
     queryFn: ({ signal }) => getGeneralSettings(signal),
   })
 
+  // Only "can this page reach the server" — the public answer is enough, and
+  // every role may read it. The breakdown is the System card's business.
   const healthQuery = useQuery({
-    queryKey: ["health"],
-    queryFn: ({ signal }) => fetchHealth(signal),
+    queryKey: queryKeys.healthPublic,
+    queryFn: ({ signal }) => fetchPublicHealth(signal),
     refetchInterval: 30_000,
   })
 

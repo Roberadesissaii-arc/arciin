@@ -31,6 +31,10 @@ export const queryKeys = {
   importInspection: (url: string) => ["imports", "inspect", url] as const,
   uploads: ["uploads"] as const,
   upload: (uploadId: string) => ["upload", uploadId] as const,
+  /** The public one-word answer: reachable, and "ok" or "degraded". */
+  healthPublic: ["health", "public"] as const,
+  /** The per-service breakdown, which only an owner or admin may read. */
+  healthDetails: ["health", "detailed"] as const,
   jobs: ["jobs"] as const,
   job: (jobId: string) => ["job", jobId] as const,
   licenseStatus: ["license", "status"] as const,
