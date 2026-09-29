@@ -115,7 +115,7 @@ const DIRECT_FILE_EXT: Record<string, { category: LinkContentCategory; library: 
   docx: { category: "document", library: "Documents" },
 }
 
-const VIDEO_FORMATS: LinkImportFormat[] = [
+export const VIDEO_FORMATS: LinkImportFormat[] = [
   {
     id: "video-mp4",
     label: "MP4 video",

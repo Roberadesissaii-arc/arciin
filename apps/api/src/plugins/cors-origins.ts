@@ -2,13 +2,14 @@ import { isSelfHostedLanHostname } from "@arciin/shared"
 
 import { apiConfig } from "@/config"
 import {
+  customOriginFromPublicUrl,
   evaluateCorsOrigin,
   normalizeOrigin,
   type CorsDecisionContext,
 } from "@/plugins/cors-policy"
 import { getCloudflareTunnelState } from "@/services/remote-access/cloudflare-tunnel"
 
-export { evaluateCorsOrigin, normalizeOrigin, type CorsDecisionContext }
+export { customOriginFromPublicUrl, evaluateCorsOrigin, normalizeOrigin, type CorsDecisionContext }
 
 /**
  * Which browser origins may make credentialed requests to this API.
@@ -87,6 +88,29 @@ export function isActiveTunnelOrigin(origin: string): boolean {
   return normalizeOrigin(state.url) === candidate
 }
 
+/**
+ * The owner's custom public domain, as an exact origin — or null.
+ *
+ * Held in memory so the CORS check stays synchronous and never queries Postgres
+ * per request. services/remote-access/custom-public-origin.ts is the only
+ * writer: it loads InstanceConfig.publicUrl at startup and replaces this value
+ * right after Settings → Domain saves a new one, so the stored setting and the
+ * trusted origin cannot disagree for longer than that one write.
+ */
+let trustedCustomPublicOrigin: string | null = null
+
+export function setTrustedCustomPublicOrigin(origin: string | null): void {
+  trustedCustomPublicOrigin = origin ? normalizeOrigin(origin) : null
+}
+
+export function getTrustedCustomPublicOrigin(): string | null {
+  return trustedCustomPublicOrigin
+}
+
+/**
+ * The one answer to "may this browser origin make credentialed requests?" —
+ * used by Fastify CORS, the SSE chat stream and Socket.IO alike.
+ */
 export function isCorsOriginAllowed(origin: string | undefined): boolean {
   const state = getCloudflareTunnelState()
   return evaluateCorsOrigin(origin, {
@@ -94,6 +118,7 @@ export function isCorsOriginAllowed(origin: string | undefined): boolean {
     configuredOrigins,
     activeTunnelOrigin:
       state.running && state.url ? normalizeOrigin(state.url) : null,
+    customPublicOrigin: trustedCustomPublicOrigin,
     selfHostedInstance: isSelfHostedInstance(),
     isProduction: apiConfig.isProduction,
   })

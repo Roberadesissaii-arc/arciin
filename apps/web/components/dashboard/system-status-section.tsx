@@ -6,7 +6,13 @@ import { useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { ArrowUpRight, Database } from "lucide-react"
 
-import { fetchHealth } from "@/lib/api/health"
+import {
+  describePublicSystemStatus,
+  describeSystemStatus,
+  SYSTEM_SERVICES,
+} from "@/components/dashboard/system-status"
+import { useAuth } from "@/hooks/use-auth"
+import { canViewHealthDetails, fetchHealthDetails, fetchPublicHealth } from "@/lib/api/health"
 import { listAppDatabases } from "@/lib/api/app-databases"
 import { getJobs, getStorageSettings } from "@/lib/api/settings"
 import { queryKeys } from "@/lib/api/query-keys"
@@ -20,15 +26,6 @@ import {
 import { Skeleton } from "@/components/ui/skeleton"
 import { formatBytes } from "@/lib/utils/format-bytes"
 import { cn } from "@/lib/utils"
-import type { HealthStatus } from "@/lib/types/models"
-
-const SERVICES: Array<keyof Omit<HealthStatus, "version" | "timestamp" | "status">> = [
-  "api",
-  "database",
-  "redis",
-  "worker",
-  "storage",
-]
 
 const SERVICE_LABELS: Record<string, string> = {
   api: "API",
@@ -48,11 +45,23 @@ const SERVICE_DESCRIPTIONS: Record<string, string> = {
 
 /** System services strip — same card shell as storage, uploads, and activity. */
 export function SystemStatusSection({ className }: { className?: string }) {
+  const authQuery = useAuth()
+  // The breakdown lives behind /health/detailed, which the API keeps to owners
+  // and admins. Members and viewers get the public one-word answer instead of
+  // a request that is certain to be refused.
+  const detailed = canViewHealthDetails(authQuery.data?.user.role)
+
   const healthQuery = useQuery({
-    queryKey: ["health"],
-    // Reads the body on 503 too, so a degraded instance still shows which
-    // service is down rather than collapsing into one generic error.
-    queryFn: ({ signal }) => fetchHealth(signal),
+    queryKey: queryKeys.healthDetails,
+    queryFn: ({ signal }) => fetchHealthDetails(signal),
+    enabled: detailed,
+    refetchInterval: 30_000,
+  })
+
+  const publicHealthQuery = useQuery({
+    queryKey: queryKeys.healthPublic,
+    queryFn: ({ signal }) => fetchPublicHealth(signal),
+    enabled: authQuery.isSuccess && !detailed,
     refetchInterval: 30_000,
   })
 
@@ -73,10 +82,7 @@ export function SystemStatusSection({ className }: { className?: string }) {
 
   const librariesQuery = useLibraries()
 
-  const health = healthQuery.data
-  const onlineCount = health
-    ? SERVICES.filter((s) => health[s] === "online").length
-    : null
+  const health = detailed ? healthQuery.data : undefined
 
   const totalAssets = useMemo(
     () => (librariesQuery.data ?? []).reduce((sum, lib) => sum + (lib.assetCount ?? 0), 0),
@@ -112,12 +118,19 @@ export function SystemStatusSection({ className }: { className?: string }) {
       : "…",
   }
 
-  const description =
-    onlineCount == null
-      ? "Checking services…"
-      : onlineCount === SERVICES.length
-        ? "All services responding on this host."
-        : `${onlineCount} of ${SERVICES.length} services online.`
+  const description = authQuery.isPending
+    ? describeSystemStatus({ isPending: true, isError: false, health: undefined })
+    : detailed
+      ? describeSystemStatus({
+          isPending: healthQuery.isPending,
+          isError: healthQuery.isError,
+          health,
+        })
+      : describePublicSystemStatus({
+          isPending: publicHealthQuery.isPending,
+          isError: authQuery.isError || publicHealthQuery.isError,
+          health: publicHealthQuery.data,
+        })
 
   return (
     <Card
@@ -138,8 +151,8 @@ export function SystemStatusSection({ className }: { className?: string }) {
 
       <CardContent className="px-4 py-4 sm:px-5">
         <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
-          {SERVICES.map((service) => {
-            if (healthQuery.isLoading) {
+          {(authQuery.isPending || detailed ? SYSTEM_SERVICES : []).map((service) => {
+            if (authQuery.isPending || (healthQuery.isPending && !healthQuery.isError)) {
               return <Skeleton key={service} className="h-[11.5rem] rounded-2xl" />
             }
 

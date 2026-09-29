@@ -444,6 +444,10 @@ export function DomainPanel() {
                   </Button>
                 ) : null}
               </div>
+              <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground" data-testid="custom-domain-hint">
+                A domain you save here (for example https://files.example.com) becomes the address you sign
+                in through from outside. A public domain needs two-factor authentication on the owner account.
+              </p>
               <div className="mt-3 flex flex-wrap gap-2">
                 <Button
                   size="sm"

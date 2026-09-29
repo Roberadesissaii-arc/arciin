@@ -34,6 +34,7 @@ import {
   runResumableUpload,
   type FileMeta,
 } from "@/lib/uploads/resumable-upload"
+import { TransferRate, formatTimeRemaining } from "@/lib/uploads/transfer-rate"
 import { formatBytes } from "@/lib/utils/format-bytes"
 import { cn } from "@/lib/utils"
 
@@ -62,8 +63,10 @@ type QueuedFile = {
   file: File
   status: ItemStatus
   uploadedBytes: number
-  /** Bytes per second, smoothed. */
+  /** Bytes per second over the trailing window; null while measuring. */
   speed: number | null
+  /** Seconds left for this file; null while measuring or when nothing is moving. */
+  eta?: number | null
   error?: string
   uploadId?: string
 }
@@ -88,12 +91,34 @@ function metaOf(file: File): FileMeta {
   }
 }
 
-function formatDuration(seconds: number): string {
-  if (!Number.isFinite(seconds) || seconds <= 0) return ""
-  if (seconds < 60) return `${Math.ceil(seconds)}s left`
-  const minutes = Math.round(seconds / 60)
-  if (minutes < 60) return `${minutes} min left`
-  return `${Math.floor(minutes / 60)} h ${minutes % 60} min left`
+const IN_FLIGHT: ItemStatus[] = ["uploading", "reconnecting", "verifying"]
+
+/** One file's measurement. `origin` is where it stood when this page first sent it; `startOffset` where the current attempt began. */
+type FileRate = { rate: TransferRate; origin: number; startOffset: number; confirmed: number; rebase: boolean }
+/** How often speed and time left are re-measured. */
+const RATE_TICK_MS = 1000
+
+/** "1.42 GB / 3.00 GB · 47% · 11.8 MB/s · about 2 min left" */
+function progressLabel(input: {
+  uploadedBytes: number
+  totalBytes: number
+  speed: number | null
+  eta: number | null
+  showEta: boolean
+}): string {
+  const fraction = input.totalBytes > 0 ? input.uploadedBytes / input.totalBytes : 1
+  const parts = [
+    `${formatBytes(input.uploadedBytes)} / ${formatBytes(input.totalBytes)}`,
+    `${Math.min(100, Math.floor(fraction * 100))}%`,
+  ]
+  if (input.speed == null) parts.push("measuring speed…")
+  else if (input.speed === 0) parts.push("waiting for the network…")
+  else {
+    parts.push(`${formatBytes(input.speed)}/s`)
+    const left = input.showEta ? formatTimeRemaining(input.eta) : null
+    if (left) parts.push(left)
+  }
+  return parts.join(" · ")
 }
 
 function newId() {
@@ -137,6 +162,13 @@ export function PublicFileRequestPage({ token }: { token: string }) {
   // synced in an effect lagged one render behind: the last file still looked
   // "verifying" when the loop finished, and the submission was never closed.
   const queueRef = useRef<QueuedFile[]>([])
+  // Speed is measured per file and for the whole batch from server-confirmed
+  // bytes, re-evaluated on a clock so a stall shows (see transfer-rate.ts).
+  const ratesRef = useRef(new Map<string, FileRate>())
+  const batchRateRef = useRef(new TransferRate())
+  /** Batch bytes at the moment its measurement (re)started; null when not measuring. */
+  const batchBaseRef = useRef<{ base: number; last: number } | null>(null)
+  const [batch, setBatch] = useState<{ speed: number | null; eta: number | null }>({ speed: null, eta: null })
   const updateQueue = useCallback((change: (prev: QueuedFile[]) => QueuedFile[]) => {
     queueRef.current = change(queueRef.current)
     setQueue(queueRef.current)
@@ -187,6 +219,48 @@ export function PublicFileRequestPage({ token }: { token: string }) {
     },
     [request, updateQueue],
   )
+
+  const anyInFlight = queue.some((q) => IN_FLIGHT.includes(q.status))
+  useEffect(() => {
+    if (!anyInFlight) return
+    const batchRate = batchRateRef.current
+    const tick = () => {
+      const now = performance.now()
+      const estimates = new Map<string, { speed: number | null; eta: number | null }>()
+      for (const q of queueRef.current) {
+        if (q.status !== "uploading") continue
+        const m = ratesRef.current.get(q.id)
+        if (!m) continue
+        estimates.set(q.id, {
+          speed: m.rate.bytesPerSecond(now),
+          eta: m.rate.secondsRemaining(q.file.size - m.confirmed, now),
+        })
+      }
+      // The batch: everything still to send, including files waiting their turn,
+      // so the time left is for the whole drop rather than per parallel slot.
+      const remaining = queueRef.current
+        .filter((q) => q.status !== "cancelled" && q.status !== "error" && q.status !== "done")
+        .reduce((sum, q) => sum + q.file.size - (ratesRef.current.get(q.id)?.confirmed ?? 0), 0)
+      setBatch({ speed: batchRate.bytesPerSecond(now), eta: batchRate.secondsRemaining(remaining, now) })
+      if (estimates.size > 0) {
+        updateQueue((prev) =>
+          prev.map((q) => {
+            const e = estimates.get(q.id)
+            return e && (e.speed !== q.speed || e.eta !== q.eta) ? { ...q, ...e } : q
+          }),
+        )
+      }
+    }
+    tick()
+    const timer = window.setInterval(tick, RATE_TICK_MS)
+    return () => {
+      window.clearInterval(timer)
+      // A new batch measures from scratch.
+      batchRate.reset()
+      batchBaseRef.current = null
+      setBatch({ speed: null, eta: null })
+    }
+  }, [anyInFlight, updateQueue])
 
   useEffect(() => {
     const prevent = (event: DragEvent) => event.preventDefault()
@@ -258,6 +332,10 @@ export function PublicFileRequestPage({ token }: { token: string }) {
     ["uploading", "reconnecting", "verifying"].includes(q.status),
   )
   const canSubmit = pending.length > 0 && !submitting
+  const batchItems = queue.filter((q) => q.status !== "cancelled" && q.status !== "error")
+  const showBatch = batchItems.length > 1 && active.length > 0
+  const batchSent = batchItems.reduce((sum, q) => sum + q.uploadedBytes, 0)
+  const batchTotal = batchItems.reduce((sum, q) => sum + q.file.size, 0)
   const maximumUploadBytes = request.upload?.maximumUploadBytes ?? request.maxFileSizeBytes
 
   const patch = (id: string, change: Partial<QueuedFile>) =>
@@ -269,10 +347,24 @@ export function PublicFileRequestPage({ token }: { token: string }) {
     controllersRef.current.set(item.id, controller)
     const meta = metaOf(item.file)
     const fingerprint = fileFingerprint(token, meta)
-    let lastBytes = item.uploadedBytes
-    let lastAt = performance.now()
+    // A fresh measurement for every attempt: time spent paused or waiting to
+    // reconnect is not transfer time.
+    const existing = ratesRef.current.get(item.id)
+    if (existing) existing.rebase = true
+    const confirmBatch = (now: number) => {
+      // Bytes confirmed during this run, across every file.
+      const sum = [...ratesRef.current.values()].reduce((acc, m) => acc + Math.max(0, m.confirmed - m.origin), 0)
+      const b = batchBaseRef.current
+      if (!b || sum < b.last) {
+        batchBaseRef.current = { base: sum, last: sum }
+        batchRateRef.current.begin(now)
+        return
+      }
+      b.last = sum
+      batchRateRef.current.record(sum - b.base, now)
+    }
 
-    patch(item.id, { status: "uploading", error: undefined })
+    patch(item.id, { status: "uploading", error: undefined, speed: null, eta: null })
     try {
       const result = await runResumableUpload({
         file: item.file,
@@ -292,27 +384,37 @@ export function PublicFileRequestPage({ token }: { token: string }) {
           patch(item.id, { uploadId: session.uploadId, uploadedBytes: session.uploadedBytes })
         },
         onState: (state) => {
-          if (state === "reconnecting") patch(item.id, { status: "reconnecting" })
-          else if (state === "uploading") patch(item.id, { status: "uploading" })
+          if (state === "reconnecting") {
+            // Measure again from wherever the server says it is.
+            const m = ratesRef.current.get(item.id)
+            if (m) m.rebase = true
+            patch(item.id, { status: "reconnecting", speed: null, eta: null })
+          } else if (state === "uploading" && queueRef.current.find((q) => q.id === item.id)?.status !== "uploading")
+            patch(item.id, { status: "uploading" })
           else if (state === "verifying") patch(item.id, { status: "verifying" })
         },
-        onProgress: (bytes) => {
+        onProgress: (bytes) => patch(item.id, { uploadedBytes: bytes }),
+        onConfirmed: (bytes) => {
           const now = performance.now()
-          const elapsed = (now - lastAt) / 1000
-          if (elapsed >= 0.5) {
-            const instant = Math.max(0, bytes - lastBytes) / elapsed
-            lastBytes = bytes
-            lastAt = now
-            updateQueue((prev) =>
-              prev.map((q) =>
-                q.id === item.id
-                  ? { ...q, uploadedBytes: bytes, speed: q.speed == null ? instant : q.speed * 0.7 + instant * 0.3 }
-                  : q,
-              ),
-            )
+          const m = ratesRef.current.get(item.id)
+          if (!m) {
+            // Bytes already on the server when this file started were not
+            // sent now and must not count as speed.
+            const rate = new TransferRate()
+            rate.begin(now)
+            ratesRef.current.set(item.id, { rate, origin: bytes, startOffset: bytes, confirmed: bytes, rebase: false })
+          } else if (m.rebase || bytes < m.startOffset) {
+            m.rate = new TransferRate()
+            m.rate.begin(now)
+            m.startOffset = bytes
+            m.origin = Math.min(m.origin, bytes)
+            m.confirmed = bytes
+            m.rebase = false
           } else {
-            patch(item.id, { uploadedBytes: bytes })
+            m.confirmed = bytes
+            m.rate.record(bytes - m.startOffset, now)
           }
+          confirmBatch(now)
         },
       })
       // Later files join this submission, so the owner is told once per drop.
@@ -595,14 +697,24 @@ export function PublicFileRequestPage({ token }: { token: string }) {
         />
       </div>
 
+      {showBatch ? (
+        <p
+          className="mt-4 text-[11px] tabular-nums text-muted-foreground"
+          data-testid="file-request-batch"
+          aria-live="polite"
+        >
+          {`${batchItems.length} files · `}
+          {progressLabel({ uploadedBytes: batchSent, totalBytes: batchTotal, speed: batch.speed, eta: batch.eta, showEta: true })}
+        </p>
+      ) : null}
+
       {queue.length > 0 ? (
         <ul className="mt-4 space-y-2" data-testid="file-request-queue">
           {queue.map((item) => {
             const fraction = item.file.size > 0 ? item.uploadedBytes / item.file.size : 1
             const percent = Math.min(100, Math.floor(fraction * 100))
-            const inFlight = ["uploading", "reconnecting", "verifying"].includes(item.status)
+            const inFlight = IN_FLIGHT.includes(item.status)
             const showBar = inFlight || item.status === "paused" || item.status === "stalled"
-            const remaining = item.speed && item.speed > 0 ? (item.file.size - item.uploadedBytes) / item.speed : NaN
             const label =
               item.status === "error"
                 ? item.error
@@ -613,21 +725,23 @@ export function PublicFileRequestPage({ token }: { token: string }) {
                     : item.status === "pending"
                       ? formatBytes(item.file.size)
                       : item.status === "reconnecting"
-                        ? "Connection interrupted. Retrying…"
+                        ? `Connection interrupted. Retrying from ${formatBytes(item.uploadedBytes)}…`
                         : item.status === "verifying"
                           ? "Verifying…"
                           : item.status === "paused"
                             ? `Paused · ${formatBytes(item.uploadedBytes)} / ${formatBytes(item.file.size)}`
                             : item.status === "stalled"
                               ? item.error
-                              : [
-                                  `${formatBytes(item.uploadedBytes)} / ${formatBytes(item.file.size)}`,
-                                  `${percent}%`,
-                                  item.speed ? `${formatBytes(item.speed)}/s` : null,
-                                  formatDuration(remaining) || null,
-                                ]
-                                  .filter(Boolean)
-                                  .join(" · ")
+                              : progressLabel({
+                                  uploadedBytes: item.uploadedBytes,
+                                  totalBytes: item.file.size,
+                                  speed: item.speed,
+                                  eta: item.eta ?? null,
+                                  // Parallel files share one uplink: a per-file
+                                  // time would be for its share only. The batch
+                                  // line below gives the honest total instead.
+                                  showEta: !showBatch,
+                                })
             return (
               <li
                 key={item.id}

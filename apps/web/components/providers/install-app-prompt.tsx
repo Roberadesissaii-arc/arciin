@@ -1,61 +1,41 @@
 "use client"
 
 import Image from "next/image"
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { Download, X } from "lucide-react"
 
-type BeforeInstallPromptEvent = Event & {
-  prompt: () => Promise<void>
-  userChoice: Promise<{ outcome: "accepted" | "dismissed" }>
-}
-
-const DISMISS_KEY = "arciin.install-dismissed"
-
-function isStandalone(): boolean {
-  if (typeof window === "undefined") return false
-  return (
-    window.matchMedia?.("(display-mode: standalone)").matches ||
-    // iOS Safari
-    (window.navigator as unknown as { standalone?: boolean }).standalone === true
-  )
-}
+import {
+  createInstallPromptController,
+  HIDDEN_INSTALL_PROMPT,
+  persistInstallPromptDismissal,
+  type InstallPromptController,
+  type InstallPromptState,
+} from "@/lib/pwa/install-prompt"
 
 export function InstallAppPrompt() {
-  const [deferred, setDeferred] = useState<BeforeInstallPromptEvent | null>(null)
-  const [visible, setVisible] = useState(false)
+  const [{ visible, deferred }, setPrompt] = useState<InstallPromptState>(HIDDEN_INSTALL_PROMPT)
   const [installing, setInstalling] = useState(false)
+  const controllerRef = useRef<InstallPromptController | null>(null)
 
   useEffect(() => {
-    if (isStandalone()) return
-    if (localStorage.getItem(DISMISS_KEY) === "1") return
+    // Dismissal is checked by the controller each time the browser offers an
+    // install, not once here: this component stays mounted across navigation
+    // and Chrome fires the event again (see lib/pwa/install-prompt.ts).
+    const controller = createInstallPromptController({ onChange: setPrompt })
+    controllerRef.current = controller
 
-    function onBeforeInstall(event: Event) {
-      // Prevent the mini-infobar so we can show our own, on-brand prompt.
-      event.preventDefault()
-      setDeferred(event as BeforeInstallPromptEvent)
-      setVisible(true)
-    }
-
-    function onInstalled() {
-      setVisible(false)
-      setDeferred(null)
-    }
-
-    window.addEventListener("beforeinstallprompt", onBeforeInstall)
-    window.addEventListener("appinstalled", onInstalled)
+    window.addEventListener("beforeinstallprompt", controller.handleBeforeInstall)
+    window.addEventListener("appinstalled", controller.handleInstalled)
     return () => {
-      window.removeEventListener("beforeinstallprompt", onBeforeInstall)
-      window.removeEventListener("appinstalled", onInstalled)
+      window.removeEventListener("beforeinstallprompt", controller.handleBeforeInstall)
+      window.removeEventListener("appinstalled", controller.handleInstalled)
+      controllerRef.current = null
     }
   }, [])
 
   function dismiss() {
-    setVisible(false)
-    try {
-      localStorage.setItem(DISMISS_KEY, "1")
-    } catch {
-      // ignore storage failures (private mode, etc.)
-    }
+    // The prompt only becomes visible through the controller, so it is set.
+    controllerRef.current?.dismiss()
   }
 
   async function install() {
@@ -64,16 +44,9 @@ export function InstallAppPrompt() {
     try {
       await deferred.prompt()
       const choice = await deferred.userChoice
-      setDeferred(null)
-      setVisible(false)
-      if (choice.outcome === "dismissed") {
-        // They closed the native dialog — don't nag again this session.
-        try {
-          localStorage.setItem(DISMISS_KEY, "1")
-        } catch {
-          // ignore
-        }
-      }
+      setPrompt(HIDDEN_INSTALL_PROMPT)
+      // They closed the native dialog — that is a "not now" too.
+      if (choice.outcome === "dismissed") persistInstallPromptDismissal()
     } finally {
       setInstalling(false)
     }

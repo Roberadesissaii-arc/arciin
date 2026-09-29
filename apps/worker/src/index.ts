@@ -25,8 +25,11 @@ import {
 import { maybeRunScheduledStage } from "@/services/auto-update"
 import { handleImportUrl } from "@/services/url-import"
 import { startSemanticIndexing } from "@/services/semantic-worker"
+import { inspectLink } from "@/services/url-inspect"
 
 const redisUrl = new URL(workerConfig.REDIS_URL)
+/** An inspection that has not answered by now is abandoned; the API stops waiting a little later. */
+const INSPECT_DEADLINE_MS = 30_000
 
 const connection = {
   host: redisUrl.hostname,
@@ -120,6 +123,24 @@ async function start() {
     }
   )
 
+  // Link inspection answers a person waiting on the import sheet, so it has
+  // its own queue and a hard deadline. It reads metadata only.
+  const inspectWorker = new Worker(
+    JOB_QUEUE_NAMES.inspect,
+    async (job) => {
+      let timer: NodeJS.Timeout | undefined
+      const deadline = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error("Inspecting the link took too long.")), INSPECT_DEADLINE_MS)
+      })
+      try {
+        return await Promise.race([inspectLink(String(job.data.url)), deadline])
+      } finally {
+        clearTimeout(timer)
+      }
+    },
+    { connection, concurrency: 2, prefix: workerConfig.queuePrefix },
+  )
+
   const storageWorker = new Worker(
     JOB_QUEUE_NAMES.storage,
     async (job) => {
@@ -196,6 +217,7 @@ async function start() {
       semantic.close(),
       mediaWorker.close(),
       storageWorker.close(),
+      inspectWorker.close(),
       integrationsWorker.close(),
       storageQueueForSchedules.close(),
       redis.quit(),

@@ -35,6 +35,32 @@ export function resolveSessionLifetimeMs(env: NodeJS.ProcessEnv = process.env): 
   return hours * 60 * 60 * 1000
 }
 
+/**
+ * However long an upload keeps making progress, it ends this long after it
+ * started. The upper bound ARCIIN_UPLOAD_SESSION_HOURS accepts.
+ */
+export const MAX_SESSION_TOTAL_MS = 168 * 60 * 60 * 1000
+
+/**
+ * The expiry after a chunk is accepted.
+ *
+ * The session lifetime is an *inactivity* limit, not a deadline for the whole
+ * transfer: a 3.9 GB upload over a ~5 Mbps uplink was lost at 68% when it hit
+ * a fixed 24 h expiry while bytes were still arriving. Each accepted chunk now
+ * pushes the expiry out to a full lifetime from now — never shortening it, and
+ * never past MAX_SESSION_TOTAL_MS from the start, so every session still ends.
+ */
+export function extendedExpiry(input: {
+  createdAt: Date
+  expiresAt: Date
+  now: number
+  lifetimeMs: number
+}): Date {
+  const cap = input.createdAt.getTime() + MAX_SESSION_TOTAL_MS
+  const wanted = Math.min(cap, input.now + input.lifetimeMs)
+  return new Date(Math.max(input.expiresAt.getTime(), wanted))
+}
+
 /** Open resumable sessions allowed at once — per request, and per submitter within it. */
 export const MAX_ACTIVE_SESSIONS_PER_REQUEST = 6
 export const MAX_ACTIVE_SESSIONS_PER_SUBMITTER = 3

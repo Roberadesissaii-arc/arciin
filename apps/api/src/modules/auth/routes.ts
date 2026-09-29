@@ -68,6 +68,7 @@ import {
 import { loadUserPreferences } from "@/services/user/preferences"
 import { mediaQueue } from "@/services/jobs/queues"
 import { queueDocumentThumbnailBackfill } from "@/services/media/thumbnail-jobs"
+import { refreshTrustedCustomPublicOrigin } from "@/services/remote-access/custom-public-origin"
 
 const MAX_AVATAR_BYTES = 10 * 1024 * 1024
 
@@ -541,6 +542,8 @@ export async function registerAuthRoutes(fastify: FastifyInstance) {
         data: codes.map((code) => ({ userId: user.id, codeHash: hashRecoveryCode(code) })),
       }),
     ])
+    // A public custom domain is trusted only once the owner has a second factor.
+    await refreshTrustedCustomPublicOrigin(fastify.prisma, fastify.log)
 
     await recordSecurityEvent(fastify, {
       userId: user.id,
@@ -612,6 +615,8 @@ export async function registerAuthRoutes(fastify: FastifyInstance) {
       }),
       fastify.prisma.mfaRecoveryCode.deleteMany({ where: { userId: user.id } }),
     ])
+    // Removing the owner's second factor withdraws trust from a public custom domain at once.
+    await refreshTrustedCustomPublicOrigin(fastify.prisma, fastify.log)
 
     await recordSecurityEvent(fastify, {
       userId: user.id,
