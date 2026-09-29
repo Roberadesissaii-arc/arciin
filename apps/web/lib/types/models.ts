@@ -243,6 +243,8 @@ export type AssetAiSummary = {
 
 export type AssetSummary = {
   id: string
+  /** Set on search results found by meaning (local semantic search) rather than by name. */
+  searchMatch?: { kind: string; label: string | null } | null
   libraryId: string
   folderId?: string | null
   storageObjectId: string

@@ -50,7 +50,7 @@ export function ConfirmDestructiveButton({
   disabled?: boolean
   children: ReactNode
   size?: "sm" | "default" | "icon" | "icon-sm"
-  variant?: "destructive" | "outline" | "ghost"
+  variant?: "destructive" | "outline" | "ghost" | "default"
   className?: string
   "aria-label"?: string
   "data-testid"?: string
@@ -82,7 +82,8 @@ export function ConfirmDestructiveButton({
         <AlertDialogFooter>
           <AlertDialogCancel disabled={busy}>Cancel</AlertDialogCancel>
           <AlertDialogAction
-            variant="destructive"
+            // A non-destructive confirmation (installing something) is not red.
+            variant={variant === "default" ? "default" : "destructive"}
             disabled={busy}
             data-testid={testId ? `${testId}-confirm` : undefined}
             onClick={async (event) => {

@@ -9,6 +9,7 @@ import {
   assetSupportsDocumentThumbnail,
   DEFAULT_USER_PREFERENCES,
   resolveInlineContentType,
+  SEMANTIC_MAX_RESULTS,
 } from "@arciin/shared"
 import { resolveArciinStorageRoot } from "@arciin/storage"
 
@@ -24,6 +25,7 @@ import {
 import { checkEndpointRateLimit } from "@/services/security/endpoint-rate-limit"
 import { resolveHiddenFromAllFilesFolderIds } from "@/services/folders/hidden-from-all-files"
 import { buildVisibleAssetWhere } from "@/services/libraries/visible-assets"
+import { semanticSearchFor, withSearchMatches, withSemanticMatches } from "@/services/search/hybrid-search"
 import {
   computerLibraryIds,
   computerOwnerRestriction,
@@ -269,7 +271,22 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
             ).map((l) => l.id)
           : []
 
-      const assets = await fastify.prisma.asset.findMany({
+      const listFilters = {
+        scope: await resolveSmartLibraryScope(fastify.prisma, query),
+        hiddenFolderIds,
+        excludeLibraryIds,
+        computerLibraryIds: await computerLibraryIds(fastify.prisma),
+        restrictComputerOwnerId: request.auth ? computerOwnerRestriction(request.auth.user) : null,
+        mediaType: query.mediaType,
+        category: query.category,
+        archived: archivedMode,
+      }
+      // Meaning is looked up while the keyword query runs.
+      const semanticSearch = query.search?.trim() && !idList?.length
+        ? semanticSearchFor(fastify.prisma).candidates(query.search)
+        : null
+
+      let assets = await fastify.prisma.asset.findMany({
         where: idList?.length
           ? {
               deletedAt: null,
@@ -280,19 +297,7 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
                   ? { archivedAt: null }
                   : {}),
             }
-          : buildVisibleAssetWhere({
-              scope: await resolveSmartLibraryScope(fastify.prisma, query),
-              hiddenFolderIds,
-              excludeLibraryIds,
-              computerLibraryIds: await computerLibraryIds(fastify.prisma),
-              restrictComputerOwnerId: request.auth
-                ? computerOwnerRestriction(request.auth.user)
-                : null,
-              mediaType: query.mediaType,
-              category: query.category,
-              search: query.search,
-              archived: archivedMode,
-            }),
+          : buildVisibleAssetWhere({ ...listFilters, search: query.search }),
         orderBy: {
           createdAt: "desc",
         },
@@ -303,15 +308,34 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
         take: query.category ? 500 : ASSET_LIST_LIMIT,
       })
 
+      let searchMatches = new Map<string, unknown>()
+      if (semanticSearch && query.search) {
+        const hybrid = await withSemanticMatches({
+          prisma: fastify.prisma,
+          query: query.search,
+          literalRows: assets,
+          visibleWhere: buildVisibleAssetWhere(listFilters),
+          load: (where) => fastify.prisma.asset.findMany({ where }),
+          limit: SEMANTIC_MAX_RESULTS,
+          candidates: semanticSearch,
+        })
+        assets = hybrid.rows
+        searchMatches = new Map(hybrid.rows.filter((r) => r.searchMatch).map((r) => [r.id, r.searchMatch]))
+        reply.header("x-arciin-semantic", hybrid.semantic)
+      }
+
       reply.send({
         // Batched for the whole page — a request per card would be two hundred
         // requests to draw two hundred badges.
-        data: withAiSummaries(
-          assets.map(serializeAsset),
-          await loadAiSummariesForPage(
-            fastify,
-            assets.map((a) => a.id),
+        data: withSearchMatches(
+          withAiSummaries(
+            assets.map(serializeAsset),
+            await loadAiSummariesForPage(
+              fastify,
+              assets.map((a) => a.id),
+            ),
           ),
+          searchMatches,
         ),
       })
     }
@@ -405,6 +429,12 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
       }
 
       const limit = clampPageSize(query.limit)
+      // The first page of a search also gets matches by meaning; later pages
+      // continue the keyword results (semantic ones are never repeated there,
+      // because they are exactly the assets the keyword query does not match).
+      const semanticSearch = query.search?.trim() && !query.cursor
+        ? semanticSearchFor(fastify.prisma).candidates(query.search)
+        : null
 
       const rows = await fastify.prisma.asset.findMany({
         where: buildVisibleAssetWhere({
@@ -417,23 +447,46 @@ export async function registerAssetRoutes(fastify: FastifyInstance) {
       })
 
       const page = buildAssetPage(rows, limit)
+      let items: Array<(typeof page.items)[number]> = page.items
+      let searchMatches = new Map<string, unknown>()
+      let semantic: string | undefined
+      let added = 0
+      if (semanticSearch && query.search) {
+        const hybrid = await withSemanticMatches({
+          prisma: fastify.prisma,
+          query: query.search,
+          literalRows: page.items,
+          visibleWhere: buildVisibleAssetWhere({ ...filters, search: undefined }),
+          load: (where) => fastify.prisma.asset.findMany({ where }),
+          limit,
+          candidates: semanticSearch,
+        })
+        items = hybrid.rows
+        added = hybrid.added
+        semantic = hybrid.semantic
+        searchMatches = new Map(hybrid.rows.filter((r) => r.searchMatch).map((r) => [r.id, r.searchMatch]))
+      }
 
       const total = query.withTotal
-        ? await fastify.prisma.asset.count({ where: buildVisibleAssetWhere(filters) })
+        ? (await fastify.prisma.asset.count({ where: buildVisibleAssetWhere(filters) })) + added
         : undefined
 
       reply.send({
         data: {
-          items: withAiSummaries(
-            page.items.map(serializeAsset),
-            await loadAiSummariesForPage(
-              fastify,
-              page.items.map((a) => a.id),
+          items: withSearchMatches(
+            withAiSummaries(
+              items.map(serializeAsset),
+              await loadAiSummariesForPage(
+                fastify,
+                items.map((a) => a.id),
+              ),
             ),
+            searchMatches,
           ),
           nextCursor: page.nextCursor,
           hasMore: page.hasMore,
           ...(total !== undefined ? { total } : {}),
+          ...(semantic ? { semantic } : {}),
         },
       })
     }

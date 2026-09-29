@@ -118,6 +118,8 @@ export const JOB_QUEUE_NAMES = {
   media: "media",
   storage: "storage",
   integrations: "integrations",
+  /** Local semantic indexing: one asset at a time, so captioning never crowds out the rest. */
+  semantic: "semantic",
   /** Link inspection: metadata only, short-lived, kept off the media queue so it never waits behind a transcode. */
   inspect: "inspect",
 } as const
@@ -145,4 +147,5 @@ export const JOB_TYPES = {
   applyUpdate: "apply_update",
   purgeExpiredTrash: "purge_expired_trash",
   transcribeMedia: "transcribe_media",
+  semanticIndex: "semantic_index",
 } as const
