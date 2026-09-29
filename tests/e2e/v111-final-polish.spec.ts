@@ -23,16 +23,31 @@ const DISMISS_KEY = "arciin.install-dismissed"
 const ROLE_FILE = "/tmp/arciin-e2e-role-users.json"
 const PAGES = ["/dashboard", "/files", "/images", "/activity", "/settings"] as const
 
+/**
+ * Fires the event until the prompt's listener has handled it.
+ *
+ * The listener is attached in an effect, so straight after a reload an event
+ * can land before it exists — and "the prompt stayed closed" would then prove
+ * nothing. The handler always calls preventDefault(), which makes
+ * `defaultPrevented` a reliable sign that it saw the event.
+ */
 async function fireInstallEvent(page: Page) {
-  await page.evaluate(() => {
-    const event = new Event("beforeinstallprompt", { cancelable: true }) as Event & {
-      prompt: () => Promise<void>
-      userChoice: Promise<{ outcome: string }>
-    }
-    event.prompt = async () => {}
-    event.userChoice = Promise.resolve({ outcome: "dismissed" })
-    window.dispatchEvent(event)
-  })
+  await expect
+    .poll(
+      () =>
+        page.evaluate(() => {
+          const event = new Event("beforeinstallprompt", { cancelable: true }) as Event & {
+            prompt: () => Promise<void>
+            userChoice: Promise<{ outcome: string }>
+          }
+          event.prompt = async () => {}
+          event.userChoice = Promise.resolve({ outcome: "dismissed" })
+          window.dispatchEvent(event)
+          return event.defaultPrevented
+        }),
+      { message: "the install prompt never attached its listener", timeout: 15_000 },
+    )
+    .toBe(true)
 }
 
 function installPrompt(page: Page) {
