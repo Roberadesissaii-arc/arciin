@@ -33,11 +33,13 @@ describe.skipIf(!LIVE)("live local Ollama", () => {
     const relevant: number[] = []
     const unrelated: number[] = []
     const queryMs: number[] = []
+    const queryVectors = new Map<string, Float32Array>()
     const lines: string[] = []
     for (const q of SEMANTIC_QUERIES) {
       t = performance.now()
       const [qv] = await embedTexts({ baseUrl: BASE, model: MODEL, texts: [q.query], kind: "query" })
       queryMs.push(performance.now() - t)
+      queryVectors.set(q.query, qv!)
       const scored = SEMANTIC_CORPUS.map((c, i) => ({ key: c.key, topic: c.topic, s: dot(qv!, docs[i]!) })).sort((a, b) => b.s - a.s)
       for (const s of scored) (q.topic && s.topic === q.topic ? relevant : unrelated).push(s.s)
       const top = scored[0]!
@@ -57,6 +59,34 @@ describe.skipIf(!LIVE)("live local Ollama", () => {
       const fp = unrelated.filter((x) => x >= th).length
       lines.push(`threshold ${th.toFixed(2)}: recall ${Math.round((100 * tp) / relevant.length)}% (${tp}/${relevant.length}) · false hits ${fp}/${unrelated.length}`)
     }
+    // Per query: false negatives (a right answer below the bar), false
+    // positives (a wrong one above it), and whether the top hit is right.
+    let falseNegatives = 0
+    let falsePositives = 0
+    let top1 = 0
+    let answerable = 0
+    for (const q of SEMANTIC_QUERIES) {
+      const qv = queryVectors.get(q.query)!
+      const scored = SEMANTIC_CORPUS.map((c, i) => ({ topic: c.topic, s: dot(qv, docs[i]!) })).sort((a, b) => b.s - a.s)
+      falsePositives += scored.filter((x) => x.topic !== q.topic && x.s >= SEMANTIC_MIN_SIMILARITY).length
+      if (!q.topic) continue
+      answerable++
+      falseNegatives += scored.filter((x) => x.topic === q.topic && x.s < SEMANTIC_MIN_SIMILARITY).length
+      if (scored[0]!.topic === q.topic && scored[0]!.s >= SEMANTIC_MIN_SIMILARITY) top1++
+    }
+    lines.push(`at ${SEMANTIC_MIN_SIMILARITY}: false negatives ${falseNegatives}/${relevant.length} · false positives ${falsePositives}/${unrelated.length} · top-1 correct ${top1}/${answerable}`)
+
+    // The IMG_0042 acceptance example, stated plainly.
+    const birthday = SEMANTIC_CORPUS.findIndex((c) => c.key === "IMG_0042")
+    const scoreOf = (query: string) => dot(queryVectors.get(query)!, docs[birthday]!)
+    for (const query of ["birthday party", "people blowing out candles"]) {
+      expect(scoreOf(query), query).toBeGreaterThanOrEqual(SEMANTIC_MIN_SIMILARITY)
+    }
+    for (const query of ["beach sunset", "graduation ceremony", "red car"]) {
+      expect(scoreOf(query), query).toBeLessThan(SEMANTIC_MIN_SIMILARITY)
+    }
+    lines.push(`IMG_0042: ${["birthday party", "people blowing out candles", "beach sunset", "graduation ceremony", "red car"].map((q) => `${q}=${scoreOf(q).toFixed(3)}`).join(" · ")}`)
+
     queryMs.sort((a, b) => a - b)
     lines.push(`document embed ${(docMs / texts.length).toFixed(1)} ms/item (batched ${texts.length}); query embed median ${at(queryMs, 0.5).toFixed(1)} ms`)
     console.log(lines.join("\n"))

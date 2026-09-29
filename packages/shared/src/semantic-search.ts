@@ -37,19 +37,24 @@ export const EMBED_QUERY_PREFIX = "search_query: "
 /**
  * Cosine similarity at or above which a semantic hit is shown at all, and at
  * or above which it counts as a strong match. Measured, not guessed: with
- * nomic-embed-text over the controlled corpus in tests/fixtures (18 assets, 16
- * queries, 288 query/asset pairs; tests/semantic-live-ollama.test.ts):
+ * nomic-embed-text over the controlled corpus in tests/fixtures (18 assets, 18
+ * queries, 324 query/asset pairs; tests/semantic-live-ollama.test.ts),
+ * re-run for v1.1.2 on the integrated code:
  *
- *   threshold  recall  false hits
- *   0.55        90%     7 / 267
- *   0.58        90%     3 / 267
- *   0.60        86%     2 / 267
- *   0.62        86%     0 / 267   ← chosen
- *   0.65        71%     0 / 267
+ *   threshold  recall        false hits
+ *   0.55        92% (23/25)   8 / 299
+ *   0.58        92% (23/25)   4 / 299
+ *   0.60        88% (22/25)   3 / 299
+ *   0.62        80% (20/25)   0 / 299   ← chosen
+ *   0.65        68% (17/25)   0 / 299
  *
- * Unrelated pairs peaked at 0.609 ("rental contract" vs an invoice); every
- * query's top result was the right one. Queries with no answer in the corpus
- * ("submarine", "tax return 1998") topped out at 0.55 and return nothing.
+ * The closest unrelated pair was 0.614 ("graduation ceremony" vs a wedding
+ * video), so anything lower starts showing wrong files. At 0.62 every
+ * answerable query's top result is right (15/15), and queries with no answer
+ * in the corpus ("submarine", "tax return 1998") top out at 0.55 and return
+ * nothing. IMG_0042 scores 0.79 for "birthday party" and 0.70 for "people
+ * blowing out candles"; "beach sunset", "graduation ceremony" and "red car"
+ * stay at 0.45–0.54.
  */
 export const SEMANTIC_MIN_SIMILARITY = 0.62
 export const SEMANTIC_STRONG_SIMILARITY = 0.7
