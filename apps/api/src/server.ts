@@ -6,6 +6,7 @@ import pino from "pino"
 
 import { apiConfig } from "@/config"
 import { registerAdminRoutes } from "@/modules/admin/routes"
+import { registerStorageAuditRoutes } from "@/modules/admin/storage-audit.routes"
 import { registerChatRoutes } from "@/modules/chat/routes"
 import { registerModelRoutes } from "@/modules/models/routes"
 import { registerActivityRoutes } from "@/modules/activity/routes"
@@ -38,6 +39,7 @@ import { registerFileRequestRoutes } from "@/modules/file-requests/routes"
 import { registerShareRoutes } from "@/modules/shares/routes"
 import { registerUploadRoutes } from "@/modules/uploads/routes"
 import { registerImportRoutes } from "@/modules/imports/routes"
+import { registerSemanticSearchRoutes } from "@/modules/semantic-search/routes"
 import { registerTrashRoutes } from "@/modules/trash/routes"
 import { registerWebhookRoutes } from "@/modules/webhooks/routes"
 import { registerLicenseRoutes } from "@/modules/license/routes"
@@ -266,7 +268,9 @@ export async function createServer() {
       await registerIntegrationRoutes(api)
       await registerAppDatabaseRoutes(api)
       await registerAdminRoutes(api)
+      await registerStorageAuditRoutes(api)
       await registerModelRoutes(api)
+      await registerSemanticSearchRoutes(api)
       await registerChatRoutes(api)
     },
     {

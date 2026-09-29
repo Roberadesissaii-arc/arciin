@@ -6,6 +6,7 @@ import { Database, Loader2 } from "lucide-react"
 import { DashboardPageIntro } from "@/components/app-shell/dashboard-page-intro"
 import { IntroCornerIcon } from "@/components/app-shell/intro-corner-icon"
 import { DatabaseHubGrid } from "@/components/database/database-hub-grid"
+import { StorageAuditCard } from "@/components/database/storage-audit-card"
 import { useLicense } from "@/lib/license/use-license"
 import {
   Empty,
@@ -68,6 +69,8 @@ export function DatabaseHubPage() {
           appDataPlanLabel={license.planLabel(appDataPlan)}
         />
       )}
+
+      <StorageAuditCard />
     </div>
   )
 }

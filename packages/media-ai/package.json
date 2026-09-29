@@ -1,12 +1,13 @@
 {
   "name": "@arciin/media-ai",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "private": true,
   "type": "module",
   "exports": {
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "@arciin/shared": "workspace:*",
     "@arciin/types": "workspace:*",
     "@google/genai": "^2.18.0",
     "@prisma/client": "^6.19.3",

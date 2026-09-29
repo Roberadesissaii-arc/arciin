@@ -505,6 +505,12 @@ export function AssetCard({
 
         <div className="mt-1 flex items-center justify-between gap-2">
           <p className="truncate text-[11px] tabular-nums text-zinc-400" suppressHydrationWarning>
+            {asset.searchMatch?.label ? (
+              // Found by meaning rather than by name: said in words, never as a score.
+              <span className="text-zinc-500" data-testid="asset-search-match">
+                {asset.searchMatch.label} ·{" "}
+              </span>
+            ) : null}
             {metaLine}
           </p>
           {/* Permanent language state, which a running job does not hide. */}

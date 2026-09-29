@@ -38,6 +38,7 @@ import { DashboardPageIntro } from "@/components/app-shell/dashboard-page-intro"
 import { IntroCornerIcon } from "@/components/app-shell/intro-corner-icon"
 import { PlanBadge } from "@/components/license/plan-badge"
 import { ModelTestPanel, ModelTestTrigger } from "@/components/models/model-test-box"
+import { SemanticSearchCard } from "@/components/models/semantic-search-card"
 import {
   DEFAULT_GEMINI_CHAT_MODEL,
   DEFAULT_GEMINI_TTS_MODEL,
@@ -1240,6 +1241,8 @@ export function ModelsPage() {
           )
         })}
       </div>
+
+      <SemanticSearchCard />
 
       {/* Connect sheet */}
       {sheetMeta && (

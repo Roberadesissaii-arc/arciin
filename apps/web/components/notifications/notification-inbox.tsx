@@ -1,8 +1,9 @@
 "use client"
 
 import { useState } from "react"
-import { AlertCircle, Bell, CheckCheck } from "lucide-react"
+import { AlertCircle, Bell, CheckCheck, Inbox } from "lucide-react"
 
+import { ConfirmDestructiveButton } from "@/components/shared/confirm-destructive-button"
 import { AppPagination } from "@/components/ui/app-pagination"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -22,6 +23,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import {
+  useClearNotifications,
   useMarkAllNotificationsRead,
   useMarkNotificationRead,
   useNotificationsPage,
@@ -163,6 +165,7 @@ export function NotificationInbox() {
   const query = useNotificationsPage(page, PAGE_SIZE)
   const markRead = useMarkNotificationRead()
   const markAllRead = useMarkAllNotificationsRead()
+  const clearInbox = useClearNotifications()
 
   const pageItems = query.data?.items ?? []
   const total = query.data?.total ?? 0
@@ -198,6 +201,20 @@ export function NotificationInbox() {
             <CheckCheck className="size-3.5" />
             Mark all read
           </Button>
+          <ConfirmDestructiveButton
+            variant="outline"
+            className="h-8 gap-1.5 border-border bg-card text-xs font-semibold text-foreground"
+            title="Clear all notifications?"
+            description="This removes them from your notification inbox. Your Activity history will stay available."
+            confirmLabel="Clear inbox"
+            disabled={total === 0}
+            pending={clearInbox.isPending}
+            onConfirm={() => clearInbox.mutateAsync()}
+            data-testid="notifications-clear"
+          >
+            <Inbox className="size-3.5" />
+            Clear inbox
+          </ConfirmDestructiveButton>
         </div>
       </div>
 
@@ -228,7 +245,7 @@ export function NotificationInbox() {
             <Bell />
           </EmptyMedia>
           <EmptyHeader>
-            <EmptyTitle>No notifications yet</EmptyTitle>
+            <EmptyTitle>No notifications</EmptyTitle>
             <EmptyDescription>
               Uploads, sign-ins, and other events on this server will appear here, on every device
               you use.

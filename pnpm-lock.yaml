@@ -383,6 +383,9 @@ importers:
 
   packages/media-ai:
     dependencies:
+      '@arciin/shared':
+        specifier: workspace:*
+        version: link:../shared
       '@arciin/types':
         specifier: workspace:*
         version: link:../types

@@ -25,15 +25,33 @@ function serviceHeaders(): HeadersInit {
   }
 }
 
+/**
+ * How long a page waits for the license server. Without a limit a stalled
+ * authority held the page open until the proxy gave up; every page already
+ * shows a readable error when this throws.
+ */
+export const LICENSE_SERVER_TIMEOUT_MS = 8_000
+
 async function lsFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${baseUrl()}${path}`, {
-    ...init,
-    headers: {
-      ...serviceHeaders(),
-      ...(init?.headers ?? {}),
-    },
-    cache: "no-store",
-  })
+  let res: Response
+  try {
+    res = await fetch(`${baseUrl()}${path}`, {
+      ...init,
+      headers: {
+        ...serviceHeaders(),
+        ...(init?.headers ?? {}),
+      },
+      cache: "no-store",
+      signal: init?.signal ?? AbortSignal.timeout(LICENSE_SERVER_TIMEOUT_MS),
+    })
+  } catch (error) {
+    const name = (error as { name?: string })?.name
+    throw new Error(
+      name === "TimeoutError" || name === "AbortError"
+        ? "The license server did not answer in time."
+        : "The license server is not reachable.",
+    )
+  }
   const json = (await res.json().catch(() => ({}))) as {
     data?: T
     error?: { code?: string; message?: string }
@@ -164,7 +182,7 @@ export async function deactivateServer(input: { licenseId: string; instanceId: s
 
 export async function licenseServerHealth(): Promise<boolean> {
   try {
-    const res = await fetch(`${baseUrl()}/health`, { cache: "no-store" })
+    const res = await fetch(`${baseUrl()}/health`, { cache: "no-store", signal: AbortSignal.timeout(3_000) })
     return res.ok
   } catch {
     return false

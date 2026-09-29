@@ -16,11 +16,11 @@ import {
 } from "@/components/ui/empty"
 import { AdminTableHero } from "@/components/database/admin-table-hero"
 import { CellValue } from "@/components/database/table-cell-value"
+import { FolderAuditNote } from "@/components/database/folder-audit-note"
 import {
-  API_KEY_STATUS_FILTERS,
+  TABLE_STATUS_FILTERS,
   getAdminTableData,
   getAdminTables,
-  type ApiKeyStatusFilter,
 } from "@/lib/api/admin"
 import { queryKeys } from "@/lib/api/query-keys"
 import { cn } from "@/lib/utils"
@@ -30,12 +30,15 @@ export function AdminTableDetailPanel({ table }: { table: string }) {
   /**
    * Database → API Keys is the audit view: revoked and expired keys stay,
    * because deleting history to tidy a list would destroy the record of who
-   * had access when. The filter narrows the view without touching rows.
-   * Default All. Developer → API Keys is where keys are managed.
+   * had access when. Database → Folders likewise keeps the legacy Computer
+   * Backup trees and deleted folders. The filter narrows the view without
+   * touching rows. Default All.
    */
-  const [status, setStatus] = useState<ApiKeyStatusFilter>("all")
-  const statusFilterable = table === "api-keys"
+  const [status, setStatus] = useState("all")
+  const statusFilters = TABLE_STATUS_FILTERS[table]
+  const statusFilterable = Boolean(statusFilters)
   const effectiveStatus = statusFilterable ? status : "all"
+  const filterNoun = table === "folders" ? "folders" : "keys"
 
   const metaQuery = useQuery({
     queryKey: queryKeys.adminTables,
@@ -101,13 +104,15 @@ export function AdminTableDetailPanel({ table }: { table: string }) {
         />
       ) : null}
 
+      {table === "folders" && meta ? <FolderAuditNote /> : null}
+
       {statusFilterable && meta ? (
         <div
           role="radiogroup"
-          aria-label="Filter API keys by status"
+          aria-label={table === "folders" ? "Filter folders" : "Filter API keys by status"}
           className="flex flex-wrap items-center gap-2"
         >
-          {API_KEY_STATUS_FILTERS.map((value) => {
+          {statusFilters!.map((value) => {
             const selected = status === value
             return (
               <Button
@@ -117,7 +122,7 @@ export function AdminTableDetailPanel({ table }: { table: string }) {
                 aria-checked={selected}
                 size="sm"
                 variant="outline"
-                data-testid={`api-key-filter-${value}`}
+                data-testid={`${table === "folders" ? "folder" : "api-key"}-filter-${value}`}
                 className={cn(
                   "h-8 rounded-full border-border bg-card px-3 text-xs font-semibold capitalize text-muted-foreground",
                   selected && "border-primary/40 bg-primary/10 text-primary",
@@ -217,9 +222,11 @@ export function AdminTableDetailPanel({ table }: { table: string }) {
               </EmptyMedia>
               {effectiveStatus !== "all" ? (
                 <>
-                  <EmptyTitle>No {effectiveStatus} keys</EmptyTitle>
+                  <EmptyTitle>No {effectiveStatus} {filterNoun}</EmptyTitle>
                   <EmptyDescription>
-                    No API key is currently {effectiveStatus}. Choose All to see every key this instance has issued.
+                    {filterNoun === "folders"
+                      ? `No folder is ${effectiveStatus}. Choose All to see every folder record.`
+                      : `No API key is currently ${effectiveStatus}. Choose All to see every key this instance has issued.`}
                   </EmptyDescription>
                 </>
               ) : (
