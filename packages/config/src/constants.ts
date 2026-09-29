@@ -1,4 +1,4 @@
-export const APP_VERSION = "1.1.1"
+export const APP_VERSION = "1.1.2"
 
 export const DEFAULT_LIBRARY_DEFINITIONS = [
   { name: "Videos", slug: "videos", kind: "VIDEO", icon: "video" },
