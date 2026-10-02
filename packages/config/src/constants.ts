@@ -9,6 +9,20 @@ export const DEFAULT_LIBRARY_DEFINITIONS = [
 ] as const
 
 /**
+ * System library for paired-computer backup trees.
+ *
+ * Kept out of DEFAULT_LIBRARY_DEFINITIONS so setup and the sidebar never
+ * offer it as a normal library. Seed creates it once a default storage
+ * location exists.
+ */
+export const COMPUTERS_LIBRARY_DEFINITION = {
+  name: "Computers",
+  slug: "computers",
+  kind: "COMPUTER",
+  icon: "computer",
+} as const
+
+/**
  * A folder or two to open each library with.
  *
  * A brand-new instance shows five empty libraries, and an empty folder list is
