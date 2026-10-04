@@ -67,6 +67,13 @@ export function LibraryBrowser({
   } = useLibraryBrowserFilters()
   const router = useRouter()
   const searchParams = useSearchParams()
+  /** `?q=` — "View all results" from the top search lands here with the query applied. */
+  const urlQuery = searchParams.get("q")
+  useEffect(() => {
+    if (urlQuery !== null) setSearch(urlQuery)
+    // Only a new `?q=` should overwrite what the person typed here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [urlQuery])
   /**
    * Root only by default.
    *

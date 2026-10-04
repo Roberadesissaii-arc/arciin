@@ -1,8 +1,9 @@
 "use client"
 
-import { ArrowRight, ArrowRightLeft, FolderOpen, Library, X } from "lucide-react"
+import { ArrowRight, ArrowRightLeft, FolderOpen, Library } from "lucide-react"
 
 import { MediaTypeIcon } from "@/components/libraries/media-type-icon"
+import { InspectorHeader } from "@/components/shared/floating-inspector"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { Label } from "@/components/ui/label"
@@ -15,10 +16,7 @@ import {
 } from "@/components/ui/select"
 import {
   SheetClose,
-  SheetDescription,
   SheetFooter,
-  SheetHeader,
-  SheetTitle,
 } from "@/components/ui/sheet"
 import type { AssetSummary, FolderSummary, LibrarySummary } from "@/lib/types/models"
 import { formatBytes } from "@/lib/utils/format-bytes"
@@ -151,6 +149,8 @@ export function MoveAssetsSheetContent({
   onLibraryChange,
   onFolderChange,
   onMove,
+  embedded = false,
+  onCancel,
 }: {
   assets: AssetSummary[]
   count: number
@@ -165,6 +165,10 @@ export function MoveAssetsSheetContent({
   onLibraryChange: (id: string) => void
   onFolderChange: (id: string) => void
   onMove: () => void | Promise<void>
+  /** Rendered inside a host that already has a header (the asset inspector). */
+  embedded?: boolean
+  /** With `embedded`, Cancel calls this instead of closing a sheet. */
+  onCancel?: () => void
 }) {
   const libraryName = libraries.find((lib) => lib.id === libraryId)?.name ?? "Library"
   const folderLabel =
@@ -174,33 +178,14 @@ export function MoveAssetsSheetContent({
 
   return (
     <>
-      <SheetHeader className="relative shrink-0 space-y-3 border-b border-border px-4 py-4 pr-12">
-        <SheetClose asChild>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-sm"
-            className="absolute top-3.5 right-3 text-muted-foreground hover:text-foreground"
-            aria-label="Close"
-          >
-            <X className="size-4" />
-          </Button>
-        </SheetClose>
-        <div className="flex items-start gap-3">
-          <div className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-primary/20 bg-primary/10 text-primary">
-            <ArrowRightLeft className="size-5" aria-hidden />
-          </div>
-          <div className="min-w-0 flex-1 space-y-1">
-            <SheetTitle className="font-heading text-lg font-semibold tracking-tight text-foreground">
-              Move {count} {count === 1 ? "asset" : "assets"}
-            </SheetTitle>
-            <SheetDescription className="text-[13px] leading-snug text-muted-foreground">
-              Pick a library and folder. {count > 1 ? "All selected items" : "This file"} will land
-              in the same place.
-            </SheetDescription>
-          </div>
-        </div>
-      </SheetHeader>
+      {embedded ? null : (
+        <InspectorHeader
+          icon={<ArrowRightLeft className="size-4 text-[color:var(--arciin-accent,#ff4f12)]" aria-hidden />}
+          title={`Move ${count} ${count === 1 ? "asset" : "assets"}`}
+          description={`Pick a library and folder. ${count > 1 ? "All selected items" : "This file"} will land in the same place.`}
+          closeAsSheetClose
+        />
+      )}
 
       <div className="scrollbar-hide flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 py-4">
         <MoveAssetsPreview assets={assets} />
@@ -280,7 +265,7 @@ export function MoveAssetsSheetContent({
         <DestinationSummary libraryName={libraryName} folderLabel={folderLabel} />
       </div>
 
-      <SheetFooter className="shrink-0 gap-2 border-t border-border px-4 py-4 sm:flex-col">
+      <SheetFooter className="shrink-0 gap-2 border-t border-zinc-200/70 bg-zinc-50/60 px-4 py-3 sm:flex-col">
         {moveProgress ? (
           <div className="w-full space-y-2 pb-1" aria-live="polite">
             <div className="flex items-baseline justify-between text-[12px]">
@@ -298,18 +283,24 @@ export function MoveAssetsSheetContent({
           </div>
         ) : null}
         <Button
-          className="h-11 w-full bg-primary text-white hover:bg-primary/90"
+          className="h-10 w-full bg-primary text-white hover:bg-primary/90"
           disabled={movePending || !libraryId || count === 0}
           onClick={() => void onMove()}
         >
           {movePending ? "Moving…" : `Move ${count} ${count === 1 ? "asset" : "assets"}`}
         </Button>
         {!movePending ? (
-          <SheetClose asChild>
-            <Button type="button" variant="outline" className="h-11 w-full border-border">
+          embedded && onCancel ? (
+            <Button type="button" variant="outline" className="h-10 w-full border-border" onClick={onCancel}>
               Cancel
             </Button>
-          </SheetClose>
+          ) : (
+            <SheetClose asChild>
+              <Button type="button" variant="outline" className="h-10 w-full border-border">
+                Cancel
+              </Button>
+            </SheetClose>
+          )
         ) : null}
       </SheetFooter>
     </>

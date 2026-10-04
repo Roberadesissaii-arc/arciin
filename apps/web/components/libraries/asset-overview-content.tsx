@@ -7,6 +7,7 @@ import {
   Clock,
   Download,
   FileType2,
+  Folder,
   HardDrive,
   Maximize2,
   Pause,
@@ -17,9 +18,11 @@ import {
 import { assetSupportsDocumentThumbnail, DEFAULT_USER_PREFERENCES } from "@arciin/shared"
 
 import { AudioCardArtwork } from "@/components/libraries/audio-card-artwork"
+import { LibrarySlugIcon } from "@/components/libraries/library-slug-icon"
 import { MediaTypeIcon } from "@/components/libraries/media-type-icon"
 import { VideoAssetViewer } from "@/components/libraries/video-asset-viewer"
 import { Button } from "@/components/ui/button"
+import { useFolders, useLibraries } from "@/hooks/use-libraries"
 import { ensureDocumentMetadata } from "@/lib/api/documents"
 import { getUserPreferences } from "@/lib/api/user-preferences"
 import { queryKeys } from "@/lib/api/query-keys"
@@ -161,7 +164,14 @@ function AssetPreview({ asset }: { asset: AssetSummary }) {
     prefs?.media.documentThumbnails ?? DEFAULT_USER_PREFERENCES.media.documentThumbnails
 
   if (asset.mediaType === "VIDEO") {
-    return <VideoAssetViewer src={src} compact controlsBelow />
+    return (
+      <VideoAssetViewer
+        src={src}
+        poster={`/api/assets/${asset.id}/thumbnail?v=${encodeURIComponent(asset.updatedAt)}`}
+        compact
+        controlsBelow
+      />
+    )
   }
   if (asset.mediaType === "IMAGE") {
     return (
@@ -208,7 +218,7 @@ function Row({
         index % 2 === 1 && "bg-muted/20",
       )}
     >
-      <dt className="text-[11.5px] font-medium text-muted-foreground">{label}</dt>
+      <dt className="text-[11.5px] font-medium text-zinc-600">{label}</dt>
       <dd className="min-w-0 break-words text-[12.5px] text-foreground">{children}</dd>
     </div>
   )
@@ -334,16 +344,52 @@ export function AssetOverviewDetails({
 
   return (
     <div className={className}>
-      <h3 className="px-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+      <h3 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-zinc-500">
         Details
       </h3>
-      <dl className="mt-1.5 overflow-hidden rounded-xl border border-border">
+      <dl className="mt-2 overflow-hidden rounded-xl border border-zinc-200/80 bg-white">
         {rows.map((row, index) => (
           <Row key={row.label} label={row.label} index={index}>
             {row.value}
           </Row>
         ))}
       </dl>
+    </div>
+  )
+}
+
+/** Type, library and folder in one quiet line under the preview. Names come from cached queries. */
+function AssetContextRow({ asset }: { asset: AssetSummary }) {
+  const libraries = useLibraries()
+  const folders = useFolders(asset.folderId ? asset.libraryId : "")
+  const library = libraries.data?.find((l) => l.id === asset.libraryId)
+  const folder = asset.folderId ? folders.data?.find((f) => f.id === asset.folderId) : null
+  const chip =
+    "inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-full border border-zinc-200/90 bg-white px-2.5 py-1 text-[11.5px] font-medium text-zinc-700"
+  return (
+    <div className="flex flex-wrap items-center gap-1.5" data-testid="asset-panel-context">
+      <span className={chip}>
+        <MediaTypeIcon
+          mediaType={asset.mediaType}
+          filename={asset.originalFilename}
+          mimeType={asset.mimeType}
+          extension={asset.extension}
+          className="size-3.5 shrink-0 text-zinc-500"
+        />
+        <span className="truncate">{(asset.extension || asset.mediaType).toUpperCase()}</span>
+      </span>
+      {library ? (
+        <span className={chip}>
+          <LibrarySlugIcon slug={library.slug} kind={library.kind} className="size-3.5 shrink-0 text-zinc-500" />
+          <span className="truncate">{library.name}</span>
+        </span>
+      ) : null}
+      {folder ? (
+        <span className={chip} title={folder.pathCache}>
+          <Folder className="size-3.5 shrink-0 text-zinc-500" aria-hidden />
+          <span className="truncate">{folder.name}</span>
+        </span>
+      ) : null}
     </div>
   )
 }
@@ -370,7 +416,7 @@ export function AssetOverviewContent({
 }) {
   return (
     <>
-      <div className="scrollbar-hide flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-2">
+      <div className="scrollbar-hide flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto overscroll-contain px-4 py-4">
         {/*
           Preview on top — plain border, no glass wash.
           Video/audio put their play bar under the media inside AssetPreview;
@@ -382,11 +428,20 @@ export function AssetOverviewContent({
             // Video/audio own their frame + under-bar; stills get a plain mat.
             asset.mediaType === "VIDEO" || isAudioLikeAsset(asset) || asset.mediaType === "AUDIO"
               ? "bg-transparent"
-              : "max-h-[240px] min-h-[120px] rounded-xl border border-border bg-zinc-50",
+              : "max-h-[260px] min-h-[120px] rounded-2xl border border-zinc-200/80 bg-zinc-50",
           )}
           data-testid="asset-panel-preview"
         >
           <AssetPreview asset={asset} />
+        </div>
+
+        <div className="-mt-1 space-y-2">
+          {asset.title?.trim() && asset.title.trim() !== asset.originalFilename ? (
+            <p className="break-words text-[12px] leading-snug text-zinc-600" data-testid="asset-panel-filename">
+              {asset.originalFilename}
+            </p>
+          ) : null}
+          <AssetContextRow asset={asset} />
         </div>
 
         <AssetOverviewDetails asset={asset} />
@@ -441,7 +496,7 @@ export function AssetOverviewContent({
       </div>
 
       {/* Long Open (the file) + icon Download / Delete */}
-      <div className="flex shrink-0 items-center gap-2 border-t border-border p-2">
+      <div className="flex shrink-0 items-center gap-2 border-t border-zinc-200/70 bg-zinc-50/60 px-4 py-3">
         {onOpen ? (
           <Button
             type="button"

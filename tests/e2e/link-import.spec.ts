@@ -13,7 +13,7 @@ const video = (n: number) => ({
   id: `c${n}`,
   url: `https://cdn.example.com/v${n}.mp4`,
   title: `Clip ${n}`,
-  thumbnail: null,
+  hasThumbnail: false,
   durationSeconds: 60 * n + 5,
   source: "cdn.example.com",
   category: "video",

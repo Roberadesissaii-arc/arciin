@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
 import { useFolders, useLibraries } from "@/hooks/use-libraries"
 import { useMoveAsset } from "@/hooks/use-assets"
-import { libraryGlassSheetPanel } from "@/lib/library-glass-sheet"
+import { floatingInspectorPanel } from "@/components/shared/floating-inspector"
 import type { AssetSummary } from "@/lib/types/models"
 import { cn } from "@/lib/utils"
 
@@ -24,10 +24,16 @@ import { cn } from "@/lib/utils"
 export function AssetMoveContent({
   asset,
   onDone,
+  embedded = false,
+  onCancel,
 }: {
   asset: AssetSummary
   /** Called after a successful move, so a host can step back or close. */
   onDone?: () => void
+  /** Inside the asset inspector, which supplies the header. */
+  embedded?: boolean
+  /** Embedded Cancel steps back instead of closing a sheet. */
+  onCancel?: () => void
 }) {
   const [libraryId, setLibraryId] = useState(asset.libraryId)
   const [folderId, setFolderId] = useState<string>("root")
@@ -83,6 +89,8 @@ export function AssetMoveContent({
           }}
       onFolderChange={setFolderId}
       onMove={handleMove}
+      embedded={embedded}
+      onCancel={onCancel}
     />
   )
 }
@@ -122,7 +130,7 @@ export function MoveAssetDialog({
       <SheetContent
         side="right"
         showCloseButton={false}
-        className={cn(libraryGlassSheetPanel, "dashboard-main border-primary/25 text-foreground")}
+        className={cn(floatingInspectorPanel, "dashboard-main text-foreground")}
       >
         {open ? <AssetMoveContent asset={asset} onDone={() => setOpen(false)} /> : null}
       </SheetContent>

@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef } from "react"
 import { usePathname } from "next/navigation"
 import { Clock, CloudUpload, Command, Search } from "lucide-react"
 
-import { CommandPalettePanel } from "@/components/app-shell/command-palette-panel"
+import { UniversalSearchDialog } from "@/components/app-shell/universal-search"
 import { ImportLinkDialog } from "@/components/uploads/import-link-dialog"
 import {
   Breadcrumb,
@@ -16,11 +16,6 @@ import {
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb"
 import { Button } from "@/components/ui/button"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { cn } from "@/lib/utils"
 import { useUiStore } from "@/lib/stores/ui-store"
@@ -162,39 +157,31 @@ export function DashboardHeader() {
 
         {!isChatPage ? (
           <div className="flex min-w-0 flex-1 flex-nowrap items-center justify-end gap-1.5 md:gap-2">
-            <DropdownMenu open={commandOpen} onOpenChange={setCommandOpen}>
-              <DropdownMenuTrigger asChild>
-                <button
-                  type="button"
-                  className={cn(
-                    floatChip,
-                    headerControlH,
-                    "flex min-w-0 flex-1 items-center gap-2 px-3 text-left text-sm transition-colors hover:bg-zinc-50/90 md:min-w-[7rem] lg:min-w-[12rem] xl:min-w-[18rem] xl:max-w-[42rem]",
-                  )}
-                >
-                  <Search className="size-4 shrink-0 text-zinc-400" />
-                  <span className="min-w-0 flex-1 truncate font-normal text-zinc-400 lg:hidden">
-                    Search
-                  </span>
-                  <span className="hidden min-w-0 flex-1 truncate font-normal text-zinc-400 lg:inline">
-                    Search files, folders, and metadata
-                  </span>
-                  <span className="ml-auto hidden shrink-0 items-center gap-1 rounded-md border border-zinc-200/80 bg-zinc-100/80 px-1.5 py-0.5 text-[11px] font-medium text-zinc-500 xl:inline-flex">
-                    <Command className="size-3" />
-                    K
-                  </span>
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent
-                align="start"
-                side="bottom"
-                sideOffset={14}
-                collisionPadding={16}
-                className="dashboard-main z-50 w-[var(--radix-dropdown-menu-trigger-width)] min-w-0 max-w-[min(96vw,36rem)] overflow-visible border-0 bg-transparent p-1 shadow-[0_20px_60px_-18px_rgba(0,0,0,0.22)]"
-              >
-                <CommandPalettePanel onClose={() => setCommandOpen(false)} />
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <button
+              type="button"
+              onClick={() => setCommandOpen(true)}
+              aria-haspopup="dialog"
+              aria-expanded={commandOpen}
+              aria-keyshortcuts="Meta+K Control+K"
+              data-testid="universal-search-trigger"
+              className={cn(
+                floatChip,
+                headerControlH,
+                "flex min-w-0 flex-1 items-center gap-2 px-3 text-left text-sm transition-colors hover:bg-zinc-50/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF4F12]/30 md:min-w-[7rem] lg:min-w-[12rem] xl:min-w-[18rem] xl:max-w-[42rem]",
+              )}
+            >
+              <Search className="size-4 shrink-0 text-zinc-500" aria-hidden />
+              <span className="min-w-0 flex-1 truncate font-normal text-zinc-500 lg:hidden">
+                Search
+              </span>
+              <span className="hidden min-w-0 flex-1 truncate font-normal text-zinc-500 lg:inline">
+                Search files, folders, and metadata
+              </span>
+              <span className="ml-auto hidden shrink-0 items-center gap-1 rounded-md border border-zinc-200/80 bg-zinc-100/80 px-1.5 py-0.5 text-[11px] font-medium text-zinc-500 xl:inline-flex">
+                <Command className="size-3" aria-hidden />
+                K
+              </span>
+            </button>
 
             <ImportLinkDialog />
 
@@ -233,6 +220,8 @@ export function DashboardHeader() {
           <div className="min-w-0 flex-1" aria-hidden />
         )}
       </div>
+      {/* Mounted on every page (chat included) so Cmd/Ctrl+K always works. */}
+      <UniversalSearchDialog />
     </header>
   )
 }

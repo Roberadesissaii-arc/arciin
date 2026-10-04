@@ -16,6 +16,11 @@ export type ImportUrlPayload = {
   audioFormat?: "mp3" | "m4a"
   /** Video container when downloading video (yt-dlp --merge-output-format or best). */
   videoFormat?: "mp4" | "best"
+  /**
+   * Title of the inspection candidate the user picked, as the *server* stored
+   * it at inspection time. Never text a client sent.
+   */
+  sourceTitle?: string | null
 }
 
 export type ExtractMetadataPayload = {

@@ -30,6 +30,55 @@ import {
   assertPublicUrlResolvesOffHost,
   isImportablePublicUrl,
 } from "@/services/imports/url-guard"
+import { fetchRemoteThumbnail, type ThumbnailFailure, type ThumbnailMime } from "@/services/imports/thumbnail-proxy"
+
+/** Replaceable so tests never reach the network. */
+export const thumbnailFetcher = { fetch: (url: string) => fetchRemoteThumbnail(url) }
+
+/**
+ * Proxied thumbnails, briefly: a picker re-renders, a dialog reopens.
+ * Bounded by entries and bytes; failures are cached too so a dead image is
+ * not fetched again on every render.
+ */
+type ThumbnailCacheEntry = { body: Buffer; contentType: ThumbnailMime } | { failure: ThumbnailFailure }
+const THUMBNAIL_CACHE_TTL_MS = 10 * 60_000
+const THUMBNAIL_CACHE_MAX_ENTRIES = 200
+const THUMBNAIL_CACHE_MAX_BYTES = 32 * 1024 * 1024
+export const thumbnailCache = (() => {
+  const map = new Map<string, { at: number; entry: ThumbnailCacheEntry }>()
+  let bytes = 0
+  const size = (e: ThumbnailCacheEntry) => ("body" in e ? e.body.length : 0)
+  const drop = (key: string) => {
+    const old = map.get(key)
+    if (old) bytes -= size(old.entry)
+    map.delete(key)
+  }
+  return {
+    get(key: string): ThumbnailCacheEntry | undefined {
+      const hit = map.get(key)
+      if (!hit) return undefined
+      if (Date.now() - hit.at > THUMBNAIL_CACHE_TTL_MS) {
+        drop(key)
+        return undefined
+      }
+      return hit.entry
+    },
+    set(key: string, entry: ThumbnailCacheEntry) {
+      drop(key)
+      map.set(key, { at: Date.now(), entry })
+      bytes += size(entry)
+      while (map.size > THUMBNAIL_CACHE_MAX_ENTRIES || bytes > THUMBNAIL_CACHE_MAX_BYTES) {
+        const oldest = map.keys().next().value
+        if (oldest === undefined) break
+        drop(oldest)
+      }
+    },
+    clear() {
+      map.clear()
+      bytes = 0
+    },
+  }
+})()
 
 const formatSchema = {
   audioOnly: z.boolean().optional(),
@@ -37,9 +86,20 @@ const formatSchema = {
   videoFormat: z.enum(["mp4", "best"]).optional(),
 }
 
+const candidateRef = {
+  inspectionId: z.string().regex(/^[A-Za-z0-9_-]{16,64}$/),
+  itemId: z.string().regex(/^c[0-9]{1,2}$/),
+}
+
 const importSchema = z.object({
   // Normalised below: "example.com/video" is accepted and becomes https://.
   url: z.string().trim().min(1).max(2048),
+  /**
+   * The inspection candidate this link was picked from, if any. Only lets
+   * the server look up the title *it* stored; the client sends no title.
+   */
+  inspectionId: candidateRef.inspectionId.optional(),
+  itemId: candidateRef.itemId.optional(),
   targetLibraryId: z.string().cuid().optional(),
   targetFolderId: z.string().cuid().optional(),
   ...formatSchema,
@@ -67,7 +127,15 @@ const inspectionKey = (id: string) => `import:inspect:${id}`
 type StoredInspection = {
   userId: string
   url: string
-  items: Array<{ id: string; url: string; category: ImportCandidateCategory }>
+  items: Array<{
+    id: string
+    url: string
+    category: ImportCandidateCategory
+    /** The source's own title, as inspected — null when the source gave none. */
+    title?: string | null
+    /** Third-party preview URL. Server-side only; never sent to a browser. */
+    thumbnail?: string | null
+  }>
 }
 
 /** What the worker's inspectLink returns. */
@@ -75,7 +143,7 @@ export type InspectOutcome = {
   kind: ImportInspectionKind
   title: string | null
   reason: string | null
-  items: Array<Omit<ImportCandidate, "id" | "title"> & { title: string | null }>
+  items: Array<Omit<ImportCandidate, "id" | "title" | "hasThumbnail"> & { title: string | null; thumbnail: string | null }>
 }
 
 /**
@@ -203,6 +271,8 @@ export async function registerImportRoutes(fastify: FastifyInstance) {
       audioOnly: input.format.audioOnly,
       audioFormat: input.format.audioFormat,
       videoFormat: input.format.videoFormat,
+      // From the stored inspection only (see callers).
+      ...(input.title ? { sourceTitle: input.title } : {}),
     }
     const job = await fastify.prisma.job.create({
       data: { type: JOB_TYPES.importUrl, status: "QUEUED", progress: 0, payload },
@@ -238,6 +308,65 @@ export async function registerImportRoutes(fastify: FastifyInstance) {
     return { state: admitted ? ("started" as const) : ("waiting" as const), upload }
   }
 
+  /** A stored inspection, only for the user who made it (anyone else's looks expired). */
+  async function readInspection(userId: string, inspectionId: string): Promise<StoredInspection | null> {
+    const raw = await fastify.redis.get(inspectionKey(inspectionId))
+    const stored = raw ? (JSON.parse(raw) as StoredInspection) : null
+    return stored && stored.userId === userId ? stored : null
+  }
+
+  /** The title the server stored for a candidate — only if it is the same link being imported. */
+  async function storedCandidateTitle(userId: string, inspectionId: string, itemId: string, url: string): Promise<string | null> {
+    const stored = await readInspection(userId, inspectionId)
+    const item = stored?.items.find((i) => i.id === itemId)
+    if (!item?.title) return null
+    const normalized = normalizeImportUrl(item.url)
+    return normalized.ok && normalized.url === url ? item.title : null
+  }
+
+  /**
+   * A candidate's preview image, fetched by the server.
+   *
+   * The browser names an inspection and an item — never a URL. The URL is
+   * the one stored at inspection time for this user, fetched under the import
+   * SSRF rules (see thumbnail-proxy.ts) and cached briefly in memory.
+   */
+  fastify.get(
+    "/imports/inspections/:inspectionId/items/:itemId/thumbnail",
+    { preHandler: guard },
+    async (request, reply) => {
+      if (!request.auth) return
+      const params = z.object(candidateRef).safeParse(request.params)
+      if (!params.success) return sendError(reply, 404, "THUMBNAIL_NOT_FOUND", "No preview for this item.")
+      const userId = request.auth.user.id
+      if (await checkEndpointRateLimit(request, reply, { key: `import-thumb:user:${userId}`, limit: 120, windowSec: 60 })) {
+        return
+      }
+      const stored = await readInspection(userId, params.data.inspectionId)
+      const item = stored?.items.find((i) => i.id === params.data.itemId)
+      if (!item?.thumbnail) return sendError(reply, 404, "THUMBNAIL_NOT_FOUND", "No preview for this item.")
+
+      const cacheKey = `${params.data.inspectionId}:${params.data.itemId}`
+      let entry = thumbnailCache.get(cacheKey)
+      if (!entry) {
+        const fetched = await thumbnailFetcher.fetch(item.thumbnail)
+        entry = fetched.ok ? { body: fetched.body, contentType: fetched.contentType } : { failure: fetched.reason }
+        thumbnailCache.set(cacheKey, entry)
+      }
+      if ("failure" in entry) {
+        request.log.info({ reason: entry.failure }, "import thumbnail unavailable")
+        return sendError(reply, 404, "THUMBNAIL_NOT_FOUND", "No preview for this item.")
+      }
+      reply
+        .header("Content-Type", entry.contentType)
+        .header("Cache-Control", "private, max-age=600")
+        .header("X-Content-Type-Options", "nosniff")
+        .header("Content-Security-Policy", "default-src 'none'; sandbox")
+        .header("Content-Disposition", "inline")
+        .send(entry.body)
+    },
+  )
+
   fastify.post("/imports", { preHandler: guard }, async (request, reply) => {
     if (!request.auth) return
     if (await checkEndpointRateLimit(request, reply, { key: `import:user:${request.auth.user.id}`, limit: 60, windowSec: 60 })) {
@@ -259,8 +388,13 @@ export async function registerImportRoutes(fastify: FastifyInstance) {
     if (!url) return
 
     const { targetLibraryId, targetFolderId, audioOnly, audioFormat, videoFormat } = parsed.data
+    const title =
+      parsed.data.inspectionId && parsed.data.itemId
+        ? await storedCandidateTitle(request.auth.user.id, parsed.data.inspectionId, parsed.data.itemId, url)
+        : null
     const result = await createImport(request, {
       url,
+      title,
       targetLibraryId,
       targetFolderId,
       format: { audioOnly, audioFormat, videoFormat },
@@ -315,11 +449,12 @@ export async function registerImportRoutes(fastify: FastifyInstance) {
     }
 
     const inspectionId = randomBytes(18).toString("base64url")
-    const items: ImportCandidate[] = (outcome.items ?? []).slice(0, IMPORT_BATCH_MAX_ITEMS).map((item, i) => ({
+    const found = (outcome.items ?? []).slice(0, IMPORT_BATCH_MAX_ITEMS)
+    const items: ImportCandidate[] = found.map((item, i) => ({
       id: `c${i + 1}`,
       url: item.url,
       title: item.title ?? `Item ${i + 1}`,
-      thumbnail: item.thumbnail ?? null,
+      hasThumbnail: typeof item.thumbnail === "string" && item.thumbnail.startsWith("https://"),
       durationSeconds: item.durationSeconds ?? null,
       source: item.source,
       category: item.category,
@@ -327,7 +462,13 @@ export async function registerImportRoutes(fastify: FastifyInstance) {
     const stored: StoredInspection = {
       userId,
       url,
-      items: items.map(({ id, url: itemUrl, category }) => ({ id, url: itemUrl, category })),
+      items: found.map((item, i) => ({
+        id: `c${i + 1}`,
+        url: item.url,
+        category: item.category,
+        title: item.title ?? null,
+        thumbnail: typeof item.thumbnail === "string" ? item.thumbnail.slice(0, 2048) : null,
+      })),
     }
     await fastify.redis.set(inspectionKey(inspectionId), JSON.stringify(stored), "EX", INSPECTION_TTL_SECONDS)
 
@@ -362,10 +503,9 @@ export async function registerImportRoutes(fastify: FastifyInstance) {
     const { inspectionId, targetLibraryId, targetFolderId, audioOnly, audioFormat, videoFormat } = parsed.data
     const itemIds = [...new Set(parsed.data.itemIds)]
 
-    const raw = await fastify.redis.get(inspectionKey(inspectionId))
-    const stored = raw ? (JSON.parse(raw) as StoredInspection) : null
     // Someone else's inspection is indistinguishable from an expired one.
-    if (!stored || stored.userId !== userId) {
+    const stored = await readInspection(userId, inspectionId)
+    if (!stored) {
       return sendError(reply, 404, "INSPECTION_NOT_FOUND", "This link was inspected too long ago. Inspect it again.")
     }
     const chosen = itemIds.map((id) => stored.items.find((item) => item.id === id))
@@ -401,6 +541,7 @@ export async function registerImportRoutes(fastify: FastifyInstance) {
       try {
         const result = await createImport(request, {
           url: normalized.url,
+          title: item.title ?? null,
           targetLibraryId,
           targetFolderId,
           format,

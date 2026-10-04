@@ -1,7 +1,7 @@
 import { ApiError, toApiError } from "@/lib/api/errors"
 import { isApiFailure, type ApiResponse } from "@/lib/types/api"
 
-const clientApiBase = process.env.NEXT_PUBLIC_API_BASE_URL || "/api"
+export const clientApiBase = process.env.NEXT_PUBLIC_API_BASE_URL || "/api"
 
 type FetchApiOptions = Omit<RequestInit, "body"> & {
   body?: BodyInit | FormData | Record<string, unknown> | null

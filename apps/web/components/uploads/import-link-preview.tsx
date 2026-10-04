@@ -21,8 +21,6 @@ import {
 } from "@/lib/utils/link-import-preview"
 import { cn } from "@/lib/utils"
 
-/** Fixed inspect area — empty and detected states share this footprint. */
-export const IMPORT_LINK_INSPECT_SLOT_HEIGHT = "h-[132px]"
 
 const CATEGORY_ICONS: Record<LinkContentCategory, LucideIcon> = {
   video: Video,
@@ -41,7 +39,7 @@ type ImportLinkInspectSlotProps = {
   className?: string
 }
 
-/** Always the same size — shows placeholder or compact detected link info inside. */
+/** What Arciin can tell about a link before (or without) inspecting it: source, kind, destination. */
 export function ImportLinkInspectSlot({ url, className }: ImportLinkInspectSlotProps) {
   const preview = url.trim() ? analyzeImportLink(url) : null
   const CategoryIcon = preview ? CATEGORY_ICONS[preview.category] : Link2
@@ -49,7 +47,6 @@ export function ImportLinkInspectSlot({ url, className }: ImportLinkInspectSlotP
   return (
     <div
       className={cn(
-        IMPORT_LINK_INSPECT_SLOT_HEIGHT,
         "relative overflow-hidden rounded-xl border p-3",
         preview
           ? "border-border bg-white"

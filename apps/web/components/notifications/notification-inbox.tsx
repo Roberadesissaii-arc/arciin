@@ -1,7 +1,8 @@
 "use client"
 
 import { useState } from "react"
-import { AlertCircle, Bell, CheckCheck, Inbox } from "lucide-react"
+import Link from "next/link"
+import { AlertCircle, Bell, Check, CheckCheck, Inbox } from "lucide-react"
 
 import { ConfirmDestructiveButton } from "@/components/shared/confirm-destructive-button"
 import { AppPagination } from "@/components/ui/app-pagination"
@@ -49,11 +50,11 @@ const SOURCE_LABEL: Record<NotificationItem["source"], string> = {
   activity: "Activity",
 }
 
-/** Badge color reflects the category (source) — stable regardless of outcome. */
+/** Badge color reflects the category (source) — stable regardless of outcome. Tinted, not solid: a list of solid blocks shouts. */
 const SOURCE_BADGE: Record<NotificationItem["source"], string> = {
-  upload: "border-0 bg-primary text-primary-foreground",
-  security: "border-0 bg-blue-600 text-white",
-  activity: "border-0 bg-violet-600 text-white",
+  upload: "border border-[#FF4F12]/25 bg-[#FF4F12]/[0.08] text-[#C23A06]",
+  security: "border border-sky-500/30 bg-sky-500/10 text-sky-800",
+  activity: "border border-violet-500/25 bg-violet-500/10 text-violet-800",
 }
 
 /** Outcome indicator, shown separately from the source badge so the two never conflate. */
@@ -82,10 +83,12 @@ function NotificationTableRow({
 
   return (
     <TableRow
+      data-unread={unreadItem || undefined}
       className={cn(
         dashboardTableBodyRow,
-        "cursor-pointer [&>td]:align-middle [&>td]:py-3.5",
-        unreadItem && "bg-muted/20",
+        "relative cursor-pointer [&>td]:align-middle [&>td]:py-3.5",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#FF4F12]/30",
+        unreadItem ? "bg-[#FF4F12]/[0.035]" : "",
       )}
       onClick={() => onOpen(item)}
       onKeyDown={(event) => {
@@ -97,7 +100,8 @@ function NotificationTableRow({
       tabIndex={0}
       aria-label={`${item.title}${unreadItem ? ", unread. Press Enter to mark read." : ", read."}`}
     >
-      <TableCell className="whitespace-nowrap py-3.5 pl-5 text-[13px] tabular-nums text-zinc-500">
+      <TableCell className="relative whitespace-nowrap py-3.5 pl-5 text-[13px] tabular-nums text-zinc-600">
+        {unreadItem ? <span className="absolute inset-y-2 left-0 w-0.5 rounded-full bg-[#FF4F12]" aria-hidden /> : null}
         <span className="flex items-center gap-2">
           <span
             className={cn(
@@ -114,7 +118,7 @@ function NotificationTableRow({
       <TableCell className="whitespace-nowrap py-3.5">
         <Badge
           className={cn(
-            "inline-flex h-7 min-w-[5rem] justify-center rounded-md px-2.5 text-[11px] font-bold uppercase tracking-wide shadow-none",
+            "inline-flex h-6 min-w-[4.75rem] justify-center rounded-md px-2 text-[11px] font-semibold shadow-none",
             SOURCE_BADGE[item.source] ?? SOURCE_BADGE.activity,
           )}
         >
@@ -130,7 +134,7 @@ function NotificationTableRow({
           <span
             className={cn(
               "block min-w-0 max-w-[14rem] truncate text-[13px] font-medium sm:max-w-[18rem] lg:max-w-[24rem]",
-              unreadItem ? "text-zinc-900" : "text-zinc-600",
+              unreadItem ? "font-semibold text-zinc-900" : "text-zinc-600",
             )}
           >
             {item.title}
@@ -147,11 +151,12 @@ function NotificationTableRow({
       </TableCell>
       <TableCell className="whitespace-nowrap py-3.5 pr-5 text-right">
         {unreadItem ? (
-          <span className="rounded bg-primary/15 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-primary">
+          <span className="rounded-md border border-[#FF4F12]/25 bg-[#FF4F12]/10 px-1.5 py-0.5 text-[11px] font-semibold text-[#C23A06]">
             Unread
           </span>
         ) : (
-          <span className="text-[10px] font-medium uppercase tracking-wide text-zinc-500">
+          <span className="inline-flex items-center gap-1 text-[11px] font-medium text-zinc-500">
+            <Check className="size-3" aria-hidden />
             Read
           </span>
         )}
@@ -179,17 +184,24 @@ export function NotificationInbox() {
 
   return (
     <div className={dashboardTablePanel}>
-      <div className={dashboardTablePanelHeader}>
-        <Bell className="size-4 text-primary" />
-        <span className="text-sm font-semibold text-foreground">Recent alerts</span>
-        <div className="ml-auto flex flex-wrap items-center gap-2">
+      <div className={cn(dashboardTablePanelHeader, "flex-wrap gap-y-2")}>
+        <Bell className="size-4 text-primary" aria-hidden />
+        <div className="flex min-w-0 flex-wrap items-baseline gap-x-2">
+          <span className="text-sm font-semibold text-foreground">Recent alerts</span>
           {total > 0 ? (
-            <span className="rounded-md bg-muted px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">
-              {total.toLocaleString()} alert{total === 1 ? "" : "s"}
-              {unread > 0 ? ` · ${unread} unread` : " · all read"}
-              {totalPages > 1 ? ` · page ${safePage} of ${totalPages}` : ""}
+            <span className="text-[12px] text-zinc-600" data-testid="notifications-summary">
+              {unread > 0 ? (
+                <>
+                  <span className="font-semibold text-[#C23A06]">{unread.toLocaleString()} unread</span> ·{" "}
+                </>
+              ) : (
+                "All read · "
+              )}
+              {total.toLocaleString()} total
             </span>
           ) : null}
+        </div>
+        <div className="ml-auto flex flex-wrap items-center gap-2">
           <Button
             type="button"
             variant="outline"
@@ -247,10 +259,13 @@ export function NotificationInbox() {
           <EmptyHeader>
             <EmptyTitle>No notifications</EmptyTitle>
             <EmptyDescription>
-              Uploads, sign-ins, and other events on this server will appear here, on every device
-              you use.
+              Your inbox is clear. Uploads, sign-ins, and other events on this server will appear
+              here, on every device you use. Everything that happened is still in Activity.
             </EmptyDescription>
           </EmptyHeader>
+          <Button type="button" variant="outline" size="sm" asChild>
+            <Link href="/activity">View Activity</Link>
+          </Button>
         </Empty>
       ) : (
         <>
@@ -281,7 +296,11 @@ export function NotificationInbox() {
           </Table>
 
           {totalPages > 1 && (
-            <div className={dashboardTablePagination}>
+            <div className={cn(dashboardTablePagination, "flex flex-wrap items-center justify-between gap-2")}>
+              <span className="text-[12px] tabular-nums text-zinc-600" data-testid="notifications-range">
+                Showing {((safePage - 1) * PAGE_SIZE + 1).toLocaleString()}–
+                {Math.min(safePage * PAGE_SIZE, total).toLocaleString()} of {total.toLocaleString()}
+              </span>
               <AppPagination page={safePage} totalPages={totalPages} onPageChange={setPage} />
             </div>
           )}

@@ -1,10 +1,12 @@
 "use client"
 
+import { useState } from "react"
 import { FileText, Film, Image as ImageIcon, Music2, Package, type LucideIcon } from "lucide-react"
 
 import type { ImportCandidate, ImportCandidateCategory } from "@arciin/shared"
 
 import { Checkbox } from "@/components/ui/checkbox"
+import { importCandidateThumbnailUrl } from "@/lib/api/imports"
 import { cn } from "@/lib/utils"
 
 const CATEGORY_ICON: Record<ImportCandidateCategory, LucideIcon> = {
@@ -25,12 +27,50 @@ export function formatCandidateDuration(seconds: number | null): string | null {
 }
 
 /**
- * The media found on a page or in a playlist — at most five rows, each with a
- * checkbox. Thumbnails are not loaded from the third-party site (the app's
- * image policy is same-origin, and a viewer's address should not go to every
- * host a page links); a category icon stands in.
+ * A candidate's preview: the server-proxied thumbnail (same origin — the
+ * third-party URL never reaches the browser, and a viewer's address is never
+ * sent to the page's image host), or the category icon when there is none or
+ * it fails. Never a broken-image glyph.
  */
+export function ImportCandidateThumb({
+  inspectionId,
+  item,
+  className,
+}: {
+  inspectionId: string
+  item: Pick<ImportCandidate, "id" | "category" | "hasThumbnail">
+  className?: string
+}) {
+  const [failed, setFailed] = useState(false)
+  const Icon = CATEGORY_ICON[item.category] ?? Package
+  return (
+    <span
+      className={cn(
+        "relative flex aspect-video w-[72px] shrink-0 items-center justify-center overflow-hidden rounded-lg border border-zinc-200/80 bg-zinc-100 text-zinc-500",
+        className,
+      )}
+      data-testid="import-candidate-thumb"
+    >
+      {item.hasThumbnail && !failed ? (
+        // eslint-disable-next-line @next/next/no-img-element -- same-origin proxied preview
+        <img
+          src={importCandidateThumbnailUrl(inspectionId, item.id)}
+          alt=""
+          loading="lazy"
+          decoding="async"
+          className="size-full object-cover"
+          onError={() => setFailed(true)}
+        />
+      ) : (
+        <Icon className="size-4" aria-hidden />
+      )}
+    </span>
+  )
+}
+
+/** The media found on a page or in a playlist — at most five rows, each with a checkbox. */
 export function ImportLinkCandidates({
+  inspectionId,
   title,
   items,
   selected,
@@ -38,6 +78,7 @@ export function ImportLinkCandidates({
   onToggleAll,
   disabled,
 }: {
+  inspectionId: string
   title: string | null
   items: ImportCandidate[]
   selected: Set<string>
@@ -73,9 +114,8 @@ export function ImportLinkCandidates({
           </button>
         </div>
       </div>
-      <ul className="max-h-[15.5rem] overflow-y-auto">
+      <ul>
         {items.map((item) => {
-          const Icon = CATEGORY_ICON[item.category] ?? Package
           const checked = selected.has(item.id)
           const duration = formatCandidateDuration(item.durationSeconds)
           const inputId = `import-candidate-${item.id}`
@@ -83,9 +123,10 @@ export function ImportLinkCandidates({
             <li key={item.id} className="border-b border-zinc-100 last:border-b-0">
               <label
                 htmlFor={inputId}
+                data-selected={checked || undefined}
                 className={cn(
-                  "flex cursor-pointer items-center gap-2.5 px-3 py-2 transition-colors",
-                  checked ? "bg-primary/[0.04]" : "hover:bg-zinc-50",
+                  "flex cursor-pointer items-center gap-3 px-3 py-2.5 transition-colors motion-reduce:transition-none",
+                  checked ? "bg-[#FF4F12]/[0.04]" : "hover:bg-zinc-50",
                   disabled && "cursor-not-allowed opacity-60",
                 )}
               >
@@ -96,12 +137,14 @@ export function ImportLinkCandidates({
                   onCheckedChange={() => onToggle(item.id)}
                   aria-label={`Import ${item.title}`}
                 />
-                <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-zinc-100 text-zinc-500">
-                  <Icon className="size-4" />
-                </span>
+                <ImportCandidateThumb
+                  inspectionId={inspectionId}
+                  item={item}
+                  className={checked ? "ring-2 ring-[#FF4F12]/35 ring-offset-1" : undefined}
+                />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[12.5px] font-medium text-foreground">{item.title}</span>
-                  <span className="block truncate text-[11px] text-muted-foreground">
+                  <span className="line-clamp-2 text-[12.5px] font-medium leading-snug text-foreground">{item.title}</span>
+                  <span className="mt-0.5 block truncate text-[11px] text-zinc-600">
                     {[item.source, duration].filter(Boolean).join(" · ")}
                   </span>
                 </span>
@@ -110,6 +153,26 @@ export function ImportLinkCandidates({
           )
         })}
       </ul>
+    </section>
+  )
+}
+
+/** One inspected item: its own title and preview, before importing it. */
+export function ImportLinkSingleItem({ inspectionId, item }: { inspectionId: string; item: ImportCandidate }) {
+  const duration = formatCandidateDuration(item.durationSeconds)
+  return (
+    <section
+      className="flex min-w-0 items-center gap-3 rounded-xl border border-zinc-200/90 bg-white p-2.5"
+      aria-label="Media found at this link"
+      data-testid="import-single-item"
+    >
+      <ImportCandidateThumb inspectionId={inspectionId} item={item} className="w-[112px] rounded-[10px]" />
+      <div className="min-w-0 flex-1">
+        <p className="line-clamp-2 text-[13px] font-semibold leading-snug text-zinc-900">{item.title}</p>
+        <p className="mt-0.5 truncate text-[11.5px] text-zinc-600">
+          {[item.source, duration].filter(Boolean).join(" · ")}
+        </p>
+      </div>
     </section>
   )
 }
