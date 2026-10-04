@@ -100,7 +100,7 @@
     "date-fns": "^4.1.0",
     "dotenv": "^17.4.2",
     "execa": "^9.6.1",
-    "fastify": "^5.12.1",
+    "fastify": "^5.12.5",
     "file-type": "^22.0.1",
     "framer-motion": "^12.38.0",
     "input-otp": "^1.4.2",
