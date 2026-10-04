@@ -114,7 +114,7 @@ export function ImportLinkCandidates({
           </button>
         </div>
       </div>
-      <ul className="max-h-[15.5rem] overflow-y-auto">
+      <ul>
         {items.map((item) => {
           const checked = selected.has(item.id)
           const duration = formatCandidateDuration(item.durationSeconds)
@@ -153,6 +153,26 @@ export function ImportLinkCandidates({
           )
         })}
       </ul>
+    </section>
+  )
+}
+
+/** One inspected item: its own title and preview, before importing it. */
+export function ImportLinkSingleItem({ inspectionId, item }: { inspectionId: string; item: ImportCandidate }) {
+  const duration = formatCandidateDuration(item.durationSeconds)
+  return (
+    <section
+      className="flex min-w-0 items-center gap-3 rounded-xl border border-zinc-200/90 bg-white p-2.5"
+      aria-label="Media found at this link"
+      data-testid="import-single-item"
+    >
+      <ImportCandidateThumb inspectionId={inspectionId} item={item} className="w-[112px] rounded-[10px]" />
+      <div className="min-w-0 flex-1">
+        <p className="line-clamp-2 text-[13px] font-semibold leading-snug text-zinc-900">{item.title}</p>
+        <p className="mt-0.5 truncate text-[11.5px] text-zinc-600">
+          {[item.source, duration].filter(Boolean).join(" · ")}
+        </p>
+      </div>
     </section>
   )
 }

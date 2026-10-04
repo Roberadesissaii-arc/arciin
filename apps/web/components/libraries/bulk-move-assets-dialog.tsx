@@ -13,7 +13,7 @@ import {
   beginBulkLibraryMutation,
   endBulkLibraryMutation,
 } from "@/lib/realtime/refresh-library-queries"
-import { libraryGlassSheetPanel } from "@/lib/library-glass-sheet"
+import { floatingInspectorPanel } from "@/components/shared/floating-inspector"
 import type { AssetSummary } from "@/lib/types/models"
 import { cn } from "@/lib/utils"
 
@@ -122,7 +122,7 @@ export function BulkMoveAssetsDialog({
       <SheetContent
         side="right"
         showCloseButton={false}
-        className={cn(libraryGlassSheetPanel, "dashboard-main border-primary/25 text-foreground")}
+        className={cn(floatingInspectorPanel, "dashboard-main text-foreground")}
       >
         <MoveAssetsSheetContent
           assets={assets}

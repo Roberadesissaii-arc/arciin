@@ -1,8 +1,8 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { useQueryClient } from "@tanstack/react-query"
-import { ChevronLeft, Loader2, X } from "lucide-react"
+import { Loader2 } from "lucide-react"
 
 import { AssetEditContent } from "@/components/libraries/rename-asset-dialog"
 import { AssetMoveContent } from "@/components/libraries/move-asset-dialog"
@@ -30,17 +30,15 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { Button } from "@/components/ui/button"
+import { MediaTypeIcon } from "@/components/libraries/media-type-icon"
 import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet"
+  InspectorHeader,
+  floatingInspectorPanel,
+  floatingInspectorTall,
+} from "@/components/shared/floating-inspector"
+import { Sheet, SheetContent } from "@/components/ui/sheet"
 import { deleteAsset } from "@/lib/api/assets"
 import { queryKeys } from "@/lib/api/query-keys"
-import { libraryGlassSheetPanel } from "@/lib/library-glass-sheet"
 import { notifyDeleted } from "@/lib/notifications/toast-actions"
 import { toast } from "@/lib/notifications/arciin-toast"
 import type { AssetSummary } from "@/lib/types/models"
@@ -87,6 +85,9 @@ export function AssetSidePanel() {
   const queryClient = useQueryClient()
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  /** Assist is a workspace (a transcript, a summary) and gets the full height; forms size to fit. */
+  const [tall, setTall] = useState(false)
+  const onSectionChange = useCallback((section: Section) => setTall(section === "ai"), [])
 
   const selected = selection?.selectedAssets ?? []
   /**
@@ -166,39 +167,21 @@ export function AssetSidePanel() {
           onPointerDownOutside={(event) => event.preventDefault()}
           onInteractOutside={(event) => event.preventDefault()}
           data-testid="asset-side-panel"
-          // The shared library panel token: inset top/right/bottom, all four
-          // corners rounded. Same shell as Edit File, Move and Share.
-          className={cn(libraryGlassSheetPanel, "dashboard-main text-foreground sm:max-w-[420px]")}
+          // The floating inspector: inset on every side, height follows the
+          // content. Same shell as Import, Edit File, Move and Share.
+          className={cn(floatingInspectorPanel, tall && floatingInspectorTall, "dashboard-main text-foreground")}
         >
-          {/* ── stable header: the file, not the section ─────────────────── */}
-          <SheetHeader className="relative shrink-0 space-y-1 border-b border-border p-2 pr-11">
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              className="absolute top-2 right-2 text-muted-foreground hover:text-foreground"
-              aria-label="Close"
-              onClick={close}
-            >
-              <X className="size-4" />
-            </Button>
-            <SheetTitle
-              tabIndex={-1}
-              className="truncate pr-2 text-[14px] font-semibold leading-snug text-foreground"
-              title={asset.originalFilename}
-            >
-              {asset.originalFilename}
-            </SheetTitle>
-            {/* Filename only — kind/size already live in Overview details. */}
-            <SheetDescription className="sr-only">
-              {assetKindLabel(asset)} details
-            </SheetDescription>
-          </SheetHeader>
-
           {/* Keyed by asset: selecting a different file resets the section and
               every section's draft by remounting, rather than by an effect that
-              writes state during render. */}
-          <PanelSections key={asset.id} asset={asset} onDeleteRequest={() => setDeleteOpen(true)} />
+              writes state during render. The header lives inside, because it
+              follows the section (a back control everywhere but Overview). */}
+          <PanelSections
+            key={asset.id}
+            asset={asset}
+            onClose={close}
+            onDeleteRequest={() => setDeleteOpen(true)}
+            onSectionChange={onSectionChange}
+          />
         </SheetContent>
       </Sheet>
 
@@ -253,10 +236,14 @@ export function AssetSidePanel() {
  */
 function PanelSections({
   asset,
+  onClose,
   onDeleteRequest,
+  onSectionChange,
 }: {
   asset: AssetSummary
+  onClose: () => void
   onDeleteRequest: () => void
+  onSectionChange: (section: Section) => void
 }) {
   const selection = useAssetSelection()
   const intentContext = useAssetPanelIntent()
@@ -303,35 +290,45 @@ function PanelSections({
   }, [appliedGeneration, asset.id, intentContext])
 
   const active = sections.includes(section) ? section : "overview"
+  useEffect(() => {
+    onSectionChange(active)
+  }, [active, onSectionChange])
+
+  const displayName = asset.title?.trim() || asset.originalFilename
 
   return (
     <>
-      {/* When a menu opened a non-overview section, offer a quiet way back.
-          No permanent tabs — just the current destination and Overview. */}
-      {active !== "overview" ? (
-        <div
-          className="flex shrink-0 items-center gap-2 border-b border-border px-2.5 py-2"
-          data-testid="asset-panel-section-bar"
-        >
-          <button
-            type="button"
-            onClick={() => setSection("overview")}
-            data-testid="asset-panel-back-overview"
-            className={cn(
-              "inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[12px] font-medium",
-              "text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30",
-            )}
-          >
-            <ChevronLeft className="size-3.5" aria-hidden />
-            Overview
-          </button>
-          <span className="text-[12px] text-border" aria-hidden>
-            /
-          </span>
-          <span className="text-[12.5px] font-semibold text-foreground">{SECTION_LABELS[active]}</span>
-        </div>
-      ) : null}
+      {/* One header in every section: the file on Overview; elsewhere the
+          section, with the same back control. No permanent tab strip. */}
+      {active === "overview" ? (
+        <InspectorHeader
+          icon={
+            <MediaTypeIcon
+              mediaType={asset.mediaType}
+              filename={asset.originalFilename}
+              mimeType={asset.mimeType}
+              extension={asset.extension}
+              className="size-4"
+            />
+          }
+          eyebrow={assetKindLabel(asset)}
+          title={displayName}
+          titleAttr={displayName}
+          description={`${assetKindLabel(asset)} details`}
+          descriptionSrOnly
+          onClose={onClose}
+        />
+      ) : (
+        <InspectorHeader
+          back={{ label: "Overview", onClick: () => setSection("overview") }}
+          eyebrow={<span className="block truncate normal-case tracking-normal" title={displayName}>{displayName}</span>}
+          title={SECTION_LABELS[active]}
+          description={`${SECTION_LABELS[active]} — ${displayName}`}
+          descriptionSrOnly
+          onClose={onClose}
+          className="[&_[data-slot=sheet-title]]:text-[15.5px]"
+        />
+      )}
 
       {active === "overview" ? (
         <AssetOverviewContent
@@ -388,7 +385,7 @@ function PanelSections({
         )
       ) : null}
       {active === "move" ? (
-        <AssetMoveContent asset={asset} onDone={() => selection?.clear()} />
+        <AssetMoveContent asset={asset} embedded onCancel={() => setSection("overview")} onDone={() => selection?.clear()} />
       ) : null}
       {active === "share" ? (
         <AssetShareContent

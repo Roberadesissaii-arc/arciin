@@ -153,7 +153,7 @@ export function DocumentAssistSection({
       </div>
 
       {/* Same footer as Overview — Open / Download / Delete always available. */}
-      <div className="flex shrink-0 items-center gap-2 border-t border-border p-2">
+      <div className="flex shrink-0 items-center gap-2 border-t border-zinc-200/70 bg-zinc-50/60 px-4 py-3">
         {onOpen ? (
           <Button
             type="button"

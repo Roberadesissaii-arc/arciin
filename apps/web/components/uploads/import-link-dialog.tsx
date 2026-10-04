@@ -10,7 +10,6 @@ import {
   Music2,
   Link2,
   Video,
-  X,
   type LucideIcon,
 } from "lucide-react"
 
@@ -19,7 +18,14 @@ import { IMPORT_BATCH_MAX_ITEMS, normalizeImportUrl } from "@arciin/shared"
 import { notifyImportFailed, notifyImportStarted } from "@/lib/notifications/toast-actions"
 import { useUploadStore } from "@/lib/stores/upload-store"
 
-import { ImportLinkCandidates } from "@/components/uploads/import-link-candidates"
+import { ImportLinkCandidates, ImportLinkSingleItem } from "@/components/uploads/import-link-candidates"
+import {
+  InspectorBody,
+  InspectorFooter,
+  InspectorHeader,
+  InspectorSection,
+  floatingInspectorPanel,
+} from "@/components/shared/floating-inspector"
 import {
   ImportLinkInspectSlot,
   linkSupportsFormatOptions,
@@ -29,20 +35,10 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Field, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import {
-  Sheet,
-  SheetClose,
-  SheetContent,
-  SheetDescription,
-  SheetFooter,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from "@/components/ui/sheet"
+import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
 import { ApiError } from "@/lib/api/errors"
 import { importFromUrl, importInspectionItems, inspectImportLink } from "@/lib/api/imports"
 import { queryKeys } from "@/lib/api/query-keys"
-import { libraryGlassSheetPanel } from "@/lib/library-glass-sheet"
 import {
   VIDEO_FORMATS,
   analyzeImportLink,
@@ -59,6 +55,16 @@ const SUPPORTED = [
   { icon: FileText, label: "PDFs & docs" },
   { icon: Film, label: "Direct files" },
 ] as const
+
+/** Shown, disabled, before a link offers any format — so the card never changes shape. */
+const PLACEHOLDER_VIDEO_FORMATS = [
+  { id: "video-mp4" as LinkImportFormatId, label: "MP4 video", subtitle: "Full video with audio", live: false },
+  { id: "video-best" as LinkImportFormatId, label: "Best quality", subtitle: "Highest quality available", live: false },
+]
+const PLACEHOLDER_AUDIO_FORMATS = [
+  { id: "audio-mp3" as LinkImportFormatId, label: "MP3 audio", subtitle: "Extract soundtrack as MP3", live: false },
+  { id: "audio-m4a" as LinkImportFormatId, label: "M4A audio", subtitle: "Extract soundtrack as M4A", live: false },
+]
 
 const VIDEO_FORMAT_IDS: LinkImportFormatId[] = ["video-mp4", "video-best"]
 const AUDIO_FORMAT_IDS: LinkImportFormatId[] = ["audio-mp3", "audio-m4a"]
@@ -101,25 +107,25 @@ function FormatSlot({
       disabled={disabled}
       onClick={onSelect}
       aria-pressed={selected}
+      data-selected={selected && !disabled ? "" : undefined}
       className={cn(
-        "flex min-h-[4.25rem] flex-col justify-center gap-0.5 rounded-xl border px-2.5 py-2 text-left transition-colors",
-        disabled && "cursor-not-allowed opacity-40",
-        !disabled && selected
-          ? "border-primary/45 bg-primary/[0.07] ring-1 ring-primary/25"
-          : !disabled && "border-zinc-200/90 bg-white hover:border-zinc-300 hover:bg-zinc-50/80",
-        disabled && "border-zinc-200/70 bg-zinc-50/80",
+        "flex h-[4.5rem] flex-col items-start justify-start gap-1 rounded-xl border px-3 py-2.5 text-left transition-colors motion-reduce:transition-none",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF4F12]/30",
+        disabled
+          ? "cursor-not-allowed border-zinc-200/70 bg-zinc-50/80 text-zinc-400"
+          : selected
+            ? "border-[#FF4F12]/45 bg-[#FF4F12]/[0.06] ring-1 ring-[#FF4F12]/20"
+            : "border-zinc-200/90 bg-white hover:border-zinc-300 hover:bg-zinc-50/80",
       )}
     >
-      <span className="flex items-center gap-1.5">
+      <span className="flex w-full items-center gap-1.5">
         <Icon
-          className={cn(
-            "size-3.5 shrink-0",
-            selected && !disabled ? "text-primary" : "text-zinc-400",
-          )}
+          className={cn("size-3.5 shrink-0", selected && !disabled ? "text-[#FF4F12]" : "text-zinc-400")}
+          aria-hidden
         />
-        <span className="truncate text-[12px] font-semibold text-zinc-900">{title}</span>
+        <span className={cn("truncate text-[12.5px] font-semibold", disabled ? "text-zinc-500" : "text-zinc-900")}>{title}</span>
       </span>
-      <span className="line-clamp-2 text-[10px] leading-snug text-zinc-500">{subtitle}</span>
+      <span className={cn("line-clamp-2 text-[11px] leading-snug", disabled ? "text-zinc-400" : "text-zinc-600")}>{subtitle}</span>
     </button>
   )
 }
@@ -185,6 +191,9 @@ export function ImportLinkDialog() {
   const blockReason =
     preview?.blockReason ?? (inspection?.kind === "blocked" ? inspection.reason : null) ?? inspectRefusal
   const candidates = phase === "multiple" ? (inspection?.items ?? []) : []
+  /** One inspected item: shown with its own title and preview. */
+  const singleItem =
+    inspection?.kind === "single" && phase !== "blocked" && inspection.items.length === 1 ? inspection.items[0]! : null
   const selectedCandidates = candidates.filter((item) => selectedIds.has(item.id))
 
   // A new inspection starts with nothing chosen.
@@ -429,42 +438,21 @@ export function ImportLinkDialog() {
       <SheetContent
         side="right"
         showCloseButton={false}
-        className={cn(libraryGlassSheetPanel, "dashboard-main text-foreground")}
+        className={cn(floatingInspectorPanel, "dashboard-main text-foreground")}
+        data-testid="import-link-panel"
       >
-        {/* Compact header — title + one short line, no overflow from long copy */}
-        <SheetHeader className="relative shrink-0 space-y-2 border-b border-border px-3 py-3 pr-11">
-          <SheetClose asChild>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              className="absolute top-2.5 right-2 text-muted-foreground hover:text-foreground"
-              aria-label="Close"
-            >
-              <X className="size-4" />
-            </Button>
-          </SheetClose>
-          <div className="flex items-start gap-2.5">
-            <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-xl border border-zinc-200 bg-zinc-50 text-[color:var(--arciin-accent,#ff4f12)]">
-              <Link2 className="size-4" />
-            </span>
-            <div className="min-w-0 space-y-0.5">
-              <SheetTitle className="font-heading text-[17px] font-semibold tracking-tight text-zinc-900">
-                Import from link
-              </SheetTitle>
-              <SheetDescription className="text-[12.5px] leading-snug text-zinc-500">
-                Public links only — YouTube, SoundCloud, TikTok, files. Not Spotify or Audible.
-              </SheetDescription>
-            </div>
-          </div>
-        </SheetHeader>
+        {/* 1. Header */}
+        <InspectorHeader
+          icon={<Link2 className="size-4 text-[color:var(--arciin-accent,#ff4f12)]" aria-hidden />}
+          title="Import from link"
+          description="Public links only — YouTube, SoundCloud, TikTok, files. Not Spotify or Audible."
+          closeAsSheetClose
+        />
 
-        <div className="scrollbar-hide flex min-h-0 flex-1 flex-col gap-3 overflow-x-hidden overflow-y-auto p-3">
+        <InspectorBody className="gap-3.5">
+          {/* 2. Link */}
           <Field className="min-w-0 gap-1.5">
-            <FieldLabel
-              htmlFor="importUrl"
-              className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500"
-            >
+            <FieldLabel htmlFor="importUrl" className="text-[11px] font-semibold uppercase tracking-[0.08em] text-zinc-500">
               Link
             </FieldLabel>
             <Input
@@ -510,8 +498,27 @@ export function ImportLinkDialog() {
                 {error}
               </p>
             ) : null}
+            {PHASE_STATUS[phase] ? (
+              <p
+                role="status"
+                data-testid="import-link-status"
+                data-phase={phase}
+                className="flex min-w-0 items-center gap-1.5 text-[11.5px] leading-snug text-zinc-600"
+              >
+                {phase === "preparing" || phase === "inspecting" ? (
+                  <Loader2 className="size-3.5 shrink-0 animate-spin motion-reduce:animate-none" aria-hidden />
+                ) : null}
+                {PHASE_STATUS[phase]}
+              </p>
+            ) : null}
+            {phase === "invalid" && !normalized.ok && url.trim().length > 3 ? (
+              <p className="text-[11.5px] leading-snug text-zinc-600" data-testid="import-link-status" data-phase="invalid">
+                {normalized.reason}
+              </p>
+            ) : null}
           </Field>
 
+          {/* 3. Preview / candidates */}
           {phase === "multiple" && inspection ? (
             <ImportLinkCandidates
               inspectionId={inspection.inspectionId}
@@ -522,31 +529,10 @@ export function ImportLinkDialog() {
               onToggleAll={toggleAllCandidates}
               disabled={submitting}
             />
-          ) : (
-            <ImportLinkInspectSlot url={effectiveUrl ?? ""} />
-          )}
-
-          {PHASE_STATUS[phase] ? (
-            <p
-              role="status"
-              data-testid="import-link-status"
-              data-phase={phase}
-              className={cn(
-                "flex min-w-0 items-center gap-1.5 text-[11.5px] leading-snug",
-                phase === "error" || phase === "none" ? "text-zinc-600" : "text-muted-foreground",
-              )}
-            >
-              {phase === "preparing" || phase === "inspecting" ? (
-                <Loader2 className="size-3.5 shrink-0 animate-spin motion-reduce:animate-none" />
-              ) : null}
-              {PHASE_STATUS[phase]}
-            </p>
-          ) : null}
-
-          {phase === "invalid" && !normalized.ok && url.trim().length > 3 ? (
-            <p className="text-[11.5px] leading-snug text-zinc-500" data-testid="import-link-status" data-phase="invalid">
-              {normalized.reason}
-            </p>
+          ) : singleItem && inspection ? (
+            <ImportLinkSingleItem inspectionId={inspection.inspectionId} item={singleItem} />
+          ) : effectiveUrl ? (
+            <ImportLinkInspectSlot url={effectiveUrl} />
           ) : null}
 
           {phase === "blocked" && blockReason ? (
@@ -559,26 +545,11 @@ export function ImportLinkDialog() {
             </div>
           ) : null}
 
-          {/* Download options — no fixed height that clips or overflows long hints */}
-          <section
-            className={cn(
-              "min-w-0 overflow-hidden rounded-2xl border border-zinc-200/90 bg-white p-3 shadow-sm",
-              phase === "blocked" && "opacity-60",
-            )}
-          >
-            <div className="flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
-                  Download options
-                </p>
-                <p className="mt-0.5 truncate text-[11px] text-zinc-400">{optionsHint}</p>
-              </div>
-              <div
-                className={cn(
-                  "flex shrink-0 items-center gap-2 rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-1",
-                  !formatOptionsEnabled && "opacity-40",
-                )}
-              >
+          {/* 4. Download options */}
+          <InspectorSection
+            title="Download options"
+            aside={
+              <div className={cn("flex items-center gap-2", !formatOptionsEnabled && "opacity-50")}>
                 <Checkbox
                   id="audioOnlyToggle"
                   checked={audioOnlyEnabled}
@@ -588,99 +559,73 @@ export function ImportLinkDialog() {
                 <Label
                   htmlFor="audioOnlyToggle"
                   className={cn(
-                    "text-[11.5px] font-semibold text-zinc-700",
+                    "text-[12px] font-medium text-zinc-700",
                     formatOptionsEnabled ? "cursor-pointer" : "cursor-not-allowed",
                   )}
                 >
                   Audio only
                 </Label>
               </div>
+            }
+            className={cn(phase === "blocked" && "opacity-60")}
+          >
+            <p className="-mt-1 mb-2 text-[11.5px] leading-snug text-zinc-600">{optionsHint}</p>
+            <div className="grid grid-cols-2 gap-2" role="group" aria-label="Download format">
+              {(videoFormats.length > 0
+                ? videoFormats.map((format) => ({ ...format, live: true }))
+                : PLACEHOLDER_VIDEO_FORMATS
+              ).map((format) => (
+                <FormatSlot
+                  key={format.id}
+                  selected={format.live && formatId === format.id}
+                  disabled={!format.live || !formatOptionsEnabled || audioOnlyEnabled}
+                  onSelect={() => {
+                    setAudioOnlyEnabled(false)
+                    setFormatId(format.id)
+                  }}
+                  icon={Video}
+                  title={format.label}
+                  subtitle={format.subtitle}
+                />
+              ))}
+              {(audioFormats.length > 0
+                ? audioFormats.map((format) => ({ ...format, live: true }))
+                : PLACEHOLDER_AUDIO_FORMATS
+              ).map((format) => (
+                <FormatSlot
+                  key={format.id}
+                  selected={format.live && formatId === format.id}
+                  disabled={!format.live || !formatOptionsEnabled || !audioOnlyEnabled}
+                  onSelect={() => {
+                    setAudioOnlyEnabled(true)
+                    setFormatId(format.id)
+                  }}
+                  icon={Music2}
+                  title={format.label}
+                  subtitle={format.subtitle}
+                />
+              ))}
             </div>
+          </InspectorSection>
 
-            <div className="mt-3 grid grid-cols-2 gap-2">
-              {videoFormats.length > 0
-                ? videoFormats.map((format) => (
-                    <FormatSlot
-                      key={format.id}
-                      selected={formatId === format.id}
-                      disabled={!formatOptionsEnabled || audioOnlyEnabled}
-                      onSelect={() => {
-                        setAudioOnlyEnabled(false)
-                        setFormatId(format.id)
-                      }}
-                      icon={Video}
-                      title={format.label}
-                      subtitle={format.subtitle}
-                    />
-                  ))
-                : [
-                    { id: "video-mp4", label: "MP4 video", subtitle: "Full video with audio" },
-                    { id: "video-best", label: "Best quality", subtitle: "Highest quality available" },
-                  ].map((slot) => (
-                    <FormatSlot
-                      key={slot.id}
-                      selected={false}
-                      disabled
-                      onSelect={() => {}}
-                      icon={Video}
-                      title={slot.label}
-                      subtitle={slot.subtitle}
-                    />
-                  ))}
-
-              {audioFormats.length > 0
-                ? audioFormats.map((format) => (
-                    <FormatSlot
-                      key={format.id}
-                      selected={formatId === format.id}
-                      disabled={!formatOptionsEnabled || !audioOnlyEnabled}
-                      onSelect={() => {
-                        setAudioOnlyEnabled(true)
-                        setFormatId(format.id)
-                      }}
-                      icon={Music2}
-                      title={format.label}
-                      subtitle={format.subtitle}
-                    />
-                  ))
-                : [
-                    { id: "audio-mp3", label: "MP3 audio", subtitle: "Extract soundtrack as MP3" },
-                    { id: "audio-m4a", label: "M4A audio", subtitle: "Extract soundtrack as M4A" },
-                  ].map((slot) => (
-                    <FormatSlot
-                      key={slot.id}
-                      selected={false}
-                      disabled
-                      onSelect={() => {}}
-                      icon={Music2}
-                      title={slot.label}
-                      subtitle={slot.subtitle}
-                    />
-                  ))}
-            </div>
-          </section>
-
-          <div className="shrink-0 overflow-hidden rounded-2xl border border-zinc-200/90 bg-zinc-50/80 p-3">
-            <p className="mb-2.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
-              Supported sources
-            </p>
-            <ul className="grid grid-cols-2 gap-2">
+          {/* 5. Supported sources */}
+          <InspectorSection title="Supported sources">
+            <ul className="flex flex-wrap gap-1.5">
               {SUPPORTED.map(({ icon: Icon, label }) => (
                 <li
                   key={label}
-                  className="flex items-center gap-2 rounded-xl border border-zinc-200/80 bg-white px-2.5 py-2 text-[12px] font-medium text-zinc-700"
+                  className="inline-flex items-center gap-1.5 rounded-full border border-zinc-200/90 bg-white px-2.5 py-1 text-[11.5px] font-medium text-zinc-700"
                 >
-                  <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-zinc-100 text-zinc-500">
-                    <Icon className="size-3.5" />
-                  </span>
+                  <Icon className="size-3.5 text-zinc-500" aria-hidden />
                   {label}
                 </li>
               ))}
             </ul>
-          </div>
-        </div>
+          </InspectorSection>
+        </InspectorBody>
 
-        <SheetFooter className="shrink-0 border-t border-border p-3">
+        {/* 6. Footer */}
+        <InspectorFooter>
           <Button
             className="h-10 w-full bg-primary text-white hover:bg-primary/90"
             disabled={submitDisabled}
@@ -689,7 +634,7 @@ export function ImportLinkDialog() {
           >
             {submitLabel}
           </Button>
-        </SheetFooter>
+        </InspectorFooter>
       </SheetContent>
     </Sheet>
   )
