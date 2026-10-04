@@ -57,6 +57,10 @@ export const queryKeys = {
   chatSelection: ["chat", "selection"] as const,
   apiKeys: ["api-keys"] as const,
   semanticSearchStatus: ["semantic-search", "status"] as const,
+  /** Top search: keyword files, folders and libraries. */
+  universalSearch: (q: string) => ["search", "quick", q] as const,
+  /** Top search: files with matches by meaning. */
+  universalSearchFiles: (q: string) => ["search", "files", q] as const,
   integrations: ["integrations"] as const,
   plexStatus: ["integrations", "plex", "status"] as const,
   jellyfinStatus: ["integrations", "jellyfin", "status"] as const,

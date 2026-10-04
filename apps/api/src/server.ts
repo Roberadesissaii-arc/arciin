@@ -15,6 +15,7 @@ import { registerJsonBodyParser } from "@/plugins/json-body"
 import { registerApiKeyRoutes } from "@/modules/api-keys/routes"
 import { registerAppDatabaseRoutes } from "@/modules/app-databases/routes"
 import { registerAssetRoutes } from "@/modules/assets/routes"
+import { registerUniversalSearchRoutes } from "@/modules/search/routes"
 import { registerDocumentRoutes } from "@/modules/documents/routes"
 import { transcriptRoutes } from "@/modules/transcripts/routes"
 import { bookRunRoutes } from "@/modules/book-runs/routes"
@@ -271,6 +272,7 @@ export async function createServer() {
       await registerStorageAuditRoutes(api)
       await registerModelRoutes(api)
       await registerSemanticSearchRoutes(api)
+      await registerUniversalSearchRoutes(api)
       await registerChatRoutes(api)
     },
     {

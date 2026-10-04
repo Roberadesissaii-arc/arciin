@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 
 import { AssetBulkActionsBar } from "@/components/libraries/asset-bulk-actions-bar"
+import { AssetDeepLink } from "@/components/libraries/asset-deep-link"
 import { AssetSidePanel } from "@/components/libraries/asset-side-panel"
 import { AssetPanelIntentProvider } from "@/components/libraries/asset-panel-intent"
 import { AssetViewerProvider } from "@/components/libraries/asset-viewer-context"
@@ -222,6 +223,7 @@ export function SelectableAssetsContainer({
         {/* Inside the selection provider, because selecting one asset is what
             opens the panel that the intent then steers. */}
         <PanelIntentBridge>
+          <AssetDeepLink assets={assets} />
           <SelectableAssetsContainerInner defaultLibraryId={defaultLibraryId}>
             {children}
           </SelectableAssetsContainerInner>
