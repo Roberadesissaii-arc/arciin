@@ -26,8 +26,11 @@ export function VideoAssetViewer({
   onTimeChange,
   compact = false,
   controlsBelow = false,
+  poster,
 }: {
   src: string
+  /** Still shown before the first frame loads (the server thumbnail). */
+  poster?: string
   /**
    * Put the controls under the picture instead of over it.
    *
@@ -459,6 +462,7 @@ export function VideoAssetViewer({
             }}
             key={src}
             src={src}
+            poster={poster}
             playsInline
             preload="metadata"
             crossOrigin="use-credentials"

@@ -3,7 +3,7 @@
 
 import { useEffect, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { FolderLock, FolderPlus, RefreshCw, X } from "lucide-react"
+import { FolderLock, FolderPlus, RefreshCw } from "lucide-react"
 
 import {
   notifyFolderActionError,
@@ -18,19 +18,15 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import {
   Sheet,
-  SheetClose,
   SheetContent,
-  SheetDescription,
   SheetFooter,
-  SheetHeader,
-  SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet"
 import { useCreateFolder, useLockFolder } from "@/hooks/use-libraries"
 import { getPasswordVault } from "@/lib/api/password-vault"
 import type { FolderCredentialInput } from "@/lib/api/libraries"
 import { queryKeys } from "@/lib/api/query-keys"
-import { libraryGlassSheetPanel } from "@/lib/library-glass-sheet"
+import { InspectorHeader, floatingInspectorPanel } from "@/components/shared/floating-inspector"
 import { generateFolderName } from "@/lib/utils/generate-folder-name"
 import { cn } from "@/lib/utils"
 
@@ -155,29 +151,16 @@ export function CreateFolderDialog({
       <SheetContent
         side="right"
         showCloseButton={false}
-        className={cn(libraryGlassSheetPanel, "dashboard-main text-foreground")}
+        className={cn(floatingInspectorPanel, "dashboard-main text-foreground")}
       >
-        <SheetHeader className="relative shrink-0 space-y-1 border-b border-border p-2 pr-11">
-          <SheetClose asChild>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              className="absolute top-2 right-2 text-muted-foreground hover:text-foreground"
-              aria-label="Close"
-            >
-              <X className="size-4" />
-            </Button>
-          </SheetClose>
-          <SheetTitle className="font-heading text-lg font-semibold tracking-tight text-foreground">
-            Create folder
-          </SheetTitle>
-          <SheetDescription className="text-[13px] leading-snug text-muted-foreground">
-            Add a nested folder inside this library to keep the archive organized.
-          </SheetDescription>
-        </SheetHeader>
+        <InspectorHeader
+          icon={<FolderPlus className="size-4 text-[color:var(--arciin-accent,#ff4f12)]" aria-hidden />}
+          title="Create folder"
+          description="Add a nested folder inside this library to keep the archive organized."
+          closeAsSheetClose
+        />
 
-        <div className="scrollbar-hide flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-2">
+        <div className="scrollbar-hide flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto overscroll-contain px-4 py-4">
           <Field>
             <FieldLabel
               htmlFor="folderName"
@@ -285,7 +268,7 @@ export function CreateFolderDialog({
           </div>
         </div>
 
-        <SheetFooter className="shrink-0 border-t border-border p-2">
+        <SheetFooter className="shrink-0 border-t border-zinc-200/70 bg-zinc-50/60 px-4 py-3">
           <Button
             className="h-10 w-full bg-primary text-white hover:bg-primary/90"
             disabled={busy}
