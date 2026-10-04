@@ -109,7 +109,13 @@ export type ImportCandidate = {
   id: string
   url: string
   title: string
-  thumbnail: string | null
+  /**
+   * Whether a preview image exists. The image itself is only ever served
+   * through the API's same-origin proxy
+   * (`/imports/inspections/:inspectionId/items/:id/thumbnail`); the
+   * third-party URL never reaches the browser.
+   */
+  hasThumbnail: boolean
   durationSeconds: number | null
   source: string
   category: ImportCandidateCategory

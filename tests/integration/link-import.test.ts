@@ -33,6 +33,8 @@ const events: RealtimeEvent[] = []
 const queued: Array<Record<string, unknown>> = []
 let failQueueOn: string | null = null
 let runner: { run: (url: string) => Promise<unknown> }
+let thumbs: { fetch: (url: string) => Promise<unknown> }
+let thumbCache: { clear: () => void }
 let lastInspected: string[] = []
 
 // Literal public addresses: no DNS needed for the guard to pass them.
@@ -51,6 +53,8 @@ async function buildApp() {
     return { id: String(queued.length) }
   }) as never)
   runner = routes.inspectRunner
+  thumbs = routes.thumbnailFetcher
+  thumbCache = routes.thumbnailCache
   const a = Fastify({ logger: false })
   a.decorate("prisma", prisma)
   a.decorate("redis", redis)
@@ -177,7 +181,7 @@ describe("POST /imports/inspect", () => {
     expect(lastInspected).toEqual([`${PUB}/videos`])
     expect(data).toMatchObject({ url: `${PUB}/videos`, kind: "collection", title: "Clips" })
     expect(data.items.map((i: { id: string }) => i.id)).toEqual(["c1", "c2", "c3", "c4", "c5"])
-    expect(Object.keys(data.items[0]).sort()).toEqual(["category", "durationSeconds", "id", "source", "thumbnail", "title", "url"])
+    expect(Object.keys(data.items[0]).sort()).toEqual(["category", "durationSeconds", "hasThumbnail", "id", "source", "title", "url"])
     const stored = JSON.parse((await redis.get(`import:inspect:${data.inspectionId}`))!)
     expect(stored.userId).toBe(userId)
     expect(stored.items).toHaveLength(5)
@@ -372,5 +376,136 @@ describe("slots", () => {
     await redis.zadd(importSlotsKey(userId), Date.now(), "live-2")
     expect(await acquireImportSlot(redis, userId, "new")).toBe(true)
     expect(await redis.zscore(importSlotsKey(userId), "dead-1")).toBeNull()
+  })
+})
+
+
+describe("source titles — decided by the server", () => {
+  it("a batch import carries the title the server stored, never one the client sends", async () => {
+    stubInspection({
+      kind: "collection",
+      title: "Playlist",
+      reason: null,
+      items: [{ ...video(1), title: "Building a Data Center — Redundancy Explained" }, video(2)],
+    })
+    const { inspectionId } = (await post("/imports/inspect", { url: `${PUB}/playlist` })).json().data
+    const res = await post("/imports/batch", { inspectionId, itemIds: ["c1"], title: "client says hi", sourceTitle: "evil" })
+    expect(res.statusCode, res.body).toBe(202)
+    expect(queued[0]).toMatchObject({ url: `${PUB}/clips/v1.mp4`, sourceTitle: "Building a Data Center — Redundancy Explained" })
+    const job = await prisma.job.findFirstOrThrow()
+    expect((job.payload as { sourceTitle?: string }).sourceTitle).toBe("Building a Data Center — Redundancy Explained")
+    const session = await prisma.uploadSession.findFirstOrThrow()
+    expect(session.originalFilename).toBe("Building a Data Center — Redundancy Explained")
+  })
+
+  it("a candidate with no source title sends none (no 'Item 1' placeholder)", async () => {
+    stubInspection({ kind: "collection", title: null, reason: null, items: [{ ...video(1), title: null }, video(2)] })
+    const { inspectionId } = (await post("/imports/inspect", { url: `${PUB}/untitled` })).json().data
+    await post("/imports/batch", { inspectionId, itemIds: ["c1"] })
+    expect(queued[0]).not.toHaveProperty("sourceTitle")
+  })
+
+  it("a single import names its candidate by id; the server checks it is the same link and the same user", async () => {
+    stubInspection({ kind: "single", title: null, reason: null, items: [{ ...video(7), url: `${PUB}/watch/7`, title: "My Podcast Episode" }] })
+    const { inspectionId } = (await post("/imports/inspect", { url: `${PUB}/watch/7` })).json().data
+
+    await post("/imports", { url: `${PUB}/watch/7`, inspectionId, itemId: "c1", audioOnly: true, audioFormat: "mp3" })
+    expect(queued.at(-1)).toMatchObject({ sourceTitle: "My Podcast Episode", audioOnly: true })
+
+    // A different link with the same reference gets no title.
+    await redis.del(importSlotsKey(userId))
+    await post("/imports", { url: `${PUB}/watch/8`, inspectionId, itemId: "c1" })
+    expect(queued.at(-1)).not.toHaveProperty("sourceTitle")
+
+    // Someone else's inspection gives nothing.
+    await post("/imports", { url: `${PUB}/watch/7`, inspectionId, itemId: "c1" }, otherCookie)
+    expect(queued.at(-1)).not.toHaveProperty("sourceTitle")
+
+    // A title in the body is not a field the server reads.
+    await redis.del(importSlotsKey(userId))
+    await post("/imports", { url: `${PUB}/watch/9`, title: "client title", sourceTitle: "client title" })
+    expect(queued.at(-1)).not.toHaveProperty("sourceTitle")
+  })
+})
+
+describe("GET /imports/inspections/:id/items/:item/thumbnail", () => {
+  const PNG = Buffer.from("89504e470d0a1a0a0000000d49484452", "hex")
+  let fetched: string[] = []
+
+  beforeEach(() => {
+    fetched = []
+    thumbCache.clear()
+    thumbs.fetch = async (url: string) => {
+      fetched.push(url)
+      return { ok: true, body: PNG, contentType: "image/png" }
+    }
+  })
+
+  async function inspectWithThumbs() {
+    stubInspection({
+      kind: "collection",
+      title: "Thumbs",
+      reason: null,
+      items: [
+        { ...video(1), thumbnail: "https://i.ytimg.example/vi/one/hq.jpg" },
+        { ...video(2), thumbnail: null },
+      ],
+    })
+    const res = await post("/imports/inspect", { url: `${PUB}/thumbs` })
+    return res.json().data as { inspectionId: string; items: Array<Record<string, unknown>> }
+  }
+  const get = (url: string, c: string | null = cookie) =>
+    app.inject({ method: "GET", url: `/api${url}`, headers: c ? { cookie: c } : {} })
+
+  it("the inspection response never carries the third-party URL", async () => {
+    const data = await inspectWithThumbs()
+    expect(JSON.stringify(data)).not.toContain("ytimg")
+    expect(data.items.map((i) => i.hasThumbnail)).toEqual([true, false])
+  })
+
+  it("serves the image same-origin, from the stored URL, with safe headers — and caches it", async () => {
+    const { inspectionId } = await inspectWithThumbs()
+    const res = await get(`/imports/inspections/${inspectionId}/items/c1/thumbnail`)
+    expect(res.statusCode, res.body).toBe(200)
+    expect(res.headers["content-type"]).toBe("image/png")
+    expect(res.headers["x-content-type-options"]).toBe("nosniff")
+    expect(res.headers["cache-control"]).toBe("private, max-age=600")
+    expect(res.rawPayload.equals(PNG)).toBe(true)
+    expect(fetched).toEqual(["https://i.ytimg.example/vi/one/hq.jpg"])
+    await get(`/imports/inspections/${inspectionId}/items/c1/thumbnail`)
+    expect(fetched).toHaveLength(1)
+  })
+
+  it("no thumbnail, an unknown item, a malformed id: 404 without fetching", async () => {
+    const { inspectionId } = await inspectWithThumbs()
+    for (const path of [
+      `/imports/inspections/${inspectionId}/items/c2/thumbnail`,
+      `/imports/inspections/${inspectionId}/items/c9/thumbnail`,
+      `/imports/inspections/${inspectionId}/items/..%2F..%2Fx/thumbnail`,
+      `/imports/inspections/short/items/c1/thumbnail`,
+    ]) {
+      expect((await get(path)).statusCode, path).toBe(404)
+    }
+    expect(fetched).toEqual([])
+  })
+
+  it("another user's or an expired inspection is not found; signed-out is refused", async () => {
+    const { inspectionId } = await inspectWithThumbs()
+    expect((await get(`/imports/inspections/${inspectionId}/items/c1/thumbnail`, otherCookie)).statusCode).toBe(404)
+    expect((await get(`/imports/inspections/${inspectionId}/items/c1/thumbnail`, null)).statusCode).toBe(401)
+    await redis.del(`import:inspect:${inspectionId}`)
+    expect((await get(`/imports/inspections/${inspectionId}/items/c1/thumbnail`)).statusCode).toBe(404)
+    expect(fetched).toEqual([])
+  })
+
+  it("a fetch the proxy refuses (private address, not an image, too large) is a 404, and not retried each time", async () => {
+    thumbs.fetch = async (url: string) => {
+      fetched.push(url)
+      return { ok: false, reason: "blocked" }
+    }
+    const { inspectionId } = await inspectWithThumbs()
+    expect((await get(`/imports/inspections/${inspectionId}/items/c1/thumbnail`)).statusCode).toBe(404)
+    expect((await get(`/imports/inspections/${inspectionId}/items/c1/thumbnail`)).statusCode).toBe(404)
+    expect(fetched).toHaveLength(1)
   })
 })

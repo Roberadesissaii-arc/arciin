@@ -17,7 +17,7 @@ const inspection = (over: Partial<ImportInspection>): ImportInspection => ({
   reason: null,
   ...over,
 })
-const item = (id: string) => ({ id, url: `https://cdn.example.com/${id}.mp4`, title: id, thumbnail: null, durationSeconds: null, source: "cdn.example.com", category: "video" as const })
+const item = (id: string) => ({ id, url: `https://cdn.example.com/${id}.mp4`, title: id, hasThumbnail: false, durationSeconds: null, source: "cdn.example.com", category: "video" as const })
 
 describe("importSheetPhase", () => {
   it("walks empty → preparing → inspecting → result", () => {

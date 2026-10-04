@@ -15,6 +15,7 @@
 
 import { lookup as dnsLookup } from "node:dns"
 import { get as httpsGet } from "node:https"
+import { isIP } from "node:net"
 
 /** Well above any cover art, well below something that would exhaust memory. */
 const MAX_IMAGE_BYTES = 12 * 1024 * 1024
@@ -35,8 +36,17 @@ export function isPublicAddress(address: string): boolean {
   if (ip.includes(":")) {
     const mapped = ip.match(/^::ffff:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/)
     if (mapped) return isPublicAddress(mapped[1]!)
+    // The same, written in hex ("::ffff:7f00:1" is 127.0.0.1).
+    const hexMapped = ip.match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/)
+    if (hexMapped) {
+      const hi = parseInt(hexMapped[1]!, 16)
+      const lo = parseInt(hexMapped[2]!, 16)
+      return isPublicAddress(`${hi >> 8}.${hi & 255}.${lo >> 8}.${lo & 255}`)
+    }
     if (ip === "::" || ip === "::1") return false
-    if (/^(fe80|fc|fd)/.test(ip)) return false
+    // Link-local, unique-local, multicast, and NAT64 (which reaches IPv4 inside).
+    if (/^(fe[89ab]|fc|fd|ff)/.test(ip)) return false
+    if (ip.startsWith("64:ff9b:")) return false
     return true
   }
 
@@ -70,6 +80,13 @@ export function fetchPublicImage(rawUrl: string): Promise<Buffer | null> {
       return
     }
     if (url.protocol !== "https:") {
+      resolve(null)
+      return
+    }
+    // Node never calls `lookup` for an IP literal, so the resolver check below
+    // cannot see "https://169.254.169.254/". Judge the literal here.
+    const literal = url.hostname.replace(/^\[|\]$/g, "")
+    if (isIP(literal) && !isPublicAddress(literal)) {
       resolve(null)
       return
     }
