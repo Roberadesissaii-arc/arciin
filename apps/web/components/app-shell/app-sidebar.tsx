@@ -6,7 +6,12 @@ import { useQuery } from "@tanstack/react-query"
 import {
   Bell, BookOpen, Boxes, ChevronLeft, ChevronRight,
   ChevronsUpDown, Code2, Database, Files, FingerprintPattern, GalleryVerticalEnd, HelpCircle, LayoutDashboard,
+  FileText,
+  Film,
+  Image as ImageIcon,
+  Inbox,
   Library,
+  Music,
   BriefcaseBusiness,
   LogOut,
   MessageSquare,
@@ -50,14 +55,26 @@ import { describeBookRun } from "@/lib/api/book-runs"
 import type { AuthSession } from "@/lib/types/models"
 
 // ── colour tokens ──────────────────────────────────────────────────────────
-const DIVIDER  = "rgba(255,255,255,0.06)"
-const TEXT_OFF = "rgba(255,255,255,0.5)"
-const TEXT_ON  = "rgba(255,255,255,0.95)"
-const SECT     = "rgba(255,255,255,0.3)"
-const ACTIVE   = "rgba(255,255,255,0.08)"
-const HOVER    = "rgba(255,255,255,0.04)"
-const CNT_BG   = "rgba(255,255,255,0.07)"
-const CNT_TX   = "rgba(255,255,255,0.45)"
+const DIVIDER  = "rgba(255,255,255,0.07)"
+// Muted text at 0.5 alpha measured ~3.9:1 on #18181B; 0.62 clears 4.5:1.
+const TEXT_OFF = "rgba(255,255,255,0.62)"
+const TEXT_ON  = "rgba(255,255,255,0.96)"
+const SECT     = "rgba(255,255,255,0.42)"
+/** Active: a subtle orange wash, white text, and an orange marker (see ActiveMarker). */
+const ACTIVE   = "rgba(255,79,18,0.13)"
+const HOVER    = "rgba(255,255,255,0.05)"
+const CNT_BG   = "rgba(255,255,255,0.08)"
+const CNT_TX   = "rgba(255,255,255,0.62)"
+const CNT_BG_ON = "rgba(255,79,18,0.22)"
+const QUIET    = "rgba(255,255,255,0.42)"
+
+/** Shared keyboard focus ring for every sidebar control. */
+const FOCUS_RING =
+  "outline-none focus-visible:ring-2 focus-visible:ring-[#FF4F12]/50 focus-visible:ring-offset-1 focus-visible:ring-offset-[#18181B]"
+
+function ActiveMarker() {
+  return <span className="absolute inset-y-1.5 left-0 w-[3px] rounded-r-full bg-[#FF4F12]" aria-hidden />
+}
 // ── nav data ───────────────────────────────────────────────────────────────
 type NavItem = { id: string; label: string; icon: React.ElementType; href: string }
 
@@ -96,6 +113,15 @@ const LIBRARY_ROUTES: Record<string, string> = {
 
 const LIBRARY_ORDER = ["inbox", "videos", "images", "music", "documents"]
 
+/** Shown for each library when the rail is collapsed (its name and count go in the tooltip). */
+const LIBRARY_ICONS: Record<string, React.ElementType> = {
+  inbox: Inbox,
+  videos: Film,
+  images: ImageIcon,
+  music: Music,
+  documents: FileText,
+}
+
 function isActive(pathname: string, href: string) {
   if (href === "/dashboard") return pathname === href
   return pathname === href || pathname.startsWith(`${href}/`)
@@ -128,8 +154,12 @@ function FlatLink({
   const link = (
     <Link
       href={href}
+      aria-current={active ? "page" : undefined}
+      // Collapsed rows are icon-only; the tooltip is not an accessible name.
+      aria-label={collapsed ? (tooltipSuffix ? `${label}, ${tooltipSuffix}` : label) : undefined}
       className={cn(
-        "relative flex items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] font-medium transition-colors select-none",
+        "relative flex items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] font-medium transition-colors select-none motion-reduce:transition-none",
+        FOCUS_RING,
         collapsed && "justify-center px-0",
         showUnreadBadge && collapsed && "relative",
         locked && "opacity-75",
@@ -139,7 +169,8 @@ function FlatLink({
       onMouseLeave={(e) => { if (!active) { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = TEXT_OFF } }}
       title={locked && planBadge ? `Available on ${planBadge}` : undefined}
     >
-      <Icon className="h-[15px] w-[15px] shrink-0" />
+      {active ? <ActiveMarker /> : null}
+      <Icon className={cn("h-[15px] w-[15px] shrink-0", active && "text-[#FF6A33]")} />
       {!collapsed && <span className="flex-1 leading-none">{label}</span>}
       {!collapsed && locked && planBadge ? (
         <span
@@ -179,7 +210,7 @@ function FlatLink({
 
 // ── divider ────────────────────────────────────────────────────────────────
 function Divider() {
-  return <div style={{ height: "1px", background: DIVIDER, margin: "8px 4px" }} />
+  return <div style={{ height: "1px", background: DIVIDER, margin: "10px 6px" }} />
 }
 
 // ── inner component ────────────────────────────────────────────────────────
@@ -319,26 +350,47 @@ function AppSidebarInner({ auth }: { auth: AuthSession }) {
               </>
             )}
           </div>
-          {!collapsed && (
-            <div className="mt-0.5 pb-1">
+          {collapsed ? (
+            <div className="mt-0.5 space-y-[1px] pb-1">
+              {libraryItems.map((item) => (
+                <FlatLink
+                  key={item.id}
+                  id={item.id}
+                  label={item.label}
+                  href={item.href}
+                  icon={LIBRARY_ICONS[item.slug] ?? Library}
+                  collapsed
+                  pathname={pathname}
+                  tooltipSuffix={item.count > 0 ? `${item.count.toLocaleString()} files` : undefined}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="mt-0.5 space-y-[1px] pb-1">
               {libraryItems.map((item) => {
                 const active = isActive(pathname, item.href)
                 return (
                   <Link
                     key={item.id}
                     href={item.href}
-                    className="flex items-center rounded-lg pl-9 pr-3 py-[7px] text-[13px] font-medium transition-colors select-none"
+                    aria-current={active ? "page" : undefined}
+                    className={cn(
+                      "relative flex items-center rounded-lg pl-9 pr-3 py-[7px] text-[13px] font-medium transition-colors select-none motion-reduce:transition-none",
+                      FOCUS_RING,
+                    )}
                     style={{ background: active ? ACTIVE : "transparent", color: active ? TEXT_ON : TEXT_OFF }}
                     onMouseEnter={(e) => { if (!active) { e.currentTarget.style.background = HOVER; e.currentTarget.style.color = TEXT_ON } }}
                     onMouseLeave={(e) => { if (!active) { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = TEXT_OFF } }}
                   >
+                    {active ? <ActiveMarker /> : null}
                     <span className="flex-1 leading-none">{item.label}</span>
                     {item.count > 0 && (
                       <span
-                        className="ml-2 shrink-0 rounded-md px-1.5 py-0.5 text-[11px] tabular-nums leading-none"
-                        style={{ background: CNT_BG, color: CNT_TX }}
+                        className="ml-2 shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-medium tabular-nums leading-none"
+                        style={{ background: active ? CNT_BG_ON : CNT_BG, color: active ? TEXT_ON : CNT_TX }}
+                        aria-label={`${item.count.toLocaleString()} files`}
                       >
-                        {item.count}
+                        {item.count.toLocaleString()}
                       </span>
                     )}
                   </Link>
@@ -387,8 +439,8 @@ function AppSidebarInner({ auth }: { auth: AuthSession }) {
             <button
               type="button"
               className={cn(
-                "mt-2 flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 outline-none transition-colors",
-                "focus-visible:ring-2 focus-visible:ring-zinc-500/40 focus-visible:ring-offset-2 focus-visible:ring-offset-[#18181B]",
+                "mt-2 flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 transition-colors",
+                FOCUS_RING,
                 collapsed && "justify-center px-0",
               )}
               style={{ background: "rgba(255,255,255,0.03)", border: `1px solid ${DIVIDER}` }}
@@ -416,7 +468,7 @@ function AppSidebarInner({ auth }: { auth: AuthSession }) {
                     <p className="truncate text-[12px] font-semibold leading-none" style={{ color: TEXT_ON }}>
                       {sessionUser.name}
                     </p>
-                    <p className="mt-[3px] truncate text-[10px]" style={{ color: "rgba(255,255,255,0.32)" }}>
+                    <p className="mt-[3px] truncate text-[10.5px]" style={{ color: QUIET }}>
                       {sessionUser.email}
                     </p>
                   </div>
@@ -489,10 +541,11 @@ function AppSidebarInner({ auth }: { auth: AuthSession }) {
           {!collapsed && updateQuery.data ? (
             <Link
               href="/settings?tab=updates"
-              className="flex min-w-0 flex-1 items-center gap-1.5 rounded-lg px-2 py-1.5 text-[11px] transition-colors"
-              style={{ color: "rgba(255,255,255,0.25)" }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = HOVER; e.currentTarget.style.color = "rgba(255,255,255,0.5)" }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "rgba(255,255,255,0.25)" }}
+              className={cn("flex min-w-0 flex-1 items-center gap-1.5 rounded-lg px-2 py-1.5 text-[11px] transition-colors", FOCUS_RING)}
+              style={{ color: QUIET }}
+              aria-label={`Arciin version ${updateQuery.data.currentVersion}${updateQuery.data.updateAvailable ? ", update available" : ""}`}
+              onMouseEnter={(e) => { e.currentTarget.style.background = HOVER; e.currentTarget.style.color = TEXT_OFF }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = QUIET }}
             >
               <span className="shrink-0 font-mono">v{updateQuery.data.currentVersion}</span>
               {updateQuery.data.updateAvailable ? (
@@ -522,11 +575,12 @@ function AppSidebarInner({ auth }: { auth: AuthSession }) {
               data-testid="sidebar-collapse-toggle"
               className={cn(
                 "flex h-8 shrink-0 items-center rounded-lg px-2 text-[11px] transition-colors",
+                FOCUS_RING,
                 collapsed ? "w-full justify-center" : "justify-end gap-1",
               )}
-              style={{ color: "rgba(255,255,255,0.18)" }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = HOVER; e.currentTarget.style.color = "rgba(255,255,255,0.5)" }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "rgba(255,255,255,0.18)" }}
+              style={{ color: QUIET }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = HOVER; e.currentTarget.style.color = TEXT_OFF }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = QUIET }}
             >
               {collapsed
                 ? <ChevronRight className="h-3.5 w-3.5 shrink-0" />
