@@ -10,6 +10,6 @@
     "@arciin/shared": "workspace:*",
     "@arciin/storage": "workspace:*",
     "@arciin/types": "workspace:*",
-    "undici": "^8.10.0"
+    "undici": "^8.10.2"
   }
 }
