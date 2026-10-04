@@ -12,6 +12,7 @@ import {
   decodeHtmlEntities,
   drmBlockedMessage,
   extractEmbeddedPlayerUrls,
+  extractJsonLdName,
   extractMetaContent,
   htmlLooksLikeVideoPage,
   isPublicHttpUrl,
@@ -30,6 +31,7 @@ import {
   JOB_QUEUE_NAMES,
   JOB_TYPES,
   assetSupportsDocumentThumbnail,
+  htmlTitleText,
   inferMediaType,
   type ImportUrlPayload,
   apiOwnsCompletionEvent,
@@ -42,6 +44,7 @@ import { normalizeConfiguredStorageRoot } from "@arciin/storage"
 import { workerConfig } from "@/config"
 import { syncConnectorMirrorsForAsset } from "@/services/connector-mirror"
 import { createRealtimeEvent, publishRealtimeEvent } from "@/services/realtime"
+import { importNaming, readYtDlpInfo, type PageNames, type SourceMetadata } from "@/services/import-naming"
 
 const MAX_IMPORT_BYTES =
   (Number(process.env.MAX_UPLOAD_SIZE_MB) > 0 ? Number(process.env.MAX_UPLOAD_SIZE_MB) : 20 * 1024) *
@@ -90,9 +93,40 @@ function ytDlpCookieArgs(): string[] {
 }
 
 type ResolvedDownload = {
+  /** Temporary file; its name may be a downloader id — it is never the asset's name. */
   filePath: string
   filename: string
   fallbackMime?: string
+  /** yt-dlp's structured title. */
+  sourceTitle?: string | null
+  sourceMetadata?: SourceMetadata | null
+  /** The page the media came from, when it came from a page. */
+  page?: PageNames | null
+  contentDispositionName?: string | null
+  urlFilename?: string | null
+}
+
+function pageNames(html: string): PageNames {
+  return {
+    ogTitle: extractMetaContent(html, "og:title") ?? extractMetaContent(html, "twitter:title"),
+    jsonLdName: extractJsonLdName(html),
+    htmlTitle: htmlTitleText(html, decodeHtmlEntities),
+  }
+}
+
+/** Last path segment of a URL, when it looks like a filename. */
+function urlFilenameOf(rawUrl: string): string | null {
+  try {
+    const last = new URL(rawUrl).pathname.split("/").filter(Boolean).pop()
+    return last && /\.[a-z0-9]{1,8}$/i.test(last) ? last : null
+  } catch {
+    return null
+  }
+}
+
+async function ytDlpResult(outDir: string, filePath: string): Promise<ResolvedDownload> {
+  const meta = await readYtDlpInfo(outDir)
+  return { filePath, filename: path.basename(filePath), sourceTitle: meta?.title ?? null, sourceMetadata: meta }
 }
 
 function filenameFromUrl(rawUrl: string, fallbackExt = "bin"): string {
@@ -189,7 +223,13 @@ async function fetchDirectOrHtml(
   await streamResponseToFile(response.stream, filePath)
   return {
     kind: "file",
-    download: { filePath, filename, fallbackMime: contentType.split(";")[0] || undefined },
+    download: {
+      filePath,
+      filename,
+      fallbackMime: contentType.split(";")[0] || undefined,
+      contentDispositionName: dispositionName,
+      urlFilename: urlFilenameOf(finalUrl),
+    },
   }
 }
 
@@ -199,9 +239,11 @@ async function firstFileIn(dir: string): Promise<string | null> {
     const files: { p: string; size: number }[] = []
     for (const entry of entries) {
       if (!entry.isFile()) continue
-      // yt-dlp writes `.part` / `.ytdl` while downloading — never import those.
+      // yt-dlp writes `.part` / `.ytdl` while downloading — never import those,
+      // nor the info JSON it is asked to write beside the media.
       const lower = entry.name.toLowerCase()
       if (
+        lower.endsWith(".json") ||
         lower.endsWith(".part") ||
         lower.endsWith(".ytdl") ||
         lower.endsWith(".temp") ||
@@ -277,6 +319,10 @@ async function tryYtDlp(
         "--user-agent",
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "--no-playlist",
+        // Title, uploader, duration … as JSON beside the file: the asset is
+        // named from this, never from console output.
+        "--write-info-json",
+        "--no-write-playlist-metafiles",
         "--no-warnings",
         "--no-progress",
         "--no-continue",
@@ -294,9 +340,7 @@ async function tryYtDlp(
     // yt-dlp may exit non-zero after a successful merge when separate video+audio
     // streams were downloaded (--max-downloads counted each stream). Prefer the file on disk.
     const producedAfterError = await firstFileIn(outDir)
-    if (producedAfterError) {
-      return { filePath: producedAfterError, filename: path.basename(producedAfterError) }
-    }
+    if (producedAfterError) return ytDlpResult(outDir, producedAfterError)
 
     const stderr =
       err instanceof Error && "stderr" in err && typeof err.stderr === "string"
@@ -317,7 +361,7 @@ async function tryYtDlp(
   }
   const produced = await firstFileIn(outDir)
   if (!produced) return null
-  return { filePath: produced, filename: path.basename(produced) }
+  return ytDlpResult(outDir, produced)
 }
 
 async function tryGalleryDl(rawUrl: string, workDir: string): Promise<ResolvedDownload | null> {
@@ -389,6 +433,8 @@ async function downloadMediaUrl(
     filePath,
     filename,
     fallbackMime: contentType.split(";")[0] || undefined,
+    contentDispositionName: dispositionName,
+    urlFilename: urlFilenameOf(response.finalUrl || mediaUrl),
   }
 }
 
@@ -545,7 +591,7 @@ async function resolveInstagramDownload(
   if (initial.kind === "file") return initial.download
 
   const viaOg = await tryOpenGraphMedia(initial.html, initial.finalUrl, workDir)
-  if (viaOg) return viaOg
+  if (viaOg) return { ...viaOg, page: pageNames(initial.html) }
 
   throw new Error("Could not find a downloadable file at that Instagram link.")
 }
@@ -666,27 +712,31 @@ async function resolveDownload(
   const initial = await fetchDirectOrHtml(rawUrl, workDir)
   if (initial.kind === "file") return initial.download
 
+  // Whatever is found from here on came from this page, which names it.
+  const page = pageNames(initial.html)
+  const fromPage = (download: ResolvedDownload): ResolvedDownload => ({ ...download, page: download.page ?? page })
+
   if (!preferVideoTool) {
     const viaYt = await tryYtDlp(rawUrl, workDir, opts)
-    if (viaYt) return viaYt
+    if (viaYt) return fromPage(viaYt)
   }
 
   const viaGallery = await tryGalleryDl(rawUrl, workDir)
-  if (viaGallery) return viaGallery
+  if (viaGallery) return fromPage(viaGallery)
 
   // Movie / show aggregator pages: follow embedded YouTube/Vimeo/m3u8 players.
   const viaEmbed = await tryEmbeddedPlayers(initial.html, initial.finalUrl, workDir, opts)
-  if (viaEmbed) return viaEmbed
+  if (viaEmbed) return fromPage(viaEmbed)
 
   const viaOgVideo = await tryOpenGraphMedia(initial.html, initial.finalUrl, workDir, "video")
-  if (viaOgVideo) return viaOgVideo
+  if (viaOgVideo) return fromPage(viaOgVideo)
 
   const videoPage = htmlLooksLikeVideoPage(initial.html, initial.finalUrl)
   // Do not silently save a poster JPG for movie pages — that looks like a successful
   // download of the film when it is only the cover art.
   if (!videoPage) {
     const viaOgImage = await tryOpenGraphMedia(initial.html, initial.finalUrl, workDir, "image")
-    if (viaOgImage) return viaOgImage
+    if (viaOgImage) return fromPage(viaOgImage)
   }
 
   if (videoPage) {
@@ -861,7 +911,7 @@ export async function handleImportUrl(
   data: ImportUrlPayload & { jobRecordId?: string },
   redis: Redis,
 ): Promise<void> {
-  const { url, uploadId, userId, targetLibraryId, targetFolderId, audioOnly, audioFormat, videoFormat } =
+  const { url, uploadId, userId, targetLibraryId, targetFolderId, audioOnly, audioFormat, videoFormat, sourceTitle } =
     data
 
   const existing = await prisma.uploadSession.findUnique({
@@ -932,6 +982,7 @@ export async function handleImportUrl(
       "bin"
     ).toLowerCase()
     const mediaType = inferMediaType(mimeType, download.filename)
+    const naming = importNaming(download, { candidateTitle: sourceTitle ?? null, extension })
 
     const targetLibrary = targetLibraryId
       ? await prisma.library.findUnique({ where: { id: targetLibraryId } })
@@ -982,7 +1033,8 @@ export async function handleImportUrl(
         storageObjectId: storageObject.id,
         ownerId: userId,
         filename: `${checksum}.${extension}`,
-        originalFilename: download.filename,
+        originalFilename: naming.originalFilename,
+        title: naming.title,
         mimeType,
         mediaType,
         extension,
@@ -996,7 +1048,7 @@ export async function handleImportUrl(
     await prisma.uploadSession.update({
       where: { id: uploadId },
       data: {
-        originalFilename: download.filename,
+        originalFilename: naming.originalFilename,
         mimeType,
         sizeBytes: BigInt(size),
         detectedMediaType: mediaType,
@@ -1037,7 +1089,7 @@ export async function handleImportUrl(
       userId,
       type: "upload.completed",
       title: "Link imported",
-      message: `${download.filename} imported to ${targetLibrary.name}.`,
+      message: `${naming.originalFilename} imported to ${targetLibrary.name}.`,
       entityId: asset.id,
       metadata: {
         mediaType,
@@ -1056,7 +1108,7 @@ export async function handleImportUrl(
         userId,
         libraryId: targetLibrary.id,
         assetId: asset.id,
-        message: `${download.filename} added to ${targetLibrary.name}.`,
+        message: `${naming.originalFilename} added to ${targetLibrary.name}.`,
         data: { mediaType, destination: targetLibrary.name, source: "url" },
       }),
     )
@@ -1072,9 +1124,9 @@ export async function handleImportUrl(
           uploadId,
           assetId: asset.id,
           progress: 100,
-          message: `${download.filename} imported successfully.`,
+          message: `${naming.originalFilename} imported successfully.`,
           data: {
-            fileName: download.filename,
+            fileName: naming.originalFilename,
             sizeBytes: size,
             destination: targetLibrary.name,
             origin: "url",

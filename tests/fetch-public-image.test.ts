@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { isPublicAddress } from "../apps/api/src/services/media/fetch-public-image"
+import { fetchPublicImage, isPublicAddress } from "../apps/api/src/services/media/fetch-public-image"
 
 /**
  * The address check that runs inside the resolver.
@@ -37,6 +37,11 @@ describe("addresses that reach inward are refused", () => {
     ["ipv6 unspecified", "::"],
     ["ipv6 link-local", "fe80::1"],
     ["ipv6 unique-local", "fd00::1"],
+    ["ipv6 v4-mapped loopback, hex", "::ffff:7f00:1"],
+    ["ipv6 v4-mapped metadata, hex", "::ffff:a9fe:a9fe"],
+    ["ipv6 multicast", "ff02::1"],
+    ["ipv6 link-local fe9x", "fe90::1"],
+    ["nat64", "64:ff9b::7f00:1"],
   ])("%s", (_label, ip) => {
     expect(isPublicAddress(ip)).toBe(false)
   })
@@ -63,6 +68,17 @@ describe("malformed input is refused rather than assumed public", () => {
     "%j",
     (value) => {
       expect(isPublicAddress(value)).toBe(false)
+    },
+  )
+})
+
+describe("an IP literal never reaches the resolver, so it is judged directly", () => {
+  it.each(["https://127.0.0.1/x.png", "https://169.254.169.254/latest/meta-data", "https://[::1]/x.png", "https://[::ffff:7f00:1]/x.png"])(
+    "%s is refused without connecting",
+    async (url) => {
+      const started = Date.now()
+      expect(await fetchPublicImage(url)).toBeNull()
+      expect(Date.now() - started).toBeLessThan(1_000)
     },
   )
 })

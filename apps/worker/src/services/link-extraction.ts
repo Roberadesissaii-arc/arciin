@@ -219,3 +219,47 @@ export function drmBlockedMessage(rawUrl: string): string | null {
     "Try a YouTube link or a direct file URL."
   )
 }
+
+const JSON_LD_MEDIA_TYPE = /^(VideoObject|AudioObject|MediaObject|Movie|TVEpisode|Episode|Clip|PodcastEpisode|MusicRecording|ImageObject|CreativeWork|Article|NewsArticle|BlogPosting)$/
+
+/**
+ * The `name` of the media a page describes in JSON-LD: a VideoObject /
+ * AudioObject / Movie … first, any named top-level node otherwise. Bounded
+ * walk; malformed blocks are skipped.
+ */
+export function extractJsonLdName(html: string): string | null {
+  let fallback: string | null = null
+  let found: string | null = null
+  const visit = (node: unknown, depth: number) => {
+    if (found || !node || depth > 6) return
+    if (Array.isArray(node)) {
+      for (const child of node) visit(child, depth + 1)
+      return
+    }
+    if (typeof node !== "object") return
+    const obj = node as Record<string, unknown>
+    const types = ([] as unknown[]).concat(obj["@type"] ?? [])
+    const name = typeof obj.name === "string" ? obj.name : typeof obj.headline === "string" ? obj.headline : null
+    if (name && types.some((t) => typeof t === "string" && JSON_LD_MEDIA_TYPE.test(t))) {
+      found = name
+      return
+    }
+    if (name && depth <= 1 && !fallback) fallback = name
+    for (const key of ["@graph", "mainEntity", "video", "audio", "associatedMedia"]) {
+      if (obj[key]) visit(obj[key], depth + 1)
+    }
+  }
+  for (const block of html.matchAll(
+    /<script[^>]+type\s*=\s*(?:["']application\/ld\+json["']|application\/ld\+json)[^>]*>([\s\S]*?)<\/script>/gi,
+  )) {
+    const raw = block[1]?.trim()
+    if (!raw || raw.length > 512 * 1024) continue
+    try {
+      visit(JSON.parse(raw) as unknown, 0)
+    } catch {
+      // Not JSON; ignore the block.
+    }
+    if (found) break
+  }
+  return found ? decodeHtmlEntities(found) : fallback ? decodeHtmlEntities(fallback) : null
+}

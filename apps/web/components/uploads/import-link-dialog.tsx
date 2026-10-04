@@ -328,7 +328,12 @@ export function ImportLinkDialog() {
 
     setSubmitting(true)
     try {
-      const session = await importFromUrl(target, importOptions)
+      // A single inspected item: let the server name it from what it stored.
+      const single =
+        inspection?.kind === "single" && inspection.url === target && inspection.items[0]
+          ? { inspectionId: inspection.inspectionId, itemId: inspection.items[0].id }
+          : undefined
+      const session = await importFromUrl(target, { ...importOptions, candidate: single })
       notifyImportStarted(preview?.source.key, preview?.source.label)
       useUploadStore.getState().addOrUpdate({
         id: session.id,
@@ -509,6 +514,7 @@ export function ImportLinkDialog() {
 
           {phase === "multiple" && inspection ? (
             <ImportLinkCandidates
+              inspectionId={inspection.inspectionId}
               title={inspection.title}
               items={candidates}
               selected={selectedIds}
