@@ -3,7 +3,15 @@ import { Activity, ArrowRight, Layers2 } from "lucide-react"
 
 import { LockedFeatureCard } from "@/components/license/locked-feature-card"
 import { TableIcon } from "@/components/database/table-icon"
-import type { AdminTable } from "@/lib/api/admin"
+import type { AdminTable, AdminTableSummaryMetric } from "@/lib/api/admin"
+import { cn } from "@/lib/utils"
+
+const METRIC_TONE: Record<AdminTableSummaryMetric["tone"], string> = {
+  neutral: "border-zinc-200 bg-zinc-50 text-zinc-700",
+  success: "border-emerald-500/30 bg-emerald-500/10 text-emerald-800",
+  warning: "border-amber-500/30 bg-amber-500/10 text-amber-800",
+  danger: "border-red-500/25 bg-red-500/[0.07] text-red-700",
+}
 
 export function DatabaseHubGrid({
   tables,
@@ -80,23 +88,29 @@ export function DatabaseHubGrid({
                 {table.summary && table.summary.length > 1 ? "Records (incl. history)" : "Records"}
               </span>
             </div>
-            <div className="flex items-center gap-1.5">
+            <span className="rounded-lg border border-border bg-muted/50 px-2 py-0.5 text-[12px] font-bold tabular-nums text-foreground">
+              {table.count.toLocaleString()}
+            </span>
+          </div>
+          {/* The breakdown, where there is one: "34 current · 3,506 legacy · 59 deleted". */}
+          {table.summary && table.summary.some((m) => m.tone !== "neutral") ? (
+            <ul className="mt-2 flex flex-wrap gap-1.5" data-testid={`database-card-${table.name}-summary`}>
               {table.summary
-                ?.filter((metric) => metric.tone === "success" && metric.value !== table.count)
-                .slice(0, 1)
+                .filter((metric) => metric.tone !== "neutral")
+                .slice(0, 3)
                 .map((metric) => (
-                  <span
+                  <li
                     key={metric.label}
-                    className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-700 tabular-nums dark:text-emerald-400"
+                    className={cn(
+                      "rounded-md border px-1.5 py-0.5 text-[11px] font-medium tabular-nums",
+                      METRIC_TONE[metric.tone],
+                    )}
                   >
                     {metric.value.toLocaleString()} {metric.label}
-                  </span>
+                  </li>
                 ))}
-              <span className="rounded-lg border border-border bg-muted/50 px-2 py-0.5 text-[12px] font-bold tabular-nums text-foreground">
-                {table.count.toLocaleString()}
-              </span>
-            </div>
-          </div>
+            </ul>
+          ) : null}
         </Link>
       ))}
     </div>

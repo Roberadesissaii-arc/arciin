@@ -25,8 +25,77 @@ import {
 import { queryKeys } from "@/lib/api/query-keys"
 import { cn } from "@/lib/utils"
 
+/**
+ * Tables that read better as a page than as a dump of columns: which columns
+ * lead, and which raw values (ids, slugs) sit behind "Show raw values".
+ */
+const PRESENTATION: Record<string, { primary: string[]; raw: string[] }> = {
+  folders: {
+    primary: ["name", "library", "classification", "createdAt", "deletedAt"],
+    raw: ["id", "slug", "libraryId", "parentFolderId", "pathCache", "libraryKind"],
+  },
+}
+
+/** Which summary metric counts each filter, so a filter can say how many rows it holds. */
+const FILTER_METRIC: Record<string, Record<string, string>> = {
+  folders: { all: "historical records", current: "current", legacy: "legacy computer", deleted: "deleted" },
+  "api-keys": { all: "historical records", active: "active", revoked: "revoked", expired: "expired" },
+}
+
+const FOLDER_CLASS_STYLE: Record<string, { label: string; className: string }> = {
+  current: { label: "Current", className: "border-emerald-500/30 bg-emerald-500/10 text-emerald-800" },
+  legacy: { label: "Legacy Computer", className: "border-amber-500/30 bg-amber-500/10 text-amber-800" },
+  deleted: { label: "Deleted", className: "border-red-500/25 bg-red-500/[0.07] text-red-700" },
+}
+
+function FolderCell({ column, row }: { column: string; row: Record<string, unknown> }) {
+  const value = row[column]
+  if (column === "name") {
+    return (
+      <div className="min-w-0 max-w-[22rem]">
+        <p className="truncate font-medium text-foreground">{String(value ?? "")}</p>
+        {typeof row.pathCache === "string" ? (
+          <p className="truncate font-mono text-[11px] text-zinc-500" title={row.pathCache}>
+            {row.pathCache}
+          </p>
+        ) : null}
+      </div>
+    )
+  }
+  if (column === "library") {
+    return (
+      <div className="min-w-0">
+        <p className="truncate text-foreground">{String(value ?? "—")}</p>
+        {typeof row.libraryKind === "string" ? (
+          <p className="text-[11px] capitalize text-zinc-500">{row.libraryKind.toLowerCase()}</p>
+        ) : null}
+      </div>
+    )
+  }
+  if (column === "classification") {
+    const style = FOLDER_CLASS_STYLE[String(value)] ?? { label: String(value), className: "border-zinc-200 bg-zinc-50 text-zinc-700" }
+    return (
+      <span className={cn("inline-flex rounded-md border px-1.5 py-0.5 text-[11px] font-semibold", style.className)}>
+        {/* The raw value stays in the DOM for filters and tests; the badge says it in words. */}
+        <span className="sr-only">{String(value)} </span>
+        <span aria-hidden>{style.label}</span>
+      </span>
+    )
+  }
+  return <CellValue value={value} />
+}
+
+const COLUMN_LABEL: Record<string, string> = {
+  name: "Folder",
+  library: "Library",
+  classification: "Classification",
+  createdAt: "Created",
+  deletedAt: "Deleted",
+}
+
 export function AdminTableDetailPanel({ table }: { table: string }) {
   const [page, setPage] = useState(1)
+  const [showRaw, setShowRaw] = useState(false)
   /**
    * Database → API Keys is the audit view: revoked and expired keys stay,
    * because deleting history to tidy a list would destroy the record of who
@@ -53,7 +122,18 @@ export function AdminTableDetailPanel({ table }: { table: string }) {
 
   const meta = metaQuery.data?.find((t) => t.name === table)
   const data = dataQuery.data
-  const columns = data?.rows[0] ? Object.keys(data.rows[0]) : []
+  const allColumns = data?.rows[0] ? Object.keys(data.rows[0]) : []
+  const presentation = PRESENTATION[table]
+  const columns = presentation
+    ? [
+        ...presentation.primary.filter((c) => allColumns.includes(c)),
+        ...(showRaw ? allColumns.filter((c) => !presentation.primary.includes(c)) : []),
+      ]
+    : allColumns
+  const metricFor = (value: string) => {
+    const label = FILTER_METRIC[table]?.[value]
+    return label ? meta?.summary?.find((m) => m.label === label)?.value : undefined
+  }
   const totalPages = data?.totalPages ?? 1
 
   const catalogLoading = metaQuery.isLoading
@@ -106,36 +186,59 @@ export function AdminTableDetailPanel({ table }: { table: string }) {
 
       {table === "folders" && meta ? <FolderAuditNote /> : null}
 
-      {statusFilterable && meta ? (
-        <div
-          role="radiogroup"
-          aria-label={table === "folders" ? "Filter folders" : "Filter API keys by status"}
-          className="flex flex-wrap items-center gap-2"
-        >
-          {statusFilters!.map((value) => {
-            const selected = status === value
-            return (
-              <Button
-                key={value}
-                type="button"
-                role="radio"
-                aria-checked={selected}
-                size="sm"
-                variant="outline"
-                data-testid={`${table === "folders" ? "folder" : "api-key"}-filter-${value}`}
-                className={cn(
-                  "h-8 rounded-full border-border bg-card px-3 text-xs font-semibold capitalize text-muted-foreground",
-                  selected && "border-primary/40 bg-primary/10 text-primary",
-                )}
-                onClick={() => {
-                  setStatus(value)
-                  setPage(1)
-                }}
-              >
-                {value}
-              </Button>
-            )
-          })}
+      {(statusFilterable || presentation) && meta ? (
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          {statusFilterable ? (
+            <div
+              role="radiogroup"
+              aria-label={table === "folders" ? "Filter folders" : "Filter API keys by status"}
+              className="inline-flex flex-wrap items-center gap-1 rounded-xl border border-border bg-card p-1 shadow-sm"
+            >
+              {statusFilters!.map((value) => {
+                const selected = status === value
+                const count = metricFor(value)
+                return (
+                  <button
+                    key={value}
+                    type="button"
+                    role="radio"
+                    aria-checked={selected}
+                    data-testid={`${table === "folders" ? "folder" : "api-key"}-filter-${value}`}
+                    className={cn(
+                      "inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-xs font-semibold capitalize transition-colors",
+                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF4F12]/30",
+                      selected ? "bg-[#FF4F12]/10 text-[#C23A06]" : "text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900",
+                    )}
+                    onClick={() => {
+                      setStatus(value)
+                      setPage(1)
+                    }}
+                  >
+                    {value}
+                    {count !== undefined ? (
+                      <span className={cn("tabular-nums font-medium", selected ? "text-[#C23A06]/80" : "text-zinc-500")}>
+                        {count.toLocaleString()}
+                      </span>
+                    ) : null}
+                  </button>
+                )
+              })}
+            </div>
+          ) : (
+            <span />
+          )}
+          {presentation ? (
+            <label className="inline-flex cursor-pointer items-center gap-2 text-[12px] font-medium text-zinc-600">
+              <input
+                type="checkbox"
+                className="size-3.5 accent-[#FF4F12]"
+                checked={showRaw}
+                onChange={(event) => setShowRaw(event.target.checked)}
+                data-testid="admin-table-show-raw"
+              />
+              Show raw values
+            </label>
+          ) : null}
         </div>
       ) : null}
 
@@ -249,9 +352,10 @@ export function AdminTableDetailPanel({ table }: { table: string }) {
                   {columns.map((col) => (
                     <th
                       key={col}
+                      scope="col"
                       className="px-4 py-3 text-[10px] font-semibold uppercase tracking-wider text-zinc-500"
                     >
-                      {col}
+                      {presentation ? (COLUMN_LABEL[col] ?? col) : col}
                     </th>
                   ))}
                 </tr>
@@ -266,7 +370,7 @@ export function AdminTableDetailPanel({ table }: { table: string }) {
                   >
                     {columns.map((col) => (
                       <td key={col} className="px-4 py-2.5 align-middle">
-                        <CellValue value={row[col]} />
+                        {table === "folders" ? <FolderCell column={col} row={row} /> : <CellValue value={row[col]} />}
                       </td>
                     ))}
                   </tr>
