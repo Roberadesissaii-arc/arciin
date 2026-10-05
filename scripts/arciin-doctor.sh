@@ -158,7 +158,8 @@ doctor_native() {
     for name in arciin-api arciin-worker arciin-web; do
       status="$(pm2 jlist 2>/dev/null | python3 -c "import sys,json; print(next((p['pm2_env']['status'] for p in json.load(sys.stdin) if p['name']=='$name'),'missing'))" 2>/dev/null)"
       [[ "$status" == "online" ]] && pass "$name" "online" || bad "$name" "${status:-missing} — pm2 logs ${name} --lines 40"
-      grep -q "\"name\":\"${name}\"" "$dump" 2>/dev/null || bad "Saved for boot" "${name} not in PM2's saved list — pm2 save"
+      # dump.pm2 is pretty-printed JSON ("name": "x"), so allow whitespace.
+      grep -qE "\"name\"[[:space:]]*:[[:space:]]*\"${name}\"" "$dump" 2>/dev/null || bad "Saved for boot" "${name} not in PM2's saved list — pm2 save"
     done
   else
     bad "PM2" "not installed — ./install.sh --repair"

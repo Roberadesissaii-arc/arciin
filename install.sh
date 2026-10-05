@@ -586,7 +586,9 @@ ensure_production_secrets() {
   _set_env_kv "$env_file" "NODE_ENV" "production"
 
   local secret_len
-  secret_len="$(grep '^SESSION_SECRET=' "$env_file" 2>/dev/null | cut -d= -f2- | wc -c | tr -d ' ')"
+  # A missing key must not end the install: under pipefail a grep with no
+  # match fails the whole assignment (an .env from Docker or a stopped run).
+  secret_len="$({ grep '^SESSION_SECRET=' "$env_file" 2>/dev/null || true; } | cut -d= -f2- | wc -c | tr -d ' ')"
   if grep -q '^SESSION_SECRET=change-this-in-production' "$env_file" 2>/dev/null \
     || [[ "${secret_len:-0}" -lt 32 ]]; then
     _set_env_kv "$env_file" "SESSION_SECRET" "$(_gen_secret)"
@@ -594,7 +596,7 @@ ensure_production_secrets() {
   fi
 
   if grep -qE '^ARCIIN_SETUP_TOKEN=(dev-token)?$' "$env_file" 2>/dev/null \
-    || grep -q '^ARCIIN_SETUP_TOKEN=$' "$env_file" 2>/dev/null; then
+    || ! grep -q '^ARCIIN_SETUP_TOKEN=.' "$env_file" 2>/dev/null; then
     _set_env_kv "$env_file" "ARCIIN_SETUP_TOKEN" "$(openssl rand -hex 24 2>/dev/null || _gen_secret)"
     ok "ARCIIN_SETUP_TOKEN secured (random)"
   fi
@@ -1289,7 +1291,7 @@ ensure_postgres_role_and_db() {
     # to match. This touches no data and rotates no secret — it repairs drift
     # (a restored .env, a re-cloned folder, an earlier half-finished install).
     local db_url auth
-    db_url="$(grep '^DATABASE_URL=' "${ROOT_DIR}/.env" 2>/dev/null | cut -d= -f2- | tr -d '"')"
+    db_url="$({ grep '^DATABASE_URL=' "${ROOT_DIR}/.env" 2>/dev/null || true; } | cut -d= -f2- | tr -d '"')"
     auth="$(arciin_probe_db_auth "$db_url" 2>/dev/null || true)"
     if [[ "$auth" != "ok" ]]; then
       printf '%s\n' "ALTER ROLE arciin WITH LOGIN PASSWORD :'pwd' CREATEDB;" \
@@ -1308,7 +1310,7 @@ ensure_postgres_role_and_db() {
 
   # Proof, not a guess: log in with exactly what the app will use.
   local final_url final_auth
-  final_url="$(grep '^DATABASE_URL=' "${ROOT_DIR}/.env" 2>/dev/null | cut -d= -f2- | tr -d '"')"
+  final_url="$({ grep '^DATABASE_URL=' "${ROOT_DIR}/.env" 2>/dev/null || true; } | cut -d= -f2- | tr -d '"')"
   final_auth="$(arciin_probe_db_auth "$final_url" 2>/dev/null || true)"
   if [[ "$final_auth" != "ok" ]]; then
     arciin_fail_report "Arciin cannot log in to PostgreSQL (${final_auth})" \

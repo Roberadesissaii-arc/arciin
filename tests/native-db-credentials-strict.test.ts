@@ -289,3 +289,37 @@ describe("installer database step, PostgreSQL stubbed, strict mode", () => {
     expect(r.env).toContain("postgresql://arciin:dockerpw123@localhost:5432/arciin")
   })
 })
+
+describe("install.sh survives a partial .env under set -Eeuo pipefail", () => {
+  it("ensure_production_secrets with no SESSION_SECRET or setup token (Docker .env) fills both", () => {
+    n += 1
+    const dir = path.join(scratch, `secrets-${n}`)
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(path.join(dir, ".env"), "NODE_ENV=production\nPOSTGRES_PASSWORD=abc\n", { mode: 0o600 })
+    const r = strict(`
+ROOT_DIR="${dir}"
+ARCIIN_FRESH_INSTALL=0
+ok() { echo "ok: $1"; }
+warn() { echo "warn: $1"; }
+${installerFn("_set_env_kv")}
+${installerFn("_gen_secret")}
+${installerFn("ensure_production_secrets")}
+ensure_production_secrets
+echo finished`)
+    expect(r.stderr).not.toMatch(/unbound|error/i)
+    expect(r.stdout).toContain("finished")
+    const env = readFileSync(path.join(dir, ".env"), "utf8")
+    expect(env).toMatch(/^SESSION_SECRET=.{32,}$/m)
+    expect(env).toMatch(/^ARCIIN_SETUP_TOKEN=[0-9a-f]{48}$/m)
+  })
+
+  it("no `x=$(grep … | …)` assignment in the installer can abort on a missing key", () => {
+    const src = readFileSync(INSTALL, "utf8")
+    const risky = src
+      .split("\n")
+      .map((line, i) => [i + 1, line] as const)
+      .filter(([, line]) => /^\s*(?!local\s)[A-Za-z_]+="?\$\(grep [^)]*\|/.test(line))
+      .filter(([, line]) => !/\|\| (true|echo|printf)/.test(line))
+    expect(risky).toEqual([])
+  })
+})
