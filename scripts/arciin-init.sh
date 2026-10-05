@@ -35,9 +35,10 @@ ARCIIN_DATA_DIR="${EXISTING_DATA_DIR:-${ARCIIN_DATA_DIR:-/srv/arciin-storage/arc
 
 wait_for_postgres() {
   local host port user tries=30
-  if [[ "${DATABASE_URL}" =~ postgresql://[^@]+@([^:/]+):?([0-9]*)/ ]]; then
-    host="${BASH_REMATCH[1]}"
-    port="${BASH_REMATCH[2]:-5432}"
+  if [[ "${DATABASE_URL}" =~ postgresql://([^:@/]+)[^@]*@([^:/]+):?([0-9]*)/ ]]; then
+    user="${BASH_REMATCH[1]}"
+    host="${BASH_REMATCH[2]}"
+    port="${BASH_REMATCH[3]:-5432}"
   else
     host="localhost"
     port="5432"
@@ -55,7 +56,10 @@ wait_for_postgres() {
 
   log "Waiting for PostgreSQL at ${host}:${port}"
   while (( tries > 0 )); do
-    if pg_isready -h "${host}" -p "${port}" >/dev/null 2>&1; then
+    # -U: without it libpq asks the OS for a user name, which fails for a
+    # container uid with no passwd entry (ARCIIN_PUID other than 1000), and
+    # pg_isready then reports "no response" forever.
+    if pg_isready -h "${host}" -p "${port}" ${user:+-U "$user"} >/dev/null 2>&1; then
       log "PostgreSQL is ready"
       return 0
     fi
@@ -110,9 +114,11 @@ recover_chat_migration_failure() {
 # surface later as "migration failed; a pre-migration backup may be
 # available" — true, and pointing at entirely the wrong thing.
 check_database_login() {
-  local out code
-  out="$(pnpm exec prisma migrate status 2>&1)"
-  code=$?
+  local out code=0
+  # `migrate status` exits non-zero whenever migrations are pending — every
+  # fresh database. Under `set -e` a bare assignment would end the script
+  # right here, silently, and the API container would restart forever.
+  out="$(pnpm exec prisma migrate status 2>&1)" || code=$?
   if grep -qE "P1000|[Aa]uthentication failed" <<<"$out"; then
     cat >&2 <<'MSG'
 

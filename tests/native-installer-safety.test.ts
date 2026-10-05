@@ -119,6 +119,21 @@ describe("database credentials are tested, not assumed", () => {
     expect(init).toContain("Your data: NOT deleted")
   })
 
+  it("pending migrations on a fresh database do not end arciin-init (set -e)", () => {
+    // `prisma migrate status` exits 1 whenever migrations are pending. The
+    // check used to be a bare assignment, so under `set -e` the script died
+    // silently and the Docker API container restarted forever.
+    const out = execSync(
+      `bash -c 'set -euo pipefail; log() { echo "$1"; }; pnpm() { echo "Following migrations have not yet been applied:"; return 1; }; source <(sed -n "/^check_database_login() {/,/^}/p" scripts/arciin-init.sh); check_database_login; echo survived'`,
+      { cwd: ROOT, encoding: "utf8" },
+    ).trim()
+    expect(out).toMatch(/survived$/)
+  })
+
+  it("the readiness wait names the database user (container uids without a passwd entry)", () => {
+    expect(init).toMatch(/pg_isready -h "\$\{host\}" -p "\$\{port\}" \$\{user:\+-U "\$user"\}/)
+  })
+
   it("an unreadable migration status is no longer reported as 'up to date'", () => {
     expect(backup).toMatch(/return 2\n}/)
     const out = execSync(
