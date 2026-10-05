@@ -12,9 +12,25 @@
 # ================================================================
 set -uo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-# shellcheck source=scripts/lib/install-state.sh
-source "${ROOT_DIR}/scripts/lib/install-state.sh"
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "$SELF_DIR/.." && pwd)"
+# In a checkout the library is scripts/lib/; the Docker installer copies this
+# script and the library side by side into ARCIIN_DIR (default /opt/arciin).
+if [[ -f "$SELF_DIR/lib/install-state.sh" ]]; then
+  # shellcheck source=scripts/lib/install-state.sh
+  source "$SELF_DIR/lib/install-state.sh"
+else
+  # shellcheck source=scripts/lib/install-state.sh
+  source "$SELF_DIR/install-state.sh"
+  ROOT_DIR="$SELF_DIR"
+  export ARCIIN_DIR="${ARCIIN_DIR:-$SELF_DIR}"
+fi
+# The Docker installer keeps its journal next to its .env.
+if [[ -z "${ARCIIN_JOURNAL:-}" && -f "${ARCIIN_DIR:-/opt/arciin}/install-state.json" ]]; then
+  export ARCIIN_JOURNAL="${ARCIIN_DIR:-/opt/arciin}/install-state.json"
+fi
+PROJECT="${ARCIIN_COMPOSE_PROJECT:-$(arciin_journal_get composeProject)}"
+PROJECT="${PROJECT:-arciin}"
 
 G="\033[32m"; Y="\033[33m"; R="\033[31m"; B="\033[1m"; D="\033[2m"; X="\033[0m"
 PROBLEMS=0
@@ -46,7 +62,7 @@ detect_mode() {
     fi
   done
   if [[ -z "$MODE" ]]; then
-    if [[ "$journal_mode" == "docker" ]] || { [[ -n "$COMPOSE_DIR" ]] && docker ps -a --format '{{.Names}}' 2>/dev/null | grep -q '^arciin-api-1$'; }; then
+    if [[ "$journal_mode" == "docker" ]] || { [[ -n "$COMPOSE_DIR" ]] && docker ps -a --format '{{.Names}}' 2>/dev/null | grep -qx "${PROJECT}-api-1"; }; then
       MODE=docker
     elif command -v pm2 >/dev/null 2>&1 && pm2 jlist 2>/dev/null | grep -q '"name":"arciin-api"'; then
       MODE=native
@@ -66,7 +82,7 @@ detect_mode() {
 
 env_value() { grep -E "^$1=" "$ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '"'; }
 
-dc() { docker compose -p arciin --project-directory "$COMPOSE_DIR" -f "$COMPOSE_FILE" --env-file "$ENV_FILE" "$@"; }
+dc() { docker compose -p "$PROJECT" --project-directory "$COMPOSE_DIR" -f "$COMPOSE_FILE" --env-file "$ENV_FILE" "$@"; }
 
 # ── shared ───────────────────────────────────────────────────────────────────
 check_host() {
@@ -220,10 +236,10 @@ doctor_docker() {
   section "Containers"
   local name state health policy expected=(caddy web api worker postgres redis)
   for name in "${expected[@]}"; do
-    state="$(docker inspect -f '{{.State.Status}}' "arciin-${name}-1" 2>/dev/null || echo missing)"
-    health="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}-{{end}}' "arciin-${name}-1" 2>/dev/null)"
-    policy="$(docker inspect -f '{{.HostConfig.RestartPolicy.Name}}' "arciin-${name}-1" 2>/dev/null)"
-    if [[ "$state" == "running" && ( "$health" == "healthy" || "$health" == "-" ) ]]; then pass "$name" "running${health:+, $health}"; else bad "$name" "${state}${health:+, $health} — docker logs arciin-${name}-1 --tail 40"; fi
+    state="$(docker inspect -f '{{.State.Status}}' "${PROJECT}-${name}-1" 2>/dev/null || echo missing)"
+    health="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}-{{end}}' "${PROJECT}-${name}-1" 2>/dev/null)"
+    policy="$(docker inspect -f '{{.HostConfig.RestartPolicy.Name}}' "${PROJECT}-${name}-1" 2>/dev/null)"
+    if [[ "$state" == "running" && ( "$health" == "healthy" || "$health" == "-" ) ]]; then pass "$name" "running${health:+, $health}"; else bad "$name" "${state}${health:+, $health} — docker logs ${PROJECT}-${name}-1 --tail 40"; fi
     [[ "$policy" == "unless-stopped" || "$policy" == "always" ]] || { [[ "$state" != "missing" ]] && bad "$name restart" "policy '${policy:-none}' — it will not come back after a reboot"; }
   done
 
@@ -242,7 +258,7 @@ doctor_docker() {
   section "Storage"
   local host_dir puid pgid
   host_dir="$(env_value ARCIIN_HOST_DATA_DIR)"; puid="$(env_value ARCIIN_PUID)"; pgid="$(env_value ARCIIN_PGID)"
-  if docker inspect arciin-api-1 >/dev/null 2>&1 && dc exec -T api sh -c 'p=/data/arciin/.doctor-$$ && echo ok > $p && mv $p $p.r && rm -f $p.r' 2>/dev/null; then
+  if docker inspect "${PROJECT}-api-1" >/dev/null 2>&1 && dc exec -T api sh -c 'p=/data/arciin/.doctor-$$ && echo ok > $p && mv $p $p.r && rm -f $p.r' 2>/dev/null; then
     pass "Storage" "${host_dir:-?} writable by the containers (uid ${puid:-1000}:${pgid:-1000})"
   else
     report_storage "${host_dir:-/srv/arciin-storage/arciin}" "${puid:-1000}:${pgid:-1000}"

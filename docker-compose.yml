@@ -1,3 +1,10 @@
+# ─────────────────────────────────────────────────────────────────────────────
+#  DEVELOPMENT ONLY — do not run production from this file.
+#
+#  It builds from source and has no restart policies, so a reboot leaves
+#  Arciin stopped. Production uses docker-compose.production.yml through the
+#  installer:  ./install.sh --docker   or   curl -fsSL https://get.arciin.com/install.sh | bash
+# ─────────────────────────────────────────────────────────────────────────────
 services:
   caddy:
     image: caddy:2.10-alpine

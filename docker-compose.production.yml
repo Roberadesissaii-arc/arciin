@@ -1,16 +1,18 @@
-# Arciin — private distribution (image-based)
+# Arciin — production Docker Compose (the only production definition)
 #
-# Customer install uses pre-built images only — no monorepo, no source bind mounts.
-# Public one-liner: curl -fsSL https://get.arciin.com/install.sh | bash
-# (served compose lives in Arciin_web/public/install/ — keep image defaults in sync).
+# Every Docker install uses this file, installed as docker-compose.yml next to
+# its .env (default /opt/arciin):
+#   curl -fsSL https://get.arciin.com/install.sh | bash   (release asset)
+#   ./install.sh --docker  /  ./scripts/docker-setup.sh   (from a checkout)
+# Both run scripts/docker-install.sh. docker-compose.yml in the repository is
+# for development only.
 #
-# Local prototype: build images first with `pnpm docker:build` (or scripts/docker-build-images.sh),
-# then: docker compose -f docker-compose.production.yml --env-file .env up -d
+# Images are pinned by the installer from the release manifest, by tag and
+# digest (ARCIIN_IMAGE_WEB / _API / _WORKER in .env). There is no floating
+# :latest default: an unpinned production install is refused.
 #
-# Image tags (override via .env):
-#   ARCIIN_IMAGE_WEB / ARCIIN_IMAGE_API / ARCIIN_IMAGE_WORKER
-#
-# Registry: public GHCR packages under ghcr.io/roberadesissaii-arc/arciin-{web,api,worker}.
+# Every service has `restart: unless-stopped`; with Docker enabled at boot the
+# stack comes back after a reboot. Registry: ghcr.io/roberadesissaii-arc.
 
 name: arciin
 
@@ -26,7 +28,9 @@ services:
     ports:
       - "${ARCIIN_HTTP_PORT:-80}:80"
     volumes:
-      - ./docker/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      # Installed next to this file. From a checkout without the installer:
+      # ARCIIN_CADDYFILE=./docker/caddy/Caddyfile
+      - ${ARCIIN_CADDYFILE:-./Caddyfile}:/etc/caddy/Caddyfile:ro
     security_opt:
       - "no-new-privileges:true"
     healthcheck:
@@ -37,7 +41,7 @@ services:
       start_period: 20s
 
   web:
-    image: ${ARCIIN_IMAGE_WEB:-ghcr.io/roberadesissaii-arc/arciin-web:latest}
+    image: ${ARCIIN_IMAGE_WEB:?set by the Arciin installer (release manifest)}
     restart: unless-stopped
     # No env_file: public web tier must not hold back-end secrets.
     environment:
@@ -67,7 +71,7 @@ services:
       start_period: 40s
 
   api:
-    image: ${ARCIIN_IMAGE_API:-ghcr.io/roberadesissaii-arc/arciin-api:latest}
+    image: ${ARCIIN_IMAGE_API:?set by the Arciin installer (release manifest)}
     restart: unless-stopped
     env_file:
       - .env
@@ -111,7 +115,7 @@ services:
       - ${ARCIIN_HOST_DATA_DIR:-/srv/arciin-storage/arciin}:/data/arciin
 
   worker:
-    image: ${ARCIIN_IMAGE_WORKER:-ghcr.io/roberadesissaii-arc/arciin-worker:latest}
+    image: ${ARCIIN_IMAGE_WORKER:?set by the Arciin installer (release manifest)}
     restart: unless-stopped
     env_file:
       - .env

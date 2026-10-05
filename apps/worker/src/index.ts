@@ -3,6 +3,7 @@ import { setInterval } from "node:timers"
 import { Queue, Worker } from "bullmq"
 import Redis from "ioredis"
 
+import { prisma } from "@arciin/database"
 import {
   JOB_QUEUE_NAMES,
   JOB_TYPES,
@@ -78,11 +79,21 @@ async function start() {
 
   // Commands can now reject, and an unhandled rejection would take the worker
   // down over something as recoverable as a missed heartbeat.
-  const writeHeartbeat = () =>
-    redis.set(workerConfig.workerHeartbeatKey, String(Date.now())).catch(() => {
+  const writeHeartbeat = async () => {
+    await redis.set(workerConfig.workerHeartbeatKey, String(Date.now())).catch(() => {
       // The API reports the worker offline until the next tick succeeds, which
       // is exactly what an operator should see while Redis is unreachable.
     })
+    // A worker that can reach Redis but not PostgreSQL picks up jobs and fails
+    // every one of them. The container health check reads this second key, so
+    // it is written only after the database answered.
+    try {
+      await prisma.$queryRaw`SELECT 1`
+      await redis.set(`${workerConfig.workerHeartbeatKey}:db`, String(Date.now()))
+    } catch {
+      // Stale key → unhealthy container → visible in `docker compose ps`.
+    }
+  }
 
   const heartbeat = setInterval(() => {
     void writeHeartbeat()

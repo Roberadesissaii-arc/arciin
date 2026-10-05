@@ -23,8 +23,10 @@ describe("persistent mDNS installer contract", () => {
     expect(read("scripts/lib/avahi-discovery.sh")).toContain("arciin_setup_persistent_mdns")
     expect(read("install.sh")).toContain("scripts/lib/avahi-discovery.sh")
     expect(read("install.sh")).toContain("arciin_setup_persistent_mdns")
-    expect(read("scripts/docker-setup.sh")).toContain("scripts/lib/avahi-discovery.sh")
-    expect(read("scripts/docker-setup.sh")).toContain("arciin_setup_persistent_mdns")
+    // v1.1.4: every Docker path runs scripts/docker-install.sh, which ships the
+    // helper as a release asset and sources it from lib/ or beside itself.
+    expect(read("scripts/docker-install.sh")).toContain("avahi-discovery.sh")
+    expect(read("scripts/docker-install.sh")).toContain("arciin_setup_persistent_mdns")
     expect(read("scripts/advertise-arciin-mdns.sh")).toContain("arciin_setup_persistent_mdns")
   })
 
@@ -59,7 +61,7 @@ describe("persistent mDNS installer contract", () => {
   })
 
   it("docker installer advertises HTTP port, native installer advertises web port", () => {
-    const docker = read("scripts/docker-setup.sh")
+    const docker = read("scripts/docker-install.sh")
     const native = read("install.sh")
     expect(docker).toMatch(/arciin_setup_persistent_mdns "\$http_port"/)
     expect(native).toMatch(/arciin_setup_persistent_mdns "\$\{ARCIIN_WEB_PORT\}"/)
