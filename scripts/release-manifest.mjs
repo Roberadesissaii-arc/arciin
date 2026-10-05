@@ -27,7 +27,6 @@ export const MANIFEST_ASSETS = [
   "docker-compose.yml",
   "Caddyfile",
   "avahi-discovery.sh",
-  "open-firewall-ports.sh",
 ]
 
 export function assetKey(name) {

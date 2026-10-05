@@ -306,13 +306,13 @@ fetch_assets() {
   local name src expected actual base
   base="$(manifest_get assets_base)"
   for name in docker-compose.yml Caddyfile docker-install.sh install-state.sh arciin-doctor.sh \
-    avahi-discovery.sh open-firewall-ports.sh; do
+    avahi-discovery.sh; do
     local tmp; tmp="$(secure_tmp)"
     if [[ -n "$LOCAL_ASSETS" ]]; then
       case "$name" in
         docker-compose.yml) src="$LOCAL_ASSETS/docker-compose.production.yml" ;;
         Caddyfile) src="$LOCAL_ASSETS/docker/caddy/Caddyfile" ;;
-        install-state.sh|avahi-discovery.sh|open-firewall-ports.sh) src="$LOCAL_ASSETS/scripts/lib/$name" ;;
+        install-state.sh|avahi-discovery.sh) src="$LOCAL_ASSETS/scripts/lib/$name" ;;
         *) src="$LOCAL_ASSETS/scripts/$name" ;;
       esac
       cp "$src" "$tmp"
@@ -784,23 +784,21 @@ detect_lan_ip() {
   echo "${ip:-127.0.0.1}"
 }
 
-# Firewall and Avahi (_arciin._tcp) are conveniences: both helpers fail open
-# and never stop an install. They ship with the installer as release assets.
+# LAN discovery (Avahi, _arciin._tcp) is a convenience: the helper fails open
+# and never stops an install. It ships with the installer as a release asset.
+#
+# No firewall step: Docker publishes ports through its own iptables chain, so
+# ufw rules change nothing for Arciin, and enabling an inactive ufw (what the
+# shared helper does for native installs) can lock out SSH on a custom port.
 host_integration() {
-  local lib
-  for lib in open-firewall-ports.sh avahi-discovery.sh; do
-    for dir in "$SELF_DIR/lib" "$SELF_DIR" "$ARCIIN_DIR"; do
-      if [[ -f "$dir/$lib" ]]; then
-        # shellcheck source=/dev/null
-        source "$dir/$lib"
-        break
-      fi
-    done
+  local dir
+  for dir in "$SELF_DIR/lib" "$SELF_DIR" "$ARCIIN_DIR"; do
+    if [[ -f "$dir/avahi-discovery.sh" ]]; then
+      # shellcheck source=scripts/lib/avahi-discovery.sh
+      source "$dir/avahi-discovery.sh"
+      break
+    fi
   done
-  if [[ "${ARCIIN_SKIP_FIREWALL:-0}" != "1" ]] && command -v arciin_open_firewall_ports >/dev/null 2>&1; then
-    step "Firewall"
-    arciin_open_firewall_ports "$HTTP_PORT" || true
-  fi
   if command -v arciin_setup_persistent_mdns >/dev/null 2>&1; then
     step "LAN discovery"
     local http_port="$HTTP_PORT"

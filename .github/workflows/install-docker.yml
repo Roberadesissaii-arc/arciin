@@ -104,7 +104,7 @@ jobs:
           mkdir -p dist/release
           cp scripts/install-bootstrap.sh dist/release/install.sh
           cp scripts/docker-install.sh scripts/arciin-doctor.sh dist/release/
-          cp scripts/lib/install-state.sh scripts/lib/avahi-discovery.sh scripts/lib/open-firewall-ports.sh dist/release/
+          cp scripts/lib/install-state.sh scripts/lib/avahi-discovery.sh dist/release/
           cp docker-compose.production.yml dist/release/docker-compose.yml
           cp docker/caddy/Caddyfile dist/release/Caddyfile
           node scripts/release-manifest.mjs --version "$v" --release-sha "${{ github.sha }}" \

@@ -155,6 +155,11 @@ describe("reboot survival is verified, not assumed", () => {
     expect(body).toContain("The API cannot log in to PostgreSQL.")
   })
 
+  it("never touches the host firewall (Docker publishes ports itself; enabling ufw can lock out SSH)", () => {
+    expect(installer).not.toContain("arciin_open_firewall_ports")
+    expect(installer).not.toMatch(/ufw (--force )?enable/)
+  })
+
   it("a port in use is reported with its owner", () => {
     const body = fn("preflight_port")
     expect(body).toContain("ss -lntH")
