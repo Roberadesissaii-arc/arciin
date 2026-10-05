@@ -882,15 +882,40 @@ configure_postgres_port() {
   maybe_reconfigure_postgresql_port "$pg_port"
   ARCIIN_PG_PORT="$pg_port"
 
-  local password encoded existing_url user host db
-  existing_url="$(arciin_read_env_database_url "$env_file" || true)"
-  if ! password="$(arciin_resolve_db_password "$env_file" "${ARCIIN_FRESH_INSTALL:-0}")"; then
-    fail "Could not resolve a database password. Set DATABASE_URL in .env or re-run a fresh install."
+  local password="" encoded="" existing_url="" user="arciin" host="localhost" db="arciin"
+  local env_backup
+  env_backup="$(dirname "$(arciin_journal_path)")/env-backups/latest.env"
+  existing_url="$(arciin_read_env_database_url "$env_file" 2>/dev/null || true)"
+  if ! arciin_resolve_db_password_into password "$env_file" "${ARCIIN_FRESH_INSTALL:-0}" "$env_backup"; then
+    arciin_fail_report "Could not create a database password." \
+      "Neither openssl nor /dev/urandom is available to generate one." \
+      "Nothing was changed." \
+      "Install openssl (sudo apt-get install -y openssl) and re-run ./install.sh"
   fi
-  encoded="$(arciin_urlencode_db_password "$password")" || fail "Could not encode the database password for DATABASE_URL."
-  user="arciin"
-  host="localhost"
-  db="arciin"
+  case "${ARCIIN_DB_PASSWORD_SOURCE}" in
+    env) [[ "${ARCIIN_FRESH_INSTALL:-0}" == "1" ]] || ok "Existing database credentials kept" ;;
+    backup) ok "Database password recovered from the previous .env backup" ;;
+    generated)
+      if [[ "${ARCIIN_FRESH_INSTALL:-0}" != "1" ]]; then
+        # An existing .env without a usable DATABASE_URL: typical after a
+        # Docker install (Compose builds the URL itself) or a run that stopped
+        # half-way. Keep a copy before rewriting it.
+        local saved
+        saved="$(dirname "$(arciin_journal_path)")/env-backups/pre-credentials-$(date -u +%Y%m%dT%H%M%SZ).env"
+        mkdir -p "$(dirname "$saved")" && install -m 600 "$env_file" "$saved" 2>/dev/null || true
+        case "${ARCIIN_DB_URL_STATE}" in
+          missing) warn ".env has no DATABASE_URL (it may come from a Docker install)" ;;
+          malformed) warn "DATABASE_URL in .env could not be read" ;;
+          placeholder) warn "DATABASE_URL in .env still holds the example password" ;;
+        esac
+        warn "A new database password was generated. An existing 'arciin' role is re-aligned to it below — no data changes. Previous .env saved to ${saved}"
+      fi
+      ;;
+  esac
+  encoded="$(arciin_urlencode_db_password "$password")" || arciin_fail_report \
+    "Could not encode the database password for DATABASE_URL." \
+    "Neither python3 nor node is available to URL-encode it." "Nothing was changed." \
+    "Install python3 and re-run ./install.sh"
   if [[ -n "$existing_url" ]]; then
     local parsed
     parsed="$(arciin_parse_database_url "$existing_url" || true)"
@@ -901,13 +926,15 @@ configure_postgres_port() {
       [[ -n "$user" ]] || user="arciin"
       [[ -n "$host" ]] || host="localhost"
       [[ -n "$db" ]] || db="arciin"
+      # A Docker .env names the Compose service; natively it is this machine.
+      if [[ "$host" == "postgres" || "$host" == "db" ]]; then host="localhost"; fi
     fi
   fi
   _set_env_kv "$env_file" "DATABASE_URL" "$(arciin_format_database_url "$user" "$encoded" "$host" "$pg_port" "$db")"
   _set_env_kv "$env_file" "ARCIIN_PG_PORT" "${pg_port}"
   arciin_restrict_env_perms "$env_file"
   ARCIIN_DB_PASSWORD="$password"
-  if [[ "${ARCIIN_FRESH_INSTALL:-0}" == "1" ]]; then
+  if [[ "${ARCIIN_FRESH_INSTALL:-0}" == "1" && "${ARCIIN_DB_PASSWORD_SOURCE}" == "generated" ]]; then
     ok "Database credentials generated successfully."
   fi
 
@@ -1240,7 +1267,8 @@ ensure_postgres_role_and_db() {
 
   local password="${ARCIIN_DB_PASSWORD:-}"
   if [[ -z "$password" ]]; then
-    password="$(arciin_resolve_db_password "${ROOT_DIR}/.env" "${ARCIIN_FRESH_INSTALL:-0}")" \
+    arciin_resolve_db_password_into password "${ROOT_DIR}/.env" "${ARCIIN_FRESH_INSTALL:-0}" \
+      "$(dirname "$(arciin_journal_path)")/env-backups/latest.env" \
       || fail "Could not resolve a database password for the arciin role."
   fi
 

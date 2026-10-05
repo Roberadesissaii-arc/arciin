@@ -77,10 +77,14 @@ describe("native installer database credentials (ARC-009)", () => {
     rmSync(file, { force: true })
   })
 
-  it("fails clearly when no credential can be resolved", () => {
+  it("an existing .env without DATABASE_URL gets a controlled new password (v1.1.4), not an abort", () => {
+    // Was: fail. The owner's Docker-to-native .env had no DATABASE_URL and the
+    // installer died with "raw: unbound variable". The installer now generates
+    // a password and re-aligns an existing role; see native-db-credentials-strict.test.ts.
     const file = path.join(tmpdir(), `arciin-env-empty-${Date.now()}`)
     writeFileSync(file, "NODE_ENV=production\n")
-    expect(() => run(`arciin_resolve_db_password "${file}" 0 || exit 2`)).toThrow()
+    const out = run(`set -u; arciin_resolve_db_password_into pw "${file}" 0; echo "$ARCIIN_DB_PASSWORD_SOURCE \${#pw}"`).trim()
+    expect(out).toBe("generated 48")
     rmSync(file, { force: true })
   })
 
