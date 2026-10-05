@@ -60,20 +60,20 @@ const DIVIDER  = "rgba(255,255,255,0.07)"
 const TEXT_OFF = "rgba(255,255,255,0.62)"
 const TEXT_ON  = "rgba(255,255,255,0.96)"
 const SECT     = "rgba(255,255,255,0.42)"
-/** Active: a subtle orange wash, white text, and an orange marker (see ActiveMarker). */
-const ACTIVE   = "rgba(255,79,18,0.13)"
+/** Active: the original subtle white wash and white text, plus a neutral marker line (see ActiveMarker). */
+const ACTIVE   = "rgba(255,255,255,0.08)"
 const HOVER    = "rgba(255,255,255,0.05)"
 const CNT_BG   = "rgba(255,255,255,0.08)"
 const CNT_TX   = "rgba(255,255,255,0.62)"
-const CNT_BG_ON = "rgba(255,79,18,0.22)"
+const CNT_BG_ON = "rgba(255,255,255,0.14)"
 const QUIET    = "rgba(255,255,255,0.42)"
 
 /** Shared keyboard focus ring for every sidebar control. */
 const FOCUS_RING =
-  "outline-none focus-visible:ring-2 focus-visible:ring-[#FF4F12]/50 focus-visible:ring-offset-1 focus-visible:ring-offset-[#18181B]"
+  "outline-none focus-visible:ring-2 focus-visible:ring-white/40 focus-visible:ring-offset-1 focus-visible:ring-offset-[#18181B]"
 
 function ActiveMarker() {
-  return <span className="absolute inset-y-1.5 left-0 w-[3px] rounded-r-full bg-[#FF4F12]" aria-hidden />
+  return <span className="absolute inset-y-1.5 left-0 w-[3px] rounded-r-full bg-white/85" aria-hidden />
 }
 // ── nav data ───────────────────────────────────────────────────────────────
 type NavItem = { id: string; label: string; icon: React.ElementType; href: string }
@@ -170,7 +170,7 @@ function FlatLink({
       title={locked && planBadge ? `Available on ${planBadge}` : undefined}
     >
       {active ? <ActiveMarker /> : null}
-      <Icon className={cn("h-[15px] w-[15px] shrink-0", active && "text-[#FF6A33]")} />
+      <Icon className="h-[15px] w-[15px] shrink-0" />
       {!collapsed && <span className="flex-1 leading-none">{label}</span>}
       {!collapsed && locked && planBadge ? (
         <span
