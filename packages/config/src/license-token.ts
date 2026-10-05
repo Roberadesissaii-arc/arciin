@@ -286,6 +286,58 @@ export type LicenseServerActivateResponse = {
   }
 }
 
+/** Where a customer manages their licences and releases server seats. */
+export const ARCIIN_ACCOUNT_URL = "https://arciin.com/account"
+
+/**
+ * A server holding a seat, as shown to the licence holder when the seat limit
+ * is reached. Deliberately no hostname and no full instance id: the holder
+ * needs to recognise the server, not locate it.
+ */
+export type LicenseBoundServer = {
+  name: string | null
+  instanceIdShort: string
+  version: string | null
+  lastCheckInAt: string | null
+  activatedAt: string
+}
+
+/** `details` of a SERVER_LIMIT_REACHED error from the licensing authority. */
+export type LicenseServerLimitDetails = {
+  serverLimit: number
+  servers: LicenseBoundServer[]
+  manageUrl: string
+}
+
+/**
+ * Validate `details` from the authority before an instance passes them to its
+ * UI: known fields only, bounded strings, at most 50 servers. Anything else is
+ * dropped rather than forwarded.
+ */
+export function parseServerLimitDetails(value: unknown): LicenseServerLimitDetails | undefined {
+  if (!value || typeof value !== "object") return undefined
+  const v = value as Record<string, unknown>
+  const str = (x: unknown, max: number) => (typeof x === "string" ? x.slice(0, max) : null)
+  if (typeof v.serverLimit !== "number" || !Array.isArray(v.servers)) return undefined
+  const servers = v.servers.slice(0, 50).flatMap((row): LicenseBoundServer[] => {
+    if (!row || typeof row !== "object") return []
+    const r = row as Record<string, unknown>
+    const instanceIdShort = str(r.instanceIdShort, 12)
+    const activatedAt = str(r.activatedAt, 40)
+    if (!instanceIdShort || !activatedAt) return []
+    return [
+      {
+        name: str(r.name, 200),
+        instanceIdShort,
+        version: str(r.version, 64),
+        lastCheckInAt: str(r.lastCheckInAt, 40),
+        activatedAt,
+      },
+    ]
+  })
+  return { serverLimit: v.serverLimit, servers, manageUrl: ARCIIN_ACCOUNT_URL }
+}
+
 export type LicenseServerDemoResponse = {
   licenseKey: string
   license: {
