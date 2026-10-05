@@ -475,7 +475,9 @@ export function ImportLinkDialog() {
           </div>
         </SheetHeader>
 
-        <div className="scrollbar-hide flex min-h-0 flex-1 flex-col gap-3 overflow-x-hidden overflow-y-auto p-3">
+        {/* Children never shrink: when the content is taller than the panel the
+            body scrolls, instead of the cards being squeezed and clipped. */}
+        <div className="scrollbar-hide flex min-h-0 flex-1 flex-col gap-3 overflow-x-hidden overflow-y-auto p-3 [&>*]:shrink-0">
           {/* 2. Link */}
           <Field className="min-w-0 gap-1.5">
             <FieldLabel htmlFor="importUrl" className="text-[11px] font-semibold uppercase tracking-[0.08em] text-zinc-500">

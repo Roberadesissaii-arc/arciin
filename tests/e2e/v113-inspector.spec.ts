@@ -134,6 +134,14 @@ test.describe("Import from link — compact floating panel", () => {
     expect(Math.abs(firstThumb.width / firstThumb.height - 16 / 9)).toBeLessThan(0.1)
     await expectFloating(page, panel)
     await expect(panel.getByTestId("import-link-submit")).toBeInViewport()
+    // Nothing is squeezed: the cards keep their full height and the body scrolls.
+    for (const el of [list, panel.getByRole("group", { name: "Download format" })]) {
+      const clipped = await el.evaluate((node) => node.scrollHeight - node.clientHeight)
+      expect(clipped).toBeLessThanOrEqual(1)
+    }
+    await list.getByRole("listitem").last().scrollIntoViewIfNeeded()
+    await expect(list.getByRole("listitem").last()).toBeInViewport()
+    await list.getByRole("listitem").first().scrollIntoViewIfNeeded()
     await shot(page, "import-five")
 
     await list.getByRole("button", { name: "Select all" }).click()
@@ -167,6 +175,12 @@ async function openAsset(page: Page, route: string, assetId: string) {
 }
 
 async function openSection(page: Page, card: Locator, section: "edit" | "rename" | "ai" | "move" | "share") {
+  // The full-height panel covers the grid's right-hand column, where the
+  // fixture card sits: close it first, as a person would, then use the menu.
+  if ((await panel(page).count()) > 0) {
+    await page.keyboard.press("Escape")
+    await expect(panel(page)).toHaveCount(0)
+  }
   await card.click({ button: "right" })
   await page.getByTestId(`asset-menu-${section}`).click()
   await expect(panel(page)).toBeVisible({ timeout: 15_000 })
