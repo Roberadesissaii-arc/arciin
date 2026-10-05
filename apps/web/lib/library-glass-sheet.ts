@@ -11,6 +11,23 @@ export const libraryGlassSheetPanel =
   "ring-1 ring-black/[0.05] backdrop-blur-2xl backdrop-saturate-150"
 
 /**
+ * The library inspector family — the asset panel (Overview, Edit, Assist,
+ * Move, Share), Import from link, and the library's own Edit / Move / Share /
+ * Create folder sheets. Same glass look as `libraryGlassSheetPanel`, one
+ * geometry for all of them: a 20px inset from the top, right and bottom,
+ * 420px wide on desktop, and always the full available height (header and
+ * footer anchored, the body scrolls) so a short form never leaves a dead area
+ * under the panel.
+ */
+export const libraryInspectorPanel =
+  "gap-0 p-0 shadow-none " +
+  "!top-5 !right-5 !bottom-5 !left-auto !h-[calc(100dvh-2.5rem)] " +
+  "!w-[calc(100vw-2.5rem)] !max-w-[calc(100vw-2.5rem)] sm:!w-[420px] sm:!max-w-[420px] " +
+  "flex min-h-0 flex-col overflow-hidden rounded-2xl border border-white/70 " +
+  "bg-white/72 text-foreground shadow-[0_28px_90px_-24px_rgba(0,0,0,0.28),0_0_0_1px_rgba(0,0,0,0.06),inset_0_1px_0_rgba(255,255,255,0.92)] " +
+  "ring-1 ring-black/[0.05] backdrop-blur-2xl backdrop-saturate-150"
+
+/**
  * Right-click menus on library cards/folders.
  *
  * Same surface as the AI Chat Library/Files tooltips:

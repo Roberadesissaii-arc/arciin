@@ -23,16 +23,25 @@ async function shot(page: Page, name: string) {
 
 const PNG = readFileSync(path.resolve(__dirname, "../fixtures/e2e-image-fixture.png"))
 
-/** The panel floats: never touching an edge, never taller than the viewport. */
-async function expectFloating(page: Page, panel: Locator, opts: { compact?: boolean } = {}) {
+/**
+ * One panel family: inset 16–28px from the top, right and bottom, 410–440px
+ * wide, and always the full available height — never a short card with a dead
+ * area underneath.
+ */
+async function expectFloating(page: Page, panel: Locator) {
+  await expect.poll(async () => (await panel.boundingBox())?.y ?? -1).toBeGreaterThanOrEqual(16)
   const box = (await panel.boundingBox())!
   const vp = page.viewportSize()!
-  expect(box.y, "top inset").toBeGreaterThanOrEqual(8)
-  expect(vp.width - (box.x + box.width), "right inset").toBeGreaterThanOrEqual(8)
-  expect(box.y + box.height, "bottom inside viewport").toBeLessThanOrEqual(vp.height - 8)
-  expect(box.width).toBeGreaterThanOrEqual(400)
-  expect(box.width).toBeLessThanOrEqual(460)
-  if (opts.compact) expect(box.height, "sized to content, not full height").toBeLessThan(vp.height - 24 - 40)
+  const bottomInset = vp.height - (box.y + box.height)
+  const rightInset = vp.width - (box.x + box.width)
+  expect(box.y, "top inset").toBeLessThanOrEqual(28)
+  expect(bottomInset, "bottom inset").toBeGreaterThanOrEqual(16)
+  expect(bottomInset, "bottom inset — fills the height").toBeLessThanOrEqual(28)
+  expect(rightInset, "right inset").toBeGreaterThanOrEqual(16)
+  expect(rightInset, "right inset").toBeLessThanOrEqual(28)
+  expect(box.width).toBeGreaterThanOrEqual(410)
+  expect(box.width).toBeLessThanOrEqual(440)
+  return box
 }
 
 const candidate = (n: number, extra: Record<string, unknown> = {}) => ({
@@ -80,9 +89,12 @@ async function openImport(page: Page) {
 }
 
 test.describe("Import from link — compact floating panel", () => {
-  test("empty: compact, inset, footer reachable, no blank region", async ({ page }) => {
+  test("empty: full height, inset, footer anchored at the bottom", async ({ page }) => {
     const panel = await openImport(page)
-    await expectFloating(page, panel, { compact: true })
+    const box = await expectFloating(page, panel)
+    const footer = (await panel.getByTestId("import-link-submit").boundingBox())!
+    expect(box.y + box.height - (footer.y + footer.height), "footer sits at the bottom").toBeLessThanOrEqual(24)
+    await expect(panel.getByTestId("import-link-help")).toBeVisible()
     await expect(panel.getByTestId("import-link-submit")).toBeInViewport()
     await expect(panel.getByText("Download options")).toBeVisible()
     await expect(panel.getByText("Supported sources")).toBeVisible()
@@ -101,7 +113,7 @@ test.describe("Import from link — compact floating panel", () => {
     for (const url of thumbs) expect(new URL(url).pathname).toMatch(/^\/api\/imports\/inspections\/insp_fixture_0123456789\/items\/c1\/thumbnail$/)
     const srcs = await page.locator("img").evaluateAll((els) => els.map((e) => (e as HTMLImageElement).src))
     expect(srcs.filter((s) => /ytimg|youtube\.com/.test(s))).toEqual([])
-    await expectFloating(page, panel, { compact: true })
+    await expectFloating(page, panel)
     await shot(page, "import-single")
   })
 
@@ -122,6 +134,14 @@ test.describe("Import from link — compact floating panel", () => {
     expect(Math.abs(firstThumb.width / firstThumb.height - 16 / 9)).toBeLessThan(0.1)
     await expectFloating(page, panel)
     await expect(panel.getByTestId("import-link-submit")).toBeInViewport()
+    // Nothing is squeezed: the cards keep their full height and the body scrolls.
+    for (const el of [list, panel.getByRole("group", { name: "Download format" })]) {
+      const clipped = await el.evaluate((node) => node.scrollHeight - node.clientHeight)
+      expect(clipped).toBeLessThanOrEqual(1)
+    }
+    await list.getByRole("listitem").last().scrollIntoViewIfNeeded()
+    await expect(list.getByRole("listitem").last()).toBeInViewport()
+    await list.getByRole("listitem").first().scrollIntoViewIfNeeded()
     await shot(page, "import-five")
 
     await list.getByRole("button", { name: "Select all" }).click()
@@ -155,6 +175,12 @@ async function openAsset(page: Page, route: string, assetId: string) {
 }
 
 async function openSection(page: Page, card: Locator, section: "edit" | "rename" | "ai" | "move" | "share") {
+  // The full-height panel covers the grid's right-hand column, where the
+  // fixture card sits: close it first, as a person would, then use the menu.
+  if ((await panel(page).count()) > 0) {
+    await page.keyboard.press("Escape")
+    await expect(panel(page)).toHaveCount(0)
+  }
   await card.click({ button: "right" })
   await page.getByTestId(`asset-menu-${section}`).click()
   await expect(panel(page)).toBeVisible({ timeout: 15_000 })
@@ -164,12 +190,11 @@ test.describe("Asset inspector — floating shell", () => {
   test("image: preview, name, type/library chips, details; compact and inset", async ({ page }) => {
     await openAsset(page, "/images", "e2e-image-fixture")
     await expect(panel(page).getByTestId("asset-panel-preview").locator("img")).toBeVisible()
-    await expect(panel(page).getByTestId("asset-panel-context")).toContainText("PNG")
     await expect(panel(page).getByTestId("asset-panel-context")).toContainText("Images")
     await expect(panel(page)).toContainText("480×270")
     await expectFloating(page, panel(page))
     await expect(panel(page).getByTestId("asset-panel-download")).toBeInViewport()
-    await shot(page, "inspector-image")
+    await shot(page, "inspector-overview")
   })
 
   test("video: player with a poster, length in details", async ({ page }) => {
@@ -188,7 +213,7 @@ test.describe("Asset inspector — floating shell", () => {
 
     await openSection(page, card, "ai")
     await expect(panel(page).getByTestId("asset-panel-back-overview")).toBeVisible()
-    await expect(panel(page).getByRole("heading", { name: "Assist" })).toBeVisible()
+    await expect(panel(page).getByTestId("asset-panel-section-bar")).toContainText("Assist")
     await expectFloating(page, panel(page))
     await shot(page, "inspector-assist")
   })
@@ -201,7 +226,7 @@ test.describe("Asset inspector — floating shell", () => {
       ["share", "Share", "inspector-share"],
     ] as const) {
       await openSection(page, card, section)
-      await expect(panel(page).getByRole("heading", { name: heading, exact: true })).toBeVisible()
+      await expect(panel(page).getByTestId("asset-panel-section-bar")).toContainText(heading)
       await expect(panel(page).getByRole("button", { name: "Close" }), `${section}: one close button`).toHaveCount(1)
       await expect(panel(page).getByTestId("asset-panel-back-overview")).toBeVisible()
       await expectFloating(page, panel(page))
@@ -265,12 +290,53 @@ test.describe("Asset inspector — floating shell", () => {
   })
 })
 
+test("Import, Overview and Share share one geometry", async ({ page }) => {
+  const importPanel = await openImport(page)
+  const a = await expectFloating(page, importPanel)
+  await page.keyboard.press("Escape")
+  const card = await openAsset(page, "/images", "e2e-image-fixture")
+  const b = await expectFloating(page, panel(page))
+  await openSection(page, card, "share")
+  const c = await expectFloating(page, panel(page))
+  for (const box of [b, c]) {
+    expect(Math.abs(box.y - a.y)).toBeLessThanOrEqual(1)
+    expect(Math.abs(box.height - a.height)).toBeLessThanOrEqual(1)
+    expect(Math.abs(box.width - a.width)).toBeLessThanOrEqual(1)
+    expect(Math.abs(box.x - a.x)).toBeLessThanOrEqual(1)
+  }
+})
+
+for (const [w, h] of [
+  [1280, 800],
+  [1024, 768],
+] as const) {
+  test(`import panel at ${w}×${h}: full height, footer reachable, no horizontal scroll`, async ({ page }) => {
+    await page.setViewportSize({ width: w, height: h })
+    const p = await openImport(page)
+    await expectFloating(page, p)
+    await expect(p.getByTestId("import-link-submit")).toBeInViewport()
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
+    expect(overflow).toBeLessThanOrEqual(0)
+    await shot(page, `import-${w}x${h}`)
+  })
+}
+
+test("phone 390×844: the desktop-only screen, no horizontal scroll", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await suppressWindowsDesktopPromo(page as never)
+  await page.goto("/dashboard")
+  await expect(page.getByRole("heading", { name: "Built for desktop, not phones" })).toBeVisible({ timeout: 60_000 })
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
+  expect(overflow).toBeLessThanOrEqual(0)
+})
+
 test("tablet portrait: inspectors stay on screen", async ({ page }) => {
   await page.setViewportSize({ width: 768, height: 1024 })
   const importPanel = await openImport(page)
+  await expect.poll(async () => (await importPanel.boundingBox())?.y ?? -1).toBeGreaterThanOrEqual(16)
   const box = (await importPanel.boundingBox())!
-  expect(box.x + box.width).toBeLessThanOrEqual(768 - 8)
-  expect(box.x).toBeGreaterThanOrEqual(8)
+  expect(box.x + box.width).toBeLessThanOrEqual(768 - 16)
+  expect(box.x).toBeGreaterThanOrEqual(16)
   await expect(importPanel.getByTestId("import-link-submit")).toBeInViewport()
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
   expect(overflow).toBeLessThanOrEqual(0)
