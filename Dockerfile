@@ -83,6 +83,15 @@ COPY --chown=1000:1000 prisma ./prisma
 FROM manifests AS prod-deps
 RUN pnpm install --frozen-lockfile --prod --ignore-scripts
 RUN pnpm db:generate
+# --ignore-scripts skips @prisma/engines' postinstall, so the schema engine
+# (what `prisma migrate deploy` runs) was downloaded at first boot into
+# node_modules — writable only by uid 1000. Any other ARCIIN_PUID failed every
+# migration with "Can't write to …/@prisma/engines" and the API restarted
+# forever. Fetch it now, into the image, and fail the build if it is missing.
+RUN for d in node_modules/.pnpm/@prisma+engines@*/node_modules/@prisma/engines; do \
+      (cd "$d" && node scripts/postinstall.js); \
+    done \
+    && ls node_modules/.pnpm/@prisma+engines@*/node_modules/@prisma/engines/schema-engine-* >/dev/null
 
 # ─────────────────────────────────────────────────────────────────────────────
 # web-builder — the only stage that needs the dev toolchain.
