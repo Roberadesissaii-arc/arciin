@@ -1250,8 +1250,11 @@ ensure_postgres_role_and_db() {
   fi
 
   if [[ "$role_exists" -eq 0 ]]; then
-    sudo -u postgres env PGPORT="$pg_port" psql -v ON_ERROR_STOP=1 -v pwd="$password" \
-      -c "CREATE ROLE arciin WITH LOGIN PASSWORD :'pwd' CREATEDB;" &>/dev/null
+    # On stdin, not -c: psql substitutes :'pwd' only in script input. With -c
+    # the literal :'pwd' reached the server as a syntax error, so a native
+    # install on a brand-new server could never create its role.
+    printf '%s\n' "CREATE ROLE arciin WITH LOGIN PASSWORD :'pwd' CREATEDB;" \
+      | sudo -u postgres env PGPORT="$pg_port" psql -X -q -v ON_ERROR_STOP=1 -v pwd="$password" &>/dev/null
   else
     # The role already exists. .env is the source of truth for its password:
     # if a real login with the .env credentials fails, set the role's password
@@ -1261,8 +1264,8 @@ ensure_postgres_role_and_db() {
     db_url="$(grep '^DATABASE_URL=' "${ROOT_DIR}/.env" 2>/dev/null | cut -d= -f2- | tr -d '"')"
     auth="$(arciin_probe_db_auth "$db_url" 2>/dev/null || true)"
     if [[ "$auth" != "ok" ]]; then
-      sudo -u postgres env PGPORT="$pg_port" psql -v ON_ERROR_STOP=1 -v pwd="$password" \
-        -c "ALTER ROLE arciin WITH LOGIN PASSWORD :'pwd' CREATEDB;" &>/dev/null
+      printf '%s\n' "ALTER ROLE arciin WITH LOGIN PASSWORD :'pwd' CREATEDB;" \
+        | sudo -u postgres env PGPORT="$pg_port" psql -X -q -v ON_ERROR_STOP=1 -v pwd="$password" &>/dev/null
       [[ "$auth" == "auth_failed" ]] && ok "Database role password realigned with .env (no data changed)"
     fi
   fi

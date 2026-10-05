@@ -117,6 +117,12 @@ describe("database credentials are tested, not assumed", () => {
     expect(body).toContain("PostgreSQL is running, but a login with the credentials in .env failed.")
   })
 
+  it("role passwords are set through psql's script input, where :'pwd' is substituted", () => {
+    // psql -c does not interpolate variables: the role was never created.
+    expect(install).not.toMatch(/-c "(CREATE|ALTER) ROLE arciin[^"]*:'pwd'/)
+    expect(install).toMatch(/printf '%s\\n' "CREATE ROLE arciin WITH LOGIN PASSWORD :'pwd' CREATEDB;" \\\n\s+\| sudo -u postgres/)
+  })
+
   it("arciin-init reports wrong credentials as credentials, before any migration", () => {
     expect(init).toContain("check_database_login")
     expect(init.indexOf("check_database_login\nrun_migrations")).toBeGreaterThan(-1)
