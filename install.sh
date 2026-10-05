@@ -283,7 +283,9 @@ RESET_DB=false
 ARCIIN_DB_CLAIM_STATE="unknown"
 
 # ── Banner ────────────────────────────────────────────────────────────────────
-clear
+# Only on a terminal: with no usable TERM (cloud-init, CI, `ssh host cmd`)
+# `clear` fails and the ERR trap used to abort the whole install here.
+if [[ -t 1 ]]; then clear 2>/dev/null || true; fi
 echo ""
 echo -e "${BGREEN}     █████╗ ██████╗  ██████╗██╗██╗███╗   ██╗${RESET}"
 echo -e "${BGREEN}    ██╔══██╗██╔══██╗██╔════╝██║██║████╗  ██║${RESET}"

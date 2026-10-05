@@ -89,6 +89,11 @@ describe("fresh-server failures", () => {
     expect(install).not.toMatch(/pm2 startup 2>&1 \| grep sudo/)
   })
 
+  it("a missing TERM does not abort the install (clear only on a terminal)", () => {
+    expect(install).not.toMatch(/^clear$/m)
+    expect(install).toContain("if [[ -t 1 ]]; then clear 2>/dev/null || true; fi")
+  })
+
   it("apt never prompts and the system upgrade is opt-in", () => {
     expect(install).toContain("export DEBIAN_FRONTEND=noninteractive")
     expect(install).toContain("export NEEDRESTART_MODE=a")
