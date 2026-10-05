@@ -832,16 +832,38 @@ pull_and_verify() {
 
 launch() {
   step "Starting Arciin"
-  dc up -d --remove-orphans >/dev/null || arciin_fail_report "Arciin's containers did not start." \
-    "docker compose up failed." "Your data has NOT been deleted." \
-    "Logs: cd ${ARCIIN_DIR} && docker compose logs --tail 100" "Diagnose: bash ${ARCIIN_DIR}/arciin-doctor.sh"
+  # A first boot runs migrations before the API answers; when that outlasts
+  # the health start period, `up` gives up on Caddy's dependency even though
+  # the stack is on its way. wait_healthy polls and starts what is left.
+  if ! dc up -d --remove-orphans >"$(secure_tmp)" 2>&1; then
+    info "Some services are still starting — waiting for them"
+  fi
+  [[ -n "$(project_containers)" ]] || arciin_fail_report "Arciin's containers were not created." \
+    "docker compose up created nothing." "Your data has NOT been deleted." \
+    "Logs: cd ${ARCIIN_DIR} && docker compose up" "Diagnose: bash ${ARCIIN_DIR}/arciin-doctor.sh"
   ok "Containers created"
+}
+
+# One line per unhealthy service: state, health, and the last probe's output.
+describe_unhealthy() {
+  local svc name state
+  for svc in postgres redis api worker web caddy; do
+    name="$(service_container "$svc")"
+    if [[ -z "$name" ]]; then echo "    ${svc}: not created"; continue; fi
+    state="$("${DOCKER[@]}" inspect -f '{{.State.Status}}{{if .State.Health}} / {{.State.Health.Status}}{{end}} (restarts: {{.RestartCount}})' "$name" 2>/dev/null)"
+    [[ "$state" == "running / healthy"* || "$state" == "running (restarts"* ]] && continue
+    echo "    ${svc}: ${state}"
+    "${DOCKER[@]}" inspect -f '{{if .State.Health}}{{range .State.Health.Log}}{{.Output}}{{end}}{{end}}' "$name" 2>/dev/null \
+      | tail -c 400 | sed 's/^/        /'
+  done
 }
 
 wait_healthy() {
   step "Waiting for every service to be healthy"
   local i lines unhealthy=""
   for i in $(seq 1 150); do
+    # Start anything `up` left behind once its dependencies became healthy.
+    if (( i % 15 == 0 )); then dc up -d >/dev/null 2>&1 || true; fi
     lines="$(dc ps -a --format '{{.Service}} {{.State}} {{.Health}}' 2>/dev/null || true)"
     unhealthy="$(awk '$2 != "running" || ($3 != "" && $3 != "healthy")' <<<"$lines")"
     if [[ -n "$lines" && -z "$unhealthy" && "$(wc -l <<<"$lines")" -ge "$EXPECTED_SERVICES" ]]; then
@@ -856,6 +878,8 @@ wait_healthy() {
       "The database rejected the password in ${ENV_FILE}." "Your data has NOT been deleted." \
       "Re-run the installer: it detects this and offers recovery" "See docs/REPAIR.md"
   fi
+  echo ""
+  describe_unhealthy
   arciin_fail_report "Arciin did not become healthy within 5 minutes." \
     "Not healthy: $(tr '\n' ';' <<<"$unhealthy")" "Your data has NOT been deleted." \
     "Logs: cd ${ARCIIN_DIR} && docker compose logs --tail 100" "Diagnose: bash ${ARCIIN_DIR}/arciin-doctor.sh"

@@ -22,6 +22,7 @@ export ARCIIN_DIR="${ARCIIN_DIR:-/opt/arciin}"
 export ARCIIN_HOST_DATA_DIR="${ARCIIN_HOST_DATA_DIR:-/srv/arciin-storage/arciin}"
 export ARCIIN_HTTP_PORT="${ARCIIN_HTTP_PORT:-8080}"
 export ARCIIN_ASSUME_YES=1
+PROJECT="${ARCIIN_COMPOSE_PROJECT:-arciin}"
 export ARCIIN_LOCAL_ASSETS="$ROOT"
 LOGS="${ARCIIN_SCENARIO_LOGS:-$ROOT/install-logs}"
 mkdir -p "$LOGS"
@@ -44,6 +45,7 @@ install() { # install <log-name> [args] → exit code; full output in $LOGS
   local started=$SECONDS rc=0
   bash "$ROOT/scripts/docker-install.sh" "$@" >"$LOGS/$name.log" 2>&1 </dev/null || rc=$?
   echo "    (${name}: exit ${rc}, $((SECONDS - started))s)"
+  [[ "$rc" == 0 ]] || diagnose "$name"
   return "$rc"
 }
 
@@ -56,6 +58,17 @@ install_bootstrap() {
     bash "$ROOT/scripts/install-bootstrap.sh" "$@" >"$LOGS/$name.log" 2>&1 </dev/null || rc=$?
   echo "    (${name}: exit ${rc}, $((SECONDS - started))s)"
   return "$rc"
+}
+
+diagnose() { # container state and recent logs, for a failed install
+  {
+    docker ps -a --filter "label=com.docker.compose.project=$PROJECT" --format '{{.Names}} {{.Status}}'
+    for c in api worker web caddy; do
+      echo "── ${c} ──"
+      docker logs --tail 80 "${PROJECT}-${c}-1" 2>&1
+      docker inspect -f '{{if .State.Health}}{{range .State.Health.Log}}{{.Output}}{{end}}{{end}}' "${PROJECT}-${c}-1" 2>/dev/null | tail -c 600
+    done
+  } >"$LOGS/$1.diag" 2>&1
 }
 
 write_marker() {
@@ -141,9 +154,10 @@ scenario_env_lost_containers_gone() {
 
 scenario_wrong_password_rekey() {
   dc down >/dev/null 2>&1
-  mkdir -p "$LOGS/hidden-backups"
-  mv "$ARCIIN_DIR/backups/env"/*.env "$LOGS/hidden-backups/" 2>/dev/null
-  mv "$ARCIIN_HOST_DATA_DIR/backups/install/latest.env" "$LOGS/hidden-backups/data-latest.env" 2>/dev/null
+  # Out of the installer's sight — and out of the uploaded logs: these hold secrets.
+  local hidden; hidden="$(mktemp -d)"
+  mv "$ARCIIN_DIR/backups/env"/*.env "$hidden/" 2>/dev/null
+  mv "$ARCIIN_HOST_DATA_DIR/backups/install/latest.env" "$hidden/data-latest.env" 2>/dev/null
   sed -i "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$(openssl rand -hex 24)/" "$ARCIIN_DIR/.env"
   local after; after="$(fingerprint)"
   install wrong-password; local rc=$?
