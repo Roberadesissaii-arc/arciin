@@ -11,6 +11,7 @@ import {
   Link2,
   Loader2,
   Share2,
+  X,
 } from "lucide-react"
 import { toast } from "@/lib/notifications/arciin-toast"
 
@@ -29,12 +30,16 @@ import {
 } from "@/components/ui/select"
 import {
   Sheet,
+  SheetClose,
   SheetContent,
+  SheetDescription,
   SheetFooter,
+  SheetHeader,
+  SheetTitle,
 } from "@/components/ui/sheet"
 import { createShareLink } from "@/lib/api/shares"
 import { MediaTypeIcon } from "@/components/libraries/media-type-icon"
-import { InspectorHeader, floatingInspectorPanel } from "@/components/shared/floating-inspector"
+import { libraryInspectorPanel } from "@/lib/library-glass-sheet"
 import type { AssetSummary, FolderSummary } from "@/lib/types/models"
 import { copyToClipboard } from "@/lib/utils/clipboard"
 import { formatBytes } from "@/lib/utils/format-bytes"
@@ -390,7 +395,7 @@ export function AssetShareContent({
 
   return (
     <>
-        <div className="scrollbar-hide flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto overscroll-contain px-4 py-4">
+        <div className="scrollbar-hide flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-2">
           {createdShares.length > 0 ? (
             <div className="space-y-3">
               {createdShares.map((created) => (
@@ -466,7 +471,7 @@ export function AssetShareContent({
           )}
         </div>
 
-        <SheetFooter className="shrink-0 border-t border-zinc-200/70 bg-zinc-50/60 px-4 py-3">
+        <SheetFooter className="shrink-0 border-t border-border p-2">
           {createdShares.length > 0 ? (
             <Button
               type="button"
@@ -516,19 +521,30 @@ export function ShareDialog({
       <SheetContent
         side="right"
         showCloseButton={false}
-        className={cn(floatingInspectorPanel, "dashboard-main text-foreground")}
+        className={cn(libraryInspectorPanel, "dashboard-main text-foreground")}
       >
-        <InspectorHeader
-          icon={<Share2 className="size-4 text-[color:var(--arciin-accent,#ff4f12)]" aria-hidden />}
-          title="Share"
-          description={
-            <>
-              Create a private link for <span className="font-medium text-zinc-900">{label}</span>. Recipients only see
-              this item — not your full library.
-            </>
-          }
-          closeAsSheetClose
-        />
+        <SheetHeader className="relative shrink-0 space-y-1 border-b border-border p-2 pr-11">
+          <SheetClose asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              className="absolute top-2 right-2 text-muted-foreground hover:text-foreground"
+              aria-label="Close"
+            >
+              <X className="size-4" />
+            </Button>
+          </SheetClose>
+          <SheetTitle className="flex items-center gap-2 font-heading text-lg font-semibold tracking-tight">
+            <Share2 className="size-4 text-primary" />
+            Share
+          </SheetTitle>
+          <SheetDescription className="text-[13px] leading-snug text-muted-foreground">
+            Create a private link for{" "}
+            <span className="font-medium text-foreground">{label}</span>. Recipients only see this
+            item — not your full library.
+          </SheetDescription>
+        </SheetHeader>
         {open ? <AssetShareContent target={target} onDone={() => onOpenChange(false)} /> : null}
       </SheetContent>
     </Sheet>

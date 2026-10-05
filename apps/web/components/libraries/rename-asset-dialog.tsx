@@ -9,6 +9,7 @@ import {
   RotateCcw,
   Sparkles,
   Tag,
+  X,
 } from "lucide-react"
 import { toast } from "@/lib/notifications/arciin-toast"
 
@@ -25,13 +26,17 @@ import { Field, FieldError, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import {
   Sheet,
+  SheetClose,
   SheetContent,
+  SheetDescription,
   SheetFooter,
+  SheetHeader,
+  SheetTitle,
 } from "@/components/ui/sheet"
 import { useQueryClient } from "@tanstack/react-query"
 
 import { useUpdateAsset } from "@/hooks/use-assets"
-import { InspectorHeader, floatingInspectorPanel } from "@/components/shared/floating-inspector"
+import { libraryInspectorPanel } from "@/lib/library-glass-sheet"
 import {
   isValidBadgeColor,
   resolveAssetBadge,
@@ -252,7 +257,7 @@ export function AssetEditContent({
 
   return (
     <>
-        <div className="scrollbar-hide flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto overscroll-contain px-4 py-4">
+        <div className="scrollbar-hide flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-2">
           <Field>
             <FieldLabel
               htmlFor="assetName"
@@ -466,7 +471,7 @@ export function AssetEditContent({
           <FieldError errors={[error ? { message: error } : undefined]} />
         </div>
 
-        <SheetFooter className="shrink-0 border-t border-zinc-200/70 bg-zinc-50/60 px-4 py-3">
+        <SheetFooter className="shrink-0 border-t border-border p-2">
           <Button
             className="h-10 w-full bg-primary text-white hover:bg-primary/90"
             disabled={updateAssetMutation.isPending}
@@ -500,14 +505,28 @@ export function RenameAssetDialog({
       <SheetContent
         side="right"
         showCloseButton={false}
-        className={cn(floatingInspectorPanel, "dashboard-main text-foreground")}
+        className={cn(libraryInspectorPanel, "dashboard-main text-foreground")}
       >
-        <InspectorHeader
-          icon={<Pencil className="size-4 text-[color:var(--arciin-accent,#ff4f12)]" aria-hidden />}
-          title="Edit file"
-          description="Rename the file and customize the badge shown on its card — label, color, or hide it entirely."
-          closeAsSheetClose
-        />
+        <SheetHeader className="relative shrink-0 space-y-1 border-b border-border p-2 pr-11">
+          <SheetClose asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              className="absolute top-2 right-2 text-muted-foreground hover:text-foreground"
+              aria-label="Close"
+            >
+              <X className="size-4" />
+            </Button>
+          </SheetClose>
+          <SheetTitle className="font-heading text-lg font-semibold tracking-tight text-foreground">
+            Edit file
+          </SheetTitle>
+          <SheetDescription className="text-[13px] leading-snug text-muted-foreground">
+            Rename the file and customize the badge shown on its card — label, color, or hide it
+            entirely.
+          </SheetDescription>
+        </SheetHeader>
         {/* Mounted only while open, so the draft starts from the saved asset
             each time rather than from a stale edit. */}
         {open ? <AssetEditContent asset={asset} onDone={() => onOpenChange(false)} /> : null}
