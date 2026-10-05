@@ -10,6 +10,10 @@ migration_backup_dir() {
   echo "${root}/backups/migrations"
 }
 
+# 0 = migrations pending, 1 = up to date, 2 = could not tell (the database
+# could not be reached or refused the credentials). It used to answer
+# "up to date" for every failure, so a wrong password was reported as
+# "schema is up to date — skipping backup" right before the migration failed.
 has_pending_migrations() {
   local status_log
   status_log="$(mktemp)"
@@ -24,7 +28,7 @@ has_pending_migrations() {
     return 0
   fi
   rm -f "${status_log}"
-  return 1
+  return 2
 }
 
 create_migration_backup() {

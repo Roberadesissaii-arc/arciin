@@ -105,19 +105,67 @@ recover_chat_migration_failure() {
   return 1
 }
 
+# Prove the configured credentials work before anything else. pg_isready
+# answers "accepting connections" to any password, so a wrong one used to
+# surface later as "migration failed; a pre-migration backup may be
+# available" — true, and pointing at entirely the wrong thing.
+check_database_login() {
+  local out code
+  out="$(pnpm exec prisma migrate status 2>&1)"
+  code=$?
+  if grep -qE "P1000|[Aa]uthentication failed" <<<"$out"; then
+    cat >&2 <<'MSG'
+
+[arciin-init] ✖ PostgreSQL is running, but Arciin cannot authenticate with the configured credentials.
+
+  Why:       The database password in .env (POSTGRES_PASSWORD / DATABASE_URL) does not
+             match the one stored in the existing database. This usually means .env was
+             regenerated or replaced while the database (or Docker volume) was kept.
+  Your data: NOT deleted, NOT modified.
+  Recover:   Restore the previous .env (or its POSTGRES_PASSWORD), then restart.
+             Docker:  ./scripts/docker-setup.sh --repair   (it will ask for the existing password)
+             Native:  ./install.sh --repair                 (realigns the role to .env)
+             Diagnose: bash scripts/arciin-doctor.sh
+MSG
+    exit 3
+  fi
+  if grep -qE "P1001|Can't reach database server" <<<"$out"; then
+    echo "[arciin-init] ✖ PostgreSQL is not reachable at the configured address. Your data is unaffected." >&2
+    echo "$out" | grep -E "P1001|reach" | head -2 >&2
+    exit 4
+  fi
+  if [[ "$code" -ne 0 ]] && ! grep -qiE "not yet been applied|Following migrations|up to date" <<<"$out"; then
+    log "migrate status returned ${code}; continuing to migrate deploy for details"
+  else
+    log "Database login verified"
+  fi
+}
+
 run_migrations() {
   # shellcheck source=scripts/migration-backup.sh
   source "${ROOT_DIR}/scripts/migration-backup.sh"
 
-  if has_pending_migrations; then
+  local pending=0
+  has_pending_migrations || pending=$?
+  if [[ "$pending" -eq 0 ]]; then
     log "Pending migrations detected — creating pre-migration backup"
     if ! backup_path="$(create_migration_backup)"; then
       echo "[arciin-init] FATAL: pre-migration backup failed; refusing to migrate" >&2
       exit 1
     fi
     log "Pre-migration backup stored at ${backup_path}"
-  else
+  elif [[ "$pending" -eq 1 ]]; then
     log "Database schema is up to date — skipping pre-migration backup"
+  else
+    # The login was verified above, so this is a schema state migrate status
+    # does not summarise (e.g. a failed migration that deploy knows how to
+    # recover). Back up first, then let migrate deploy decide.
+    log "Migration status needs attention — creating a backup before migrating"
+    if ! backup_path="$(create_migration_backup)"; then
+      echo "[arciin-init] FATAL: pre-migration backup failed; refusing to migrate. Nothing was changed." >&2
+      exit 1
+    fi
+    log "Pre-migration backup stored at ${backup_path}"
   fi
 
   log "Applying database migrations (prisma migrate deploy)"
@@ -160,6 +208,7 @@ report_claim_state() {
 }
 
 wait_for_postgres
+check_database_login
 run_migrations
 if ! run_seed; then
   ensure_storage_dirs
