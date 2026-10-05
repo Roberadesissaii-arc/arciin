@@ -16,6 +16,7 @@ on:
       - "scripts/arciin-doctor.sh"
       - "scripts/worker-healthcheck.mjs"
       - "scripts/release-manifest.mjs"
+      - "scripts/stage-release-assets.sh"
       - "docker-compose.production.yml"
       - "docker/caddy/Caddyfile"
       - "Dockerfile"
@@ -101,12 +102,7 @@ jobs:
           set -euo pipefail
           v="${{ steps.version.outputs.version }}"
           digest() { docker buildx imagetools inspect "localhost:5000/arciin-$1:$v" --format '{{json .Manifest}}' | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s).digest))'; }
-          mkdir -p dist/release
-          cp scripts/install-bootstrap.sh dist/release/install.sh
-          cp scripts/docker-install.sh scripts/arciin-doctor.sh dist/release/
-          cp scripts/lib/install-state.sh scripts/lib/avahi-discovery.sh dist/release/
-          cp docker-compose.production.yml dist/release/docker-compose.yml
-          cp docker/caddy/Caddyfile dist/release/Caddyfile
+          bash scripts/stage-release-assets.sh dist/release
           node scripts/release-manifest.mjs --version "$v" --release-sha "${{ github.sha }}" \
             --registry localhost:5000 \
             --digest-web "$(digest web)" --digest-api "$(digest api)" --digest-worker "$(digest worker)" \

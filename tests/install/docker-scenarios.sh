@@ -24,19 +24,12 @@ export ARCIIN_HTTP_PORT="${ARCIIN_HTTP_PORT:-8080}"
 export ARCIIN_ASSUME_YES=1
 PROJECT="${ARCIIN_COMPOSE_PROJECT:-arciin}"
 export ARCIIN_LOCAL_ASSETS="$ROOT"
-LOGS="${ARCIIN_SCENARIO_LOGS:-$ROOT/install-logs}"
-mkdir -p "$LOGS"
-RESULTS="$LOGS/results.tsv"
-: >"$RESULTS"
-FAILED=0
-CURRENT=""
+export ARCIIN_SCENARIO_LOGS="${ARCIIN_SCENARIO_LOGS:-$ROOT/install-logs}"
+# shellcheck source=tests/install/lib-scenarios.sh
+source "$ROOT/tests/install/lib-scenarios.sh"
 
-pass() { printf '  \033[32mPASS\033[0m %s — %s\n' "$CURRENT" "$1"; printf '%s\tPASS\t%s\n' "$CURRENT" "$1" >>"$RESULTS"; }
-fail() { printf '  \033[31mFAIL\033[0m %s — %s\n' "$CURRENT" "$1"; printf '%s\tFAIL\t%s\n' "$CURRENT" "$1" >>"$RESULTS"; FAILED=$((FAILED + 1)); }
-check() { if eval "$2"; then pass "$1"; else fail "$1"; fi; }
-
-dc() { docker compose -p arciin --project-directory "$ARCIIN_DIR" -f "$ARCIIN_DIR/docker-compose.yml" --env-file "$ARCIIN_DIR/.env" "$@"; }
-psql_arciin() { docker exec -i arciin-postgres-1 psql -X -U arciin -d arciin -tAq "$@"; }
+dc() { docker compose -p "$PROJECT" --project-directory "$ARCIIN_DIR" -f "$ARCIIN_DIR/docker-compose.yml" --env-file "$ARCIIN_DIR/.env" "$@"; }
+psql_arciin() { docker exec -i ${PROJECT}-postgres-1 psql -X -U arciin -d arciin -tAq "$@"; }
 env_val() { grep -E "^$1=" "$ARCIIN_DIR/.env" 2>/dev/null | tail -1 | cut -d= -f2-; }
 fingerprint() { env_val POSTGRES_PASSWORD | sha256sum | cut -c1-12; }
 
@@ -83,11 +76,6 @@ all_healthy() {
   lines="$(dc ps -a --format '{{.Service}} {{.State}} {{.Health}}' 2>/dev/null)"
   [[ "$(wc -l <<<"$lines")" -ge 6 ]] && [[ -z "$(awk '$2 != "running" || ($3 != "" && $3 != "healthy")' <<<"$lines")" ]]
 }
-wait_until() { # wait_until <seconds> <condition>
-  local deadline=$((SECONDS + $1))
-  while ((SECONDS < deadline)); do eval "$2" && return 0; sleep 3; done
-  return 1
-}
 no_secret_in() { # the log must not contain the database or redis password
   local pw rpw; pw="$(env_val POSTGRES_PASSWORD)"; rpw="$(env_val REDIS_PASSWORD)"
   [[ -n "$pw" ]] && ! grep -qF "$pw" "$1" && ! grep -qF "$rpw" "$1"
@@ -102,7 +90,7 @@ scenario_fresh() {
   check "all six services healthy" all_healthy
   check "API answers through Caddy" "curl -fsS http://127.0.0.1:${ARCIIN_HTTP_PORT}/api/health >/dev/null"
   check "every container restarts unless-stopped" \
-    "[[ -z \"\$(docker ps -a --filter label=com.docker.compose.project=arciin --format '{{.Names}}' | xargs docker inspect -f '{{.HostConfig.RestartPolicy.Name}}' | grep -v unless-stopped)\" ]]"
+    "[[ -z \"\$(docker ps -a --filter label=com.docker.compose.project=$PROJECT --format '{{.Names}}' | xargs docker inspect -f '{{.HostConfig.RestartPolicy.Name}}' | grep -v unless-stopped)\" ]]"
   check ".env is mode 600" "[[ \$(stat -c %a $ARCIIN_DIR/.env) == 600 ]]"
   check ".env backed up beside the install and on the data disk" \
     "ls $ARCIIN_DIR/backups/env/*.env >/dev/null 2>&1 && [[ -f $ARCIIN_HOST_DATA_DIR/backups/install/latest.env ]]"
@@ -110,7 +98,7 @@ scenario_fresh() {
     "grep -q '\"mode\": \"docker\"' $ARCIIN_DIR/install-state.json && grep -q '\"step.complete\": \"done\"' $ARCIIN_DIR/install-state.json"
   check "no password appears in the installer output" "no_secret_in $LOGS/fresh.log"
   check "worker reports the database heartbeat" \
-    "docker exec arciin-redis-1 sh -c 'redis-cli -a \"\$REDIS_PASSWORD\" --no-auth-warning get arciin:worker:heartbeat:db' | grep -q '^[0-9]'"
+    "docker exec ${PROJECT}-redis-1 sh -c 'redis-cli -a \"\$REDIS_PASSWORD\" --no-auth-warning get arciin:worker:heartbeat:db' | grep -q '^[0-9]'"
   write_marker "m1"
 }
 
@@ -129,6 +117,57 @@ scenario_doctor() {
   bash "$ARCIIN_DIR/arciin-doctor.sh" --docker >"$LOGS/doctor.log" 2>&1 || rc=$?
   check "doctor (installed copy) reports all green" "[[ $rc == 0 ]]"
   check "doctor prints no password" "no_secret_in $LOGS/doctor.log"
+}
+
+# The hardening the old smoke test checked, now against the production
+# Compose stack the installer created.
+scenario_security() {
+  local base="http://127.0.0.1:${ARCIIN_HTTP_PORT}" code uid
+  code="$(curl -s -o /dev/null -w '%{http_code}' "$base/login")"
+  check "web UI reachable through Caddy ($code)" "[[ '$code' =~ ^(200|302|307)$ ]]"
+  for svc in api worker; do
+    uid="$(dc exec -T "$svc" id -u 2>/dev/null | tr -d '\r')"
+    check "$svc runs as non-root (uid ${uid:-?})" "[[ -n '$uid' && '$uid' != 0 ]]"
+  done
+  check "Redis rejects unauthenticated clients" "dc exec -T redis redis-cli ping 2>&1 | grep -qi NOAUTH"
+  check "PostgreSQL is not published on the host" "[[ -z \$(dc port postgres 5432 2>/dev/null) ]]"
+  code="$(curl -s -o /dev/null -w '%{http_code}' -X POST "$base/api/imports" -H 'content-type: application/json' -d '{"url":"http://169.254.169.254/"}')"
+  check "URL import requires auth (got $code)" "[[ '$code' == 401 ]]"
+  check "nosniff header present" "curl -sI $base/api/health | grep -qi 'x-content-type-options: nosniff'"
+  for tool in ffmpeg yt-dlp gallery-dl pdftoppm; do
+    check "worker has $tool" "dc exec -T worker sh -c 'command -v $tool' >/dev/null 2>&1"
+  done
+}
+
+docker_instance_id() { psql_arciin -c 'SELECT id FROM "InstanceConfig" LIMIT 1' 2>/dev/null | head -1; }
+
+scenario_claim() {
+  local api="http://127.0.0.1:${ARCIIN_HTTP_PORT}/api"
+  check "instance can be claimed through Caddy" \
+    "claim_instance '$api' '$(env_val ARCIIN_PUBLIC_URL)' '$(env_val ARCIIN_SETUP_TOKEN)' /data/arciin"
+  docker_instance_id >"$LOGS/instance-id"
+  if [[ -n "${ARCIIN_TEST_LICENSE_KEY:-}" ]]; then
+    activate_license "$api" "$(env_val ARCIIN_PUBLIC_URL)" "$ARCIIN_TEST_LICENSE_KEY" >"$LOGS/license-activate-1.json"
+    check "a test licence activates" "! grep -q '\"error\"' $LOGS/license-activate-1.json"
+  fi
+}
+
+scenario_post_reboot() {
+  local n="${ARCIIN_REBOOT_INDEX:-1}"
+  check "after reboot ${n}: every service healthy without intervention" "wait_until 300 all_healthy"
+  check "after reboot ${n}: instance ID unchanged" "[[ \$(docker_instance_id) == \$(cat $LOGS/instance-id) ]]"
+  check "after reboot ${n}: database row kept" "[[ \$(marker) == m1 ]]"
+}
+
+scenario_license_seat_after_fresh() {
+  [[ -n "${ARCIIN_TEST_LICENSE_KEY:-}" ]] || return 0
+  local api="http://127.0.0.1:${ARCIIN_HTTP_PORT}/api"
+  claim_instance "$api" "$(env_val ARCIIN_PUBLIC_URL)" "$(env_val ARCIIN_SETUP_TOKEN)" /data/arciin
+  activate_license "$api" "$(env_val ARCIIN_PUBLIC_URL)" "$ARCIIN_TEST_LICENSE_KEY" >"$LOGS/license-activate-2.json"
+  check "a reinstalled server hits SERVER_LIMIT_REACHED" "grep -q SERVER_LIMIT_REACHED $LOGS/license-activate-2.json"
+  local short; short="$(cut -c1-8 "$LOGS/instance-id")"
+  check "the error names the server holding the seat" "grep -qF '\"instanceIdShort\":\"$short\"' $LOGS/license-activate-2.json"
+  check "the error points to arciin.com/account" "grep -q 'arciin.com/account' $LOGS/license-activate-2.json"
 }
 
 scenario_env_lost_containers_present() {
@@ -173,12 +212,12 @@ scenario_daemon_restart() {
 }
 
 scenario_worker_db_health() {
-  docker stop arciin-postgres-1 >/dev/null
+  docker stop ${PROJECT}-postgres-1 >/dev/null
   check "worker turns unhealthy when PostgreSQL is gone" \
-    "wait_until 240 '[[ \$(docker inspect -f {{.State.Health.Status}} arciin-worker-1) == unhealthy ]]'"
-  docker start arciin-postgres-1 >/dev/null
+    "wait_until 240 '[[ \$(docker inspect -f {{.State.Health.Status}} ${PROJECT}-worker-1) == unhealthy ]]'"
+  docker start ${PROJECT}-postgres-1 >/dev/null
   check "worker recovers when PostgreSQL returns" \
-    "wait_until 240 '[[ \$(docker inspect -f {{.State.Health.Status}} arciin-worker-1) == healthy ]]'"
+    "wait_until 240 '[[ \$(docker inspect -f {{.State.Health.Status}} ${PROJECT}-worker-1) == healthy ]]'"
 }
 
 scenario_port_conflict() {
@@ -209,28 +248,25 @@ scenario_fresh_requires_phrase() {
 scenario_uninstall_keeps_data() {
   install uninstall --uninstall; local rc=$?
   check "--uninstall exits 0" "[[ $rc == 0 ]]"
-  check "containers removed" "[[ -z \$(docker ps -aq --filter label=com.docker.compose.project=arciin) ]]"
-  check "database volume kept" "docker volume inspect arciin_postgres_data >/dev/null"
+  check "containers removed" "[[ -z \$(docker ps -aq --filter label=com.docker.compose.project=$PROJECT) ]]"
+  check "database volume kept" "docker volume inspect ${PROJECT}_postgres_data >/dev/null"
   install reinstall; rc=$?
   check "reinstall picks the data back up" "[[ $rc == 0 && \$(marker) == m2 ]]"
 }
 
 scenario_delete_data() {
   install delete-refused --uninstall --delete-data; local rc=$?
-  check "--delete-data without the phrase is refused" "[[ $rc != 0 ]] && docker volume inspect arciin_postgres_data >/dev/null"
+  check "--delete-data without the phrase is refused" "[[ $rc != 0 ]] && docker volume inspect ${PROJECT}_postgres_data >/dev/null"
   ARCIIN_CONFIRM_ERASE="ERASE ARCIIN" install delete-confirmed --uninstall --delete-data; rc=$?
-  check "--delete-data with the phrase removes the volumes" "[[ $rc == 0 ]] && ! docker volume inspect arciin_postgres_data >/dev/null 2>&1"
+  check "--delete-data with the phrase removes the volumes" "[[ $rc == 0 ]] && ! docker volume inspect ${PROJECT}_postgres_data >/dev/null 2>&1"
   check "files are kept unless --delete-storage" "[[ \$(file_marker) == m2 ]]"
 }
 
-ALL=(fresh rerun doctor env_lost_containers_present env_lost_containers_gone wrong_password_rekey
+ALL=(fresh rerun doctor security env_lost_containers_present env_lost_containers_gone wrong_password_rekey
      daemon_restart worker_db_health port_conflict fresh_requires_phrase uninstall_keeps_data delete_data)
 for s in "${@:-${ALL[@]}}"; do
   CURRENT="$s"
   echo "▸ ${s}"
   "scenario_${s}"
 done
-
-echo ""
-echo "Results: $(grep -c PASS "$RESULTS") passed, ${FAILED} failed  (logs: ${LOGS})"
-[[ "$FAILED" == "0" ]]
+finish
