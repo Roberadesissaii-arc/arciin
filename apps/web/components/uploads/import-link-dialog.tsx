@@ -6,10 +6,12 @@ import { useQuery } from "@tanstack/react-query"
 import {
   FileText,
   Film,
+  Info,
   Loader2,
   Music2,
   Link2,
   Video,
+  X,
   type LucideIcon,
 } from "lucide-react"
 
@@ -20,13 +22,6 @@ import { useUploadStore } from "@/lib/stores/upload-store"
 
 import { ImportLinkCandidates, ImportLinkSingleItem } from "@/components/uploads/import-link-candidates"
 import {
-  InspectorBody,
-  InspectorFooter,
-  InspectorHeader,
-  InspectorSection,
-  floatingInspectorPanel,
-} from "@/components/shared/floating-inspector"
-import {
   ImportLinkInspectSlot,
   linkSupportsFormatOptions,
 } from "@/components/uploads/import-link-preview"
@@ -35,7 +30,17 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Field, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
+import {
+  Sheet,
+  SheetClose,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet"
+import { libraryInspectorPanel } from "@/lib/library-glass-sheet"
 import { ApiError } from "@/lib/api/errors"
 import { importFromUrl, importInspectionItems, inspectImportLink } from "@/lib/api/imports"
 import { queryKeys } from "@/lib/api/query-keys"
@@ -438,18 +443,39 @@ export function ImportLinkDialog() {
       <SheetContent
         side="right"
         showCloseButton={false}
-        className={cn(floatingInspectorPanel, "dashboard-main text-foreground")}
+        className={cn(libraryInspectorPanel, "dashboard-main text-foreground")}
         data-testid="import-link-panel"
       >
         {/* 1. Header */}
-        <InspectorHeader
-          icon={<Link2 className="size-4 text-[color:var(--arciin-accent,#ff4f12)]" aria-hidden />}
-          title="Import from link"
-          description="Public links only — YouTube, SoundCloud, TikTok, files. Not Spotify or Audible."
-          closeAsSheetClose
-        />
+        {/* Compact header — title + one short line (the v1.1.2 header) */}
+        <SheetHeader className="relative shrink-0 space-y-2 border-b border-border px-3 py-3 pr-11">
+          <SheetClose asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              className="absolute top-2.5 right-2 text-muted-foreground hover:text-foreground"
+              aria-label="Close"
+            >
+              <X className="size-4" />
+            </Button>
+          </SheetClose>
+          <div className="flex items-start gap-2.5">
+            <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-xl border border-zinc-200 bg-zinc-50 text-[color:var(--arciin-accent,#ff4f12)]">
+              <Link2 className="size-4" />
+            </span>
+            <div className="min-w-0 space-y-0.5">
+              <SheetTitle className="font-heading text-[17px] font-semibold tracking-tight text-zinc-900">
+                Import from link
+              </SheetTitle>
+              <SheetDescription className="text-[12.5px] leading-snug text-zinc-500">
+                Public links only — YouTube, SoundCloud, TikTok, files. Not Spotify or Audible.
+              </SheetDescription>
+            </div>
+          </div>
+        </SheetHeader>
 
-        <InspectorBody className="gap-3.5">
+        <div className="scrollbar-hide flex min-h-0 flex-1 flex-col gap-3 overflow-x-hidden overflow-y-auto p-3">
           {/* 2. Link */}
           <Field className="min-w-0 gap-1.5">
             <FieldLabel htmlFor="importUrl" className="text-[11px] font-semibold uppercase tracking-[0.08em] text-zinc-500">
@@ -546,10 +572,25 @@ export function ImportLinkDialog() {
           ) : null}
 
           {/* 4. Download options */}
-          <InspectorSection
-            title="Download options"
-            aside={
-              <div className={cn("flex items-center gap-2", !formatOptionsEnabled && "opacity-50")}>
+          <section
+            className={cn(
+              "min-w-0 overflow-hidden rounded-2xl border border-zinc-200/90 bg-white p-3 shadow-sm",
+              phase === "blocked" && "opacity-60",
+            )}
+          >
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
+                  Download options
+                </p>
+                <p className="mt-0.5 truncate text-[11px] text-zinc-500">{optionsHint}</p>
+              </div>
+              <div
+                className={cn(
+                  "flex shrink-0 items-center gap-2 rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-1",
+                  !formatOptionsEnabled && "opacity-40",
+                )}
+              >
                 <Checkbox
                   id="audioOnlyToggle"
                   checked={audioOnlyEnabled}
@@ -559,18 +600,16 @@ export function ImportLinkDialog() {
                 <Label
                   htmlFor="audioOnlyToggle"
                   className={cn(
-                    "text-[12px] font-medium text-zinc-700",
+                    "text-[11.5px] font-semibold text-zinc-700",
                     formatOptionsEnabled ? "cursor-pointer" : "cursor-not-allowed",
                   )}
                 >
                   Audio only
                 </Label>
               </div>
-            }
-            className={cn(phase === "blocked" && "opacity-60")}
-          >
-            <p className="-mt-1 mb-2 text-[11.5px] leading-snug text-zinc-600">{optionsHint}</p>
-            <div className="grid grid-cols-2 gap-2" role="group" aria-label="Download format">
+            </div>
+
+            <div className="mt-3 grid grid-cols-2 gap-2" role="group" aria-label="Download format">
               {(videoFormats.length > 0
                 ? videoFormats.map((format) => ({ ...format, live: true }))
                 : PLACEHOLDER_VIDEO_FORMATS
@@ -606,26 +645,43 @@ export function ImportLinkDialog() {
                 />
               ))}
             </div>
-          </InspectorSection>
+          </section>
 
-          {/* 5. Supported sources */}
-          <InspectorSection title="Supported sources">
-            <ul className="flex flex-wrap gap-1.5">
+          {/* 5. Supported sources (the v1.1.2 card) */}
+          <div className="shrink-0 overflow-hidden rounded-2xl border border-zinc-200/90 bg-zinc-50/80 p-3">
+            <p className="mb-2.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-zinc-500">
+              Supported sources
+            </p>
+            <ul className="grid grid-cols-2 gap-2">
               {SUPPORTED.map(({ icon: Icon, label }) => (
                 <li
                   key={label}
-                  className="inline-flex items-center gap-1.5 rounded-full border border-zinc-200/90 bg-white px-2.5 py-1 text-[11.5px] font-medium text-zinc-700"
+                  className="flex items-center gap-2 rounded-xl border border-zinc-200/80 bg-white px-2.5 py-2 text-[12px] font-medium text-zinc-700"
                 >
-                  <Icon className="size-3.5 text-zinc-500" aria-hidden />
+                  <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-zinc-100 text-zinc-500">
+                    <Icon className="size-3.5" />
+                  </span>
                   {label}
                 </li>
               ))}
             </ul>
-          </InspectorSection>
-        </InspectorBody>
+          </div>
+
+          {/* Anchored at the bottom of the body: the panel is full height, so any
+              room left over reads as breathing space above a short note rather
+              than an empty column. */}
+          <div className="mt-auto flex gap-2.5 rounded-xl px-1 pt-2 text-[11.5px] leading-snug text-zinc-500" data-testid="import-link-help">
+            <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+            <p>
+              Your server downloads the file, names it after its source and files it into the right
+              library. Previews are fetched by your server too — this page never contacts the source
+              site.
+            </p>
+          </div>
+        </div>
 
         {/* 6. Footer */}
-        <InspectorFooter>
+        <SheetFooter className="shrink-0 border-t border-border p-3">
           <Button
             className="h-10 w-full bg-primary text-white hover:bg-primary/90"
             disabled={submitDisabled}
@@ -634,7 +690,7 @@ export function ImportLinkDialog() {
           >
             {submitLabel}
           </Button>
-        </InspectorFooter>
+        </SheetFooter>
       </SheetContent>
     </Sheet>
   )
