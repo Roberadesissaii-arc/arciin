@@ -86,9 +86,9 @@ command -v arciin_classify_docker >/dev/null 2>&1 || {
 
 if [[ -t 1 && -z "${NO_COLOR:-}" ]]; then
   BOLD=$'\033[1m'; DIM=$'\033[2m'; RESET=$'\033[0m'
-  RED=$'\033[31m'; GREEN=$'\033[32m'; YELLOW=$'\033[33m'; ORANGE=$'\033[38;5;208m'
+  GREEN=$'\033[32m'; YELLOW=$'\033[33m'; ORANGE=$'\033[38;5;208m'
 else
-  BOLD=""; DIM=""; RESET=""; RED=""; GREEN=""; YELLOW=""; ORANGE=""
+  BOLD=""; DIM=""; RESET=""; GREEN=""; YELLOW=""; ORANGE=""
 fi
 
 step() { printf '\n  %s▸%s %s%s%s\n' "$ORANGE" "$RESET" "$BOLD" "$1" "$RESET"; }

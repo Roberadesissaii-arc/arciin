@@ -167,7 +167,8 @@ doctor_native() {
       bad "$svc" "not running — sudo systemctl enable --now $svc"
     fi
   done
-  local unit="pm2-$(id -un)"
+  local unit
+  unit="pm2-$(id -un)"
   if [[ "$(systemctl is-enabled "$unit" 2>/dev/null)" == "enabled" ]]; then pass "Boot (PM2)" "${unit} enabled"; else bad "Boot (PM2)" "${unit} not enabled — Arciin will not start after a reboot"; hint "./install.sh --repair"; fi
   if command -v pm2 >/dev/null 2>&1; then
     local name status dump="${PM2_HOME:-$HOME/.pm2}/dump.pm2"
@@ -210,7 +211,9 @@ doctor_native() {
   report_public_url "$(env_value ARCIIN_PUBLIC_URL)"
 
   section "License service"
-  ( set -a; . "$ENV_FILE" 2>/dev/null; set +a; node "${ROOT_DIR}/scripts/license-preflight.mjs" ) || PROBLEMS=$((PROBLEMS + 1))
+  # Only the one setting it needs — .env is data, never sourced as shell.
+  ARCIIN_LICENSE_SERVER_URL="$(env_value ARCIIN_LICENSE_SERVER_URL)" \
+    node "${ROOT_DIR}/scripts/license-preflight.mjs" || PROBLEMS=$((PROBLEMS + 1))
 }
 
 # ── docker ───────────────────────────────────────────────────────────────────
