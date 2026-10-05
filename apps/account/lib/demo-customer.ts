@@ -1,4 +1,7 @@
-/** Demo identity for account.arciin.com prototype (no real auth). */
+/**
+ * Sample identity for the vendor demo portal (no sign-in). Not a customer
+ * account: customers use arciin.com/account.
+ */
 export const DEMO_CUSTOMER = {
   name: "Demo Customer",
   email: "you@yourserver.com",

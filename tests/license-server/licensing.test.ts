@@ -265,6 +265,43 @@ describe("activation and server limits", () => {
     expect(allowed.ok).toBe(true)
   })
 
+  it("tells the key holder which servers hold the seats — without hostnames", async () => {
+    const issued = await issuePro()
+    await activateLicense({
+      licenseKey: issued.licenseKey!,
+      instanceId: "office-server-42",
+      instanceName: "Office",
+      version: "1.1.3",
+      hostname: "office.internal",
+    })
+    const blocked = await activateLicense({ licenseKey: issued.licenseKey!, instanceId: "new-box" })
+    expect(blocked.ok).toBe(false)
+    if (blocked.ok) return
+    expect(blocked.code).toBe("SERVER_LIMIT_REACHED")
+    expect(blocked.message).toContain("arciin.com/account")
+    expect(blocked.details).toMatchObject({
+      serverLimit: 1,
+      manageUrl: "https://arciin.com/account",
+      servers: [{ name: "Office", instanceIdShort: "office-s", version: "1.1.3" }],
+    })
+    expect(JSON.stringify(blocked.details)).not.toContain("office.internal")
+  })
+
+  it("does not let a released server reclaim a seat another server now holds", async () => {
+    const issued = await issuePro()
+    await activateLicense({ licenseKey: issued.licenseKey!, instanceId: "a" })
+    await deactivateLicense({ licenseKey: issued.licenseKey!, instanceId: "a" })
+    expect((await activateLicense({ licenseKey: issued.licenseKey!, instanceId: "b" })).ok).toBe(true)
+
+    const back = await activateLicense({ licenseKey: issued.licenseKey!, instanceId: "a" })
+    expect(back.ok).toBe(false)
+    if (!back.ok) expect(back.code).toBe("SERVER_LIMIT_REACHED")
+
+    // Once b is released, a may return to its old activation.
+    await deactivateLicense({ licenseKey: issued.licenseKey!, instanceId: "b" })
+    expect((await activateLicense({ licenseKey: issued.licenseKey!, instanceId: "a" })).ok).toBe(true)
+  })
+
   it("releases a slot from the vendor side too", async () => {
     const issued = await issuePro()
     await activateLicense({ licenseKey: issued.licenseKey!, instanceId: "stranded" })

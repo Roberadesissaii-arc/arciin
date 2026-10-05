@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { KeyRound, Loader2, RefreshCw, ShieldCheck } from "lucide-react"
+import { ExternalLink, KeyRound, Loader2, RefreshCw, Server, ShieldCheck } from "lucide-react"
 import { toast } from "@/lib/notifications/arciin-toast"
 
 import { PlanBadge } from "@/components/license/plan-badge"
@@ -22,6 +22,8 @@ import {
   deactivateLicense,
   getLicenseStatus,
   refreshLicense,
+  seatLimitFromError,
+  type LicenseSeatLimit,
 } from "@/lib/api/license"
 import { queryKeys } from "@/lib/api/query-keys"
 import { accountUrl, pricingUrl, websiteHostLabel } from "@/lib/license/upgrade-url"
@@ -76,9 +78,66 @@ function formatDate(iso: string | null) {
   }
 }
 
+/**
+ * Shown when every seat of the licence is taken. Names the servers holding
+ * them so the owner knows which one to release, and sends them to the one
+ * place seats are managed: their account on arciin.com.
+ */
+function SeatLimitNotice({ limit, onDismiss }: { limit: LicenseSeatLimit; onDismiss: () => void }) {
+  const seats = limit.serverLimit || limit.servers.length
+  return (
+    <div
+      role="alert"
+      className="mt-4 rounded-lg border border-amber-500/30 bg-amber-500/[0.06] px-4 py-3"
+    >
+      <p className="text-[13px] font-semibold text-foreground">
+        {seats > 0
+          ? `This licence is already in use on ${seats === 1 ? "another server" : `${seats} servers`}.`
+          : "This licence is already in use on its maximum number of servers."}
+      </p>
+      <p className="mt-1 text-[12.5px] leading-relaxed text-muted-foreground">
+        Release a server in your Arciin account, then activate again here. Releasing a seat does not
+        touch that server&apos;s files; it returns to Free core.
+      </p>
+      {limit.servers.length > 0 ? (
+        <ul className="mt-3 divide-y divide-border rounded-md border border-border bg-background/60">
+          {limit.servers.map((server) => (
+            <li key={`${server.instanceIdShort}-${server.activatedAt}`} className="flex items-start gap-3 px-3 py-2">
+              <Server className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-[13px] font-medium text-foreground">
+                  {server.name || "Unnamed server"}
+                  <span className="ml-2 font-mono text-[11px] font-normal text-muted-foreground">
+                    {server.instanceIdShort}
+                  </span>
+                </p>
+                <p className="text-[11.5px] text-muted-foreground">
+                  {server.version ? `v${server.version} · ` : ""}last check-in {formatDate(server.lastCheckInAt)}
+                </p>
+              </div>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <Button asChild size="sm">
+          <a href={accountUrl()} target="_blank" rel="noreferrer">
+            Manage servers at {websiteHostLabel()}/account
+            <ExternalLink className="size-3.5" aria-hidden />
+          </a>
+        </Button>
+        <Button type="button" size="sm" variant="ghost" onClick={onDismiss}>
+          Dismiss
+        </Button>
+      </div>
+    </div>
+  )
+}
+
 export function LicensePanel() {
   const queryClient = useQueryClient()
   const [key, setKey] = useState("")
+  const [seatLimit, setSeatLimit] = useState<LicenseSeatLimit | null>(null)
 
   const statusQuery = useQuery({
     queryKey: queryKeys.licenseStatus,
@@ -87,6 +146,7 @@ export function LicensePanel() {
 
   const activateMutation = useMutation({
     mutationFn: () => activateLicense(key.trim()),
+    onMutate: () => setSeatLimit(null),
     onSuccess: (data) => {
       toast.success(`${data.planName} activated.`, {
         description: "Premium features are unlocked on this instance.",
@@ -97,6 +157,13 @@ export function LicensePanel() {
       void queryClient.invalidateQueries({ queryKey: queryKeys.licenseStatus })
     },
     onError: (err) => {
+      const limit = seatLimitFromError(err)
+      if (limit) {
+        // The inline notice carries the detail; the toast only signals.
+        setSeatLimit(limit)
+        toast.error("All server seats are in use")
+        return
+      }
       toast.error("Activation failed", {
         description:
           err instanceof ApiError ? err.message : "Check the key and try again.",
@@ -370,6 +437,7 @@ export function LicensePanel() {
             )}
           </Button>
         </form>
+        {seatLimit ? <SeatLimitNotice limit={seatLimit} onDismiss={() => setSeatLimit(null)} /> : null}
       </SettingsCard>
 
       <SettingsCard className="bg-muted/15">

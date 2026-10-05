@@ -3,16 +3,20 @@ import fs from "node:fs"
 import path from "node:path"
 
 import type { FastifyInstance } from "fastify"
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest"
+import { generateKeyPairSync } from "node:crypto"
+
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest"
 
 import {
+  buildHostedTokenPayload,
   hasFeature,
+  signHostedLicenseToken,
   licenseTokenVersion,
   verifyHostedLicenseToken,
   defaultPublicKeyRegistry,
 } from "@arciin/config"
 
-import { activateLicense } from "../../apps/api/src/services/license/license-service"
+import { activateLicense, refreshLicense } from "../../apps/api/src/services/license/license-service"
 import { requireFeature } from "../../apps/api/src/services/security/auth"
 import { prisma } from "./setup"
 
@@ -42,7 +46,7 @@ type LicenseServerBody = {
     payload?: { status?: string }
     activation?: { lastCheckInAt?: string }
   }
-  error?: { code?: string; message?: string }
+  error?: { code?: string; message?: string; details?: unknown }
 }
 
 let authority: FastifyInstance
@@ -258,6 +262,139 @@ describe("activation failure paths (ARC-016)", () => {
     })
     expect(second.status).toBe(403)
     expect(second.body.error?.code).toBe("SERVER_LIMIT_REACHED")
+  })
+})
+
+describe("seat management (v1.1.4)", () => {
+  it("names the servers holding the seats and points to the real account portal", async () => {
+    const issued = await issuePaidOrder({ orderId: `order-seats-${Date.now()}` })
+    const key = issued.body.data?.licenseKey
+    const held = await authorityCall("/licenses/activate", {
+      method: "POST",
+      body: JSON.stringify({
+        licenseKey: key,
+        instanceId: "living-room-nas-0001",
+        instanceName: "Living room NAS",
+        version: "1.1.3",
+        hostname: "private-hostname.lan",
+      }),
+    })
+    expect(held.status).toBe(200)
+
+    const result = await activateLicense(prisma, key!)
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.code).toBe("SERVER_LIMIT_REACHED")
+    expect(result.message).toContain("arciin.com/account")
+    expect(result.details?.manageUrl).toBe("https://arciin.com/account")
+    expect(result.details?.serverLimit).toBe(1)
+    expect(result.details?.servers).toEqual([
+      expect.objectContaining({ name: "Living room NAS", instanceIdShort: "living-r", version: "1.1.3" }),
+    ])
+    // Enough to recognise the server, never enough to locate it.
+    expect(JSON.stringify(result.details)).not.toContain("private-hostname")
+    expect(JSON.stringify(result.details)).not.toContain("living-room-nas-0001")
+  })
+
+  it("a released server cannot come back while its seat is taken by another", async () => {
+    const issued = await issuePaidOrder({ orderId: `order-rebind-${Date.now()}` })
+    const key = issued.body.data?.licenseKey
+    const post = (path: string, body: object) =>
+      authorityCall(path, { method: "POST", body: JSON.stringify(body) })
+
+    expect((await post("/licenses/activate", { licenseKey: key, instanceId: "box-a" })).status).toBe(200)
+    expect((await post("/licenses/deactivate", { licenseKey: key, instanceId: "box-a" })).status).toBe(200)
+    expect((await post("/licenses/activate", { licenseKey: key, instanceId: "box-b" })).status).toBe(200)
+    const back = await post("/licenses/activate", { licenseKey: key, instanceId: "box-a" })
+    expect(back.status).toBe(403)
+    expect(back.body.error?.code).toBe("SERVER_LIMIT_REACHED")
+  })
+
+  it("drops anything unexpected in the authority's seat details", async () => {
+    const spy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          error: {
+            code: "SERVER_LIMIT_REACHED",
+            message: "Server limit reached (1).",
+            details: {
+              serverLimit: 1,
+              manageUrl: "https://attacker.example/phish",
+              servers: [{ name: "x".repeat(500), instanceIdShort: "abcd1234", activatedAt: "2026-01-01T00:00:00Z", hostname: "leak" }],
+            },
+          },
+        }),
+        { status: 403, headers: { "content-type": "application/json" } },
+      ),
+    )
+    try {
+      const result = await activateLicense(prisma, "arc_pro_0123456789abcdef0123456789abcdef")
+      expect(result.ok).toBe(false)
+      if (result.ok) return
+      expect(result.details?.manageUrl).toBe("https://arciin.com/account")
+      expect(result.details?.servers[0]?.name).toHaveLength(200)
+      expect(JSON.stringify(result.details)).not.toContain("leak")
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  it("refuses a token signed by a key this build does not ship (TOKEN_VERIFY_FAILED)", async () => {
+    const { privateKey } = generateKeyPairSync("ed25519")
+    const payload = buildHostedTokenPayload({
+      licenseId: "lic-unknown-signer",
+      plan: "pro",
+      status: "active",
+      instanceId,
+      serverLimit: 1,
+      keyPrefix: "ARC_PRO_0000",
+      expiresAt: null,
+      graceUntil: null,
+      activationId: "act-1",
+    })
+    const token = signHostedLicenseToken(payload, privateKey, "arciin-lic-2099-01")
+    const spy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          data: {
+            token,
+            payload,
+            activation: { id: "act-1", instanceId, instanceName: null, lastCheckInAt: null, activatedAt: new Date().toISOString() },
+          },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    )
+    try {
+      const result = await activateLicense(prisma, "arc_pro_0123456789abcdef0123456789abcdef")
+      expect(result.ok).toBe(false)
+      if (!result.ok) expect(result.code).toBe("TOKEN_VERIFY_FAILED")
+      const row = await prisma.instanceConfig.findFirst({ where: { id: instanceId } })
+      expect(row?.licensePlan).not.toBe("pro")
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
+  it("clears premium state when the authority says the instance is not authorised (UNAUTHORIZED_INSTANCE)", async () => {
+    await prisma.instanceConfig.update({
+      where: { id: instanceId },
+      data: { licensePlan: "pro", licenseStatus: "active", licenseSource: "hosted", licenseSignedToken: "arciin-lic.v3.stale.sig" },
+    })
+    const spy = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: { code: "UNAUTHORIZED_INSTANCE", message: "Not this instance." } }), {
+        status: 403,
+        headers: { "content-type": "application/json" },
+      }),
+    )
+    try {
+      const snapshot = await refreshLicense(prisma)
+      expect(snapshot.plan).toBe("free")
+      const row = await prisma.instanceConfig.findFirst({ where: { id: instanceId } })
+      expect(row?.licenseSignedToken).toBeNull()
+    } finally {
+      spy.mockRestore()
+    }
   })
 })
 

@@ -1,18 +1,21 @@
 import { createHmac } from "node:crypto"
 
 import {
+  ARCIIN_ACCOUNT_URL,
   LICENSE_GRACE_MS,
   defaultLicenseSnapshot,
   keyDisplayPrefix,
   looksLikeHostedLicenseKey,
   describeNonKeyInput,
   normalizeLicenseKey,
+  parseServerLimitDetails,
   resolveMockPlanFromKey,
   trustedLicenseSnapshotFromRow,
   verifyHostedLicenseToken,
   verifyMockLicenseToken as verifyMockLicenseTokenWithSecret,
   verifyStoredEntitlement,
   type LicensePlanId,
+  type LicenseServerLimitDetails,
   type LicenseStateSnapshot,
   type MockLicenseTokenPayload,
 } from "@arciin/config"
@@ -126,7 +129,7 @@ export async function syncLicenseStatusIfNeeded(
 
 export type ActivateLicenseResult =
   | { ok: true; snapshot: LicenseStateSnapshot }
-  | { ok: false; code: string; message: string }
+  | { ok: false; code: string; message: string; details?: LicenseServerLimitDetails }
 
 async function persistHostedActivation(
   prisma: PrismaClient,
@@ -260,6 +263,18 @@ export async function activateLicense(
         ok: false,
         code: remote.code,
         message: `${remote.message} Set ARCIIN_LICENSE_SERVER_URL or use a dev mock key when fallback is enabled.`,
+      }
+    }
+
+    if (remote.code === "SERVER_LIMIT_REACHED") {
+      // Name the servers holding the seats, so the owner knows which one to
+      // release — instead of only "limit reached".
+      const details = parseServerLimitDetails(remote.details)
+      return {
+        ok: false,
+        code: remote.code,
+        message: remote.message,
+        details: details ?? { serverLimit: 0, servers: [], manageUrl: ARCIIN_ACCOUNT_URL },
       }
     }
 
