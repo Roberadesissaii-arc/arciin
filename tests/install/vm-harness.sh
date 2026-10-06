@@ -82,7 +82,8 @@ run_native() {
   [[ "$RELEASE" == "26.04" ]] && docker_env=1
   as_user "$base ARCIIN_SCENARIO_DOCKER_ENV=$docker_env bash tests/install/native-scenarios.sh fresh"
   if [[ -n "${ARCIIN_VM_AUTHORITY:-}" ]]; then
-    license_env_lines | as_user "cat >> .env && pm2 restart arciin-api >/dev/null"
+    # Wait for the restarted API before activating (it answered HTTP 000).
+    license_env_lines | as_user "cat >> .env && pm2 restart arciin-api >/dev/null && for i in \$(seq 1 60); do curl -fsS http://127.0.0.1:4000/api/health >/dev/null 2>&1 && break; sleep 2; done"
     as_user "$base bash tests/install/native-scenarios.sh license_seat"
   fi
   as_user "$base bash tests/install/native-scenarios.sh repair credential_drift"
