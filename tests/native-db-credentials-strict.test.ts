@@ -397,6 +397,7 @@ pm2() { return 0; }
 stop_existing_arciin() { :; }
 step "Environment"
 ensure_env_file
+ensure_native_env_keys
 ensure_arciin_storage_path
 ensure_session_secret
 ensure_setup_token
@@ -412,7 +413,39 @@ echo ENVIRONMENT-STEP-FINISHED`,
     expect(env).not.toMatch(/^ARCIIN_DATA_DIR=\/data\/arciin$/m)
     expect(env).toMatch(/^SESSION_SECRET=.{32,}$/m)
     expect(env).toMatch(/^ARCIIN_SETUP_TOKEN=.{16,}$/m)
+    // Compose builds REDIS_URL itself; the native API refuses to start without it.
+    expect(env).toMatch(/^REDIS_URL=redis:\/\/localhost:6379$/m)
+    // Existing values are never overwritten by the example's.
+    expect(env).toContain("REDIS_PASSWORD=fedcba9876543210fedcba9876543210fedcba9876543210")
     expect(r.stdout + r.stderr).not.toContain("0123456789abcdef0123456789abcdef0123456789abcdef")
     expect(r.stderr).not.toContain("BLOCKED")
+  })
+})
+
+describe("ensure_native_env_keys", () => {
+  it("adds missing keys, keeps existing values, and repoints Docker service hosts", () => {
+    n += 1
+    const dir = path.join(scratch, `keys-${n}`)
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(path.join(dir, ".env.example"), "REDIS_URL=redis://localhost:6379\nARCIIN_API_URL=http://127.0.0.1:4000\nMAX_UPLOAD_SIZE_MB=20480\n")
+    writeFileSync(
+      path.join(dir, ".env"),
+      "REDIS_URL=redis://:secretpw@redis:6379\nARCIIN_API_URL=http://api:4000\nMAX_UPLOAD_SIZE_MB=99\n",
+      { mode: 0o600 },
+    )
+    const r = strict(`
+ROOT_DIR="${dir}"
+ok() { echo "ok: $1"; }
+warn() { echo "warn: $1"; }
+${installerFn("_set_env_kv")}
+${installerFn("ensure_native_env_keys")}
+ensure_native_env_keys
+echo finished`)
+    expect(r.stdout).toContain("finished")
+    const env = readFileSync(path.join(dir, ".env"), "utf8")
+    expect(env).toMatch(/^REDIS_URL=redis:\/\/localhost:6379$/m)
+    expect(env).toMatch(/^ARCIIN_API_URL=http:\/\/127\.0\.0\.1:4000$/m)
+    expect(env).toMatch(/^MAX_UPLOAD_SIZE_MB=99$/m)
+    expect(r.stdout + r.stderr).not.toContain("secretpw")
   })
 })
