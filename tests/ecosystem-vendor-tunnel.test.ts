@@ -1,4 +1,6 @@
+import * as realFs from "node:fs"
 import { readFileSync } from "node:fs"
+import { createRequire } from "node:module"
 import path from "node:path"
 import vm from "node:vm"
 
@@ -13,22 +15,22 @@ import { describe, expect, it } from "vitest"
  */
 const ROOT = path.resolve(import.meta.dirname, "..")
 const source = readFileSync(path.join(ROOT, "ecosystem.config.cjs"), "utf8")
+const requireFromRoot = createRequire(path.join(ROOT, "ecosystem.config.cjs"))
 
 function appsWhen(tunnelConfigExists: boolean): string[] {
-  const realFs = require("node:fs")
   const fakeFs = {
     ...realFs,
     existsSync: (p: string) => (p.endsWith("/.cloudflared/config.yml") ? tunnelConfigExists : realFs.existsSync(p)),
   }
-  const module = { exports: {} as { apps: { name: string }[] } }
+  const cjs = { exports: {} as { apps: { name: string }[] } }
   vm.runInNewContext(source, {
-    module,
-    exports: module.exports,
+    module: cjs,
+    exports: cjs.exports,
     __dirname: ROOT,
     process,
-    require: (id: string) => (id === "node:fs" || id === "fs" ? fakeFs : require(id)),
+    require: (id: string) => (id === "node:fs" || id === "fs" ? fakeFs : requireFromRoot(id)),
   })
-  return module.exports.apps.map((a) => a.name)
+  return cjs.exports.apps.map((a) => a.name)
 }
 
 describe("PM2 ecosystem", () => {
