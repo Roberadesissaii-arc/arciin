@@ -516,7 +516,8 @@ _detect_lan_ip() {
 }
 
 _env_public_url_port() {
-  grep '^ARCIIN_PUBLIC_URL=' "$1" 2>/dev/null | sed -n 's|.*:\([0-9][0-9]*\)$|\1|p' | head -1
+  # No ARCIIN_PUBLIC_URL (a Docker or partial .env) is "no port", not an error.
+  { grep '^ARCIIN_PUBLIC_URL=' "$1" 2>/dev/null || true; } | sed -n 's|.*:\([0-9][0-9]*\)$|\1|p' | head -1
 }
 
 # Port reserved for ../arciin-app mobile PWA (avoid desktop web stealing it on reinstall).
@@ -826,6 +827,7 @@ launch_pm2() {
   else
     spin_ok "Building production bundles (web, API, worker)..." "Production build ready" \
       bash -c "cd \"${ROOT_DIR}\" && pnpm build"
+    promote_web_build
     arciin_journal_set "buildSha" "$head"
   fi
   arciin_journal_step "build"
@@ -945,6 +947,30 @@ configure_postgres_port() {
   else
     warn "PostgreSQL is not responding on localhost:${pg_port}"
   fi
+}
+
+# `pnpm build:web` builds into apps/web/.next-build so a live server is never
+# served a half-written build (scripts/deploy-web.sh). The installer never
+# swapped it into .next, so arciin-web on a native install found no BUILD_ID
+# and restarted forever. Verify, then swap — the same steps as deploy-web.sh.
+promote_web_build() {
+  local web="${ROOT_DIR}/apps/web"
+  local stage="${web}/.next-build" live="${web}/.next" prev="${web}/.next-prev"
+  if [[ ! -f "${stage}/BUILD_ID" ]]; then
+    [[ -f "${live}/BUILD_ID" ]] && return 0
+    arciin_fail_report "The web build is incomplete." \
+      "pnpm build finished without a BUILD_ID in apps/web/.next-build." \
+      "Nothing was changed; your data is untouched." \
+      "Re-run: ./install.sh --rebuild" "Check free memory: the web build needs ~3 GB"
+  fi
+  node "${ROOT_DIR}/scripts/verify-web-assets.mjs" --dist "$stage" >/dev/null 2>&1 \
+    || arciin_fail_report "The web build is incomplete." \
+      "scripts/verify-web-assets.mjs rejected apps/web/.next-build." \
+      "Nothing was changed; your data is untouched." "Re-run: ./install.sh --rebuild"
+  rm -rf "$prev"
+  [[ -d "$live" ]] && mv "$live" "$prev"
+  mv "$stage" "$live"
+  rm -rf "$prev"
 }
 
 _gen_secret() {

@@ -323,3 +323,96 @@ echo finished`)
     expect(risky).toEqual([])
   })
 })
+
+/**
+ * The installer's whole "Environment" step, as install.sh runs it, under
+ * set -Eeuo pipefail, against the owner's Docker-style .env. Every function
+ * defined in install.sh is loaded; only what touches the system (sudo,
+ * services, PM2) is stubbed. Each strict-mode trap on this path used to cost
+ * a 40-minute VM round to find.
+ */
+describe("install.sh Environment step with the owner's Docker-style .env", () => {
+  it("runs to the end: storage moved off /data, secrets filled, ports set, nothing printed", () => {
+    n += 1
+    const root = path.join(scratch, `envstep-${n}`)
+    const storage = path.join(root, "storage")
+    mkdirSync(path.join(root, "scripts/lib"), { recursive: true })
+    for (const lib of ["host-platform.sh", "storage-defaults.sh", "db-credentials.sh", "install-state.sh"]) {
+      writeFileSync(path.join(root, "scripts/lib", lib), readFileSync(path.join(ROOT, "scripts/lib", lib)))
+    }
+    writeFileSync(path.join(root, ".env.example"), readFileSync(path.join(ROOT, ".env.example")))
+    // Never the host's real storage: the installer migrates "legacy" folders
+    // it finds (it once copied /srv/arciin-storage/arciin into a test dir).
+    // Every path it can discover points inside this scratch root, and the
+    // target already holds data so no migration can start.
+    mkdirSync(path.join(storage, "objects"), { recursive: true })
+    writeFileSync(path.join(storage, "objects", "keep"), "x")
+    const isolatedEnv = DOCKER_STYLE_ENV.replace(
+      "ARCIIN_HOST_DATA_DIR=/srv/arciin-storage/arciin",
+      `ARCIIN_HOST_DATA_DIR=${path.join(root, "host-data")}`,
+    ).replace("ARCIIN_DATA_DIR=/srv/arciin-storage/arciin\n", "")
+    expect(isolatedEnv).not.toContain("/srv/")
+    writeFileSync(path.join(root, ".env"), `${isolatedEnv}ARCIIN_DATA_DIR=/data/arciin\n`, { mode: 0o600 })
+
+    // Every function install.sh defines, without its top-level program.
+    const src = readFileSync(INSTALL, "utf8")
+    const oneLiners = src.match(/^[a-z_][a-z0-9_]*\(\)\s+\{ .*\}$/gm) ?? []
+    const blocks = src.match(/^[a-z_][a-z0-9_]*\(\) \{\n[\s\S]*?\n\}\n/gm) ?? []
+    const fns = [...oneLiners, ...blocks].join("\n")
+    const r = strict(
+      `
+ROOT_DIR="${root}"
+ENV_FILE="${root}/.env"
+export ARCIIN_JOURNAL="${root}/state/install-state.json"
+export XDG_STATE_HOME="${root}/state"
+export ARCIIN_DATA_DIR="${storage}"
+ARCIIN_MODE=auto
+ARCIIN_ALLOW_ROOT_STORAGE=1
+DEFAULT_WEB_PORT=3000
+DEFAULT_API_PORT=4000
+DEFAULT_PG_PORT=5432
+ARCIIN_WEB_PORT=3000
+ARCIIN_API_PORT=4000
+ARCIIN_PG_PORT=5432
+ARCIIN_BOOT_PERSISTENT=0
+ARCIIN_FRESH_INSTALL=0
+ARCIIN_REBUILD=0
+ARCIIN_DELETE_DATA=0
+ARCIIN_DELETE_STORAGE=0
+RESET_DB=false
+STEP=4
+TOTAL_STEPS=13
+BOLD=""; DIM=""; RESET=""; GREEN=""; YELLOW=""; RED=""; CYAN=""; BCYAN=""; WHITE=""; BGREEN=""
+source "${root}/scripts/lib/host-platform.sh"
+source "${root}/scripts/lib/storage-defaults.sh"
+source "${root}/scripts/lib/db-credentials.sh"
+source "${root}/scripts/lib/install-state.sh"
+ARCIIN_DEFAULT_STORAGE="${root}/default-storage"
+${fns}
+# Refuse to touch anything outside the scratch root.
+rsync() { case "$*" in *"${root}"*) command rsync "$@" ;; *) echo "BLOCKED rsync $*" >&2; return 1 ;; esac; }
+cp() { case "$*" in *"/srv/"*) echo "BLOCKED cp $*" >&2; return 1 ;; *) command cp "$@" ;; esac; }
+sudo() { "$@"; }
+pm2() { return 0; }
+stop_existing_arciin() { :; }
+step "Environment"
+ensure_env_file
+ensure_arciin_storage_path
+ensure_session_secret
+ensure_setup_token
+ensure_production_secrets
+_env_backup_path="$(native_backup_env)"
+configure_app_ports
+echo ENVIRONMENT-STEP-FINISHED`,
+    )
+    expect(r.stderr).not.toMatch(/unbound variable/)
+    expect(r.stdout + r.stderr).not.toMatch(/Installer error at line/)
+    expect(r.stdout, `exit ${r.code}\n${r.stdout}\n${r.stderr}`).toContain("ENVIRONMENT-STEP-FINISHED")
+    const env = readFileSync(path.join(root, ".env"), "utf8")
+    expect(env).not.toMatch(/^ARCIIN_DATA_DIR=\/data\/arciin$/m)
+    expect(env).toMatch(/^SESSION_SECRET=.{32,}$/m)
+    expect(env).toMatch(/^ARCIIN_SETUP_TOKEN=.{16,}$/m)
+    expect(r.stdout + r.stderr).not.toContain("0123456789abcdef0123456789abcdef0123456789abcdef")
+    expect(r.stderr).not.toContain("BLOCKED")
+  })
+})

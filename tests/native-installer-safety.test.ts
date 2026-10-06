@@ -94,6 +94,16 @@ describe("fresh-server failures", () => {
     expect(install).toContain("if [[ -t 1 ]]; then clear 2>/dev/null || true; fi")
   })
 
+  it("the web build is swapped from .next-build into .next (arciin-web needs .next/BUILD_ID)", () => {
+    // build:web writes to .next-build; without the swap a native install had
+    // no web build at all and arciin-web restarted forever.
+    expect(readFileSync(path.join(ROOT, "package.json"), "utf8")).toContain("NEXT_DIST_DIR=.next-build")
+    const body = fn("promote_web_build")
+    expect(body).toContain('mv "$stage" "$live"')
+    expect(body).toContain("verify-web-assets.mjs")
+    expect(install).toMatch(/pnpm build"\n\s+promote_web_build/)
+  })
+
   it("apt never prompts and the system upgrade is opt-in", () => {
     expect(install).toContain("export DEBIAN_FRONTEND=noninteractive")
     expect(install).toContain("export NEEDRESTART_MODE=a")
