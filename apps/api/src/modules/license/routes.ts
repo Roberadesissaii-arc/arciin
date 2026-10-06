@@ -85,6 +85,7 @@ export async function registerLicenseRoutes(fastify: FastifyInstance) {
           error: {
             code: result.code,
             message: result.message,
+            ...(result.details ? { details: result.details } : {}),
           },
         })
         return

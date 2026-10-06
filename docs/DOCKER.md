@@ -4,27 +4,34 @@ Arciin runs in Docker on **any Linux host** with Docker Engine and Compose — h
 
 ---
 
-## Docker vs `./install.sh` (native)
+## One Docker install (v1.1.4)
 
-| | **Docker** (`./scripts/docker-setup.sh`) | **Native** (`./install.sh`) |
-|---|------------------------------------------|-----------------------------|
-| **Best for** | Most installs — isolated deps, simple updates | Maximum bare-metal performance, existing PM2/Postgres |
-| **System packages** | Docker (+ Compose) on the host only | apt: Node, PostgreSQL, Redis, FFmpeg, build tools |
-| **Updates** | `docker compose pull && docker compose up -d` | `git pull && ./install.sh` |
-| **Your files** | Bind mount: host path → `/data/arciin` in container | `ARCIIN_DATA_DIR` on disk directly |
-| **Risk** | Low — rebuild containers without losing media | Host apt conflicts on some systems |
+Every Docker install runs the same installer, `scripts/docker-install.sh`, on
+the one production Compose definition, `docker-compose.production.yml`:
 
-**Recommendation:** Use **Docker** unless you already run and maintain a native Node/Postgres stack on the host. If native `install.sh` fails at “System packages”, switch to Docker.
+| Entry point | |
+|---|---|
+| `curl -fsSL https://get.arciin.com/install.sh \| bash` | Downloads the installer named by the latest release's `stable.json`, checksum-verified |
+| `./install.sh --docker` / `./scripts/docker-setup.sh` | Same installer, with this checkout's Compose file and Caddyfile |
 
-### Private distribution (no monorepo)
+Images are the published ones (`ghcr.io/roberadesissaii-arc/arciin-{web,api,worker}`),
+**pinned by tag and digest** from the release manifest; nothing is built on
+your server. Configuration lives in `/opt/arciin` (`.env`, `docker-compose.yml`,
+`Caddyfile`, `docker-install.sh`, `arciin-doctor.sh`, `install-state.json`).
 
-For the **product packaging prototype** (customers pull images, never clone source), see **[PRIVATE_DISTRIBUTION.md](./PRIVATE_DISTRIBUTION.md)**:
+`docker-compose.yml` in the repository is **development only**: it builds from
+source and has no restart policies. `install-private.sh` is retired and now
+runs the same installer.
 
-- `docker-compose.production.yml` — `image:` only for web / api / worker
-- `./scripts/install-private.sh` — installs into `/srv/arciin` + `/srv/arciin-storage/arciin`
-- `pnpm docker:build` / `docker:up` / `docker:package`
+| | **Docker** | **Native** (`./install.sh`) |
+|---|---|---|
+| **Best for** | Most installs — isolated deps, no build on the server | Bare metal, existing PM2/Postgres |
+| **System packages** | Docker (+ Compose) only | Node, PostgreSQL, Redis, FFmpeg, build tools |
+| **Updates** | re-run the one-liner | `git pull && ./install.sh` |
+| **Your files** | Bind mount: host path → `/data/arciin` | `ARCIIN_DATA_DIR` on disk |
+| **After a reboot** | Docker enabled at boot + `restart: unless-stopped` | `pm2-<user>` unit + saved process list |
 
-Source-based `docker-compose.yml` below remains the monorepo / developer path.
+See [INSTALL.md](INSTALL.md) for every option and [REPAIR.md](REPAIR.md) for recovery.
 
 ---
 
@@ -53,123 +60,26 @@ Arciin avoids that with a **bind mount**:
 | `/media/user/MyDrive/arciin-data` | External USB drive (good for large libraries) |
 | `./data/arciin` | Dev-only quick test inside the repo (not recommended for production) |
 
-You do **not** need to run `mkdir` or `rsync` by hand for a normal install.
+You do **not** need to run `mkdir` by hand. The Docker installer:
 
-`./scripts/docker-setup.sh` and `./install.sh`:
+1. Uses `ARCIIN_HOST_DATA_DIR` from an existing `/opt/arciin/.env` — a re-run never moves your files — or `--data-dir` / the default **`/srv/arciin-storage/arciin`** on a first install.
+2. Refuses a path under `/mnt` or `/media` whose disk is not mounted (`--allow-root-storage` to override).
+3. Creates `objects`, `libraries`, `thumbnails`, `temp`, `logs` and `backups`.
+4. Gives the folder to the containers' user (`ARCIIN_PUID`, your uid by default; never root) — recursively only when it is new or empty — and proves it with a write test as that user.
 
-1. Ask where to store files (default **`/srv/arciin-storage/arciin`**).
-2. Create that folder (with `sudo` if needed).
-3. **Migrate automatically** if they find existing data under `data/arciin` in the repo or a previous `ARCIIN_DATA_DIR` / `ARCIIN_HOST_DATA_DIR` in `.env`, and the new location is still empty.
-4. Create `objects`, `libraries`, `thumbnails`, and other subfolders.
-5. Write the chosen path to `.env` (`ARCIIN_HOST_DATA_DIR` for Docker, `ARCIIN_DATA_DIR` for native).
+The native installer does the same for `ARCIIN_DATA_DIR`, and still moves
+legacy data from `./data/arciin` in a checkout into the new location when that
+location is empty.
 
-For Docker, the setup script also sets ownership to uid **1000** when required so the API container can write.
+### Moving data to another disk
 
-### Moving data out of the git clone
-
-Re-run setup after pulling the latest scripts:
-
-```bash
-./install.sh --docker
-# or
-./scripts/docker-setup.sh
-```
-
-Pick **`/srv/arciin-storage/arciin`** (or your preferred path). If the destination is empty and files still live under `./data/arciin`, the installer copies them once and updates `.env`.
-
-Manual `rsync` is only needed when data lives on **another machine** or a path the installer cannot see (for example copying from a different host over SSH).
-
----
-
-## Database migrations (fresh install & upgrades)
-
-The API container runs `scripts/arciin-init.sh` on every start, which executes **`prisma migrate deploy`**. That applies every migration under `prisma/migrations/` (bootstrap schema, chat, password vault, user avatars, mobile pairing, session vault unlock, and indexes). You do **not** need a manual SQL step for a new machine.
-
-After pulling a newer Arciin image or git tag:
+Stop Arciin, copy the folder, point `.env` at it, and re-run the installer:
 
 ```bash
-docker compose pull
-docker compose up -d
-# API logs should show [arciin-init] Applying database migrations
-docker compose logs api | tail -30
-```
-
-If migrations fail, check Postgres is healthy (`docker compose ps`) and run once from the repo: `docker compose exec api pnpm exec prisma migrate deploy`.
-
----
-
-## Quick start
-
-### 1. Install Docker
-
-On Linux (Ubuntu Server, Debian, etc.):
-
-```bash
-curl -fsSL https://get.docker.com | sh
-sudo usermod -aG docker $USER
-# Log out and back in so the docker group applies
-```
-
-See [Docker Engine install docs](https://docs.docker.com/engine/install/) for other platforms.
-
-### 2. Clone Arciin
-
-```bash
-git clone https://github.com/Roberadesissaii-arc/arciin.git
-cd arciin
-```
-
-### 3. Run the Docker setup script
-
-```bash
-chmod +x scripts/docker-setup.sh install.sh
-./install.sh --docker
-```
-
-The script will:
-
-1. Show your detected host name (OS or hardware).
-2. Bootstrap `.env` from `.env.docker.example`.
-3. Ask where to store files (or use `ARCIIN_HOST_DATA_DIR=/your/path`).
-4. Create the storage folder, migrate legacy `data/arciin` if present, and prepare subfolders.
-5. Fill in secrets and storage paths in `.env`.
-6. Run `docker compose up --build -d`.
-
-The first image build can take several minutes on slower hardware. Later starts are fast.
-
-### 4. Open the setup screen
-
-- **This machine:** [http://localhost/setup](http://localhost/setup) (Caddy on port **80**)
-- **Another device on LAN:** `http://<server-ip>/setup?token=<ARCIIN_SETUP_TOKEN>`
-
-Token is in `.env` as `ARCIIN_SETUP_TOKEN`.
-
----
-
-## Non-interactive setup
-
-```bash
-export ARCIIN_HOST_DATA_DIR=/mnt/ssd/arciin-data
-./scripts/docker-setup.sh
-```
-
-Or:
-
-```bash
-./install.sh --docker
-ARCIIN_INSTALL_MODE=docker ./install.sh
-```
-
----
-
-## Manual compose (advanced)
-
-```bash
-cp .env.docker.example .env
-# Edit ARCIIN_HOST_DATA_DIR, ARCIIN_SETUP_TOKEN, SESSION_SECRET, ARCIIN_PUBLIC_URL
-
-export ARCIIN_HOST_DATA_DIR=/mnt/ssd/arciin-data   # must match .env
-docker compose up --build -d
+cd /opt/arciin && docker compose down
+sudo rsync -aHAX /srv/arciin-storage/arciin/ /mnt/big/arciin/
+sed -i 's#^ARCIIN_HOST_DATA_DIR=.*#ARCIIN_HOST_DATA_DIR=/mnt/big/arciin#' .env
+bash docker-install.sh --repair
 ```
 
 ---
@@ -177,10 +87,10 @@ docker compose up --build -d
 ## Host requirements
 
 - **RAM:** 2 GB minimum; 4 GB+ recommended for heavy uploads and media jobs.
-- **Port 80** must be free for Caddy (or change `docker-compose.yml` port mapping).
-- **LAN access:** set `ARCIIN_PUBLIC_URL=http://<server-ip>` in `.env`, then `docker compose up -d` again.
-- **64-bit Linux** recommended for the Node 20 images.
-- **Firewall:** `./install.sh`, `./scripts/docker-setup.sh`, and private `install.sh` open the needed TCP ports (HTTP, and for native installs web + API). On a new VPS, UFW is often inactive — installers **enable UFW** after allowing SSH + Arciin ports so browser access works. Re-run anytime: `bash scripts/open-firewall.sh`. Skip with `ARCIIN_SKIP_FIREWALL=1`.
+- **Port 80** must be free for Caddy, or install with `--port 8080`.
+- **LAN access:** the installer sets `ARCIIN_PUBLIC_URL` to `http://<lan-ip>[:port]`; change it in `.env` for a domain or tunnel, then `bash docker-install.sh --repair`.
+- **x86_64 Linux** — the published images are amd64.
+- **Firewall:** Docker publishes Caddy's port through its own iptables rules, so the Docker installer leaves the host firewall alone (enabling an inactive ufw can lock out SSH). If a cloud or upstream firewall blocks the port, open it there. The native installer opens its web and API ports with `scripts/open-firewall.sh` (skip with `ARCIIN_SKIP_FIREWALL=1`).
 
 ### Native install: “held broken packages”
 
@@ -215,16 +125,13 @@ After upgrading images, open the app on port **80**, sign in, then generate a ne
 ## Everyday commands
 
 ```bash
+cd /opt/arciin
 docker compose ps
 docker compose logs -f api
 docker compose restart api worker
-docker compose down
-docker compose pull && docker compose up -d    # update (if using published images)
-
-# After git pull — rebuild api (includes cloudflared):
-git pull
-docker compose up --build -d api
-docker compose exec api cloudflared --version
+bash arciin-doctor.sh                       # read-only health report
+bash docker-install.sh --repair             # repair / upgrade in place
+curl -fsSL https://get.arciin.com/install.sh | bash   # upgrade to the latest release
 ```
 
 Database shell:
@@ -233,11 +140,9 @@ Database shell:
 docker compose exec postgres psql -U arciin -d arciin
 ```
 
-Re-run init (migrations + storage folders):
-
-```bash
-docker compose exec api pnpm db:init
-```
+`docker compose down` stops Arciin but keeps the database volume; never add
+`-v` unless you mean to erase it (`docker-install.sh --uninstall --delete-data`
+asks for the typed phrase and backs up first).
 
 ---
 
@@ -259,11 +164,11 @@ See also [`DEPLOYMENT.md`](./DEPLOYMENT.md) and [`../docker/caddy/Caddyfile`](..
 | Problem | What to do |
 |---------|------------|
 | Upload permission denied | `sudo chown -R 1000:1000 "$ARCIIN_HOST_DATA_DIR"` |
-| Port 80 in use | Stop nginx/apache or edit `docker-compose.yml` `caddy.ports` |
+| Port 80 in use | The installer names the holder. Stop it, or re-run with `--port 8080` |
 | Build fails / **no space left on device** during `COPY . .` | Media is still under the clone (often `~/arciin/data/arciin/objects`, shown as multi‑GB “transferring context”). **On the NAS:** `docker builder prune -af` and `docker system prune -f`, then `git pull` and `./install.sh --docker` (setup temporarily moves `data/` aside during build). **Long term:** use `ARCIIN_HOST_DATA_DIR=/srv/arciin-storage/arciin`, copy files there, remove `~/arciin/data` from the repo. |
 | Build fails (other) | Check disk space (`docker system df`) and 64-bit OS |
 | Phone cannot connect | Set `ARCIIN_PUBLIC_URL` to `http://<lan-ip>`, open firewall for port 80 |
 | Data “missing” after rebuild | Check `ARCIIN_HOST_DATA_DIR` in `.env` — files live only on that host path |
 | Cannot create storage path | Pick a writable folder or: `sudo mkdir -p <path> && sudo chown -R $USER:$USER <path>` |
 | Settings shows `/app/data/arciin`, **Writable: No** | Setup saved the dev path `./data/arciin` instead of the mount. Pull latest, then `docker compose up --build -d api` (auto-fixes to `/data/arciin`), or set **Settings → Storage** root to `/data/arciin` and ensure `sudo chown -R 1000:1000 "$ARCIIN_HOST_DATA_DIR"` |
-| **`502 Bad Gateway`** on `/api/*` or `/socket.io` (pages load but data/chat/uploads fail) | Caddy is up but the **api** container is down or still starting. On the server: `docker compose ps` (api should be `running` / `healthy`), then `docker compose logs api --tail 80`. Usually fix with `docker compose up --build -d api worker`. If logs show migration errors: `docker compose exec api pnpm db:init`. If **Exit 137**: Pi ran out of memory during build — `docker builder prune -af`, rebuild one service at a time. Run `bash scripts/docker-doctor.sh` for a quick report. |
+| **`502 Bad Gateway`** on `/api/*` or `/socket.io` (pages load but data/chat/uploads fail) | Caddy is up but the **api** container is down or still starting. On the server: `docker compose ps` (api should be `running` / `healthy`), then `docker compose logs api --tail 80`. Usually fix with `docker compose up --build -d api worker`. If logs show migration errors: `docker compose exec api pnpm db:init`. If **Exit 137**: Pi ran out of memory during build — `docker builder prune -af`, rebuild one service at a time. Run `bash /opt/arciin/arciin-doctor.sh` for a report. If logs show `P1000`, see [REPAIR.md](REPAIR.md#database-password-mismatch). |

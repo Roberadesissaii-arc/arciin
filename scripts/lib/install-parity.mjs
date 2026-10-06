@@ -1,9 +1,11 @@
 #!/usr/bin/env node
 /**
- * Semantic native ↔ production-Docker contract checks (ARC-012).
+ * Semantic native ↔ production-Docker contract checks (ARC-012, v2 in v1.1.4).
  *
- * Reads docker-compose.production.yml and native install scripts. Not a
- * formatter-sensitive grep of docker-compose.yml (development).
+ * Reads docker-compose.production.yml and the installers people actually run:
+ * install.sh (native), and docker-install.sh with every entry point that
+ * leads to it. Not a formatter-sensitive grep of docker-compose.yml
+ * (development).
  */
 
 import fs from "node:fs"
@@ -116,6 +118,57 @@ export function evaluateParity(files) {
     }
   }
 
+  // ── v1.1.4: the paths people actually run ────────────────────────────────
+  // Every service survives a reboot; images are pinned, never :latest.
+  for (const name of REQUIRED_SERVICES) {
+    if (compose[name] && !/restart: unless-stopped/.test(compose[name].raw)) {
+      errors.push(`${name} service has no restart: unless-stopped (it will not come back after a reboot)`)
+    }
+  }
+  if (!/^name: arciin$/m.test(files.productionCompose)) errors.push("production compose must be named (name: arciin)")
+  if (/:latest\}/.test(files.productionCompose)) errors.push("production compose defaults an image to :latest")
+  if (files.devCompose && !/DEVELOPMENT ONLY/.test(files.devCompose)) {
+    errors.push("docker-compose.yml must be labelled DEVELOPMENT ONLY")
+  }
+
+  // One Docker installer: every entry point ends in docker-install.sh.
+  const dockerEntry = {
+    "install.sh --docker": [files.install, /scripts\/docker-setup\.sh/],
+    "scripts/docker-setup.sh": [files.dockerSetup, /scripts\/docker-install\.sh/],
+    "scripts/install-bootstrap.sh (one-liner)": [files.bootstrap, /docker-install\.sh/],
+  }
+  for (const [label, [source, pattern]] of Object.entries(dockerEntry)) {
+    if (!source || !pattern.test(source)) errors.push(`${label} does not run the canonical Docker installer`)
+  }
+
+  // Both installers share the state library, the journal, the four-part error
+  // report, typed erase confirmation and a backup before repair.
+  for (const [label, source] of [["install.sh", files.install], ["docker-install.sh", files.dockerInstall]]) {
+    if (!source) {
+      errors.push(`${label} missing`)
+      continue
+    }
+    for (const [needle, what] of [
+      ["install-state.sh", "the shared state library"],
+      ["arciin_journal_set", "the install journal"],
+      ["arciin_fail_report", "the four-part error report"],
+      ['arciin_confirm_typed "ERASE ARCIIN"', "typed erase confirmation"],
+      ["pg_dump", "a database backup before repair"],
+      ["arciin_storage_mount_missing", "the storage mount check"],
+      ["license-preflight", "the licensing preflight"],
+    ]) {
+      // install.sh reaches typed confirmation through native_confirm_fresh.
+      if (!source.includes(needle)) errors.push(`${label} lacks ${what}`)
+    }
+  }
+  if (files.dockerInstall && !/ensure_docker[\s\S]*systemctl enable docker/.test(files.dockerInstall)) {
+    errors.push("docker-install.sh does not enable Docker at boot")
+  }
+  if (!/ensure_pm2_boot/.test(files.install)) errors.push("install.sh does not verify PM2 boot persistence")
+  if (!files.workerHealth.includes("heartbeat:db")) {
+    errors.push("worker healthcheck does not require the database heartbeat")
+  }
+
   if (!files.parityDoc.includes("Intentional differences")) {
     errors.push("docs/INSTALL-PARITY.md must document intentional differences")
   }
@@ -136,11 +189,20 @@ export function loadRepoFiles(base = root) {
     envExample: readRel(base, ".env.example"),
     envDockerExample: readRel(base, ".env.docker.example"),
     parityDoc: readRel(base, "docs/INSTALL-PARITY.md"),
+    devCompose: readOptional(base, "docker-compose.yml"),
+    dockerSetup: readOptional(base, "scripts/docker-setup.sh"),
+    dockerInstall: readOptional(base, "scripts/docker-install.sh"),
+    bootstrap: readOptional(base, "scripts/install-bootstrap.sh"),
   }
 }
 
 function readRel(base, rel) {
   return fs.readFileSync(path.join(base, rel), "utf8")
+}
+
+function readOptional(base, rel) {
+  const file = path.join(base, rel)
+  return fs.existsSync(file) ? fs.readFileSync(file, "utf8") : ""
 }
 
 if (import.meta.url === `file://${process.argv[1]}` || process.argv[1]?.endsWith("install-parity.mjs")) {

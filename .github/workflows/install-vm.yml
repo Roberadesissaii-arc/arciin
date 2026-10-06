@@ -1,0 +1,165 @@
+name: Install (VM)
+
+# End-to-end install proof on disposable LXD virtual machines, with real
+# reboots: native (PM2) and Docker on Ubuntu 24.04 and 26.04. A throwaway
+# licensing authority runs on the runner so seat limits are tested for real.
+# This is the release gate's installation evidence (see release.yml).
+
+on:
+  pull_request:
+    paths:
+      - "install.sh"
+      - "scripts/docker-install.sh"
+      - "scripts/docker-setup.sh"
+      - "scripts/install-bootstrap.sh"
+      - "scripts/arciin-init.sh"
+      - "scripts/migration-backup.sh"
+      - "scripts/lib/**"
+      - "scripts/arciin-doctor.sh"
+      - "scripts/license-preflight.mjs"
+      - "scripts/worker-healthcheck.mjs"
+      - "docker-compose.production.yml"
+      - "ecosystem.config.cjs"
+      - "Dockerfile"
+      - "tests/install/**"
+      - ".github/workflows/install-vm.yml"
+  push:
+    # main too: the release gate needs this evidence for the exact commit tagged.
+    branches: [main, "release/**"]
+  workflow_dispatch:
+
+concurrency:
+  group: install-vm-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  vm:
+    name: ${{ matrix.mode }} on Ubuntu ${{ matrix.release }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      # Hosted runners are scarce: four parallel 40–70 min jobs were being
+      # dropped ("not acquired by Runner"). Two at a time finishes reliably.
+      max-parallel: 2
+      matrix:
+        # INTEGRATION BRANCH ONLY: targeted rerun of the one failing leg.
+        release: ["26.04"]
+        mode: [native]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Make room
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
+
+      - name: KVM available
+        run: |
+          test -e /dev/kvm
+          sudo chmod 666 /dev/kvm
+
+      - name: LXD
+        run: |
+          sudo snap install lxd 2>/dev/null || sudo snap refresh lxd
+          sudo lxd waitready
+          sudo lxd init --auto
+          # Docker on the runner sets FORWARD to DROP; let the LXD bridge through.
+          sudo iptables -I DOCKER-USER -i lxdbr0 -j ACCEPT
+          sudo iptables -I DOCKER-USER -o lxdbr0 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+          echo "HOST_IP=$(ip -4 addr show lxdbr0 | awk '/inet /{print $2}' | cut -d/ -f1)" >> "$GITHUB_ENV"
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.32.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @arciin/license-server exec prisma generate
+
+      - name: Throwaway licensing authority (test key)
+        run: |
+          nohup pnpm exec tsx tests/install/test-authority.mts "$RUNNER_TEMP/authority" > "$RUNNER_TEMP/authority.log" 2>&1 &
+          for i in $(seq 1 60); do [ -f "$RUNNER_TEMP/authority/public-keys" ] && break; sleep 2; done
+          test -f "$RUNNER_TEMP/authority/license-key"
+          echo "ARCIIN_VM_AUTHORITY=$RUNNER_TEMP/authority" >> "$GITHUB_ENV"
+
+      # ── Docker mode: images from this commit in a registry the VM can reach ──
+      - if: matrix.mode == 'docker'
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: network=host
+      - if: matrix.mode == 'docker'
+        id: version
+        run: |
+          docker run -d --restart=always -p 5000:5000 --name registry registry:2
+          echo "version=$(node -p 'require("./package.json").version')" >> "$GITHUB_OUTPUT"
+      - if: matrix.mode == 'docker'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: api
+          push: true
+          tags: localhost:5000/arciin-api:${{ steps.version.outputs.version }}
+          labels: org.opencontainers.image.version=${{ steps.version.outputs.version }}
+          cache-from: type=gha,scope=api
+      - if: matrix.mode == 'docker'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: worker
+          push: true
+          tags: localhost:5000/arciin-worker:${{ steps.version.outputs.version }}
+          labels: org.opencontainers.image.version=${{ steps.version.outputs.version }}
+          cache-from: type=gha,scope=worker
+      - if: matrix.mode == 'docker'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: web
+          push: true
+          tags: localhost:5000/arciin-web:${{ steps.version.outputs.version }}
+          labels: org.opencontainers.image.version=${{ steps.version.outputs.version }}
+          cache-from: type=gha,scope=web
+      - if: matrix.mode == 'docker'
+        name: Release manifest for the VM (digest-pinned)
+        run: |
+          set -euo pipefail
+          v="${{ steps.version.outputs.version }}"
+          digest() { docker buildx imagetools inspect "localhost:5000/arciin-$1:$v" --format '{{json .Manifest}}' | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s).digest))'; }
+          bash scripts/stage-release-assets.sh dist/release
+          node scripts/release-manifest.mjs --version "$v" --release-sha "${{ github.sha }}" \
+            --registry "${HOST_IP}:5000" \
+            --digest-web "$(digest web)" --digest-api "$(digest api)" --digest-worker "$(digest worker)" \
+            --assets-dir dist/release --assets-base "file:///home/ubuntu/arciin/dist/release/" \
+            --out dist/release/stable.json
+          echo "ARCIIN_VM_MANIFEST_DIR=$PWD/dist/release" >> "$GITHUB_ENV"
+          echo "ARCIIN_VM_REGISTRY=${HOST_IP}:5000" >> "$GITHUB_ENV"
+          docker image prune -af >/dev/null
+
+      - name: Install scenarios in the VM (with real reboots)
+        env:
+          ARCIIN_SCENARIO_LOGS: ${{ github.workspace }}/install-logs
+        run: bash tests/install/vm-harness.sh "${{ matrix.release }}" "${{ matrix.mode }}"
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### ${{ matrix.mode }} on Ubuntu ${{ matrix.release }}"
+            echo ""
+            echo "| Timing | Value |"; echo "|---|---|"
+            awk -F'\t' '{printf "| %s | %s |\n", $1, $2}' install-logs/*/timings.tsv 2>/dev/null
+            echo ""
+            echo "| Scenario | Result | Check |"; echo "|---|---|---|"
+            awk -F'\t' '{printf "| %s | %s | %s |\n", $1, $2, $3}' install-logs/*/results-final.tsv 2>/dev/null
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: install-vm-${{ matrix.mode }}-${{ matrix.release }}
+          path: install-logs/
+          retention-days: 14

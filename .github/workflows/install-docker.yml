@@ -1,0 +1,170 @@
+name: Install (Docker)
+
+# Proves the canonical Docker installer against real Docker on a disposable
+# runner: fresh install, re-run, lost .env, wrong password, daemon restart,
+# worker DB health, port conflict, --fresh, --uninstall, --delete-data.
+# Images are built from this commit and served from a throwaway local registry
+# so the installer's tag@digest pinning is exercised exactly as in a release.
+
+on:
+  pull_request:
+    paths:
+      - "scripts/docker-install.sh"
+      - "scripts/docker-setup.sh"
+      - "scripts/install-bootstrap.sh"
+      - "scripts/lib/install-state.sh"
+      - "scripts/arciin-doctor.sh"
+      - "scripts/worker-healthcheck.mjs"
+      - "scripts/release-manifest.mjs"
+      - "scripts/stage-release-assets.sh"
+      - "docker-compose.production.yml"
+      - "docker/caddy/Caddyfile"
+      - "Dockerfile"
+      - "apps/worker/src/index.ts"
+      - "tests/install/**"
+      - ".github/workflows/install-docker.yml"
+  push:
+    branches: [main, "release/**"]
+  workflow_dispatch:
+
+concurrency:
+  group: install-docker-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  shellcheck:
+    name: shellcheck (installers)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+      - name: New installer code — warnings are errors
+        run: |
+          shellcheck -x -S warning \
+            scripts/docker-install.sh scripts/docker-setup.sh scripts/install-bootstrap.sh \
+            scripts/lib/install-state.sh scripts/arciin-doctor.sh tests/install/docker-scenarios.sh
+      - name: Native installer — errors only
+        run: shellcheck -x -S error install.sh scripts/arciin-init.sh scripts/migration-backup.sh
+
+  scenarios:
+    name: Docker install scenarios
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Make room for three images and a registry copy
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
+
+      - uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: network=host
+
+      - name: Local registry
+        run: docker run -d --restart=always -p 5000:5000 --name registry registry:2
+
+      - id: version
+        run: echo "version=$(node -p 'require("./package.json").version')" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push web, api, worker
+        run: echo "building ${{ steps.version.outputs.version }}"
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: api
+          push: true
+          tags: localhost:5000/arciin-api:${{ steps.version.outputs.version }}
+          labels: org.opencontainers.image.version=${{ steps.version.outputs.version }}
+          cache-from: type=gha,scope=api
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: worker
+          push: true
+          tags: localhost:5000/arciin-worker:${{ steps.version.outputs.version }}
+          labels: org.opencontainers.image.version=${{ steps.version.outputs.version }}
+          cache-from: type=gha,scope=worker
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: web
+          push: true
+          tags: localhost:5000/arciin-web:${{ steps.version.outputs.version }}
+          labels: org.opencontainers.image.version=${{ steps.version.outputs.version }}
+          cache-from: type=gha,scope=web
+
+      - name: Release manifest pinned to the pushed digests
+        run: |
+          set -euo pipefail
+          v="${{ steps.version.outputs.version }}"
+          digest() { docker buildx imagetools inspect "localhost:5000/arciin-$1:$v" --format '{{json .Manifest}}' | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s).digest))'; }
+          bash scripts/stage-release-assets.sh dist/release
+          node scripts/release-manifest.mjs --version "$v" --release-sha "${{ github.sha }}" \
+            --registry localhost:5000 \
+            --digest-web "$(digest web)" --digest-api "$(digest api)" --digest-worker "$(digest worker)" \
+            --assets-dir dist/release --assets-base "file://$PWD/dist/release/" \
+            --out dist/release/stable.json
+          cat dist/release/stable.json
+          # Only the registry copies remain; the installer must pull by digest.
+          docker image prune -af >/dev/null
+
+      - name: Prisma engines are baked — migrate as uid 1000 and 1001 with no route out
+        run: |
+          set -euo pipefail
+          img="localhost:5000/arciin-api:${{ steps.version.outputs.version }}"
+          docker pull -q "$img" >/dev/null
+          docker pull -q postgres:16-alpine >/dev/null
+          # --internal: no egress, so any engine download would fail the migration.
+          docker network create --internal prisma-proof >/dev/null
+          docker run -d --name pp-db --network prisma-proof -e POSTGRES_USER=arciin \
+            -e POSTGRES_PASSWORD=pp -e POSTGRES_DB=arciin postgres:16-alpine >/dev/null
+          until docker exec pp-db pg_isready -U arciin >/dev/null 2>&1; do sleep 1; done
+          for uid in 1000 1001; do
+            docker exec pp-db psql -qU arciin -d arciin -c "CREATE DATABASE arciin_${uid}"
+            docker run --rm --network prisma-proof --user "${uid}:${uid}" \
+              -e DATABASE_URL="postgresql://arciin:pp@pp-db:5432/arciin_${uid}" \
+              "$img" sh -c 'cd /app && pnpm exec prisma migrate deploy' 2>&1 | tee "migrate-${uid}.log"
+            grep -q "All migrations have been successfully applied\|No pending migrations" "migrate-${uid}.log"
+            if grep -qiE "download|can.t write" "migrate-${uid}.log"; then echo "::error::uid ${uid} tried to fetch or write an engine"; exit 1; fi
+            echo "✔ uid ${uid}: migrations applied offline with the baked engine"
+          done
+          ww="$(docker run --rm --user 1001:1001 "$img" sh -c 'find /app -xdev -perm -0002 \( -type f -o -type d \) 2>/dev/null | head -20')"
+          if [ -n "$ww" ]; then echo "::error::world-writable paths in the image:"; echo "$ww"; exit 1; fi
+          docker run --rm "$img" sh -c 'ls -l /app/.prisma-engines; echo "PRISMA_SCHEMA_ENGINE_BINARY=$PRISMA_SCHEMA_ENGINE_BINARY"'
+          echo "✔ no world-writable files or directories under /app"
+          docker rm -f pp-db >/dev/null; docker network rm prisma-proof >/dev/null
+
+      - name: Run scenarios
+        env:
+          ARCIIN_SCENARIO_CONFIRM: disposable
+          ARCIIN_MANIFEST: ${{ github.workspace }}/dist/release/stable.json
+          ARCIIN_SCENARIO_LOGS: ${{ github.workspace }}/install-logs
+        run: bash tests/install/docker-scenarios.sh
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### Docker install scenarios"
+            echo ""
+            echo "| Scenario | Result | Check |"
+            echo "|---|---|---|"
+            awk -F'\t' '{printf "| %s | %s | %s |\n", $1, $2, $3}' install-logs/results.tsv 2>/dev/null
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Diagnostics on failure
+        if: failure()
+        run: |
+          docker ps -a || true
+          cd /opt/arciin 2>/dev/null && docker compose logs --tail 80 || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: docker-install-logs
+          path: install-logs/
+          retention-days: 14

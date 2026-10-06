@@ -106,7 +106,9 @@ export async function registerLicenseRoutes(app: FastifyInstance) {
 
     const result = await activateLicense(body.data)
     if (!result.ok) {
-      reply.status(result.status).send({ error: { code: result.code, message: result.message } })
+      reply.status(result.status).send({
+        error: { code: result.code, message: result.message, ...(result.details ? { details: result.details } : {}) },
+      })
       return
     }
     reply.send({ data: result.data })

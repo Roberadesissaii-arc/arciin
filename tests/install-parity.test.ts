@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process"
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
 
@@ -57,6 +57,46 @@ describe("install parity verifier (ARC-012)", () => {
     files.productionCompose = files.productionCompose.replaceAll("/api/health", "/api/not-the-health-probe")
     const errors = evaluateParity(files)
     expect(errors.some((error) => /healthcheck does not probe/.test(error))).toBe(true)
+  })
+
+  it("v2: fails when a service loses its restart policy", () => {
+    const files = loadRepoFiles(ROOT)
+    files.productionCompose = files.productionCompose.replace(/(  worker:\n(?:.*\n)*?)    restart: unless-stopped\n/, "$1")
+    expect(evaluateParity(files).some((e) => /worker service has no restart/.test(e))).toBe(true)
+  })
+
+  it("v2: fails when a Docker entry point stops reaching the canonical installer", () => {
+    const files = loadRepoFiles(ROOT)
+    files.dockerSetup = files.dockerSetup.replaceAll("docker-install.sh", "something-else.sh")
+    expect(evaluateParity(files).some((e) => /docker-setup\.sh does not run the canonical Docker installer/.test(e))).toBe(true)
+  })
+
+  it("v2: fails when an installer loses typed erase confirmation or its pre-repair backup", () => {
+    const files = loadRepoFiles(ROOT)
+    files.dockerInstall = files.dockerInstall.replaceAll('arciin_confirm_typed "ERASE ARCIIN"', "true").replaceAll("pg_dump", "true")
+    const errors = evaluateParity(files)
+    expect(errors).toContain("docker-install.sh lacks typed erase confirmation")
+    expect(errors).toContain("docker-install.sh lacks a database backup before repair")
+  })
+
+  it("v2: fails on a :latest image default", () => {
+    const files = loadRepoFiles(ROOT)
+    files.productionCompose = files.productionCompose.replace(
+      /\$\{ARCIIN_IMAGE_API:\?[^}]*\}/,
+      "${ARCIIN_IMAGE_API:-ghcr.io/roberadesissaii-arc/arciin-api:latest}",
+    )
+    expect(evaluateParity(files)).toContain("production compose defaults an image to :latest")
+  })
+
+  it("release assets staged by the script are exactly the manifest's asset list", async () => {
+    const { MANIFEST_ASSETS } = await import("../scripts/release-manifest.mjs")
+    const dir = mkdtempSync(path.join(tmpdir(), "arciin-assets-"))
+    try {
+      execFileSync("bash", ["scripts/stage-release-assets.sh", dir], { cwd: ROOT })
+      expect(readdirSync(dir).sort()).toEqual([...MANIFEST_ASSETS].sort())
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 
   it("the shell entrypoint exits 0 on this repo", () => {

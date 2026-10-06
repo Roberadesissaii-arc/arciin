@@ -1,6 +1,6 @@
 import { PrismaClient, IntegrationType } from "@prisma/client"
 
-import { COMPUTERS_LIBRARY_DEFINITION, DEFAULT_LIBRARY_DEFINITIONS } from "@arciin/shared"
+import { DEFAULT_LIBRARY_DEFINITIONS } from "@arciin/shared"
 
 const prisma = new PrismaClient()
 
@@ -13,7 +13,9 @@ async function main() {
   })
 
   if (instance && defaultStorage) {
-    for (const library of [...DEFAULT_LIBRARY_DEFINITIONS, COMPUTERS_LIBRARY_DEFINITION]) {
+    // The Computers library left with Computer Backup (3c579c6); its import
+    // stayed behind as `undefined` and crashed every seed of a claimed instance.
+    for (const library of DEFAULT_LIBRARY_DEFINITIONS) {
       await prisma.library.upsert({
         where: {
           slug: library.slug,

@@ -26,6 +26,13 @@ describe("obvious non-keys are named for what they are", () => {
     expect(describeNonKeyInput("ARC_PRO_8544...FEEA")).toMatch(/shortened/i)
   })
 
+  it.each(["ARC_PRO_••••••••••••1234", "ARC_PRO_●●●●FEEA", "ARC_PRO_8544****FEEA", "ARC_PRO_8544····FEEA"])(
+    "catches a bullet- or star-masked key: %s",
+    (masked) => {
+      expect(describeNonKeyInput(masked)).toMatch(/shortened/i)
+    },
+  )
+
   it("catches a promo code pasted as a key", () => {
     const message = describeNonKeyInput("ARCIIN-27A187EF3E5F")
     expect(message).toBeTruthy()

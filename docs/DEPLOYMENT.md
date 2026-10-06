@@ -2,45 +2,40 @@
 
 For **Docker** (any Linux host), SSD bind mounts, and apt troubleshooting, read **[DOCKER.md](./DOCKER.md)** first.
 
-Arciin ships with Docker assets for a local-first self-hosted deployment:
+Install and repair are covered in **[INSTALL.md](./INSTALL.md)** and
+**[REPAIR.md](./REPAIR.md)**. This page is about what gets deployed.
 
 - `Dockerfile` — one file, three targets (`--target web`, `--target api`, `--target worker`)
-- `docker-compose.yml` — source build (dev / clone)
-- `docker-compose.production.yml` — private distribution (pre-built images)
-- `.env.production.example`
+- `docker-compose.production.yml` — **the** production Compose definition (published images, pinned by digest, `restart: unless-stopped`)
+- `docker-compose.yml` — development only (builds from source, no restart policies)
+- `scripts/docker-install.sh` — the one Docker installer (one-liner, `./install.sh --docker` and `./scripts/docker-setup.sh` all run it)
 - `docker/caddy/Caddyfile`
-
-Customer-facing install without the monorepo: **[PRIVATE_DISTRIBUTION.md](./PRIVATE_DISTRIBUTION.md)**.
 
 ## Compose flow
 
-1. Run the setup script (recommended):
-
 ```bash
-./scripts/docker-setup.sh
+curl -fsSL https://get.arciin.com/install.sh | bash
 ```
 
-Or copy the Docker env template:
+The installer writes `/opt/arciin/.env` (secrets generated once, never
+regenerated against an existing database), installs `docker-compose.yml` and
+`Caddyfile` next to it, sets `ARCIIN_IMAGE_WEB/_API/_WORKER` to the release's
+`tag@digest` references, pulls, starts, and waits for every service to be
+healthy. Then open `http://<server>/setup` with the printed token.
 
-```bash
-cp .env.docker.example .env
-```
+## Releases and stable.json
 
-2. Update at least:
+A version tag builds all three images (`.github/workflows/docker.yml`). When
+that finishes, `.github/workflows/release.yml` publishes the installer assets
+to the GitHub Release — only if **CI, Install (Docker) and Install (VM)**
+passed for the tagged commit and every image exists with the matching
+`org.opencontainers.image.version` and revision labels. It writes
+`stable.json` (schema 2: version, releaseSha, `image_*` as `tag@digest`, and a
+SHA-256 for every asset) and `SHA256SUMS`. A release that already has a
+`stable.json` is never modified.
 
-- `ARCIIN_HOST_DATA_DIR` — folder on your **host** SSD/HDD (bind mount)
-- `ARCIIN_SETUP_TOKEN`
-- `SESSION_SECRET`
-- `ARCIIN_PUBLIC_URL` — `http://localhost` or `http://<lan-ip>`
-
-3. Start the stack:
-
-```bash
-export ARCIIN_HOST_DATA_DIR=/path/on/host   # must match .env
-docker compose up --build -d
-```
-
-4. Open `http://localhost/setup?token=<ARCIIN_SETUP_TOKEN>`
+The one-liner reads `releases/latest/download/stable.json`: the latest
+**published, non-draft** release. Publishing the release is the switch.
 
 ## Services
 
@@ -116,12 +111,11 @@ pnpm dev
 # open the setup URL printed at the end
 ```
 
-Docker:
+Docker (smoke test of unreleased code through the real installer, isolated project `arciin-test`):
 
 ```bash
-./scripts/docker-setup.sh
-# or: cp .env.docker.example .env && docker compose up --build -d
-# open http://localhost/setup?token=<ARCIIN_SETUP_TOKEN>
+bash scripts/docker-smoke-test.sh          # build, install on :8087, security checks
+bash scripts/docker-smoke-test.sh --down
 ```
 
 Socket.IO and uploads behind Caddy use the **browser origin** when `NEXT_PUBLIC_SOCKET_URL` is empty — do not point the UI at `:4000` unless that port is published.
