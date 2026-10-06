@@ -73,35 +73,89 @@ arciin_read_env_database_url() {
   grep -E '^DATABASE_URL=' "$env_file" | head -1 | sed 's/^DATABASE_URL=//' | sed 's/^"//; s/"$//'
 }
 
-# Fresh install: generate. Existing env with a password: preserve.
-# Prints the resolved *raw* (decoded) password on stdout. Never logs it.
-#
-# Args: env_file fresh_flag(0|1)
-# Exit 2 if no safe credential can be resolved.
-arciin_resolve_db_password() {
-  local env_file="$1"
-  local fresh="${2:-0}"
-  local url encoded raw
+# Placeholders shipped in .env.example are never real credentials.
+arciin_is_placeholder_db_password() {
+  case "${1:-}" in
+    ""|arciin|change-me|changeme|password|postgres) return 0 ;;
+  esac
+  return 1
+}
 
-  url="$(arciin_read_env_database_url "$env_file" 2>/dev/null || true)"
-  if [[ -n "$url" ]]; then
-    encoded="$(arciin_parse_database_url "$url" | awk -F'\t' '{print $2}')"
-    raw="$(arciin_urldecode_db_password "$encoded")"
+# Read the decoded password from the DATABASE_URL in <env_file> into the
+# variable named <out_var> (empty when there is none), in the current shell.
+# Sets ARCIIN_DB_URL_STATE: missing | malformed | placeholder | ok
+arciin_db_password_from_env_into() {
+  local _e_out_var="$1" _e_env_file="${2:-}" _e_url="" _e_parsed="" _e_encoded="" _e_raw=""
+  printf -v "$_e_out_var" '%s' ""
+  ARCIIN_DB_URL_STATE="missing"
+  _e_url="$(arciin_read_env_database_url "$_e_env_file" 2>/dev/null || true)"
+  [[ -n "$_e_url" ]] || return 0
+  _e_parsed="$(arciin_parse_database_url "$_e_url" 2>/dev/null || true)"
+  _e_encoded="$(printf '%s' "$_e_parsed" | awk -F'\t' '{print $2}')"
+  if [[ -z "$_e_parsed" || -z "$_e_encoded" ]]; then
+    ARCIIN_DB_URL_STATE="malformed"
+    return 0
   fi
+  _e_raw="$(arciin_urldecode_db_password "$_e_encoded" 2>/dev/null || true)"
+  if arciin_is_placeholder_db_password "$_e_raw"; then
+    ARCIIN_DB_URL_STATE="placeholder"
+    return 0
+  fi
+  ARCIIN_DB_URL_STATE="ok"
+  printf -v "$_e_out_var" '%s' "$_e_raw"
+}
 
-  if [[ "$fresh" == "1" ]]; then
-    # Placeholder copied from .env.example is not a real install credential.
-    if [[ -z "$raw" || "$raw" == "arciin" || "$raw" == "change-me" ]]; then
-      raw="$(arciin_generate_db_password)" || return 2
-      printf '%s' "$raw"
-      return 0
+# Resolve the native database password into the variable named <out_var>,
+# in the current shell, and record where it came from. Never prints it.
+#
+#   arciin_resolve_db_password_into <out_var> <env_file> <fresh 0|1> [backup_env_file]
+#
+# Order: DATABASE_URL in .env → (re-runs only) the installer's .env backup →
+# a newly generated password. Sets ARCIIN_DB_PASSWORD_SOURCE:
+#   env        .env already held a real password (kept)
+#   backup     recovered from the .env backup (repair after .env lost it)
+#   generated  fresh install, or nothing usable was found; the installer
+#              re-aligns an existing arciin role to it, which changes no data
+# ARCIIN_DB_URL_STATE records what .env held: missing|malformed|placeholder|ok.
+# Returns 2 only when no password can be generated at all.
+#
+# Every variable is assigned before it is read: this runs under set -u (the
+# installer's `set -Eeuo pipefail`), where an unset local used to abort the
+# install with "raw: unbound variable".
+arciin_resolve_db_password_into() {
+  local _r_out_var="$1" _r_env_file="${2:-}" _r_fresh="${3:-0}" _r_backup="${4:-}"
+  local _r_password="" _r_from_backup="" _r_env_state=""
+  ARCIIN_DB_PASSWORD_SOURCE=""
+
+  arciin_db_password_from_env_into _r_password "$_r_env_file"
+  _r_env_state="$ARCIIN_DB_URL_STATE"
+  [[ -n "$_r_password" ]] && ARCIIN_DB_PASSWORD_SOURCE="env"
+
+  if [[ -z "$_r_password" && "$_r_fresh" != "1" && -n "$_r_backup" && -f "$_r_backup" ]]; then
+    arciin_db_password_from_env_into _r_from_backup "$_r_backup"
+    if [[ -n "$_r_from_backup" ]]; then
+      _r_password="$_r_from_backup"
+      ARCIIN_DB_PASSWORD_SOURCE="backup"
     fi
   fi
+  ARCIIN_DB_URL_STATE="$_r_env_state"
 
-  if [[ -z "$raw" ]]; then
-    return 2
+  if [[ -z "$_r_password" ]]; then
+    _r_password="$(arciin_generate_db_password 2>/dev/null || true)"
+    [[ -n "$_r_password" ]] || return 2
+    ARCIIN_DB_PASSWORD_SOURCE="generated"
   fi
-  printf '%s' "$raw"
+
+  printf -v "$_r_out_var" '%s' "$_r_password"
+  return 0
+}
+
+# Compatibility wrapper: prints the resolved password (for callers that
+# capture it). Prefer arciin_resolve_db_password_into.
+arciin_resolve_db_password() {
+  local _w_resolved=""
+  arciin_resolve_db_password_into _w_resolved "${1:-}" "${2:-0}" "${3:-}" || return 2
+  printf '%s' "$_w_resolved"
 }
 
 arciin_restrict_env_perms() {

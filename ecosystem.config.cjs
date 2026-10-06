@@ -85,7 +85,7 @@ function appLogFiles(name) {
   }
 }
 
-module.exports = {
+const config = {
   apps: [
     {
       name: "arciin-web",
@@ -129,6 +129,17 @@ module.exports = {
       env: sharedEnv,
       ...appLogFiles("arciin-worker"),
     },
+  ],
+}
+
+/**
+ * The vendor's licensing-authority tunnel runs only where its tunnel config
+ * exists (the vendor host). Every customer native install used to start it
+ * from this shared file, where cloudflared could only fail and restart.
+ */
+const LICENSE_TUNNEL_CONFIG = "/home/arce/.cloudflared/config.yml"
+if (fs.existsSync(LICENSE_TUNNEL_CONFIG)) {
+  config.apps.push(
     {
       /**
        * The public ingress for the licensing authority.
@@ -158,6 +169,8 @@ module.exports = {
       max_restarts: 20,
       min_uptime: "10s",
       ...appLogFiles("arciin-license-tunnel"),
-    },
-  ],
+    }
+  )
 }
+
+module.exports = config

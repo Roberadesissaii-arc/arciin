@@ -2,9 +2,13 @@
 # ================================================================
 #  Arciin — Local / WSL Installer
 #  Supports: Debian/Ubuntu/WSL (apt)
-#  Usage:  bash install.sh              — install or update (native / PM2)
-#          bash install.sh --docker     — Docker Compose (any Linux with Docker)
-#          bash install.sh --reset-db   — drop arciin DB and reinstall schema
+#  Usage:  bash install.sh                — install, or repair an existing install
+#          bash install.sh --repair       — repair/upgrade, keeping all data (default
+#                                            when Arciin is already installed)
+#          bash install.sh --fresh        — ERASE the Arciin database + config and
+#                                            reinstall (typed confirmation)
+#          bash install.sh --uninstall    — remove Arciin's services only; data kept
+#          bash install.sh --docker       — Docker (canonical production Compose)
 # ================================================================
 set -Eeuo pipefail
 
@@ -18,6 +22,14 @@ source "${ROOT_DIR}/scripts/lib/storage-defaults.sh"
 source "${ROOT_DIR}/scripts/lib/db-credentials.sh"
 # shellcheck source=scripts/lib/avahi-discovery.sh
 source "${ROOT_DIR}/scripts/lib/avahi-discovery.sh"
+# shellcheck source=scripts/lib/install-state.sh
+source "${ROOT_DIR}/scripts/lib/install-state.sh"
+
+# apt must never stop to ask a question nobody can see behind a spinner —
+# needrestart's "which services should be restarted?" dialog hung fresh
+# Ubuntu installs.
+export DEBIAN_FRONTEND=noninteractive
+export NEEDRESTART_MODE=a
 
 docker_available() {
   command -v docker &>/dev/null && (docker compose version &>/dev/null || command -v docker-compose &>/dev/null)
@@ -31,26 +43,66 @@ print_docker_hint() {
   echo ""
 }
 
+# ── Mode flags ────────────────────────────────────────────────────────────────
+# install (default) → repair when an install already exists.
+ARCIIN_MODE="${ARCIIN_MODE:-auto}"
+ARCIIN_DELETE_DATA=0
+ARCIIN_DELETE_STORAGE=0
+ARCIIN_ALLOW_ROOT_STORAGE="${ARCIIN_ALLOW_ROOT_STORAGE:-0}"
+ARCIIN_REBUILD=0
 for _arg in "$@"; do
   case "$_arg" in
     --docker|-d) ARCIIN_INSTALL_MODE=docker ;;
+    --native) ARCIIN_INSTALL_MODE=native ;;
+    --repair) ARCIIN_MODE=repair ;;
+    --fresh) ARCIIN_MODE=fresh ;;
+    # Kept as an alias. It used to drop the database with no confirmation;
+    # it now goes through the same typed confirmation as --fresh.
+    --reset-db) ARCIIN_MODE=fresh ;;
+    --uninstall) ARCIIN_MODE=uninstall ;;
+    --delete-data) ARCIIN_DELETE_DATA=1 ;;
+    --delete-storage) ARCIIN_DELETE_STORAGE=1 ;;
+    --allow-root-storage) ARCIIN_ALLOW_ROOT_STORAGE=1 ;;
+    --rebuild) ARCIIN_REBUILD=1 ;;
     --help|-h)
-      echo "Usage: ./install.sh [--docker] [--reset-db]"
-      echo "  --docker     Run scripts/docker-setup.sh (Compose + bind-mounted storage)"
-      echo "  --reset-db   Drop and recreate the arciin PostgreSQL database (native only)"
-      echo ""
-      echo "Environment:"
-      echo "  ARCIIN_INSTALL_MODE=docker     Same as --docker"
-      echo "  ARCIIN_SKIP_SYSTEM_PACKAGES=1  Skip apt install (native; deps must exist)"
-      echo "  ARCIIN_SKIP_INSTALL_CHOICE=1   Skip Docker vs native menu"
-      echo "  ARCIIN_ON_EXISTING_DB=keep|wipe  Non-interactive policy when Postgres already has a claim"
+      cat <<'USAGE'
+Usage: ./install.sh [mode] [options]
+
+Modes
+  (none)                 Install. If Arciin is already installed here, repair it.
+  --repair               Repair / upgrade an existing install. Keeps the database,
+                         files, instance ID, license, settings and secrets.
+  --fresh                Erase the Arciin database and .env, then install again.
+                         Shows exactly what will be removed and requires typing
+                         ERASE ARCIIN. Your files are NOT deleted (see --delete-storage).
+  --uninstall            Stop and remove Arciin's services. Database, files and a
+                         backup of .env are kept.
+      --delete-data      With --uninstall: also drop the Arciin database and .env
+                         (typed confirmation).
+      --delete-storage   With --fresh or --uninstall --delete-data: also delete the
+                         storage folder (a second, separate typed confirmation).
+  --docker               Install with Docker (canonical production Compose).
+
+Options
+  --allow-root-storage   Allow a storage path under /mnt or /media to be created on
+                         the root filesystem when its disk is not mounted.
+  --rebuild              Rebuild the app even if this version is already built.
+
+Environment
+  ARCIIN_INSTALL_MODE=docker|native   Same as --docker / --native
+  ARCIIN_UPGRADE_SYSTEM=1             Also run apt-get upgrade (off by default)
+  ARCIIN_SKIP_SYSTEM_PACKAGES=1       Skip apt (dependencies must exist)
+  ARCIIN_SKIP_INSTALL_CHOICE=1        Skip the Docker vs native menu
+  ARCIIN_ON_EXISTING_DB=keep          Non-interactive: keep/repair (the default)
+  ARCIIN_CONFIRM_ERASE="ERASE ARCIIN" Non-interactive confirmation for --fresh
+USAGE
       exit 0
       ;;
   esac
 done
 
 if [[ "${ARCIIN_INSTALL_MODE:-}" == "docker" ]]; then
-  exec "${ROOT_DIR}/scripts/docker-setup.sh"
+  exec "${ROOT_DIR}/scripts/docker-setup.sh" "$@"
 fi
 DEFAULT_NODE_MAJOR=24
 DEFAULT_PNPM_VERSION=10.32.1
@@ -73,7 +125,7 @@ DIM="\033[2m"
 WHITE="\033[97m"
 RESET="\033[0m"
 
-TOTAL_STEPS=12
+TOTAL_STEPS=13
 ARCIIN_WEB_PORT="${DEFAULT_WEB_PORT}"
 ARCIIN_API_PORT="${DEFAULT_API_PORT}"
 STEP=0
@@ -207,7 +259,7 @@ apt_get_install() {
   local max_attempts=5 attempt
   for (( attempt = 1; attempt <= max_attempts; attempt++ )); do
     wait_for_apt_lock || return 1
-    if sudo apt-get install -y -qq "$@"; then
+    if sudo env DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a apt-get install -y -qq "$@"; then
       return 0
     fi
     if (( attempt < max_attempts )); then
@@ -226,14 +278,14 @@ install_nodejs_nodesource() {
 
 # ── Flags ─────────────────────────────────────────────────────────────────────
 RESET_DB=false
-# missing | empty | claimed | partial | unknown — set during Postgres setup
+[[ "$ARCIIN_MODE" == "fresh" ]] && RESET_DB=true
+# claimed | partial | unclaimed | unknown — set during Postgres setup
 ARCIIN_DB_CLAIM_STATE="unknown"
-for arg in "$@"; do
-  [[ "$arg" == "--reset-db" ]] && RESET_DB=true
-done
 
 # ── Banner ────────────────────────────────────────────────────────────────────
-clear
+# Only on a terminal: with no usable TERM (cloud-init, CI, `ssh host cmd`)
+# `clear` fails and the ERR trap used to abort the whole install here.
+if [[ -t 1 ]]; then clear 2>/dev/null || true; fi
 echo ""
 echo -e "${BGREEN}     █████╗ ██████╗  ██████╗██╗██╗███╗   ██╗${RESET}"
 echo -e "${BGREEN}    ██╔══██╗██╔══██╗██╔════╝██║██║████╗  ██║${RESET}"
@@ -464,7 +516,8 @@ _detect_lan_ip() {
 }
 
 _env_public_url_port() {
-  grep '^ARCIIN_PUBLIC_URL=' "$1" 2>/dev/null | sed -n 's|.*:\([0-9][0-9]*\)$|\1|p' | head -1
+  # No ARCIIN_PUBLIC_URL (a Docker or partial .env) is "no port", not an error.
+  { grep '^ARCIIN_PUBLIC_URL=' "$1" 2>/dev/null || true; } | sed -n 's|.*:\([0-9][0-9]*\)$|\1|p' | head -1
 }
 
 # Port reserved for ../arciin-app mobile PWA (avoid desktop web stealing it on reinstall).
@@ -534,7 +587,9 @@ ensure_production_secrets() {
   _set_env_kv "$env_file" "NODE_ENV" "production"
 
   local secret_len
-  secret_len="$(grep '^SESSION_SECRET=' "$env_file" 2>/dev/null | cut -d= -f2- | wc -c | tr -d ' ')"
+  # A missing key must not end the install: under pipefail a grep with no
+  # match fails the whole assignment (an .env from Docker or a stopped run).
+  secret_len="$({ grep '^SESSION_SECRET=' "$env_file" 2>/dev/null || true; } | cut -d= -f2- | wc -c | tr -d ' ')"
   if grep -q '^SESSION_SECRET=change-this-in-production' "$env_file" 2>/dev/null \
     || [[ "${secret_len:-0}" -lt 32 ]]; then
     _set_env_kv "$env_file" "SESSION_SECRET" "$(_gen_secret)"
@@ -542,7 +597,7 @@ ensure_production_secrets() {
   fi
 
   if grep -qE '^ARCIIN_SETUP_TOKEN=(dev-token)?$' "$env_file" 2>/dev/null \
-    || grep -q '^ARCIIN_SETUP_TOKEN=$' "$env_file" 2>/dev/null; then
+    || ! grep -q '^ARCIIN_SETUP_TOKEN=.' "$env_file" 2>/dev/null; then
     _set_env_kv "$env_file" "ARCIIN_SETUP_TOKEN" "$(openssl rand -hex 24 2>/dev/null || _gen_secret)"
     ok "ARCIIN_SETUP_TOKEN secured (random)"
   fi
@@ -688,12 +743,69 @@ wait_for_api_health() {
   return 1
 }
 
-launch_pm2() {
-  if ! command -v pm2 &>/dev/null; then
+# Global npm installs land in npm's prefix. On a stock NodeSource Ubuntu that
+# is /usr, owned by root, so `npm install -g pm2` as the installing user died
+# with EACCES at the very end of an install. Use sudo exactly when the prefix
+# is not ours.
+ensure_pm2() {
+  if command -v pm2 &>/dev/null; then
+    ok "PM2 $(pm2 --version 2>/dev/null | tail -1) already installed"
+    return 0
+  fi
+  local prefix
+  prefix="$(npm config get prefix 2>/dev/null || echo /usr)"
+  if [[ -w "${prefix}/lib/node_modules" || ( ! -e "${prefix}/lib/node_modules" && -w "${prefix}" ) ]]; then
     spin_ok "Installing PM2 process manager..." "PM2 installed" npm install -g pm2
   else
-    ok "PM2 $(pm2 --version 2>/dev/null | head -1) already installed"
+    spin_ok "Installing PM2 process manager (system-wide)..." "PM2 installed" sudo npm install -g pm2
   fi
+  hash -r
+  command -v pm2 &>/dev/null || arciin_fail_report "PM2 was installed but is not on PATH" \
+    "npm placed pm2 in ${prefix}/bin, which this shell does not search." \
+    "Arciin's database and files are set up; only the process manager is missing." \
+    "Add ${prefix}/bin to PATH (e.g. in ~/.profile), open a new shell, run ./install.sh --repair"
+  ok "PM2 $(pm2 --version 2>/dev/null | tail -1) ready"
+}
+
+# Boot persistence is proven, not assumed: the systemd unit must be enabled and
+# the saved process list must contain Arciin. If either fails, say so — an
+# install that silently does not come back after a reboot is the bug.
+ensure_pm2_boot() {
+  local user unit pm2_bin node_dir
+  user="$(id -un)"
+  unit="pm2-${user}"
+  pm2_bin="$(command -v pm2)"
+  node_dir="$(dirname "$(command -v node)")"
+  pm2 save --force >/dev/null 2>&1 || true
+  if ! sudo env PATH="${PATH}:${node_dir}" "$pm2_bin" startup systemd -u "$user" --hp "$HOME" >/dev/null 2>&1; then
+    arciin_fail_report "Could not register Arciin to start on boot" \
+      "'pm2 startup systemd' failed, so a reboot would leave Arciin stopped." \
+      "Arciin is installed and running now; your data is fine." \
+      "Run: sudo env PATH=\$PATH:${node_dir} ${pm2_bin} startup systemd -u ${user} --hp ${HOME}" \
+      "Then: pm2 save — or run ./install.sh --repair"
+  fi
+  pm2 save --force >/dev/null 2>&1 || true
+  if [[ "$(systemctl is-enabled "$unit" 2>/dev/null)" != "enabled" ]]; then
+    arciin_fail_report "Boot service ${unit} is not enabled" \
+      "pm2 startup ran, but systemd does not report ${unit} as enabled." \
+      "Arciin is running now; your data is fine." \
+      "sudo systemctl enable ${unit}" "Then run: bash scripts/arciin-doctor.sh"
+  fi
+  local dump="${PM2_HOME:-$HOME/.pm2}/dump.pm2" name missing=""
+  for name in arciin-api arciin-worker arciin-web; do
+    grep -q "\"name\":\s*\"${name}\"" "$dump" 2>/dev/null || missing+=" ${name}"
+  done
+  if [[ -n "$missing" ]]; then
+    arciin_fail_report "PM2's saved process list is missing:${missing}" \
+      "On reboot PM2 restores only what was saved." \
+      "Arciin is running now; your data is fine." "pm2 save --force" "Then: bash scripts/arciin-doctor.sh"
+  fi
+  ok "Starts on boot: ${unit} enabled, Arciin in PM2's saved list"
+  arciin_journal_step "boot"
+}
+
+launch_pm2() {
+  ensure_pm2
 
   stop_existing_arciin
 
@@ -702,17 +814,31 @@ launch_pm2() {
   mkdir -p "${ROOT_DIR}/logs"
   chmod 700 "${ROOT_DIR}/logs" 2>/dev/null || true
 
-  spin_ok "Building production bundles (web, API, worker)..." "Production build ready" \
-    bash -c "cd \"${ROOT_DIR}\" && pnpm build"
+  # A build for this exact commit is reused on resume or repair; anything else
+  # is rebuilt. Build output lives in the working tree, so the commit is the key.
+  local head built
+  head="$(git -C "${ROOT_DIR}" rev-parse HEAD 2>/dev/null || echo none)"
+  built="$(arciin_journal_get buildSha)"
+  if [[ "$ARCIIN_REBUILD" != "1" && "$built" == "$head" && "$head" != "none" \
+        && -s "${ROOT_DIR}/apps/api/dist/index.js" && -s "${ROOT_DIR}/apps/worker/dist/index.js" \
+        && -f "${ROOT_DIR}/apps/web/.next/BUILD_ID" ]] \
+     && git -C "${ROOT_DIR}" diff --quiet HEAD -- 2>/dev/null; then
+    ok "Production build for ${head:0:7} already present — reusing it (--rebuild to force)"
+  else
+    spin_ok "Building production bundles (web, API, worker)..." "Production build ready" \
+      bash -c "cd \"${ROOT_DIR}\" && pnpm build"
+    promote_web_build
+    arciin_journal_set "buildSha" "$head"
+  fi
+  arciin_journal_step "build"
 
   spin_ok "Starting Arciin (PM2)..." "PM2 processes started" \
-    bash -c "cd \"${ROOT_DIR}\" && pm2 start ecosystem.config.cjs && pm2 save"
+    bash -c "cd \"${ROOT_DIR}\" && pm2 start ecosystem.config.cjs --update-env && pm2 save --force"
 
   wait_for_api_health || warn "Web UI may show 'waiting for API' until arciin-api is fixed"
 
   if has_systemd; then
-    spin_ok "Configuring auto-start on boot..." "Auto-start configured" \
-      bash -c 'PM2_STARTUP="$(pm2 startup 2>&1 | grep sudo | tail -1 || true)"; [[ -n "$PM2_STARTUP" ]] && eval "$PM2_STARTUP" || true'
+    ensure_pm2_boot
     ARCIIN_BOOT_PERSISTENT=1
   elif is_wsl; then
     # Claiming auto-start here would be false twice over: systemd is off, and
@@ -740,6 +866,7 @@ launch_pm2() {
   if ! pm2 describe arciin-api 2>/dev/null | grep -q "online"; then
     warn "arciin-api is not online — check: pm2 logs arciin-api (port ${ARCIIN_API_PORT} may be in use)"
   fi
+  arciin_journal_step "launch"
 }
 
 configure_postgres_port() {
@@ -759,15 +886,40 @@ configure_postgres_port() {
   maybe_reconfigure_postgresql_port "$pg_port"
   ARCIIN_PG_PORT="$pg_port"
 
-  local password encoded existing_url user host db
-  existing_url="$(arciin_read_env_database_url "$env_file" || true)"
-  if ! password="$(arciin_resolve_db_password "$env_file" "${ARCIIN_FRESH_INSTALL:-0}")"; then
-    fail "Could not resolve a database password. Set DATABASE_URL in .env or re-run a fresh install."
+  local password="" encoded="" existing_url="" user="arciin" host="localhost" db="arciin"
+  local env_backup
+  env_backup="$(dirname "$(arciin_journal_path)")/env-backups/latest.env"
+  existing_url="$(arciin_read_env_database_url "$env_file" 2>/dev/null || true)"
+  if ! arciin_resolve_db_password_into password "$env_file" "${ARCIIN_FRESH_INSTALL:-0}" "$env_backup"; then
+    arciin_fail_report "Could not create a database password." \
+      "Neither openssl nor /dev/urandom is available to generate one." \
+      "Nothing was changed." \
+      "Install openssl (sudo apt-get install -y openssl) and re-run ./install.sh"
   fi
-  encoded="$(arciin_urlencode_db_password "$password")" || fail "Could not encode the database password for DATABASE_URL."
-  user="arciin"
-  host="localhost"
-  db="arciin"
+  case "${ARCIIN_DB_PASSWORD_SOURCE}" in
+    env) [[ "${ARCIIN_FRESH_INSTALL:-0}" == "1" ]] || ok "Existing database credentials kept" ;;
+    backup) ok "Database password recovered from the previous .env backup" ;;
+    generated)
+      if [[ "${ARCIIN_FRESH_INSTALL:-0}" != "1" ]]; then
+        # An existing .env without a usable DATABASE_URL: typical after a
+        # Docker install (Compose builds the URL itself) or a run that stopped
+        # half-way. Keep a copy before rewriting it.
+        local saved
+        saved="$(dirname "$(arciin_journal_path)")/env-backups/pre-credentials-$(date -u +%Y%m%dT%H%M%SZ).env"
+        mkdir -p "$(dirname "$saved")" && install -m 600 "$env_file" "$saved" 2>/dev/null || true
+        case "${ARCIIN_DB_URL_STATE}" in
+          missing) warn ".env has no DATABASE_URL (it may come from a Docker install)" ;;
+          malformed) warn "DATABASE_URL in .env could not be read" ;;
+          placeholder) warn "DATABASE_URL in .env still holds the example password" ;;
+        esac
+        warn "A new database password was generated. An existing 'arciin' role is re-aligned to it below — no data changes. Previous .env saved to ${saved}"
+      fi
+      ;;
+  esac
+  encoded="$(arciin_urlencode_db_password "$password")" || arciin_fail_report \
+    "Could not encode the database password for DATABASE_URL." \
+    "Neither python3 nor node is available to URL-encode it." "Nothing was changed." \
+    "Install python3 and re-run ./install.sh"
   if [[ -n "$existing_url" ]]; then
     local parsed
     parsed="$(arciin_parse_database_url "$existing_url" || true)"
@@ -778,13 +930,15 @@ configure_postgres_port() {
       [[ -n "$user" ]] || user="arciin"
       [[ -n "$host" ]] || host="localhost"
       [[ -n "$db" ]] || db="arciin"
+      # A Docker .env names the Compose service; natively it is this machine.
+      if [[ "$host" == "postgres" || "$host" == "db" ]]; then host="localhost"; fi
     fi
   fi
   _set_env_kv "$env_file" "DATABASE_URL" "$(arciin_format_database_url "$user" "$encoded" "$host" "$pg_port" "$db")"
   _set_env_kv "$env_file" "ARCIIN_PG_PORT" "${pg_port}"
   arciin_restrict_env_perms "$env_file"
   ARCIIN_DB_PASSWORD="$password"
-  if [[ "${ARCIIN_FRESH_INSTALL:-0}" == "1" ]]; then
+  if [[ "${ARCIIN_FRESH_INSTALL:-0}" == "1" && "${ARCIIN_DB_PASSWORD_SOURCE}" == "generated" ]]; then
     ok "Database credentials generated successfully."
   fi
 
@@ -795,13 +949,61 @@ configure_postgres_port() {
   fi
 }
 
+# `pnpm build:web` builds into apps/web/.next-build so a live server is never
+# served a half-written build (scripts/deploy-web.sh). The installer never
+# swapped it into .next, so arciin-web on a native install found no BUILD_ID
+# and restarted forever. Verify, then swap — the same steps as deploy-web.sh.
+promote_web_build() {
+  local web="${ROOT_DIR}/apps/web"
+  local stage="${web}/.next-build" live="${web}/.next" prev="${web}/.next-prev"
+  if [[ ! -f "${stage}/BUILD_ID" ]]; then
+    [[ -f "${live}/BUILD_ID" ]] && return 0
+    arciin_fail_report "The web build is incomplete." \
+      "pnpm build finished without a BUILD_ID in apps/web/.next-build." \
+      "Nothing was changed; your data is untouched." \
+      "Re-run: ./install.sh --rebuild" "Check free memory: the web build needs ~3 GB"
+  fi
+  node "${ROOT_DIR}/scripts/verify-web-assets.mjs" --dist "$stage" >/dev/null 2>&1 \
+    || arciin_fail_report "The web build is incomplete." \
+      "scripts/verify-web-assets.mjs rejected apps/web/.next-build." \
+      "Nothing was changed; your data is untouched." "Re-run: ./install.sh --rebuild"
+  rm -rf "$prev"
+  [[ -d "$live" ]] && mv "$live" "$prev"
+  mv "$stage" "$live"
+  rm -rf "$prev"
+}
+
 _gen_secret() {
   openssl rand -base64 32 2>/dev/null | tr -d '\n=' || \
     head -c 32 /dev/urandom | base64 2>/dev/null | tr -d '\n=' || \
     echo "changeme-$(date +%s)-$(( RANDOM * RANDOM ))"
 }
 
+# A missing .env next to an existing Arciin database is the classic "lost the
+# config" case: minting fresh secrets would orphan encrypted vault data and
+# change the database password. Offer the installer's own backup first.
+maybe_restore_env_backup() {
+  [[ -f "${ROOT_DIR}/.env" ]] && return 0
+  [[ "$ARCIIN_MODE" == "fresh" ]] && return 0
+  local backup
+  backup="$(dirname "$(arciin_journal_path)")/env-backups/latest.env"
+  [[ -f "$backup" ]] || return 0
+  warn "No .env here, but a backup from a previous Arciin install exists (${backup})."
+  local choice="r"
+  if [[ -t 0 ]]; then
+    echo -e "    ${DIM}[r]${RESET} Restore it  ${DIM}(keeps the same secrets, database password and encryption key — recommended)${RESET}"
+    echo -e "    ${DIM}[n]${RESET} Start with a new .env"
+    read -r -p "  Restore the previous .env? [R/n]: " choice
+    choice="${choice:-r}"
+  fi
+  if [[ "${choice,,}" == r* ]]; then
+    cp "$backup" "${ROOT_DIR}/.env" && chmod 600 "${ROOT_DIR}/.env"
+    ok "Restored .env from the previous install"
+  fi
+}
+
 ensure_env_file() {
+  maybe_restore_env_backup
   if [[ ! -f "${ROOT_DIR}/.env" ]]; then
     if [[ ! -f "${ROOT_DIR}/.env.example" ]]; then
       fail ".env.example not found — cannot create .env"
@@ -816,6 +1018,34 @@ ensure_env_file() {
     ARCIIN_FRESH_INSTALL=0
     ok ".env already exists"
   fi
+}
+
+# An existing .env may come from somewhere else — a Docker install (Compose
+# builds DATABASE_URL and REDIS_URL itself, and names services rather than
+# localhost) or a run that stopped half-way. Add every key .env.example has
+# and .env lacks, never overwriting a value, and point Docker service
+# hostnames at this machine. Secrets left as placeholders are generated by the
+# steps that follow.
+ensure_native_env_keys() {
+  local env_file="${ROOT_DIR}/.env" example="${ROOT_DIR}/.env.example" line key added=0
+  [[ -f "$env_file" && -f "$example" ]] || return 0
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ "$line" =~ ^([A-Z][A-Z0-9_]*)= ]] || continue
+    key="${BASH_REMATCH[1]}"
+    if ! grep -q "^${key}=" "$env_file" 2>/dev/null; then
+      printf '%s\n' "$line" >> "$env_file"
+      added=$((added + 1))
+    fi
+  done < "$example"
+  local value
+  for key in REDIS_URL ARCIIN_API_URL; do
+    value="$({ grep "^${key}=" "$env_file" 2>/dev/null || true; } | tail -1 | cut -d= -f2-)"
+    if [[ "$value" =~ //([^/@]*@)?(redis|api|postgres|db|caddy|web)[:/] ]]; then
+      _set_env_kv "$env_file" "$key" "$({ grep "^${key}=" "$example" 2>/dev/null || true; } | head -1 | cut -d= -f2-)"
+      warn "${key} pointed at a Docker service — set to this machine"
+    fi
+  done
+  [[ "$added" -eq 0 ]] || ok "Added ${added} missing setting(s) to .env from .env.example (existing values kept)"
 }
 
 ensure_arciin_storage_path() {
@@ -836,12 +1066,39 @@ ensure_arciin_storage_path() {
     preset=""
   fi
 
+  # Before creating anything: a path on a disk that is not mounted must not
+  # quietly become a folder on the root filesystem.
+  local candidate="${preset:-${ARCIIN_DEFAULT_STORAGE:-/srv/arciin-storage/arciin}}"
+  if [[ "$(arciin_storage_mount_missing "$candidate")" == "1" && "$ARCIIN_ALLOW_ROOT_STORAGE" != "1" ]]; then
+    arciin_fail_report "Storage disk is not mounted (${candidate})" \
+      "${candidate} is under $(cut -d/ -f1-3 <<<"$candidate"), but nothing is mounted there — creating it would put your files on the system disk instead." \
+      "Nothing was created or deleted." \
+      "Mount the disk (check /etc/fstab, then: sudo mount -a) and run ./install.sh again" \
+      "Or, if the system disk is intended: ./install.sh --allow-root-storage"
+  fi
+
   local resolved
   resolved="$(_arciin_setup_host_storage "${ROOT_DIR}" "$preset" "${env_file}" 0)" \
     || fail "Could not set up file storage."
 
+  local state
+  state="$(arciin_probe_storage_state "$resolved")"
+  case "$state" in
+    read_only)
+      arciin_fail_report "Storage is read-only (${resolved})" \
+        "The filesystem refused a test write — the disk may be mounted read-only or failing." \
+        "Nothing in ${resolved} was changed." "Check: findmnt -T ${resolved}; remount it read-write, then run ./install.sh again" ;;
+    wrong_owner)
+      arciin_fail_report "Storage is not writable by $(id -un) (${resolved})" \
+        "Arciin runs as $(id -un) and could not create, rename and delete a test file there." \
+        "Nothing in ${resolved} was changed." "sudo chown -R $(id -un):$(id -gn) ${resolved}" "Then run ./install.sh again" ;;
+    valid_arciin) ok "Existing Arciin files found in ${resolved} — they are kept" ;;
+    partial) warn "${resolved} already contains other files — Arciin will add its folders next to them and delete nothing" ;;
+  esac
+
   _set_env_kv "$env_file" "ARCIIN_DATA_DIR" "$resolved"
-  ok "File storage: ${resolved}"
+  arciin_journal_set "dataDir" "$resolved"
+  ok "File storage: ${resolved} (write test passed)"
 }
 
 ensure_session_secret() {
@@ -930,79 +1187,125 @@ drop_arciin_database() {
       sudo -u postgres env PGPORT='${pg_port}' psql -c \"DROP ROLE IF EXISTS arciin;\"" || true
 }
 
-# When PostgreSQL still has a previous Arciin claim (common after re-clone / new .env
-# on the same WSL/host), detect it and either keep data or wipe for true first-run.
+# What is already in PostgreSQL decides what this run does — never a guess,
+# and never a default that destroys data.
+#
+#   missing / empty   → install
+#   valid / partial   → repair (keep everything) unless --fresh is confirmed
+#   foreign           → stop: an unrelated database is named arciin
+ARCIIN_DB_STATE="unknown"
 maybe_handle_existing_arciin_db() {
-  local state
-  state="$(detect_arciin_db_claim_state)"
-  ARCIIN_DB_CLAIM_STATE="$state"
+  local pg_port="${ARCIIN_PG_PORT:-${DEFAULT_PG_PORT}}" facts state claim
+  facts="$(arciin_probe_db_facts_native "$pg_port")"
+  # exists tables has_migrations has_instance has_user failed users instances
+  read -r f_exists f_tables f_mig f_inst f_user f_failed f_users f_instances <<<"$facts"
+  state="$(arciin_classify_db "$f_exists" "$f_tables" "$f_mig" "$f_inst" "$f_user" "$f_failed")"
+  claim="$(arciin_classify_db_claim "$f_users" "$f_instances")"
+  ARCIIN_DB_STATE="$state"
+  ARCIIN_DB_CLAIM_STATE="$claim"
+  arciin_journal_set "dbState" "$state"
 
-  if $RESET_DB; then
-    return 0
-  fi
-
-  # Automation override: ARCIIN_ON_EXISTING_DB=keep|wipe
-  local policy="${ARCIIN_ON_EXISTING_DB:-}"
-  policy="${policy,,}"
-
-  if [[ "$state" != "claimed" && "$state" != "partial" ]]; then
-    if [[ "$state" == "empty" ]]; then
-      ok "PostgreSQL arciin database is empty (first-run setup will be available)"
-    fi
-    return 0
-  fi
+  case "$state" in
+    missing) ok "No Arciin database yet — it will be created"; [[ "$ARCIIN_MODE" == "fresh" ]] && RESET_DB=false; return 0 ;;
+    empty)   ok "PostgreSQL database 'arciin' is empty — first-run setup will be available"; return 0 ;;
+  esac
 
   echo ""
-  if [[ "$state" == "claimed" ]]; then
-    warn "Existing claimed Arciin data found in PostgreSQL (owner account already exists)."
-    echo -e "    ${DIM}Re-installing the app does not wipe the database. That is why /login appears instead of /setup.${RESET}"
-  else
-    warn "Partial instance rows found (config without users). First-run setup should reclaim the instance."
-  fi
-  echo -e "    ${DIM}Same machine / WSL often keeps Postgres data even after a new git clone.${RESET}"
+  case "$state" in
+    valid_arciin)
+      warn "Existing Arciin installation detected"
+      echo -e "    ${DIM}Database${RESET}   arciin  ${DIM}(${f_tables} tables, ${f_users} user(s), instance ${claim})${RESET}" ;;
+    partial_arciin)
+      warn "Partial Arciin database detected"
+      echo -e "    ${DIM}Database${RESET}   arciin  ${DIM}(${f_tables} tables; a previous install or migration did not finish)${RESET}" ;;
+    foreign)
+      warn "A database named 'arciin' exists, but it is not an Arciin database"
+      echo -e "    ${DIM}Database${RESET}   arciin  ${DIM}(${f_tables} tables, no Arciin schema)${RESET}" ;;
+  esac
   echo ""
 
-  local choice="keep"
-  if [[ "$policy" == "wipe" || "$policy" == "reset" || "$policy" == "fresh" ]]; then
-    choice="wipe"
-  elif [[ "$policy" == "keep" ]]; then
-    choice="keep"
-  elif [[ -t 0 ]]; then
-    if [[ "${ARCIIN_FRESH_INSTALL:-0}" == "1" ]]; then
-      # New .env + old DB is the classic “I thought this was a new server” case.
-      echo -e "    ${BOLD}This looks like a fresh install folder with an older database.${RESET}"
-      echo -e "    ${DIM}[k]${RESET} Keep data  → use ${BOLD}/login${RESET} with the existing owner account"
-      echo -e "    ${DIM}[w]${RESET} Wipe DB    → true first-run ${BOLD}/setup${RESET} (destroys users, libraries, file metadata)"
-      echo ""
-      read -r -p "  Keep existing data or wipe for first-run setup? [k/w] (default w): " _db_choice
-      _db_choice="${_db_choice:-w}"
-    else
-      echo -e "    ${DIM}[k]${RESET} Keep data  → upgrade in place, open ${BOLD}/login${RESET}"
-      echo -e "    ${DIM}[w]${RESET} Wipe DB    → first-run ${BOLD}/setup${RESET} again (DESTROYS instance data)"
-      echo ""
-      read -r -p "  Keep existing data or wipe? [k/w] (default k): " _db_choice
-      _db_choice="${_db_choice:-k}"
-    fi
-    case "${_db_choice,,}" in
-      w|wipe|reset|fresh|y|yes) choice="wipe" ;;
-      *) choice="keep" ;;
-    esac
-  else
-    # Non-interactive: never destroy data unless explicitly requested.
-    choice="keep"
-    warn "Non-interactive install — keeping existing database (set ARCIIN_ON_EXISTING_DB=wipe or use --reset-db to start fresh)"
-  fi
-
-  if [[ "$choice" == "wipe" ]]; then
+  # Explicit --fresh: show the plan, require the typed phrase.
+  if [[ "$ARCIIN_MODE" == "fresh" ]]; then
+    native_confirm_fresh "$state" || arciin_fail_report "Fresh install cancelled" \
+      "The confirmation phrase was not entered." "Nothing was deleted." "Run ./install.sh --repair to keep your data" "Or ./install.sh --fresh and type ERASE ARCIIN"
     drop_arciin_database
-    RESET_DB=true
-    ARCIIN_DB_CLAIM_STATE="missing"
-    ok "Database wiped — install will continue as a first-run claim"
-  else
-    ok "Keeping existing database — after install open /login (not /setup)"
-    ARCIIN_DB_CLAIM_STATE="claimed"
+    RESET_DB=false
+    ARCIIN_DB_STATE="missing"; ARCIIN_DB_CLAIM_STATE="unclaimed"
+    ok "Arciin database erased — continuing as a fresh install"
+    return 0
   fi
+
+  if [[ "$state" == "foreign" ]]; then
+    arciin_fail_report "An unrelated database is already named 'arciin'" \
+      "It has ${f_tables} tables but no Arciin schema, so Arciin will neither migrate into it nor erase it." \
+      "That database has NOT been touched." \
+      "Rename or remove it yourself (e.g. sudo -u postgres psql -c 'ALTER DATABASE arciin RENAME TO arciin_old')" \
+      "Or, to erase it and install Arciin: ./install.sh --fresh"
+  fi
+
+  # valid / partial: repair is the default; Enter keeps everything.
+  local choice="1"
+  local policy="${ARCIIN_ON_EXISTING_DB:-}"; policy="${policy,,}"
+  if [[ "$policy" == "wipe" || "$policy" == "fresh" || "$policy" == "reset" ]]; then
+    choice="2"
+  elif [[ "$ARCIIN_MODE" != "repair" && -t 0 ]]; then
+    echo -e "  ${BOLD}What would you like to do?${RESET}"
+    echo -e "    ${BOLD}1)${RESET} Repair / keep existing data  ${DIM}[default]${RESET}"
+    echo -e "    ${BOLD}2)${RESET} Fresh install — erase the Arciin database"
+    echo -e "    ${BOLD}3)${RESET} Cancel"
+    read -r -p "  Choice [1]: " choice
+    choice="${choice:-1}"
+  fi
+  case "$choice" in
+    2)
+      native_confirm_fresh "$state" || arciin_fail_report "Fresh install cancelled" \
+        "The confirmation phrase was not entered." "Nothing was deleted." "Run ./install.sh again to repair"
+      drop_arciin_database
+      ARCIIN_MODE="fresh"; RESET_DB=false
+      ARCIIN_DB_STATE="missing"; ARCIIN_DB_CLAIM_STATE="unclaimed"
+      ok "Arciin database erased — continuing as a fresh install" ;;
+    3) echo ""; warn "Cancelled — nothing was changed."; exit 0 ;;
+    *)
+      ARCIIN_MODE="repair"
+      ok "Repairing — the database, files, instance ID, license and settings are kept"
+      native_pre_repair_backup ;;
+  esac
   echo ""
+}
+
+# Shows exactly what --fresh removes and asks for the typed phrase.
+native_confirm_fresh() {
+  local state="$1" storage
+  storage="$(grep '^ARCIIN_DATA_DIR=' "${ROOT_DIR}/.env" 2>/dev/null | cut -d= -f2- | tr -d '"' || true)"
+  echo -e "  ${BOLD}${RED}Fresh install will remove:${RESET}"
+  echo -e "    Database              arciin ${DIM}(${state}; users, libraries, file records, license activation, settings)${RESET}"
+  echo -e "    Database role         arciin"
+  echo -e "    Storage folder        ${GREEN}NOT deleted${RESET} ${DIM}(${storage:-default}); files stay on disk${RESET}"
+  echo -e "    ${DIM}A new instance ID is created, so a paid license must be activated again${RESET}"
+  echo -e "    ${DIM}(release the old server at https://arciin.com/account if it uses your seat).${RESET}"
+  echo ""
+  arciin_confirm_typed "ERASE ARCIIN"
+}
+
+# Before a repair touches the schema or processes: a logical database dump and
+# a copy of .env. Files are not copied — a repair never modifies them.
+native_pre_repair_backup() {
+  local pg_port="${ARCIIN_PG_PORT:-${DEFAULT_PG_PORT}}" storage dir ts
+  storage="$(grep '^ARCIIN_DATA_DIR=' "${ROOT_DIR}/.env" 2>/dev/null | cut -d= -f2- | tr -d '"' || true)"
+  ts="$(date -u +%Y%m%dT%H%M%SZ)"
+  dir="${storage:-${ROOT_DIR}/data/arciin}/backups/repair-${ts}"
+  mkdir -p "$dir" 2>/dev/null || dir="$(dirname "$(arciin_journal_path)")/backups/repair-${ts}"
+  mkdir -p "$dir" && chmod 700 "$dir"
+  if sudo -u postgres env PGPORT="$pg_port" pg_dump -Fc arciin >"${dir}/database.dump" 2>/dev/null && [[ -s "${dir}/database.dump" ]]; then
+    ok "Database backed up before repair: ${dir}/database.dump"
+  else
+    rm -f "${dir}/database.dump"
+    arciin_fail_report "Could not back up the database before repairing" \
+      "pg_dump of 'arciin' failed, and repair does not modify a database it could not back up." \
+      "Nothing was changed." "Check that PostgreSQL is running: sudo systemctl status postgresql" "Then run ./install.sh --repair again"
+  fi
+  [[ -f "${ROOT_DIR}/.env" ]] && cp "${ROOT_DIR}/.env" "${dir}/env.backup" && chmod 600 "${dir}/env.backup"
+  arciin_journal_set "lastRepairBackup" "$dir"
 }
 
 ensure_postgres_role_and_db() {
@@ -1020,7 +1323,8 @@ ensure_postgres_role_and_db() {
 
   local password="${ARCIIN_DB_PASSWORD:-}"
   if [[ -z "$password" ]]; then
-    password="$(arciin_resolve_db_password "${ROOT_DIR}/.env" "${ARCIIN_FRESH_INSTALL:-0}")" \
+    arciin_resolve_db_password_into password "${ROOT_DIR}/.env" "${ARCIIN_FRESH_INSTALL:-0}" \
+      "$(dirname "$(arciin_journal_path)")/env-backups/latest.env" \
       || fail "Could not resolve a database password for the arciin role."
   fi
 
@@ -1030,12 +1334,24 @@ ensure_postgres_role_and_db() {
   fi
 
   if [[ "$role_exists" -eq 0 ]]; then
-    sudo -u postgres env PGPORT="$pg_port" psql -v ON_ERROR_STOP=1 -v pwd="$password" \
-      -c "CREATE ROLE arciin WITH LOGIN PASSWORD :'pwd' CREATEDB;" &>/dev/null
-  elif [[ "${ARCIIN_FRESH_INSTALL:-0}" == "1" || "$RESET_DB" == "true" ]]; then
-    # Fresh claim of this host: the password we just wrote must match the role.
-    sudo -u postgres env PGPORT="$pg_port" psql -v ON_ERROR_STOP=1 -v pwd="$password" \
-      -c "ALTER ROLE arciin WITH LOGIN PASSWORD :'pwd' CREATEDB;" &>/dev/null
+    # On stdin, not -c: psql substitutes :'pwd' only in script input. With -c
+    # the literal :'pwd' reached the server as a syntax error, so a native
+    # install on a brand-new server could never create its role.
+    printf '%s\n' "CREATE ROLE arciin WITH LOGIN PASSWORD :'pwd' CREATEDB;" \
+      | sudo -u postgres env PGPORT="$pg_port" psql -X -q -v ON_ERROR_STOP=1 -v pwd="$password" &>/dev/null
+  else
+    # The role already exists. .env is the source of truth for its password:
+    # if a real login with the .env credentials fails, set the role's password
+    # to match. This touches no data and rotates no secret — it repairs drift
+    # (a restored .env, a re-cloned folder, an earlier half-finished install).
+    local db_url auth
+    db_url="$({ grep '^DATABASE_URL=' "${ROOT_DIR}/.env" 2>/dev/null || true; } | cut -d= -f2- | tr -d '"')"
+    auth="$(arciin_probe_db_auth "$db_url" 2>/dev/null || true)"
+    if [[ "$auth" != "ok" ]]; then
+      printf '%s\n' "ALTER ROLE arciin WITH LOGIN PASSWORD :'pwd' CREATEDB;" \
+        | sudo -u postgres env PGPORT="$pg_port" psql -X -q -v ON_ERROR_STOP=1 -v pwd="$password" &>/dev/null
+      [[ "$auth" == "auth_failed" ]] && ok "Database role password realigned with .env (no data changed)"
+    fi
   fi
 
   if sudo -u postgres env PGPORT="$pg_port" psql -tAc "SELECT 1 FROM pg_database WHERE datname='arciin'" | grep -q 1; then
@@ -1045,7 +1361,19 @@ ensure_postgres_role_and_db() {
   fi
 
   sudo -u postgres env PGPORT="$pg_port" psql -d arciin -c "GRANT ALL ON SCHEMA public TO arciin;" &>/dev/null || true
-  ok "PostgreSQL role/database ready (port ${pg_port})"
+
+  # Proof, not a guess: log in with exactly what the app will use.
+  local final_url final_auth
+  final_url="$({ grep '^DATABASE_URL=' "${ROOT_DIR}/.env" 2>/dev/null || true; } | cut -d= -f2- | tr -d '"')"
+  final_auth="$(arciin_probe_db_auth "$final_url" 2>/dev/null || true)"
+  if [[ "$final_auth" != "ok" ]]; then
+    arciin_fail_report "Arciin cannot log in to PostgreSQL (${final_auth})" \
+      "PostgreSQL is running, but a login with the credentials in .env failed." \
+      "Your data has NOT been deleted." \
+      "Run: bash scripts/arciin-doctor.sh" "Then: ./install.sh --repair"
+  fi
+  arciin_journal_step "database"
+  ok "PostgreSQL role/database ready (port ${pg_port}) — authenticated login verified"
 }
 
 # ── Preconditions ─────────────────────────────────────────────────────────────
@@ -1102,13 +1430,133 @@ fi
 
 require_sudo_credentials
 
+# ── Preflight: machine resources ──────────────────────────────────────────────
+# A native install builds the web app on this machine. Next.js needs memory to
+# do that; when it runs out, the kernel kills the build and the install stops
+# with a message nobody can act on. Say so up front instead.
+preflight_resources() {
+  local arch mem_kb swap_kb mem_mb swap_mb free_kb free_gb
+  arch="$(uname -m)"
+  case "$arch" in
+    x86_64|amd64|aarch64|arm64) ok "Architecture: ${arch}" ;;
+    *) arciin_fail_report "Unsupported CPU architecture (${arch})" \
+         "Arciin's native install supports x86_64 and arm64." \
+         "Nothing was changed." "Use a 64-bit x86 or ARM server." ;;
+  esac
+  free_kb="$(df -Pk "${ROOT_DIR}" | awk 'NR==2 {print $4}')"
+  free_gb=$(( ${free_kb:-0} / 1024 / 1024 ))
+  if (( free_gb < 6 )); then
+    arciin_fail_report "Not enough free disk space (${free_gb} GB free)" \
+      "A native install needs about 6 GB for dependencies and the build, plus room for your files." \
+      "Nothing was changed." "Free some space on $(df -P "${ROOT_DIR}" | awk 'NR==2 {print $6}') and run ./install.sh again."
+  fi
+  ok "Disk: ${free_gb} GB free"
+  mem_kb="$(awk '/MemTotal/ {print $2}' /proc/meminfo)"
+  swap_kb="$(awk '/SwapTotal/ {print $2}' /proc/meminfo)"
+  mem_mb=$(( ${mem_kb:-0} / 1024 )); swap_mb=$(( ${swap_kb:-0} / 1024 ))
+  if (( mem_mb + swap_mb < 3500 )); then
+    warn "Memory: ${mem_mb} MB RAM + ${swap_mb} MB swap — building the web app needs about 3.5 GB."
+    echo -e "    ${DIM}The build is likely to be killed for lack of memory. Options:${RESET}"
+    echo -e "    ${DIM}  • Docker uses prebuilt images and needs no build:${RESET} ${BOLD}./install.sh --docker${RESET}"
+    echo -e "    ${DIM}  • Add swap yourself (e.g. 4 GB), then run ./install.sh again${RESET}"
+    if [[ -t 0 ]] && [[ "${ARCIIN_ALLOW_LOW_MEMORY:-0}" != "1" ]]; then
+      read -r -p "  Continue the native install anyway? [y/N]: " _lowmem
+      [[ "${_lowmem,,}" == y || "${_lowmem,,}" == yes ]] || \
+        arciin_fail_report "Install stopped before building (low memory)" \
+          "Building Arciin needs more memory than this machine has." \
+          "Nothing was changed." "Run ./install.sh --docker" "Or add swap and run ./install.sh again"
+    elif [[ "${ARCIIN_ALLOW_LOW_MEMORY:-0}" != "1" ]]; then
+      arciin_fail_report "Install stopped before building (low memory)" \
+        "Building Arciin needs about 3.5 GB of RAM + swap; this machine has $(( mem_mb + swap_mb )) MB." \
+        "Nothing was changed." "Run ./install.sh --docker" "Or set ARCIIN_ALLOW_LOW_MEMORY=1 to try anyway"
+    fi
+  else
+    ok "Memory: ${mem_mb} MB RAM + ${swap_mb} MB swap"
+  fi
+}
+
+# ── Uninstall ─────────────────────────────────────────────────────────────────
+# Removing the application and deleting data are different actions. Plain
+# --uninstall stops and removes Arciin's PM2 processes and keeps everything
+# else; --delete-data (typed confirmation) drops the database and .env;
+# --delete-storage (a second typed confirmation) deletes files.
+native_backup_env() {
+  local env_file="${ROOT_DIR}/.env" dir
+  [[ -f "$env_file" ]] || return 0
+  dir="$(dirname "$(arciin_journal_path)")/env-backups"
+  mkdir -p "$dir" && chmod 700 "$dir"
+  cp "$env_file" "${dir}/env-$(date -u +%Y%m%dT%H%M%SZ)" && cp "$env_file" "${dir}/latest.env"
+  chmod 600 "${dir}"/* 2>/dev/null || true
+  echo "${dir}/latest.env"
+}
+
+native_uninstall() {
+  step "Uninstall"
+  local backup storage
+  storage="$(grep '^ARCIIN_DATA_DIR=' "${ROOT_DIR}/.env" 2>/dev/null | cut -d= -f2- | tr -d '"' || true)"
+  backup="$(native_backup_env)"
+  [[ -n "$backup" ]] && ok ".env backed up to ${backup}"
+  if command -v pm2 >/dev/null 2>&1; then
+    local name
+    for name in arciin-web arciin-api arciin-worker; do
+      pm2 delete "$name" >/dev/null 2>&1 && ok "Removed PM2 process ${name}" || true
+    done
+    pm2 save >/dev/null 2>&1 || true
+  fi
+  arciin_journal_set "installed" "no"
+  arciin_journal_set "uninstalledAt" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+  if [[ "$ARCIIN_DELETE_DATA" != "1" ]]; then
+    echo ""
+    ok "Arciin's services are removed. Kept: database 'arciin', files in ${storage:-the storage folder}, .env and its backup."
+    echo -e "    ${DIM}Reinstall later with ./install.sh — it will find and keep this data.${RESET}"
+    echo -e "    ${DIM}To delete the data too: ./install.sh --uninstall --delete-data${RESET}"
+    exit 0
+  fi
+
+  echo ""
+  echo -e "  ${BOLD}${RED}--delete-data will permanently remove:${RESET}"
+  echo -e "    PostgreSQL database   arciin (and its role)"
+  echo -e "    Configuration         ${ROOT_DIR}/.env  ${DIM}(a backup stays at ${backup:-—})${RESET}"
+  if [[ "$ARCIIN_DELETE_STORAGE" == "1" ]]; then
+    echo -e "    Storage folder        ${storage:-—}  ${DIM}(confirmed separately)${RESET}"
+  else
+    echo -e "    Storage folder        ${GREEN}NOT deleted${RESET} ${DIM}(${storage:-—}; add --delete-storage to delete it)${RESET}"
+  fi
+  echo ""
+  arciin_confirm_typed "ERASE ARCIIN" || { warn "Cancelled — nothing was deleted."; exit 1; }
+  drop_arciin_database
+  rm -f "${ROOT_DIR}/.env"
+  ok "Database and .env removed"
+  if [[ "$ARCIIN_DELETE_STORAGE" == "1" && -n "$storage" && -d "$storage" ]]; then
+    echo -e "  ${BOLD}${RED}Delete every file in ${storage}?${RESET}"
+    if arciin_confirm_typed "DELETE FILES"; then
+      rm -rf -- "$storage" && ok "Storage folder deleted"
+    else
+      warn "Storage folder kept."
+    fi
+  fi
+  exit 0
+}
+
+if [[ "$ARCIIN_MODE" == "uninstall" ]]; then
+  native_uninstall
+fi
+
+step "Preflight"
+preflight_resources
+arciin_journal_set "mode" "native"
+arciin_journal_set "installDir" "${ROOT_DIR}"
+arciin_journal_set "version" "$(node -p "require('${ROOT_DIR}/package.json').version" 2>/dev/null || grep -m1 '"version"' "${ROOT_DIR}/package.json" | cut -d'"' -f4)"
+arciin_journal_set "releaseSha" "$(git -C "${ROOT_DIR}" rev-parse HEAD 2>/dev/null || echo unknown)"
+
 # ── 1. System packages ────────────────────────────────────────────────────────
 step "System packages"
 
 _apt_install_system_deps() {
   local log held
   log="$(mktemp)"
-  if sudo apt-get install -y -qq \
+  if sudo env DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a apt-get install -y -qq \
     ca-certificates curl git gnupg build-essential unzip python3 openssl \
     libssl-dev pkg-config libatomic1 lsof \
     ffmpeg poppler-utils redis-server postgresql postgresql-contrib >"$log" 2>&1; then
@@ -1173,10 +1621,14 @@ if [[ "${ARCIIN_SKIP_SYSTEM_PACKAGES:-0}" == "1" ]]; then
 else
   spin_ok "Updating package lists..." "Package lists updated" sudo apt-get update -qq
 
-  if [[ "${ARCIIN_UPGRADE_SYSTEM:-1}" == "1" ]]; then
-    spin_ok "Upgrading installed packages..." "System packages upgraded" sudo apt-get upgrade -y -qq
+  # Installing Arciin does not upgrade the whole system. That took minutes,
+  # could pull a new kernel, and could stop on needrestart's prompt.
+  if [[ "${ARCIIN_UPGRADE_SYSTEM:-0}" == "1" ]]; then
+    spin_ok "Upgrading installed packages..." "System packages upgraded" \
+      sudo env DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a apt-get upgrade -y -qq \
+        -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold
   else
-    ok "Skipping apt upgrade (set ARCIIN_UPGRADE_SYSTEM=1 to enable)"
+    ok "Only Arciin's dependencies are installed (ARCIIN_UPGRADE_SYSTEM=1 also upgrades the system)"
   fi
 
   doing "Installing dependencies (curl, git, ffmpeg, poppler, PostgreSQL, Redis)..."
@@ -1238,10 +1690,14 @@ fi
 step "Environment"
 
 ensure_env_file
+ensure_native_env_keys
 ensure_arciin_storage_path
 ensure_session_secret
 ensure_setup_token
 ensure_production_secrets
+_env_backup_path="$(native_backup_env)"
+[[ -n "$_env_backup_path" ]] && ok ".env backed up (${_env_backup_path}) — used to recover if .env is ever lost"
+arciin_journal_step "environment"
 stop_existing_arciin
 configure_app_ports
 
@@ -1282,6 +1738,7 @@ if [[ "${ARCIIN_SKIP_DB_INIT:-0}" == "1" ]]; then
 else
   spin_ok "Applying migrations and seed..." "Database ready" \
     bash "${ROOT_DIR}/scripts/arciin-init.sh"
+  arciin_journal_step "migrations"
 fi
 
 # Re-check after migrations/seed so the summary matches reality.
@@ -1343,6 +1800,15 @@ fi
 # ── 12. Summary ───────────────────────────────────────────────────────────────
 step "Ready"
 
+echo -e "  ${BOLD}License service${RESET} ${DIM}(connectivity only — no key needed to install)${RESET}"
+( set -a; . "${ROOT_DIR}/.env" 2>/dev/null; set +a; node "${ROOT_DIR}/scripts/license-preflight.mjs" ) \
+  || warn "License service not reachable from this server — Arciin works on the free plan; paid activation will fail until this is fixed (bash scripts/arciin-doctor.sh)"
+arciin_journal_set "installed" "yes"
+arciin_journal_set "installedAt" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+arciin_journal_set "webPort" "${ARCIIN_WEB_PORT:-}"
+arciin_journal_set "apiPort" "${ARCIIN_API_PORT:-}"
+arciin_journal_step "complete"
+
 ENV_FILE="${ROOT_DIR}/.env"
 SETUP_TOKEN="$(grep '^ARCIIN_SETUP_TOKEN=' "$ENV_FILE" 2>/dev/null | cut -d= -f2- || echo 'dev-token')"
 PUBLIC_URL="$(grep '^ARCIIN_PUBLIC_URL=' "$ENV_FILE" 2>/dev/null | cut -d= -f2- || echo "http://localhost:${DEFAULT_WEB_PORT}")"
@@ -1386,7 +1852,7 @@ if [[ "$ARCIIN_DB_CLAIM_STATE" == "claimed" ]]; then
   echo -e "    ${BGREEN}2.${RESET}  This instance is ${BOLD}already claimed${RESET} (owner account exists in PostgreSQL)."
   echo -e "    ${BGREEN}3.${RESET}  Open sign-in:  ${BOLD}${LOGIN_URL}${RESET}"
   echo -e "    ${DIM}   Use the owner email/password created when this database was first claimed.${RESET}"
-  echo -e "    ${DIM}   Need a true first-run again? ${BOLD}bash install.sh --reset-db${RESET} or ${BOLD}bash scripts/reset-instance.sh${RESET}"
+  echo -e "    ${DIM}   Need a true first-run again? ${BOLD}./install.sh --fresh${RESET} ${DIM}(typed confirmation; files are kept)${RESET}"
   echo ""
   echo -e "  ${BOLD}${WHITE}Why not /setup?${RESET}"
   echo -e "    ${DIM}Setup is only for unclaimed databases. Re-installing code does not erase Postgres.${RESET}"
@@ -1421,15 +1887,13 @@ echo -e "    After upgrades: ${DIM}bash install.sh${RESET} or ${DIM}pnpm exec pr
 echo -e "    Large uploads need ${DIM}MAX_UPLOAD_SIZE_MB${RESET} in .env (default 20480) and ${DIM}pm2 restart arciin-web${RESET} after changes."
 echo -e "    Profile photos: ${DIM}\${ARCIIN_DATA_DIR}/avatars${RESET} — created during init."
 echo ""
-echo -e "  ${BOLD}${WHITE}Options${RESET}"
-echo -e "    ${DIM}bash install.sh --reset-db${RESET}            Drop DB and re-run migrations (true first-run)"
-echo -e "    ${DIM}ARCIIN_ON_EXISTING_DB=wipe ./install.sh${RESET}  Auto-wipe if a previous claim is detected"
-echo -e "    ${DIM}ARCIIN_ON_EXISTING_DB=keep ./install.sh${RESET}  Keep previous claim without prompting"
-echo -e "    ${DIM}ARCIIN_SKIP_PM2=1 ./install.sh${RESET}        Install without PM2"
-echo -e "    ${DIM}ARCIIN_SKIP_FIREWALL=1 ./install.sh${RESET}   Skip UFW configuration"
-echo -e "    ${DIM}ARCIIN_UPGRADE_SYSTEM=0 ./install.sh${RESET}   Skip apt upgrade"
-echo -e "    ${DIM}./install.sh --docker${RESET}                  Docker (avoid host apt stack)"
-echo -e "    ${DIM}ARCIIN_SKIP_SYSTEM_PACKAGES=1 ./install.sh${RESET}  Skip apt deps (native only)"
+echo -e "  ${BOLD}${WHITE}Maintenance${RESET}"
+echo -e "    ${DIM}bash scripts/arciin-doctor.sh${RESET}        Check everything (services, database login, storage, boot, license)"
+echo -e "    ${DIM}./install.sh --repair${RESET}               Repair / upgrade — keeps all data, secrets and license"
+echo -e "    ${DIM}./install.sh --fresh${RESET}                Erase the Arciin database and start over (typed confirmation; files kept)"
+echo -e "    ${DIM}./install.sh --uninstall${RESET}            Remove Arciin's services; keep database, files and .env"
+echo -e "    ${DIM}./install.sh --docker${RESET}               Use Docker instead"
+echo -e "    ${DIM}Moving a paid license to a new server? Release the old one at https://arciin.com/account${RESET}"
 echo ""
 
 maybe_offer_mobile_install() {
