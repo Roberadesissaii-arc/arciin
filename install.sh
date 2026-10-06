@@ -102,7 +102,13 @@ USAGE
 done
 
 if [[ "${ARCIIN_INSTALL_MODE:-}" == "docker" ]]; then
-  exec "${ROOT_DIR}/scripts/docker-setup.sh" "$@"
+  # Same modes, same meaning: --repair, --fresh, --uninstall, --delete-data,
+  # --delete-storage and --allow-root-storage pass straight through.
+  _docker_args=()
+  for _arg in "$@"; do
+    case "$_arg" in --docker|-d|--native|--rebuild) ;; *) _docker_args+=("$_arg") ;; esac
+  done
+  exec "${ROOT_DIR}/scripts/docker-setup.sh" "${_docker_args[@]}"
 fi
 DEFAULT_NODE_MAJOR=24
 DEFAULT_PNPM_VERSION=10.32.1

@@ -191,9 +191,10 @@ describe("install scripts keep internal vs customer ports distinct", () => {
   })
 
   it("docker setup advertises Caddy HTTP, not :3000", () => {
-    const setup = readFileSync(path.join(ROOT, "scripts/docker-setup.sh"), "utf8")
-    expect(setup).toMatch(/lan_public_url="http:\/\/\$\{LAN_IP\}"/)
-    expect(setup).toMatch(/lan_public_url="http:\/\/\$\{LAN_IP\}:\$\{http_port\}"/)
-    expect(setup).not.toMatch(/ARCIIN_PUBLIC_URL" "http:\/\/\$\{LAN_IP\}:3000"/)
+    // v1.1.4: the canonical Docker installer writes the LAN URL on Caddy's port.
+    const setup = readFileSync(path.join(ROOT, "scripts/docker-install.sh"), "utf8")
+    expect(setup).toMatch(/url="http:\/\/\$\{lan_ip\}"/)
+    expect(setup).toMatch(/url="http:\/\/\$\{lan_ip\}:\$\{HTTP_PORT\}"/)
+    expect(setup).not.toMatch(/\$\{lan_ip\}:3000/)
   })
 })
