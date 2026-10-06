@@ -1,0 +1,119 @@
+name: Release assets
+
+# Publishes the installer release assets — stable.json, the one-liner
+# bootstrapper, docker-install.sh and its libraries, the production Compose
+# file, Caddyfile and SHA256SUMS — to the GitHub Release of a version tag.
+#
+# Gate: runs only after the Docker workflow built all three images for the
+# tag, and refuses unless CI, Install (Docker) and Install (VM) succeeded for
+# the tagged commit and every image exists, carries the right version label,
+# and resolves to a digest. stable.json pins those digests.
+#
+# A release that already has a stable.json is never modified: published
+# manifests are immutable (frozen releases stay frozen).
+
+on:
+  workflow_run:
+    workflows: [Docker]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Version tag, e.g. v1.1.4"
+        required: true
+
+permissions:
+  contents: write
+  actions: read
+  packages: read
+
+jobs:
+  publish:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' && startsWith(github.event.workflow_run.head_branch, 'v'))
+    runs-on: ubuntu-24.04
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      REGISTRY: ghcr.io/roberadesissaii-arc
+    steps:
+      - name: Resolve tag and commit
+        id: tag
+        run: |
+          set -euo pipefail
+          tag="${{ github.event.inputs.tag || github.event.workflow_run.head_branch }}"
+          [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "not a release tag: $tag"; exit 1; }
+          sha="$(gh api "repos/${{ github.repository }}/commits/$tag" --jq .sha)"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.tag.outputs.sha }}
+
+      - name: Gate — CI and install evidence for this exact commit
+        run: |
+          set -euo pipefail
+          sha="${{ steps.tag.outputs.sha }}"
+          for wf in CI "Install (Docker)" "Install (VM)" Docker; do
+            ok="$(gh api "repos/${{ github.repository }}/actions/runs?head_sha=$sha&per_page=100" \
+              --jq "[.workflow_runs[] | select(.name == \"$wf\" and .conclusion == \"success\")] | length")"
+            if [[ "$ok" -lt 1 ]]; then echo "::error::$wf has no successful run for $sha"; exit 1; fi
+            echo "✔ $wf"
+          done
+
+      - name: Refuse to modify a published manifest
+        run: |
+          if gh release view "${{ steps.tag.outputs.tag }}" --json assets --jq '.assets[].name' 2>/dev/null | grep -qx stable.json; then
+            echo "::error::${{ steps.tag.outputs.tag }} already has stable.json — published manifests are immutable"
+            exit 1
+          fi
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Verify all three images and read their digests
+        id: images
+        run: |
+          set -euo pipefail
+          v="${{ steps.tag.outputs.version }}"
+          for svc in web api worker; do
+            ref="${REGISTRY}/arciin-${svc}:${v}"
+            digest="$(docker buildx imagetools inspect "$ref" --format '{{json .Manifest}}' | jq -r .digest)"
+            [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::no digest for $ref"; exit 1; }
+            docker pull -q "${ref}@${digest}" >/dev/null
+            label="$(docker image inspect -f '{{index .Config.Labels "org.opencontainers.image.version"}}' "${ref}@${digest}")"
+            [[ "${label#v}" == "$v" ]] || { echo "::error::$ref is labelled '$label', expected $v"; exit 1; }
+            revision="$(docker image inspect -f '{{index .Config.Labels "org.opencontainers.image.revision"}}' "${ref}@${digest}")"
+            [[ "$revision" == "${{ steps.tag.outputs.sha }}" ]] || { echo "::error::$ref was built from $revision, not ${{ steps.tag.outputs.sha }}"; exit 1; }
+            echo "${svc}=${digest}" >> "$GITHUB_OUTPUT"
+            echo "✔ $ref @ $digest"
+          done
+
+      - name: Build assets and stable.json
+        run: |
+          set -euo pipefail
+          tag="${{ steps.tag.outputs.tag }}"
+          bash scripts/stage-release-assets.sh dist/release
+          node scripts/release-manifest.mjs --version "${tag#v}" --release-sha "${{ steps.tag.outputs.sha }}" \
+            --registry "$REGISTRY" \
+            --digest-web "${{ steps.images.outputs.web }}" \
+            --digest-api "${{ steps.images.outputs.api }}" \
+            --digest-worker "${{ steps.images.outputs.worker }}" \
+            --assets-dir dist/release \
+            --assets-base "https://github.com/${{ github.repository }}/releases/download/${tag}/" \
+            --out dist/release/stable.json
+          (cd dist/release && sha256sum * > SHA256SUMS)
+          cat dist/release/stable.json
+
+      - name: Attach to the GitHub Release (draft if it does not exist yet)
+        run: |
+          set -euo pipefail
+          tag="${{ steps.tag.outputs.tag }}"
+          if ! gh release view "$tag" >/dev/null 2>&1; then
+            notes="docs/releases/${tag}.md"
+            [[ -f "$notes" ]] || { notes="$RUNNER_TEMP/notes.md"; echo "Release ${tag}" >"$notes"; }
+            gh release create "$tag" --draft --title "Arciin ${tag#v}" --notes-file "$notes"
+          fi
+          gh release upload "$tag" dist/release/*
+          echo "Assets attached to $tag. The one-liner follows the latest published (non-draft) release."

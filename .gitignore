@@ -114,3 +114,5 @@ firebase-adminsdk*.json
 *.p8
 *.p12
 *.pfx
+.smoke/
+install-logs/
