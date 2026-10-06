@@ -91,14 +91,24 @@ RUN pnpm db:generate
 RUN for d in node_modules/.pnpm/@prisma+engines@*/node_modules/@prisma/engines; do \
       (cd "$d" && node scripts/postinstall.js); \
     done \
-    && ls node_modules/.pnpm/@prisma+engines@*/node_modules/@prisma/engines/schema-engine-* >/dev/null \
-    && mkdir -p /app/.prisma-engines \
-    && cp node_modules/.pnpm/@prisma+engines@*/node_modules/@prisma/engines/schema-engine-* /app/.prisma-engines/schema-engine \
-    && chmod 755 /app/.prisma-engines/schema-engine \
-    # Belt and braces: whatever Prisma still wants to write there, any uid may.
-    && chmod -R a+rwX node_modules/.pnpm/@prisma+engines@*/node_modules/@prisma/engines
-# Point the CLI at the baked engine so it never looks for one to download.
-ENV PRISMA_SCHEMA_ENGINE_BINARY=/app/.prisma-engines/schema-engine
+    && ls node_modules/.pnpm/@prisma+engines@*/node_modules/@prisma/engines/schema-engine-* >/dev/null
+# Both engines get a fixed home outside node_modules, read+execute for every
+# uid, writable by none. With the paths pinned below the CLI and the client use
+# exactly these files and never look for one to download or replace. Nothing
+# here is made writable: ARCIIN_PUID may be any uid.
+USER root
+RUN mkdir -p /app/.prisma-engines \
+    && cp node_modules/.pnpm/@prisma+engines@*/node_modules/@prisma/engines/schema-engine-debian-openssl-3.0.x \
+          /app/.prisma-engines/schema-engine \
+    && cp node_modules/.prisma/client/libquery_engine-debian-openssl-3.0.x.so.node \
+          /app/.prisma-engines/libquery_engine.so.node \
+    && chown -R root:root /app/.prisma-engines \
+    && chmod 0755 /app/.prisma-engines /app/.prisma-engines/schema-engine \
+    && chmod 0644 /app/.prisma-engines/libquery_engine.so.node
+USER 1000:1000
+ENV PRISMA_SCHEMA_ENGINE_BINARY=/app/.prisma-engines/schema-engine \
+    PRISMA_QUERY_ENGINE_LIBRARY=/app/.prisma-engines/libquery_engine.so.node \
+    PRISMA_ENGINES_CHECKSUM_IGNORE_MISSING=1
 
 # ─────────────────────────────────────────────────────────────────────────────
 # web-builder — the only stage that needs the dev toolchain.
