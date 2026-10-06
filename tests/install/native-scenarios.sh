@@ -74,7 +74,10 @@ ENV
   install fresh; local rc=$?
   if [[ "${ARCIIN_SCENARIO_DOCKER_ENV:-0}" == "1" ]]; then
     check "Docker-style .env: no unbound variable" "! grep -q 'unbound variable' $LOGS/fresh.log"
-    check "Docker-style .env: credential case named, not a crash" "grep -q '.env has no DATABASE_URL' $LOGS/fresh.log"
+    # Missing settings are filled from .env.example first, so the installer
+    # names either case; both mean "new password generated, role re-aligned".
+    check "Docker-style .env: credential case named, not a crash" \
+      "grep -qE '.env has no DATABASE_URL|DATABASE_URL in .env still holds the example password' $LOGS/fresh.log"
   fi
   check "fresh native install exits 0" "[[ $rc == 0 ]]"
   check "API, web and worker online and healthy" "wait_until 120 healthy"

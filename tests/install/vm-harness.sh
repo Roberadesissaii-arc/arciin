@@ -83,7 +83,9 @@ run_native() {
   as_user "$base ARCIIN_SCENARIO_DOCKER_ENV=$docker_env bash tests/install/native-scenarios.sh fresh"
   if [[ -n "${ARCIIN_VM_AUTHORITY:-}" ]]; then
     # Wait for the restarted API before activating (it answered HTTP 000).
-    license_env_lines | as_user "cat >> .env && pm2 restart arciin-api >/dev/null && for i in \$(seq 1 60); do curl -fsS http://127.0.0.1:4000/api/health >/dev/null 2>&1 && break; sleep 2; done"
+    # Replace, not append: dotenv keeps the first occurrence, and .env already
+    # carries the default authority from .env.example.
+    license_env_lines | as_user "sed -i '/^ARCIIN_LICENSE_SERVER_URL=/d;/^ARCIIN_LICENSE_PUBLIC_KEYS=/d' .env && cat >> .env && pm2 restart arciin-api >/dev/null && for i in \$(seq 1 60); do curl -fsS http://127.0.0.1:4000/api/health >/dev/null 2>&1 && break; sleep 2; done"
     as_user "$base bash tests/install/native-scenarios.sh license_seat"
   fi
   as_user "$base bash tests/install/native-scenarios.sh repair credential_drift"
@@ -103,7 +105,7 @@ run_docker() {
   local run="cd /home/ubuntu/arciin && $base bash tests/install/docker-scenarios.sh"
   in_vm bash -c "$run fresh"
   if [[ -n "${ARCIIN_VM_AUTHORITY:-}" ]]; then
-    license_env_lines | in_vm bash -c "cat >> /opt/arciin/.env"
+    license_env_lines | in_vm bash -c "sed -i '/^ARCIIN_LICENSE_SERVER_URL=/d;/^ARCIIN_LICENSE_PUBLIC_KEYS=/d' /opt/arciin/.env && cat >> /opt/arciin/.env"
   fi
   in_vm bash -c "$run rerun doctor claim"
   local probe='cd /opt/arciin && [ "$(docker compose ps --format "{{.Health}}" | grep -c "^healthy$")" -ge 5 ] && curl -fsS http://127.0.0.1:8080/api/health'
