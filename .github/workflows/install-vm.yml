@@ -43,8 +43,9 @@ jobs:
       # dropped ("not acquired by Runner"). Two at a time finishes reliably.
       max-parallel: 2
       matrix:
-        release: ["24.04", "26.04"]
-        mode: [native, docker]
+        # INTEGRATION BRANCH ONLY: targeted rerun of the one failing leg.
+        release: ["26.04"]
+        mode: [native]
     steps:
       - uses: actions/checkout@v4
 
