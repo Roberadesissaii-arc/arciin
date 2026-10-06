@@ -99,7 +99,7 @@ RUN for d in node_modules/.pnpm/@prisma+engines@*/node_modules/@prisma/engines; 
 USER root
 RUN set -e; \
     se="$(ls node_modules/.pnpm/@prisma+engines@*/node_modules/@prisma/engines/schema-engine-*)"; \
-    qe="$(ls node_modules/.prisma/client/libquery_engine-*.so.node)"; \
+    qe="$(find node_modules/.prisma node_modules/.pnpm -path '*/.prisma/client/libquery_engine-*.so.node' 2>/dev/null | head -1)"; \
     { [ "$(printf '%s\n' "$se" | wc -l)" -eq 1 ] && [ "$(printf '%s\n' "$qe" | wc -l)" -eq 1 ]; } \
       || { echo "expected exactly one schema and one query engine"; exit 1; }; \
     echo "baking $se and $qe"; \
