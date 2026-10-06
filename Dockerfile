@@ -91,14 +91,29 @@ RUN pnpm db:generate
 RUN for d in node_modules/.pnpm/@prisma+engines@*/node_modules/@prisma/engines; do \
       (cd "$d" && node scripts/postinstall.js); \
     done \
-    && ls node_modules/.pnpm/@prisma+engines@*/node_modules/@prisma/engines/schema-engine-* >/dev/null \
-    && mkdir -p /app/.prisma-engines \
-    && cp node_modules/.pnpm/@prisma+engines@*/node_modules/@prisma/engines/schema-engine-* /app/.prisma-engines/schema-engine \
-    && chmod 755 /app/.prisma-engines/schema-engine \
-    # Belt and braces: whatever Prisma still wants to write there, any uid may.
-    && chmod -R a+rwX node_modules/.pnpm/@prisma+engines@*/node_modules/@prisma/engines
-# Point the CLI at the baked engine so it never looks for one to download.
-ENV PRISMA_SCHEMA_ENGINE_BINARY=/app/.prisma-engines/schema-engine
+    && ls node_modules/.pnpm/@prisma+engines@*/node_modules/@prisma/engines/schema-engine-* >/dev/null
+# Both engines get a fixed home outside node_modules, read+execute for every
+# uid, writable by none. With the paths pinned below the CLI and the client use
+# exactly these files and never look for one to download or replace. Nothing
+# here is made writable: ARCIIN_PUID may be any uid.
+USER root
+RUN set -e; \
+    se="$(ls node_modules/.pnpm/@prisma+engines@*/node_modules/@prisma/engines/schema-engine-*)"; \
+    qe="$(ls node_modules/.prisma/client/libquery_engine-*.so.node)"; \
+    { [ "$(printf '%s\n' "$se" | wc -l)" -eq 1 ] && [ "$(printf '%s\n' "$qe" | wc -l)" -eq 1 ]; } \
+      || { echo "expected exactly one schema and one query engine"; exit 1; }; \
+    echo "baking $se and $qe"; \
+    mkdir -p /app/.prisma-engines; \
+    cp "$se" /app/.prisma-engines/schema-engine; \
+    cp "$qe" /app/.prisma-engines/libquery_engine.so.node; \
+    chown -R root:root /app/.prisma-engines; \
+    chmod 0755 /app/.prisma-engines /app/.prisma-engines/schema-engine; \
+    chmod 0644 /app/.prisma-engines/libquery_engine.so.node; \
+    /app/.prisma-engines/schema-engine --version
+USER 1000:1000
+ENV PRISMA_SCHEMA_ENGINE_BINARY=/app/.prisma-engines/schema-engine \
+    PRISMA_QUERY_ENGINE_LIBRARY=/app/.prisma-engines/libquery_engine.so.node \
+    PRISMA_ENGINES_CHECKSUM_IGNORE_MISSING=1
 
 # ─────────────────────────────────────────────────────────────────────────────
 # web-builder — the only stage that needs the dev toolchain.

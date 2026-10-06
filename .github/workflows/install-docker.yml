@@ -112,6 +112,32 @@ jobs:
           # Only the registry copies remain; the installer must pull by digest.
           docker image prune -af >/dev/null
 
+      - name: Prisma engines are baked — migrate as uid 1000 and 1001 with no route out
+        run: |
+          set -euo pipefail
+          img="localhost:5000/arciin-api:${{ steps.version.outputs.version }}"
+          docker pull -q "$img" >/dev/null
+          docker pull -q postgres:16-alpine >/dev/null
+          # --internal: no egress, so any engine download would fail the migration.
+          docker network create --internal prisma-proof >/dev/null
+          docker run -d --name pp-db --network prisma-proof -e POSTGRES_USER=arciin \
+            -e POSTGRES_PASSWORD=pp -e POSTGRES_DB=arciin postgres:16-alpine >/dev/null
+          until docker exec pp-db pg_isready -U arciin >/dev/null 2>&1; do sleep 1; done
+          for uid in 1000 1001; do
+            docker exec pp-db psql -qU arciin -d arciin -c "CREATE DATABASE arciin_${uid}"
+            docker run --rm --network prisma-proof --user "${uid}:${uid}" \
+              -e DATABASE_URL="postgresql://arciin:pp@pp-db:5432/arciin_${uid}" \
+              "$img" sh -c 'cd /app && pnpm exec prisma migrate deploy' 2>&1 | tee "migrate-${uid}.log"
+            grep -q "All migrations have been successfully applied\|No pending migrations" "migrate-${uid}.log"
+            if grep -qiE "download|can.t write" "migrate-${uid}.log"; then echo "::error::uid ${uid} tried to fetch or write an engine"; exit 1; fi
+            echo "✔ uid ${uid}: migrations applied offline with the baked engine"
+          done
+          ww="$(docker run --rm --user 1001:1001 "$img" sh -c 'find /app -xdev -perm -0002 \( -type f -o -type d \) 2>/dev/null | head -20')"
+          if [ -n "$ww" ]; then echo "::error::world-writable paths in the image:"; echo "$ww"; exit 1; fi
+          docker run --rm "$img" sh -c 'ls -l /app/.prisma-engines; echo "PRISMA_SCHEMA_ENGINE_BINARY=$PRISMA_SCHEMA_ENGINE_BINARY"'
+          echo "✔ no world-writable files or directories under /app"
+          docker rm -f pp-db >/dev/null; docker network rm prisma-proof >/dev/null
+
       - name: Run scenarios
         env:
           ARCIIN_SCENARIO_CONFIRM: disposable
