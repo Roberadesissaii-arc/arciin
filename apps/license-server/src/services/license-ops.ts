@@ -1,4 +1,5 @@
 import {
+  ARCIIN_ACCOUNT_URL,
   buildHostedTokenPayload,
   generateHostedLicenseKey,
   hashLicenseKey,
@@ -8,9 +9,11 @@ import {
   serverLimitNumber,
   signHostedLicenseToken,
   type HostedLicenseTokenPayload,
+  type LicenseBoundServer,
   type LicensePlanId,
   type LicenseServerActivateResponse,
   type LicenseServerDemoResponse,
+  type LicenseServerLimitDetails,
   type LicenseServerStatusResponse,
   verifyHostedLicenseToken,
 } from "@arciin/config"
@@ -71,6 +74,32 @@ async function countActiveActivations(licenseId: string): Promise<number> {
   return prisma.activation.count({
     where: { licenseId, deactivatedAt: null },
   })
+}
+
+/**
+ * The servers holding this licence's seats, for the holder of the key. Only
+ * what they need to recognise each one — the name they gave it, a short id,
+ * its version and when it last checked in. Never a hostname.
+ */
+async function serverLimitDetails(licenseId: string, serverLimit: number): Promise<LicenseServerLimitDetails> {
+  const active = await prisma.activation.findMany({
+    where: { licenseId, deactivatedAt: null },
+    orderBy: { activatedAt: "asc" },
+    take: 50,
+  })
+  return {
+    serverLimit,
+    manageUrl: ARCIIN_ACCOUNT_URL,
+    servers: active.map(
+      (row): LicenseBoundServer => ({
+        name: row.instanceName,
+        instanceIdShort: row.instanceId.slice(0, 8),
+        version: row.instanceVersion,
+        lastCheckInAt: toIso(row.lastCheckInAt),
+        activatedAt: row.activatedAt.toISOString(),
+      }),
+    ),
+  }
 }
 
 export async function createDemoLicense(input: {
@@ -352,7 +381,7 @@ export type ActivateInput = {
 
 export type OpsResult<T> =
   | { ok: true; data: T }
-  | { ok: false; code: string; message: string; status: number }
+  | { ok: false; code: string; message: string; status: number; details?: unknown }
 
 export async function activateLicense(
   input: ActivateInput,
@@ -416,25 +445,18 @@ export async function activateLicense(
     },
   })
 
+  // A new instance, or one whose seat was released, needs a free seat. A
+  // released instance coming back is no exception: it used to skip the check,
+  // so deactivate A → activate B → reactivate A left two servers on one seat.
   if (!existing || existing.deactivatedAt) {
     const activeCount = await countActiveActivations(license.id)
-    // Reactivating same instance after deactivate is ok; only block new slots
-    const needsSlot = !existing || existing.deactivatedAt !== null
-    if (needsSlot && activeCount >= license.serverLimit && !existing) {
+    if (activeCount >= license.serverLimit) {
       return {
         ok: false,
         code: "SERVER_LIMIT_REACHED",
-        message: `Server limit reached (${license.serverLimit}). Deactivate another instance first.`,
+        message: `This licence is already in use on ${activeCount} of ${license.serverLimit} server${license.serverLimit === 1 ? "" : "s"}. Release a server at ${ARCIIN_ACCOUNT_URL}, then activate again.`,
         status: 403,
-      }
-    }
-    // If re-activating a previously deactivated activation on this instance, always allow
-    if (!existing && activeCount >= license.serverLimit) {
-      return {
-        ok: false,
-        code: "SERVER_LIMIT_REACHED",
-        message: `Server limit reached (${license.serverLimit}). Deactivate another instance first.`,
-        status: 403,
+        details: await serverLimitDetails(license.id, license.serverLimit),
       }
     }
   }

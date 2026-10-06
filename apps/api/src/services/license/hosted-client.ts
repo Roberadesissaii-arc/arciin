@@ -40,6 +40,8 @@ type HostedError = {
   message: string
   status: number
   unreachable?: boolean
+  /** Structured context from the authority, e.g. the servers holding the seats. */
+  details?: unknown
 }
 
 type HostedOk<T> = { ok: true; data: T }
@@ -74,7 +76,7 @@ async function licenseFetch<T>(
     })
     const json = (await res.json().catch(() => ({}))) as {
       data?: T
-      error?: { code?: string; message?: string }
+      error?: { code?: string; message?: string; details?: unknown }
     }
     if (!res.ok) {
       return {
@@ -82,6 +84,7 @@ async function licenseFetch<T>(
         code: json.error?.code ?? "LICENSE_SERVER_ERROR",
         message: json.error?.message ?? `License server returned ${res.status}`,
         status: res.status,
+        ...(json.error?.details !== undefined ? { details: json.error.details } : {}),
       }
     }
     if (!json.data) {

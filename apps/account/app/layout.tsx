@@ -4,10 +4,11 @@ import "./globals.css"
 
 export const metadata: Metadata = {
   title: {
-    default: "Arciin Account",
-    template: "%s · Arciin Account",
+    default: "Arciin Account (demo)",
+    template: "%s · Arciin Account (demo)",
   },
-  description: "Manage Arciin licenses, servers, and downloads.",
+  description: "Vendor demo of the licence server. Customer accounts live at arciin.com/account.",
+  robots: { index: false, follow: false },
   icons: {
     icon: "/favicon.svg",
   },

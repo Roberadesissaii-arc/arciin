@@ -73,7 +73,9 @@ export function describeNonKeyInput(raw: string): string | null {
   const value = raw.trim()
   if (!value) return "Paste your license key to activate."
 
-  if (/…|\.\.\./.test(value)) {
+  // The portal and the app mask keys as ARC_PRO_8544…FEEA or ARC_PRO_••••1234;
+  // a pasted mask is never a key. Real keys are [A-Za-z0-9_-] only.
+  if (/…|\.\.\.|[•●∙·⋅◦▪■]|\*{2,}/.test(value)) {
     return "That is the shortened key shown on screen — the … stands in for the middle. Open your license email and copy the whole key."
   }
 
