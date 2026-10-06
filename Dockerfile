@@ -91,7 +91,14 @@ RUN pnpm db:generate
 RUN for d in node_modules/.pnpm/@prisma+engines@*/node_modules/@prisma/engines; do \
       (cd "$d" && node scripts/postinstall.js); \
     done \
-    && ls node_modules/.pnpm/@prisma+engines@*/node_modules/@prisma/engines/schema-engine-* >/dev/null
+    && ls node_modules/.pnpm/@prisma+engines@*/node_modules/@prisma/engines/schema-engine-* >/dev/null \
+    && mkdir -p /app/.prisma-engines \
+    && cp node_modules/.pnpm/@prisma+engines@*/node_modules/@prisma/engines/schema-engine-* /app/.prisma-engines/schema-engine \
+    && chmod 755 /app/.prisma-engines/schema-engine \
+    # Belt and braces: whatever Prisma still wants to write there, any uid may.
+    && chmod -R a+rwX node_modules/.pnpm/@prisma+engines@*/node_modules/@prisma/engines
+# Point the CLI at the baked engine so it never looks for one to download.
+ENV PRISMA_SCHEMA_ENGINE_BINARY=/app/.prisma-engines/schema-engine
 
 # ─────────────────────────────────────────────────────────────────────────────
 # web-builder — the only stage that needs the dev toolchain.
